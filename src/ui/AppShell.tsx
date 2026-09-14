@@ -1,15 +1,46 @@
 import type { ReactNode } from "react";
+import { Bot, MessageSquare, Settings } from "lucide-react";
+
+export type AppPage = "chat" | "settings";
 
 export function AppShell({
-  settingsPanel,
+  activePage,
   children,
+  onPageChange,
 }: {
-  settingsPanel?: ReactNode;
+  activePage: AppPage;
   children: ReactNode;
+  onPageChange(page: AppPage): void;
 }) {
   return (
     <main className="app-shell">
-      {settingsPanel}
+      <aside className="app-navigation" aria-label="主要功能">
+        <div className="app-navigation-brand" aria-label="Ayase Studio">
+          <Bot size={20} />
+        </div>
+        <nav className="app-navigation-pages">
+          <button
+            className="app-navigation-button"
+            aria-label="聊天"
+            aria-current={activePage === "chat" ? "page" : undefined}
+            onClick={() => onPageChange("chat")}
+            type="button"
+          >
+            <MessageSquare size={19} />
+            <span>聊天</span>
+          </button>
+          <button
+            className="app-navigation-button app-navigation-settings"
+            aria-label="设置"
+            aria-current={activePage === "settings" ? "page" : undefined}
+            onClick={() => onPageChange("settings")}
+            type="button"
+          >
+            <Settings size={19} />
+            <span>设置</span>
+          </button>
+        </nav>
+      </aside>
       <section className="workspace-shell">{children}</section>
     </main>
   );

@@ -14,7 +14,5 @@ export function useAppearance() {
     ...snapshot,
     setThemeMode: (themeMode: ThemeMode) =>
       controller.setThemeMode(themeMode),
-    setSettingsOpen: (settingsOpen: boolean) =>
-      controller.setSettingsOpen(settingsOpen),
   };
 }

@@ -42,7 +42,7 @@ function createThemeHarness(initiallyDark = false) {
 }
 
 describe("appearance preferences", () => {
-  it("falls back to system theme with the settings panel open when storage is empty", () => {
+  it("falls back to system theme when storage is empty", () => {
     const storage = {
       getItem: () => null,
       setItem: () => undefined,
@@ -50,11 +50,10 @@ describe("appearance preferences", () => {
 
     expect(loadAppearancePreferences(storage)).toEqual({
       themeMode: "system",
-      settingsOpen: true,
     });
   });
 
-  it("loads a valid persisted theme and collapsed panel state", () => {
+  it("loads a valid persisted theme from the older preference shape", () => {
     const storage = {
       getItem: (key: string) =>
         key === APPEARANCE_STORAGE_KEY
@@ -65,11 +64,10 @@ describe("appearance preferences", () => {
 
     expect(loadAppearancePreferences(storage)).toEqual({
       themeMode: "dark",
-      settingsOpen: false,
     });
   });
 
-  it("persists the theme and settings panel state as one versioned preference", () => {
+  it("persists the theme as a versioned preference", () => {
     let savedKey = "";
     let savedValue = "";
     const storage = {
@@ -82,13 +80,11 @@ describe("appearance preferences", () => {
 
     saveAppearancePreferences(storage, {
       themeMode: "light",
-      settingsOpen: false,
     });
 
     expect(savedKey).toBe(APPEARANCE_STORAGE_KEY);
     expect(JSON.parse(savedValue)).toEqual({
       themeMode: "light",
-      settingsOpen: false,
     });
   });
 
@@ -105,11 +101,9 @@ describe("appearance preferences", () => {
 
     expect(loadAppearancePreferences(malformedStorage)).toEqual({
       themeMode: "system",
-      settingsOpen: true,
     });
     expect(loadAppearancePreferences(invalidThemeStorage)).toEqual({
       themeMode: "system",
-      settingsOpen: false,
     });
   });
 
@@ -152,7 +146,6 @@ describe("appearance controller", () => {
     expect(controller.getSnapshot()).toEqual({
       themeMode: "system",
       resolvedTheme: "light",
-      settingsOpen: true,
     });
     expect(harness.attributes.get("data-theme")).toBe("light");
     expect(harness.target.style.colorScheme).toBe("light");
@@ -165,7 +158,7 @@ describe("appearance controller", () => {
     expect(notifications).toBe(1);
   });
 
-  it("persists explicit choices and ignores later system theme changes", () => {
+  it("persists an explicit choice and ignores later system theme changes", () => {
     const harness = createThemeHarness(true);
     let saved = "";
     const storage = {
@@ -181,18 +174,15 @@ describe("appearance controller", () => {
     });
 
     controller.setThemeMode("light");
-    controller.setSettingsOpen(false);
     harness.setSystemTheme(false);
     harness.setSystemTheme(true);
 
     expect(controller.getSnapshot()).toEqual({
       themeMode: "light",
       resolvedTheme: "light",
-      settingsOpen: false,
     });
     expect(JSON.parse(saved)).toEqual({
       themeMode: "light",
-      settingsOpen: false,
     });
     expect(harness.attributes.get("data-theme")).toBe("light");
   });

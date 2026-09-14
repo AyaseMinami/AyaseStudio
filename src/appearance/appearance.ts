@@ -3,7 +3,6 @@ export type ResolvedTheme = Exclude<ThemeMode, "system">;
 
 export interface AppearancePreferences {
   themeMode: ThemeMode;
-  settingsOpen: boolean;
 }
 
 export interface AppearanceStorage {
@@ -29,7 +28,6 @@ export interface AppearanceController {
   getSnapshot(): AppearanceSnapshot;
   subscribe(listener: () => void): () => void;
   setThemeMode(themeMode: ThemeMode): void;
-  setSettingsOpen(settingsOpen: boolean): void;
   destroy(): void;
 }
 
@@ -37,7 +35,6 @@ export const APPEARANCE_STORAGE_KEY = "ayase-studio.appearance.v1";
 
 export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   themeMode: "system",
-  settingsOpen: true,
 };
 
 export function loadAppearancePreferences(
@@ -59,10 +56,6 @@ export function loadAppearancePreferences(
         stored.themeMode === "system"
           ? stored.themeMode
           : defaultAppearancePreferences.themeMode,
-      settingsOpen:
-        typeof stored.settingsOpen === "boolean"
-          ? stored.settingsOpen
-          : defaultAppearancePreferences.settingsOpen,
     };
   } catch {
     return { ...defaultAppearancePreferences };
@@ -129,7 +122,6 @@ export function createAppearanceController({
   });
   let preferences: AppearancePreferences = {
     themeMode: snapshot.themeMode,
-    settingsOpen: snapshot.settingsOpen,
   };
   const listeners = new Set<() => void>();
 
@@ -174,11 +166,6 @@ export function createAppearanceController({
     setThemeMode(themeMode) {
       if (themeMode !== preferences.themeMode) {
         updatePreferences({ ...preferences, themeMode });
-      }
-    },
-    setSettingsOpen(settingsOpen) {
-      if (settingsOpen !== preferences.settingsOpen) {
-        updatePreferences({ ...preferences, settingsOpen });
       }
     },
     destroy() {

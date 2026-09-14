@@ -10,12 +10,10 @@ export interface ChatWorkspaceProps {
   isStreaming: boolean;
   messages: StoredChatMessage[];
   protocolLabel: string;
-  settingsOpen: boolean;
   onClear(): void;
   onDraftChange(draft: string): void;
   onSend(): void;
   onStop(): void;
-  onToggleSettings(): void;
 }
 
 export function ChatWorkspace({
@@ -25,12 +23,10 @@ export function ChatWorkspace({
   isStreaming,
   messages,
   protocolLabel,
-  settingsOpen,
   onClear,
   onDraftChange,
   onSend,
   onStop,
-  onToggleSettings,
 }: ChatWorkspaceProps) {
   return (
     <>
@@ -38,9 +34,7 @@ export function ChatWorkspace({
         isHydrated={isHydrated}
         isStreaming={isStreaming}
         protocolLabel={protocolLabel}
-        settingsOpen={settingsOpen}
         onClear={onClear}
-        onToggleSettings={onToggleSettings}
       />
       <MessageList messages={messages} />
       <Composer

@@ -72,9 +72,9 @@ AyaseStudio/
 │  │  ├─ SafeMarkdown.tsx     safe Markdown rendering
 │  │  └─ *.test.ts[x]         deterministic tests
 │  └─ ui/
-│     ├─ AppShell.tsx         top-level settings/workspace layout
-│     ├─ SettingsPanel.tsx    appearance and provider-profile controls
-│     └─ chat/                header, message list, composer and workspace
+│     ├─ AppShell.tsx         top-level chat/settings navigation and workspace
+│     ├─ chat/                header, message list, composer and workspace
+│     └─ settings/            categorized settings workspace and pages
 ├─ src-tauri/
 │  ├─ capabilities/           Tauri permission declarations
 │  ├─ src/                    Rust application entry points
@@ -92,7 +92,7 @@ AyaseStudio/
 └─ vite.config.ts
 ```
 
-`App.tsx` 只组合外观、聊天会话与界面模块。聊天请求、流式终态、取消和持久化队列集中在 `useChatSession`；设置面板、标题栏、消息列表与输入区不重复实现这些规则。
+`App.tsx` 只组合外观、聊天会话、顶层页面选择与界面模块。`useChatSession` 无条件位于组合根中，因此聊天和设置页面切换不会重建聊天运行状态。聊天请求、流式终态、取消和持久化队列集中在 `useChatSession`；设置页、标题栏、消息列表与输入区不重复实现这些规则。
 
 ## Stable module seams
 
@@ -116,11 +116,11 @@ AyaseStudio/
 
 配置预览和真实请求必须共享同一个 URL 解析规则。配置值、标准化 Base URL 和最终请求端点是三个不同概念；解析必须确定、幂等，且不能通过自动回退发送第二次生成请求。
 
-### AppShell and Theme
+### AppShell, Settings and Theme
 
-`AppShell` 组合设置面板与聊天工作区；聊天工作区再组合标题栏、消息列表与输入区。它们是固定职责的 React 与 CSS 模块，不是可插拔 Panel 或 IDE 停靠系统。未来助手栏和对话栏应继续在这个组合根上增加，而不是重新混入聊天运行逻辑。
+`AppShell` 提供固定的顶层功能导航，并在聊天和设置两个工作区之间切换。聊天工作区组合标题栏、消息列表与输入区；设置工作区拥有自己的分类导航，当前将连接配置与外观拆分为两个页面。页面选择由 `App.tsx` 管理，不引入路由框架，也不会因为切换视图而取消或重发聊天请求。这些是固定职责的 React 与 CSS 模块，不是可插拔 Panel 或 IDE 停靠系统。未来助手栏和对话栏应继续在这个组合根上增加，而不是重新混入聊天运行逻辑。
 
-主题模块以 `themeMode`、`resolvedTheme`、`settingsOpen` 和两个更新操作作为 React 接口。普通界面模块只使用语义化 CSS 变量，不知道具体的 `stone` 或 `violet` 色阶，也不各自监听系统主题。浅色、深色和跟随系统的解析、系统变化订阅、损坏配置回退与本地持久化集中在 `AppearanceController` 内。
+主题模块以 `themeMode`、`resolvedTheme` 和主题更新操作作为 React 接口。普通界面模块只使用语义化 CSS 变量，不知道具体的 `stone` 或 `violet` 色阶，也不各自监听系统主题。浅色、深色和跟随系统的解析、系统变化订阅、损坏配置回退与本地持久化集中在 `AppearanceController` 内。顶层页面与设置分类属于瞬时导航状态，由应用组合根拥有，不混入外观偏好存储。
 
 外观偏好使用一个版本化的 localStorage 记录。`bootstrap.ts` 在主 React 入口前应用已保存或系统解析后的实际主题，React 随后通过同一个解析规则建立实时订阅。只有真实出现第二种布局实现时，才增加新的布局 adapter。
 
@@ -153,9 +153,9 @@ Assistant
 
 ## State ownership
 
-- 瞬时视图状态：由拥有该交互的 React 界面模块管理。
+- 瞬时视图状态：顶层页面与设置分类由应用组合根管理，局部交互由拥有它的 React 界面模块管理。
 - 聊天运行状态：集中管理流式消息、取消、唯一终态和持久化队列。
-- 外观状态：由主题控制器管理主题模式、实际配色、系统变化订阅与设置面板展开偏好。
+- 外观状态：由主题控制器管理主题模式、实际配色与系统变化订阅。
 - 用户设置：通过明确的加载、校验、迁移与保存入口管理。
 - 供应商差异：只存在于协议 adapter 内。
 - 长期数据：通过 repository seam 进入 Dexie 或后续本地文件存储。
@@ -177,7 +177,7 @@ Assistant
 - SSE framing、协议字段映射、错误分类、取消与存储恢复使用确定性测试，不依赖真实网络。
 - 每个请求恰好产生一个终态：`completed`、`failed` 或 `aborted`。
 - 真实探针只回答中转站是否透传某项能力，不替代确定性回归测试。
-- 界面模块化或主题变化必须保留发送、流式增量、停止生成、错误展示和重启恢复行为。
+- 顶层页面导航、设置分类或主题变化必须保留发送、流式增量、停止生成、草稿与错误状态，以及重启恢复行为。
 - 主题解析、系统变化、持久化与损坏配置回退使用注入式依赖完成确定性测试。
 - 涉及 Tauri 权限、窗口或本地文件的改动必须完成桌面烟雾测试。
 
