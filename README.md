@@ -11,19 +11,21 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Incremental Markdown rendering and cancellation
 - Normalized HTTP, network, protocol, and abort outcomes
 - Local provider profiles and a Dexie-backed current conversation
+- Composable React application shell with focused settings and chat modules
+- Persistent light, dark, and system-following appearance modes
 
 Raw HTML in model output is rendered as inert text. Alpha credentials are stored as plaintext in the local WebView profile; do not use untrusted relay credentials.
 
 ## Development
 
 ```powershell
-npm.cmd install
-npm.cmd test
-npm.cmd run build
+npm.cmd ci
 npm.cmd run tauri dev
 ```
 
 The first Rust build can take several minutes. Later incremental builds are much faster.
+
+For a new Windows machine, cross-machine Git workflow, local probe setup, verification commands, and troubleshooting, read [the development guide](docs/DEVELOPMENT.md).
 
 ## Base URL behavior
 
@@ -43,4 +45,9 @@ npm.cmd run probe:live -- --disableConsoleIntercept
 
 The live probe uses short prompts, caps output where the protocol supports it, disables automatic retries, and redacts configured API keys from reported failures. Remote HTTP endpoints are suitable only for diagnosis; use HTTPS for credentials and message content.
 
-See [the v0.1 plan](docs/PLAN.md) and [the protocol contract](docs/PROTOCOLS.md).
+## Project documentation
+
+- [Development guide](docs/DEVELOPMENT.md): Windows prerequisites, setup, cross-machine workflow, commands, credentials, and checks.
+- [Architecture and project structure](docs/ARCHITECTURE.md): technology stack, runtime topology, module seams, state ownership, and security invariants.
+- [v0.1 plan](docs/PLAN.md): current product scope, roadmap, known issues, and acceptance gates.
+- [Protocol compatibility contract](docs/PROTOCOLS.md): URL resolution, provider event mapping, and error policy.
