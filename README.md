@@ -1,6 +1,6 @@
 # Ayase Studio
 
-Ayase Studio is a deliberately small, local-first desktop chat client. It uses Tauri 2 as the host and keeps provider behavior behind one TypeScript transport interface.
+Ayase Studio is a deliberately small, local-first desktop chat client. It uses Tauri 2 as the host, keeps generation behind the neutral `ChatTransport` interface, and isolates model discovery behind `ModelCatalogClient`.
 
 ## Current capabilities
 
@@ -10,7 +10,8 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Anthropic native Messages streaming
 - Incremental Markdown rendering and cancellation
 - Normalized HTTP, network, protocol, and abort outcomes
-- Local provider profiles and a Dexie-backed current conversation
+- Three-level supplier → connection → model configuration, including repeated protocols, per-connection model discovery/testing, persisted active-model selection, and deterministic legacy migration
+- Dexie-backed current conversation persistence
 - Top-level chat/settings navigation with a dedicated, categorized settings center
 - Persistent light, dark, and system-following appearance modes
 

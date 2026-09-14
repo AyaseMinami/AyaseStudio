@@ -46,6 +46,9 @@ describe("ChatTransport", () => {
   it("streams OpenAI Chat text in order and completes once", async () => {
     const fetch: FetchLike = async (_input, init) => {
       expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        max_completion_tokens: 8,
+      });
       return sseResponse([
         'data: {"id":"one","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"Hel"},"finish_reason":null}]}\n\n',
         'data: {"id":"one","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":"stop"}]}\n\n',
@@ -53,7 +56,9 @@ describe("ChatTransport", () => {
       ]);
     };
 
-    await expect(collectEvents("openai-chat", fetch)).resolves.toEqual([
+    await expect(
+      collectEvents("openai-chat", fetch, { ...request, maxOutputTokens: 8 }),
+    ).resolves.toEqual([
       { type: "text-delta", text: "Hel" },
       { type: "text-delta", text: "lo" },
       { type: "completed", finishReason: "stop" },

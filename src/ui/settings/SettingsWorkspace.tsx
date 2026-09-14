@@ -63,7 +63,13 @@ export function SettingsWorkspace({
           </button>
         </nav>
 
-        <div className="settings-page-scroll">
+        <div
+          className={`settings-page-scroll${
+            activeSection === "connections"
+              ? " settings-page-scroll-workbench"
+              : ""
+          }`}
+        >
           {activeSection === "connections" ? (
             <ConnectionSettings {...connection} />
           ) : (

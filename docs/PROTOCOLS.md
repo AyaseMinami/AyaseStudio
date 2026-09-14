@@ -4,6 +4,18 @@
 
 Every adapter receives a base URL, API key, model, ordered local message history, and optional abort signal. The base URL stops before the protocol resource path.
 
+## Connection selection boundary
+
+供应商只用于设置界面的分组，不进入 transport，也不提供父级字段继承。每条连接完整持有名称、协议、Base URL 与 API Key，并拥有自己的已添加模型。当前聊天由持久化的 `activeModelId` 指向一个已添加模型；运行时从模型的唯一父连接读取 transport 类型、地址和凭据，因此不会把一个连接的协议与另一个连接的 Key 或模型混合。
+
+同一供应商可以配置多条相同协议的连接，以表示一个中转站的不同 URL、账号或渠道。复制已有值只发生在新建连接时，只复制地址和密钥而不复制模型；后续编辑互不影响。相同实际模型 ID 可以分别存在于不同连接下。浏览某条连接不会改变当前聊天模型；只有显式选择模型才改变 `activeModelId`。删除当前模型或其祖先会清空选择，不自动回退。供应商模板不产生 provider-specific transport 分支。API Key 不复制到模型目录、对话快照、消息或日志。
+
+## Model catalog boundary
+
+模型目录请求与生成请求使用同一连接的协议、Base URL 和 Key，但它是一次独立、用户触发的读取操作。OpenAI Chat 与 Responses 使用模型列表资源，Gemini 与 Anthropic 使用各自的原生列表资源；原生分页游标会被顺序读取、稳定合并并设置安全页数上限。返回条目先归一化为临时候选目录，再由用户逐个添加为配置模型；目录缺失、失败、空结果或取消不会修改已添加模型，也不会触发兼容协议或备用 URL 探测。任何上游错误文本在进入状态或界面前都必须删除其中出现的当前凭据。
+
+模型可用性测试复用对应的 `ChatTransport`，只对用户指定的单个模型发送一次极短请求。它不得并行批量测速、自动重试、自动切换当前模型或复用聊天中的未完成请求。
+
 ## URL resolution contract
 
 Three values are deliberately distinct:

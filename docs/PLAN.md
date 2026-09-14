@@ -31,7 +31,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## Module seams
 
-The UI knows only the `ChatTransport` interface and neutral `ChatEvent` values. Each provider adapter owns endpoint construction, headers, request mapping, SSE decoding, unknown-event handling, and provider-specific errors.
+Chat generation knows only the `ChatTransport` interface and neutral `ChatEvent` values. Each generation adapter owns endpoint construction, headers, request mapping, SSE decoding, unknown-event handling, and provider-specific errors. The separate, user-triggered model-directory action uses the neutral `ModelCatalogClient`; its protocol-specific GET routes, pagination, headers, and response mapping remain hidden from React.
 
 Conversation storage sits behind `ChatRepository`; UI code does not call Dexie directly.
 
@@ -39,33 +39,45 @@ URL resolution will sit at one seam shared by settings preview and transports. T
 
 ## Configuration model
 
-The current fixed one-profile-per-protocol map is temporary. The next configuration slice uses named connection profiles:
+The connection configuration slice uses a three-level supplier, connection, and configured-model hierarchy:
 
 ```text
+ProviderGroup
+- id
+- name
+└─ ConnectionProfile[]
+
 ConnectionProfile
 - id
 - name
 - protocol
-- configuredBaseUrl
+- baseUrl
 - apiKey
-- model
+└─ ConfiguredModel[]
+   - id
+   - modelId
+   - displayName (optional)
 
 AppSettings
-- activeProfileId
+- activeModelId
 ```
 
-- Multiple profiles may use the same protocol; protocol is never a profile identity.
-- Selecting a profile selects its protocol, Base URL, key, and model atomically.
-- The active profile ID is persisted and restored on startup.
-- Missing, deleted, or corrupt active-profile references fall back deterministically without deleting valid profiles.
+- A supplier is only a UI grouping. It has no inherited Base URL, key, model, or runtime behavior.
+- One supplier may hold any number of connections. Protocol is a dropdown property of a connection, and repeated connections using the same protocol are valid.
+- Built-in OpenAI, Google Gemini, and Anthropic entries are read-only creation templates. Their created providers and connections use the same editable runtime model as custom providers.
+- Selecting a connection in settings only changes the model list being browsed. Selecting a configured model makes its model ID, parent connection, protocol, Base URL, and key the atomic chat target.
+- The active model ID is persisted and restored on startup.
+- Missing, deleted, or corrupt active-model references become an explicit unselected state. Deletion never silently switches to another connection or model.
+- Each connection can fetch a protocol-aware remote model catalog on demand. Catalog entries are candidates only; users add them explicitly or add an arbitrary model ID manually.
+- A user may explicitly test one configured model. The test is cancellable, reports latency/failure, may consume tokens, and is never retried automatically.
 - Keys remain local and are never copied into conversations or tracked by Git. Keychain storage remains a later security upgrade.
-- Migration preserves valid values from the current `ProviderProfiles` storage shape.
+- Migration deterministically preserves valid non-empty values from the legacy `ProviderProfiles` storage shape.
 
 ## Conversation roadmap
 
 The current `current` snapshot intentionally represents one multi-turn conversation. This is sufficient for the transport and persistence vertical slice, but not the final daily-use experience.
 
-After connection profiles are stable, multiple conversations can add create, switch, rename, and delete operations behind `ChatRepository`. Each conversation should remember a `lastUsedProfileId`; it references a connection profile rather than duplicating credentials. Search, folders, pinning, and automatic titles remain separate later decisions.
+After connection profiles are stable, multiple conversations can add create, switch, rename, and delete operations behind `ChatRepository`. Each conversation should remember a `lastUsedModelId`; the model resolves its parent connection rather than duplicating credentials. Search, folders, pinning, and automatic titles remain separate later decisions.
 
 ## Delivery stages
 
@@ -88,8 +100,6 @@ Add protocol-aware URL resolution before expanding the feature set:
 
 ## Known issues
 
-- Provider profiles are persisted, but the selected protocol is not. Startup currently always selects `openai-chat`; configuration persistence must validate, store, and restore the last selected protocol, with `openai-chat` only as the fallback for missing or invalid data.
-- The current profile storage allows only one profile per protocol and has no user-defined profile names; migrate it to the connection-profile model above.
 - Markdown soft line breaks are currently collapsed by CommonMark rendering. Preserve model-provided single newlines without enabling raw HTML, and cover the rendered line-break behavior with a regression test.
 
 ## Acceptance gates
@@ -99,7 +109,7 @@ Add protocol-aware URL resolution before expanding the feature set:
 - Deterministic tests cover HTTP 429, HTTP 500, network failure, malformed SSE, and cancellation; real providers are not required to manufacture failures.
 - Unknown SSE event types are ignored without losing later standard events.
 - URL normalization is deterministic and idempotent, and the endpoint shown in settings exactly matches the requested URL.
-- Restart restores the last selected protocol and its matching profile; corrupt stored selection falls back safely.
+- Restart restores the last selected model and resolves its complete parent connection; corrupt stored selection becomes explicitly unselected.
 - Model-provided single newlines remain visually distinct without enabling raw HTML.
 - Secrets and local probe configuration are ignored by Git.
 - `npm test`, TypeScript build, Rust check, and production bundle build pass.

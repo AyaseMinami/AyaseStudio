@@ -96,6 +96,7 @@ class OpenAIChatTransport implements ChatTransport {
         {
           model: request.model,
           messages: request.messages,
+          max_completion_tokens: request.maxOutputTokens,
           stream: true,
         },
         { signal: request.signal },

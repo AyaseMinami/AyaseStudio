@@ -1,25 +1,68 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { DiscoveredModel } from "./modelCatalog";
+import {
+  testModelAvailability,
+  type ModelAvailabilityResult,
+} from "./modelAvailability";
 import { getProtocolOption } from "./protocolOptions";
 import {
   createChatRepository,
   type StoredChatMessage,
   type StoredMessageStatus,
 } from "./repository";
-import { createRuntimeChatTransport } from "./runtime";
 import {
-  loadProviderProfiles,
-  saveProviderProfiles,
-  type ProviderProfile,
-  type ProviderProfiles,
+  createRuntimeChatTransport,
+  createRuntimeModelCatalogClient,
+} from "./runtime";
+import {
+  addConnection,
+  addModel,
+  createProviderFromTemplate,
+  deleteConnection,
+  deleteModel,
+  deleteProvider,
+  getActiveTarget,
+  getConnection,
+  loadConnectionSettings,
+  providerTemplates,
+  renameProvider,
+  saveConnectionSettings,
+  selectModel,
+  updateConnection,
+  updateModel,
+  type ConnectionField,
+  type ModelField,
+  type ProviderTemplateId,
 } from "./settings";
 import type { ChatProtocol } from "./types";
 
 const chatRepository = createChatRepository();
 const currentChatId = "current";
 
+export interface ModelCatalogViewState {
+  status: "idle" | "loading" | "success" | "error";
+  models: DiscoveredModel[];
+  error?: string;
+}
+
+export type ModelTestViewState =
+  | { status: "running" }
+  | ModelAvailabilityResult;
+
 function newId(): string {
   return crypto.randomUUID();
+}
+
+function uniqueProviderName(existingNames: string[], desiredName: string): string {
+  if (!existingNames.includes(desiredName)) {
+    return desiredName;
+  }
+  let suffix = 2;
+  while (existingNames.includes(`${desiredName} ${suffix}`)) {
+    suffix += 1;
+  }
+  return `${desiredName} ${suffix}`;
 }
 
 function replaceAssistant(
@@ -38,20 +81,97 @@ export function useChatSession({
 }: {
   onConfigurationRequired(): void;
 }) {
-  const [protocol, setProtocol] = useState<ChatProtocol>("openai-chat");
-  const [profiles, setProfiles] = useState<ProviderProfiles>(loadProviderProfiles);
+  const [connectionSettings, setConnectionSettings] = useState(
+    loadConnectionSettings,
+  );
   const [messages, setMessages] = useState<StoredChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [error, setError] = useState<string>();
   const abortRef = useRef<AbortController>(null);
-  const activeProfile = profiles[protocol];
-  const protocolInfo = useMemo(() => getProtocolOption(protocol), [protocol]);
+  const catalogAbortControllers = useRef(
+    new Map<string, AbortController>(),
+  );
+  const testAbortControllers = useRef(new Map<string, AbortController>());
+  const [modelCatalogs, setModelCatalogs] = useState<
+    Record<string, ModelCatalogViewState>
+  >({});
+  const [modelTests, setModelTests] = useState<
+    Record<string, ModelTestViewState>
+  >({});
+
+  function invalidateCatalogRequest(connectionId: string): void {
+    const controller = catalogAbortControllers.current.get(connectionId);
+    catalogAbortControllers.current.delete(connectionId);
+    controller?.abort();
+  }
+
+  function invalidateModelTestRequest(modelId: string): void {
+    const controller = testAbortControllers.current.get(modelId);
+    testAbortControllers.current.delete(modelId);
+    controller?.abort();
+  }
+  const activeTarget = useMemo(
+    () => getActiveTarget(connectionSettings),
+    [connectionSettings],
+  );
+  const activeProvider = activeTarget?.provider;
+  const activeConnection = activeTarget?.connection;
+  const activeModel = activeTarget?.model;
+  const protocolInfo = useMemo(
+    () =>
+      activeConnection ? getProtocolOption(activeConnection.protocol) : undefined,
+    [activeConnection],
+  );
 
   useEffect(() => {
-    saveProviderProfiles(profiles);
-  }, [profiles]);
+    saveConnectionSettings(connectionSettings);
+  }, [connectionSettings]);
+
+  useEffect(() => {
+    const validConnectionIds = new Set(
+      connectionSettings.providers.flatMap((provider) =>
+        provider.connections.map((connection) => connection.id),
+      ),
+    );
+    const validModelIds = new Set(
+      connectionSettings.providers.flatMap((provider) =>
+        provider.connections.flatMap((connection) =>
+          connection.models.map((model) => model.id),
+        ),
+      ),
+    );
+    setModelCatalogs((current) => {
+      const entries = Object.entries(current).filter(([connectionId]) =>
+        validConnectionIds.has(connectionId),
+      );
+      return entries.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(entries);
+    });
+    setModelTests((current) => {
+      const entries = Object.entries(current).filter(([modelId]) =>
+        validModelIds.has(modelId),
+      );
+      return entries.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(entries);
+    });
+  }, [connectionSettings]);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      for (const controller of catalogAbortControllers.current.values()) {
+        controller.abort();
+      }
+      for (const controller of testAbortControllers.current.values()) {
+        controller.abort();
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -92,11 +212,324 @@ export function useChatSession({
     };
   }, []);
 
-  function updateProfile(field: keyof ProviderProfile, value: string): void {
-    setProfiles((current) => ({
+  function addProviderFromTemplate(templateId: ProviderTemplateId): string {
+    const providerId = newId();
+    const template = providerTemplates.find(
+      (candidate) => candidate.id === templateId,
+    )!;
+    const connectionIds = Object.fromEntries(
+      template.connections.map(({ protocol }) => [protocol, newId()]),
+    ) as Partial<Record<ChatProtocol, string>>;
+    setConnectionSettings((current) =>
+      createProviderFromTemplate(current, templateId, {
+        providerId,
+        connectionIds,
+        name: uniqueProviderName(
+          current.providers.map((provider) => provider.name),
+          template.providerName,
+        ),
+      }),
+    );
+    return providerId;
+  }
+
+  function addProviderConnection(
+    providerId: string,
+    name: string,
+    protocol: ChatProtocol,
+    copyFromConnectionId?: string,
+  ): string {
+    const connectionId = newId();
+    setConnectionSettings((current) =>
+      addConnection(current, providerId, {
+        id: connectionId,
+        name,
+        protocol,
+        copyFromConnectionId,
+      }),
+    );
+    return connectionId;
+  }
+
+  function updateConnectionProfile(
+    connectionId: string,
+    field: ConnectionField,
+    value: string,
+  ): void {
+    if (field === "protocol" || field === "baseUrl" || field === "apiKey") {
+      invalidateCatalogRequest(connectionId);
+      setModelCatalogs((current) => {
+        if (!(connectionId in current)) {
+          return current;
+        }
+        const { [connectionId]: _removed, ...remaining } = current;
+        return remaining;
+      });
+      const affectedModelIds = new Set(
+        getConnection(connectionSettings, connectionId)?.models.map(
+          (model) => model.id,
+        ) ?? [],
+      );
+      for (const modelId of affectedModelIds) {
+        invalidateModelTestRequest(modelId);
+      }
+      setModelTests((current) => {
+        const entries = Object.entries(current).filter(
+          ([modelId]) => !affectedModelIds.has(modelId),
+        );
+        return entries.length === Object.keys(current).length
+          ? current
+          : Object.fromEntries(entries);
+      });
+    }
+    setConnectionSettings((current) =>
+      updateConnection(current, connectionId, field, value),
+    );
+  }
+
+  function addConfiguredModel(
+    connectionId: string,
+    modelId: string,
+    displayName?: string,
+  ): string {
+    const id = newId();
+    setConnectionSettings((current) =>
+      addModel(current, connectionId, { id, modelId, displayName }),
+    );
+    return id;
+  }
+
+  function updateConfiguredModel(
+    modelId: string,
+    field: ModelField,
+    value: string,
+  ): void {
+    if (field === "modelId") {
+      invalidateModelTestRequest(modelId);
+      setModelTests((current) => {
+        if (!(modelId in current)) {
+          return current;
+        }
+        const { [modelId]: _removed, ...remaining } = current;
+        return remaining;
+      });
+    }
+    setConnectionSettings((current) =>
+      updateModel(current, modelId, field, value),
+    );
+  }
+
+  function setActiveModel(modelId: string): void {
+    setConnectionSettings((current) => selectModel(current, modelId));
+  }
+
+  function removeModel(modelId: string): void {
+    invalidateModelTestRequest(modelId);
+    setModelTests((current) => {
+      if (!(modelId in current)) {
+        return current;
+      }
+      const { [modelId]: _removed, ...remaining } = current;
+      return remaining;
+    });
+    setConnectionSettings((current) => deleteModel(current, modelId));
+  }
+
+  function removeConnection(connectionId: string): void {
+    invalidateCatalogRequest(connectionId);
+    const affectedModelIds = new Set(
+      getConnection(connectionSettings, connectionId)?.models.map(
+        (model) => model.id,
+      ) ?? [],
+    );
+    for (const modelId of affectedModelIds) {
+      invalidateModelTestRequest(modelId);
+    }
+    setConnectionSettings((current) =>
+      deleteConnection(current, connectionId),
+    );
+  }
+
+  function removeProvider(providerId: string): void {
+    const provider = connectionSettings.providers.find(
+      (candidate) => candidate.id === providerId,
+    );
+    for (const connection of provider?.connections ?? []) {
+      invalidateCatalogRequest(connection.id);
+      for (const model of connection.models) {
+        invalidateModelTestRequest(model.id);
+      }
+    }
+    setConnectionSettings((current) => deleteProvider(current, providerId));
+  }
+
+  function updateProviderName(providerId: string, name: string): void {
+    setConnectionSettings((current) =>
+      renameProvider(current, providerId, name),
+    );
+  }
+
+  async function refreshModelCatalog(connectionId: string): Promise<void> {
+    const connection = getConnection(connectionSettings, connectionId);
+    const existing = modelCatalogs[connectionId];
+    if (!connection?.baseUrl.trim() || !connection.apiKey.trim()) {
+      setModelCatalogs((current) => ({
+        ...current,
+        [connectionId]: {
+          status: "error",
+          models: current[connectionId]?.models ?? [],
+          error: "请先填写该连接的 Base URL 和 API Key。",
+        },
+      }));
+      return;
+    }
+
+    catalogAbortControllers.current.get(connectionId)?.abort();
+    const controller = new AbortController();
+    catalogAbortControllers.current.set(connectionId, controller);
+    setModelCatalogs((current) => ({
       ...current,
-      [protocol]: { ...current[protocol], [field]: value },
+      [connectionId]: {
+        status: "loading",
+        models: current[connectionId]?.models ?? [],
+      },
     }));
+    try {
+      const client = await createRuntimeModelCatalogClient(connection.protocol);
+      const models = await client.list({
+        baseUrl: connection.baseUrl,
+        apiKey: connection.apiKey,
+        signal: controller.signal,
+      });
+      if (catalogAbortControllers.current.get(connectionId) !== controller) {
+        return;
+      }
+      const nextModels =
+        models.length > 0 ? models : (existing?.models ?? models);
+      setModelCatalogs((current) => ({
+        ...current,
+        [connectionId]: { status: "success", models: nextModels },
+      }));
+    } catch (caught) {
+      if (catalogAbortControllers.current.get(connectionId) !== controller) {
+        return;
+      }
+      if (controller.signal.aborted) {
+        setModelCatalogs((current) => ({
+          ...current,
+          [connectionId]: current[connectionId]?.models.length
+            ? { status: "success", models: current[connectionId].models }
+            : { status: "idle", models: [] },
+        }));
+        return;
+      }
+      setModelCatalogs((current) => ({
+        ...current,
+        [connectionId]: {
+          status: "error",
+          models: current[connectionId]?.models ?? existing?.models ?? [],
+          error:
+            caught instanceof Error ? caught.message : "无法获取模型列表。",
+        },
+      }));
+    } finally {
+      if (catalogAbortControllers.current.get(connectionId) === controller) {
+        catalogAbortControllers.current.delete(connectionId);
+      }
+    }
+  }
+
+  function cancelModelCatalogRefresh(connectionId: string): void {
+    catalogAbortControllers.current.get(connectionId)?.abort();
+  }
+
+  async function runModelTest(
+    connectionId: string,
+    configuredModelId: string,
+  ): Promise<void> {
+    const connection = getConnection(connectionSettings, connectionId);
+    const model = connection?.models.find(
+      (candidate) => candidate.id === configuredModelId,
+    );
+    if (!connection || !model || !connection.baseUrl || !connection.apiKey) {
+      setModelTests((current) => ({
+        ...current,
+        [configuredModelId]: {
+          status: "failed",
+          totalMs: 0,
+          error: {
+            kind: "http",
+            message: "请先填写连接的 Base URL、API Key 和模型 ID。",
+            retryable: false,
+          },
+        },
+      }));
+      return;
+    }
+
+    for (const runningModelId of [
+      ...testAbortControllers.current.keys(),
+    ]) {
+      invalidateModelTestRequest(runningModelId);
+    }
+    setModelTests((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([, test]) => test.status !== "running"),
+      ),
+    );
+    const controller = new AbortController();
+    testAbortControllers.current.set(configuredModelId, controller);
+    setModelTests((current) => ({
+      ...current,
+      [configuredModelId]: { status: "running" },
+    }));
+    try {
+      const transport = await createRuntimeChatTransport(connection.protocol);
+      const result = await testModelAvailability(
+        transport,
+        {
+          baseUrl: connection.baseUrl,
+          apiKey: connection.apiKey,
+          model: model.modelId,
+        },
+        { signal: controller.signal },
+      );
+      if (testAbortControllers.current.get(configuredModelId) !== controller) {
+        return;
+      }
+      setModelTests((current) => ({
+        ...current,
+        [configuredModelId]: result,
+      }));
+    } catch (caught) {
+      if (testAbortControllers.current.get(configuredModelId) !== controller) {
+        return;
+      }
+      const result: ModelTestViewState = controller.signal.aborted
+        ? { status: "cancelled", totalMs: 0 }
+        : {
+            status: "failed",
+            totalMs: 0,
+            error: {
+              kind: "network",
+              message:
+                caught instanceof Error ? caught.message : "无法启动模型测试。",
+              retryable: true,
+            },
+          };
+      setModelTests((current) => ({
+        ...current,
+        [configuredModelId]: result,
+      }));
+    } finally {
+      if (testAbortControllers.current.get(configuredModelId) === controller) {
+        testAbortControllers.current.delete(configuredModelId);
+      }
+    }
+  }
+
+  function cancelModelTest(modelId: string): void {
+    testAbortControllers.current.get(modelId)?.abort();
   }
 
   async function sendMessage(): Promise<void> {
@@ -104,9 +537,15 @@ export function useChatSession({
     if (!content || isStreaming || !isHydrated) {
       return;
     }
-    if (!activeProfile.baseUrl || !activeProfile.apiKey || !activeProfile.model) {
+    if (!activeTarget) {
       onConfigurationRequired();
-      setError("请先填写当前协议的 Base URL、API Key 和 Model。");
+      setError("请先添加并选择一个模型。");
+      return;
+    }
+    const requestConnection = activeTarget.connection;
+    if (!requestConnection.baseUrl || !requestConnection.apiKey) {
+      onConfigurationRequired();
+      setError("请先填写当前模型所属连接的 Base URL 和 API Key。");
       return;
     }
 
@@ -158,9 +597,13 @@ export function useChatSession({
     let lastPaint = 0;
     let lastPersist = 0;
     try {
-      const transport = await createRuntimeChatTransport(protocol);
+      const transport = await createRuntimeChatTransport(
+        requestConnection.protocol,
+      );
       for await (const event of transport.stream({
-        ...activeProfile,
+        baseUrl: requestConnection.baseUrl,
+        apiKey: requestConnection.apiKey,
+        model: activeTarget.model.modelId,
         messages: requestMessages,
         signal: controller.signal,
       })) {
@@ -247,19 +690,35 @@ export function useChatSession({
   }
 
   return {
-    activeProfile,
+    activeConnection,
+    activeModel,
+    activeProvider,
+    addConnection: addProviderConnection,
+    addModel: addConfiguredModel,
+    addProvider: addProviderFromTemplate,
+    cancelModelCatalogRefresh,
+    cancelModelTest,
     clearConversation,
+    connectionSettings,
+    deleteConnection: removeConnection,
+    deleteModel: removeModel,
+    deleteProvider: removeProvider,
     draft,
     error,
     isHydrated,
     isStreaming,
     messages,
-    protocol,
+    modelCatalogs,
+    modelTests,
     protocolInfo,
+    refreshModelCatalog,
+    renameProvider: updateProviderName,
+    runModelTest,
     sendMessage,
     setDraft,
-    setProtocol,
+    setActiveModel,
     stopGeneration,
-    updateProfile,
+    updateConnection: updateConnectionProfile,
+    updateModel: updateConfiguredModel,
   };
 }

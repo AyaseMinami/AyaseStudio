@@ -67,7 +67,10 @@ AyaseStudio/
 │  │  ├─ runtime.ts           Tauri HTTP adapter wiring
 │  │  ├─ sse.ts               SSE framing parser
 │  │  ├─ repository.ts        ChatRepository and Dexie adapter
-│  │  ├─ settings.ts          current local provider-profile storage
+│  │  ├─ settings.ts          supplier/connection/model domain and v1/v2 migration
+│  │  ├─ modelCatalog.ts      protocol-aware remote model discovery client
+│  │  ├─ modelGrouping.ts     stable configured/discovered model grouping
+│  │  ├─ modelAvailability.ts explicit single-model availability test
 │  │  ├─ useChatSession.ts    chat runtime and persistence orchestration
 │  │  ├─ SafeMarkdown.tsx     safe Markdown rendering
 │  │  └─ *.test.ts[x]         deterministic tests
@@ -116,6 +119,20 @@ AyaseStudio/
 
 配置预览和真实请求必须共享同一个 URL 解析规则。配置值、标准化 Base URL 和最终请求端点是三个不同概念；解析必须确定、幂等，且不能通过自动回退发送第二次生成请求。
 
+### Connection settings
+
+连接配置使用一个版本化 localStorage 记录，并通过 `settings.ts` 的纯函数完成加载、校验、迁移、CRUD 和活动引用校验。React 界面不直接读写 localStorage。供应商只提供命名分组；连接完整持有名称、协议、Base URL 与 API Key；每条连接再拥有零到多个已添加模型。同一供应商可以建立多条相同或不同协议的连接，相同实际模型 ID 也可以分别存在于不同连接中。
+
+运行时只持久化一个 `activeModelId`。选择模型时只更新该 ID，聊天从该模型反向解析唯一的父连接和供应商，再从同一对象链取得模型 ID、协议、Base URL 与 Key，避免字段混配。设置页当前浏览的供应商和连接是瞬时 UI 状态，不等于当前聊天模型。删除当前模型或其父连接/供应商时将活动 ID 清空，禁止静默切换到另一条可能计费或隐私边界不同的线路。
+
+加载顺序优先采用 v3 记录；若不存在有效 v3，则将 v2 的单模型连接迁移为每条连接下的一个稳定模型实体；再无 v2 时才迁移旧 `ayase-studio.provider-profiles.v1`。迁移使用稳定 ID 和固定协议顺序，因此重复加载不会产生重复对象。内置 OpenAI、Google Gemini 与 Anthropic 只是只读创建模板；创建结果与自定义供应商使用相同数据类型和运行时路径。
+
+### Model discovery and availability
+
+`modelCatalog.ts` 以连接为请求边界，按四种协议构造模型目录 GET 请求、凭据头、分页和响应映射；返回值是内存中的候选目录，不直接写入配置。界面可以搜索、分组并显式把单个候选项添加为 `ConfiguredModel`。并非所有中转站都实现目录端点，因此失败或空刷新只作为该连接的可见状态，不删除上次成功结果，也不阻止手动添加。显示错误前必须删除其中出现的当前 API Key。
+
+`modelAvailability.ts` 复用该连接协议对应的 `ChatTransport` 发起一次受限的极短请求，消费统一 `ChatEvent` 并记录首段与总耗时。测试必须由用户对单个模型显式触发；同一时刻最多运行一个，可取消、有超时，且不自动重试或自动选择模型。用户取消优先于随后发生的超时，配置变化会使旧异步结果失去写回资格。
+
 ### AppShell, Settings and Theme
 
 `AppShell` 提供固定的顶层功能导航，并在聊天和设置两个工作区之间切换。聊天工作区组合标题栏、消息列表与输入区；设置工作区拥有自己的分类导航，当前将连接配置与外观拆分为两个页面。页面选择由 `App.tsx` 管理，不引入路由框架，也不会因为切换视图而取消或重发聊天请求。这些是固定职责的 React 与 CSS 模块，不是可插拔 Panel 或 IDE 停靠系统。未来助手栏和对话栏应继续在这个组合根上增加，而不是重新混入聊天运行逻辑。
@@ -126,18 +143,23 @@ AyaseStudio/
 
 ## Domain direction
 
-已确认但尚未全部实现的数据关系如下：
+当前连接配置与后续助手、对话方向的数据关系如下：
 
 ```text
-Provider
+ProviderGroup
 └─ ConnectionProfile
+   ├─ id
+   ├─ name
    ├─ protocol
    ├─ configured base URL
    ├─ API key
-   └─ default model
+   └─ ConfiguredModel[]
+      ├─ internal id
+      ├─ actual model id
+      └─ optional display name
 
 Assistant
-├─ default connection/model
+├─ default model reference
 ├─ default system instruction
 ├─ default generation settings
 └─ Conversation
@@ -146,17 +168,17 @@ Assistant
    │  ├─ text
    │  ├─ attachment references (planned)
    │  └─ citations/search metadata (planned)
-   └─ last-used connection reference
+   └─ last-used model reference
 ```
 
-对话引用连接配置，不复制凭据。助手是预设与对话容器，不是 Agent；附件和供应商托管搜索不会自动引入 MCP 或通用工具执行循环。
+供应商只负责分组，不提供父级配置继承。对话未来引用连接配置时也不复制凭据。助手是预设与对话容器，不是 Agent；附件和供应商托管搜索不会自动引入 MCP 或通用工具执行循环。
 
 ## State ownership
 
 - 瞬时视图状态：顶层页面与设置分类由应用组合根管理，局部交互由拥有它的 React 界面模块管理。
 - 聊天运行状态：集中管理流式消息、取消、唯一终态和持久化队列。
 - 外观状态：由主题控制器管理主题模式、实际配色与系统变化订阅。
-- 用户设置：通过明确的加载、校验、迁移与保存入口管理。
+- 用户设置：通过明确的加载、校验、确定性迁移与保存入口管理；当前模型由单一 ID 标识，父连接按归属关系解析。
 - 供应商差异：只存在于协议 adapter 内。
 - 长期数据：通过 repository seam 进入 Dexie 或后续本地文件存储。
 
@@ -177,6 +199,9 @@ Assistant
 - SSE framing、协议字段映射、错误分类、取消与存储恢复使用确定性测试，不依赖真实网络。
 - 每个请求恰好产生一个终态：`completed`、`failed` 或 `aborted`。
 - 真实探针只回答中转站是否透传某项能力，不替代确定性回归测试。
+- 供应商、重复协议连接和模型的增删改、v1/v2 迁移、当前模型恢复及删除时清空引用使用注入式内存存储完成确定性测试。
+- 四种协议的模型目录路径、请求头、响应归一化、去重分组和安全错误，以及模型测试的耗时、失败、取消和超时均使用合成 transport/fetch 测试，不访问真实服务。
+- 三栏设置界面覆盖“浏览连接不会改变当前模型”、右栏随中栏切换、目录候选需显式添加，以及删除当前对象不静默回退。
 - 顶层页面导航、设置分类或主题变化必须保留发送、流式增量、停止生成、草稿与错误状态，以及重启恢复行为。
 - 主题解析、系统变化、持久化与损坏配置回退使用注入式依赖完成确定性测试。
 - 涉及 Tauri 权限、窗口或本地文件的改动必须完成桌面烟雾测试。

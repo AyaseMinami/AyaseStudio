@@ -32,7 +32,13 @@ function App() {
           isHydrated={chat.isHydrated}
           isStreaming={chat.isStreaming}
           messages={chat.messages}
-          protocolLabel={chat.protocolInfo.label}
+          protocolLabel={
+            chat.activeProvider && chat.activeConnection && chat.activeModel
+              ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${
+                  chat.activeModel.displayName || chat.activeModel.modelId
+                }`
+              : "未选择模型"
+          }
           onClear={chat.clearConversation}
           onDraftChange={chat.setDraft}
           onSend={() => void chat.sendMessage()}
@@ -46,12 +52,24 @@ function App() {
             onThemeModeChange: appearance.setThemeMode,
           }}
           connection={{
-            activeProfile: chat.activeProfile,
+            connectionSettings: chat.connectionSettings,
             isStreaming: chat.isStreaming,
-            protocol: chat.protocol,
-            protocolInfo: chat.protocolInfo,
-            onProfileChange: chat.updateProfile,
-            onProtocolChange: chat.setProtocol,
+            modelCatalogs: chat.modelCatalogs,
+            modelTests: chat.modelTests,
+            onAddConnection: chat.addConnection,
+            onAddModel: chat.addModel,
+            onAddProvider: chat.addProvider,
+            onCancelModelCatalogRefresh: chat.cancelModelCatalogRefresh,
+            onCancelModelTest: chat.cancelModelTest,
+            onConnectionChange: chat.updateConnection,
+            onDeleteConnection: chat.deleteConnection,
+            onDeleteModel: chat.deleteModel,
+            onDeleteProvider: chat.deleteProvider,
+            onModelChange: chat.updateModel,
+            onProviderRename: chat.renameProvider,
+            onRefreshModelCatalog: chat.refreshModelCatalog,
+            onRunModelTest: chat.runModelTest,
+            onSelectModel: chat.setActiveModel,
           }}
           onSectionChange={setActiveSettingsSection}
         />
