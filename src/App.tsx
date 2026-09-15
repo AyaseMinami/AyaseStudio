@@ -6,6 +6,7 @@ import { useAppearance } from "./appearance/useAppearance";
 import { useChatSession } from "./chat/useChatSession";
 import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
+import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
 import {
   SettingsWorkspace,
   type SettingsSection,
@@ -26,12 +27,21 @@ function App() {
   return (
     <AppShell activePage={activePage} onPageChange={setActivePage}>
       {activePage === "chat" ? (
+        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingId={chat.generatingConversationId}>
         <ChatWorkspace
+          key={chat.workspace.conversation?.id ?? "loading"}
+          title={chat.workspace.conversation?.title ?? "新对话"}
+          isGeneratingElsewhere={chat.isGenerating && chat.generatingConversationId !== chat.workspace.conversation?.id}
           draft={chat.draft}
+          draftAttachments={chat.draftAttachments}
+          attachmentBusy={chat.attachmentBusy}
+          contextPlan={chat.contextPlan}
           error={chat.error}
           isHydrated={chat.isHydrated}
-          isStreaming={chat.isStreaming}
+          isGenerating={chat.isGenerating}
           messages={chat.messages}
+          modelId={chat.activeModel?.modelId}
+          protocol={chat.activeConnection?.protocol}
           protocolLabel={
             chat.activeProvider && chat.activeConnection && chat.activeModel
               ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${
@@ -41,9 +51,13 @@ function App() {
           }
           onClear={chat.clearConversation}
           onDraftChange={chat.setDraft}
+          onFiles={(files) => void chat.addFiles(files)}
+          onRemoveAttachment={chat.removeDraftAttachment}
+          onReadAttachment={chat.readAttachment}
           onSend={() => void chat.sendMessage()}
           onStop={chat.stopGeneration}
         />
+        </ConversationNavigation>
       ) : (
         <SettingsWorkspace
           activeSection={activeSettingsSection}
@@ -72,8 +86,10 @@ function App() {
             onResetCustomAppearance: appearance.resetCustomAppearance,
           }}
           connection={{
+            canSelectModel: !!chat.workspace.assistant && !chat.workspace.busy,
             connectionSettings: chat.connectionSettings,
-            isStreaming: chat.isStreaming,
+            isStreaming: chat.isGenerating,
+            streamPreview: chat.sessionConfig.stream,
             modelCatalogs: chat.modelCatalogs,
             modelTests: chat.modelTests,
             onAddConnection: chat.addConnection,

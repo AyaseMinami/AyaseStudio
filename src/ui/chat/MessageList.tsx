@@ -1,15 +1,24 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bot } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
+import type { RequestAttachment, SentAttachment } from "../../chat/attachments";
+import { SentAttachmentPreview } from "./SentAttachmentPreview";
 
-export function MessageList({ messages }: { messages: StoredChatMessage[] }) {
+export function MessageList({ messages, onReadAttachment }: { messages: StoredChatMessage[];
+  onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment> }) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<SentAttachment>();
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+  useEffect(() => {
+    if (preview && !messages.some((message) => message.attachments?.some((item) => item.reference === preview.reference))) {
+      setPreview(undefined);
+    }
+  }, [messages, preview]);
 
   return (
     <div className="message-scroll-region">
@@ -54,12 +63,22 @@ export function MessageList({ messages }: { messages: StoredChatMessage[] }) {
                     ) : (
                       <span className="subtle-text">（无文本输出）</span>
                     )
-                  ) : (
+                  ) : message.content ? (
                     <p className="whitespace-pre-wrap">{message.content}</p>
-                  )}
+                  ) : null}
+                  {!!message.attachments?.length && <div className="sent-attachment-list">
+                    {message.attachments.map((item) => <button type="button" key={item.reference}
+                      aria-label={`预览附件 ${item.name}`} disabled={!onReadAttachment}
+                      onClick={() => setPreview(item)}>{item.name} · {(item.size / 1_000_000).toFixed(2)} MB</button>)}
+                  </div>}
                   {message.status === "aborted" && (
                     <p className="message-status message-status-warning">
                       已停止
+                    </p>
+                  )}
+                  {message.status === "incomplete" && (
+                    <p className="message-status message-status-warning">
+                      回复未完整；下次请求不会带入这一轮
                     </p>
                   )}
                   {message.status === "failed" && (
@@ -74,6 +93,8 @@ export function MessageList({ messages }: { messages: StoredChatMessage[] }) {
         )}
         <div ref={transcriptEndRef} />
       </div>
+      {preview && onReadAttachment && <SentAttachmentPreview key={preview.reference} item={preview}
+        read={onReadAttachment} onClose={() => setPreview(undefined)} />}
     </div>
   );
 }

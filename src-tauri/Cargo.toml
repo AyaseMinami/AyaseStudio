@@ -25,6 +25,10 @@ tauri-plugin-http = "2"
 tauri-plugin-dialog = "2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -9,6 +9,7 @@ export type ChatRole = "system" | "user" | "assistant";
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  attachments?: Array<import("./attachments").SentAttachment | import("./attachments").RequestAttachment>;
 }
 
 export interface ChatRequest {
@@ -18,6 +19,7 @@ export interface ChatRequest {
   messages: ChatMessage[];
   signal?: AbortSignal;
   maxOutputTokens?: number;
+  config?: import("./sessionConfig").SessionConfig;
 }
 
 export interface TokenUsage {

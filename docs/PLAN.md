@@ -8,7 +8,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 - Ordinary Tauri 2 desktop window using React, TypeScript, Vite, and Tailwind CSS.
 - Plain-text multi-turn chat with streamed Markdown rendering.
-- One current conversation slot for the v0.1 vertical slice; multiple saved conversations are deferred.
+- Assistant presets with shared model and generation settings, multiple saved conversations, and safe deletion.
 - User-configured base URL, API key, and model.
 - Protocol-aware base URL normalization with the resolved request endpoint shown to the user.
 - Four explicit protocol adapters:
@@ -20,15 +20,18 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 - Local conversation persistence through a small repository interface backed by Dexie/IndexedDB.
 - Clear terminal states for success, cancellation, HTTP failure, network failure, and malformed streams.
 - Persistent semantic appearance customization with safe accent/canvas colors and validated local PNG, JPEG, or WebP backgrounds copied into app-private storage.
+- Issue #5 local attachments: draft picker/drop/image paste, explicit send, private copies and references for sent messages without a post-send image cache, read-only previews, and protocol-specific official input limits instead of shared 10/20 MB caps.
 
 ## Explicitly out of scope
 
-- Agents, MCP, RAG, knowledge bases, tools, web search, and file attachments.
+- Agents, MCP, RAG, knowledge bases, tools, and web search.
+- Provider Files API uploads, audio/video/Office attachments, unsent attachment persistence, and per-message edit/delete/branch actions (separate Issue #14).
 - Accounts, cloud sync, telemetry, auto-update, plugins, and marketplace features.
 - Global shortcuts, tray behavior, frameless-window tricks, and multi-window behavior.
 - Provider-managed conversation state. OpenAI Responses uses local history with `store: false`.
 - Rendering raw HTML from model output. `rehype-raw` is prohibited.
-- Multiple saved conversations, conversation search, folders, pinning, and automatic title generation.
+- Conversation search, folders, pinning, and automatic title generation.
+- A later thinking-intensity control; its available options and request fields must follow each protocol's official contract rather than a shared numeric field.
 
 ## Module seams
 
@@ -59,15 +62,19 @@ ConnectionProfile
    - modelId
    - displayName (optional)
 
-AppSettings
-- activeModelId
+Assistant
+- defaultModelId
+- defaultConfig
+└─ Conversation[]
+   - title
+   - messages
 ```
 
 - A supplier is only a UI grouping. It has no inherited Base URL, key, model, or runtime behavior.
 - One supplier may hold any number of connections. Protocol is a dropdown property of a connection, and repeated connections using the same protocol are valid.
 - Built-in OpenAI, Google Gemini, and Anthropic entries are read-only creation templates. Their created providers and connections use the same editable runtime model as custom providers.
 - Selecting a connection in settings only changes the model list being browsed. Selecting a configured model makes its model ID, parent connection, protocol, Base URL, and key the atomic chat target.
-- The active model ID is persisted and restored on startup.
+- Each assistant's model ID and generation settings are persisted and restored on startup; settings derives the current-model marker from the selected assistant.
 - Missing, deleted, or corrupt active-model references become an explicit unselected state. Deletion never silently switches to another connection or model.
 - Each connection can fetch a protocol-aware remote model catalog on demand. Catalog entries are candidates only; users add them explicitly or add an arbitrary model ID manually.
 - A user may explicitly test one configured model. The test is cancellable, reports latency/failure, may consume tokens, and is never retried automatically.
@@ -76,9 +83,7 @@ AppSettings
 
 ## Conversation roadmap
 
-The current `current` snapshot intentionally represents one multi-turn conversation. This is sufficient for the transport and persistence vertical slice, but not the final daily-use experience.
-
-After connection profiles are stable, multiple conversations can add create, switch, rename, and delete operations behind `ChatRepository`. Each conversation should remember a `lastUsedModelId`; the model resolves its parent connection rather than duplicating credentials. Search, folders, pinning, and automatic titles remain separate later decisions.
+Issue #4 extends the original `current` state into assistant-owned conversations. Each assistant owns one shared model reference and generation configuration for its conversations; conversations keep their own titles and messages but do not copy credentials or configuration snapshots. Search, folders, pinning, and automatic titles remain separate later decisions.
 
 ## Delivery stages
 
@@ -104,7 +109,13 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 
 - Markdown soft line breaks are currently collapsed by CommonMark rendering. Preserve model-provided single newlines without enabling raw HTML, and cover the rendered line-break behavior with a regression test.
 
+## Issue #3 generation configuration slice
+
+按用户 2026-09-15 确认，原 #3/#4 的独立会话快照规则改为助手统一管理。配置仅在助手编辑中保存，对话无覆盖或重新应用入口。四协议请求映射、非流式、上下文预算与安全校验保持原合同。自动数值省略可选请求字段；Anthropic 必填 `max_tokens` 自动模式使用标明为 Ayase 回退的 4096。流式默认开启是 Ayase 产品推荐。未知模型的能力不从模型 ID 或目录身份信息猜测。自定义 JSON 按协议隔离，并在最终请求构造处安全校验。旧会话配置本地备份后退出运行配置，桌面交互与确定性测试共同组成验收证据。远端 Issue 尚未同步此调整。
+
 ## Acceptance gates
+
+Issue #4 adds create/switch/rename/delete, assistant ordering/shared configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. One generation may run across navigation or assistant edits; its request settings remain frozen and all deltas, errors and saves remain bound to its original conversation. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
 
 - Streamed text is incremental and ordered.
 - A request produces exactly one terminal outcome: completed, failed, or aborted.

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 import { parseServerSentEvents } from "./sse";
+import { buildProtocolBody, RequestConfigError } from "./requestMapping";
 import { resolveGenerationEndpoint, UrlResolutionError } from "./urlResolution";
 import type {
   ChatEvent,
@@ -39,7 +40,7 @@ function providerFailure(code: string | null, message: string): ChatFailure {
 }
 
 function failureFrom(error: unknown): ChatFailure {
-  if (error instanceof UrlResolutionError) {
+  if (error instanceof UrlResolutionError || error instanceof RequestConfigError) {
     return { kind: "protocol", message: error.message, retryable: false };
   }
   const rawStatus =
@@ -85,6 +86,7 @@ class OpenAIChatTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const body = buildProtocolBody("openai-chat", request);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-chat",
         request.baseUrl,
@@ -96,13 +98,28 @@ class OpenAIChatTransport implements ChatTransport {
         dangerouslyAllowBrowser: true,
         maxRetries: 0,
       });
+      if (body.stream === false) {
+        const response = await client.chat.completions.create(
+          body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+          { signal: request.signal },
+        );
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        const choice = response.choices?.[0];
+        const text = choice?.message?.content || choice?.message?.refusal;
+        if (!choice || typeof text !== "string" || !choice.finish_reason) {
+          yield { type: "failed", error: { kind: "protocol", message: "Chat Completions response is malformed", retryable: false } };
+          return;
+        }
+        if (text) yield { type: "text-delta", text };
+        yield {
+          type: "completed",
+          finishReason: choice.finish_reason,
+          ...(response.usage ? { usage: { inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens } } : {}),
+        };
+        return;
+      }
       const stream = await client.chat.completions.create(
-        {
-          model: request.model,
-          messages: request.messages,
-          max_completion_tokens: request.maxOutputTokens,
-          stream: true,
-        },
+        body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
         { signal: request.signal },
       );
       let finishReason: string | undefined;
@@ -153,6 +170,7 @@ class OpenAIResponsesTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const body = buildProtocolBody("openai-responses", request);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-responses",
         request.baseUrl,
@@ -164,14 +182,35 @@ class OpenAIResponsesTransport implements ChatTransport {
         dangerouslyAllowBrowser: true,
         maxRetries: 0,
       });
+      if (body.stream === false) {
+        const response = await client.responses.create(
+          body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
+          { signal: request.signal },
+        );
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        if (response.status === "failed") {
+          yield { type: "failed", error: providerFailure(response.error?.code ?? null, response.error?.message ?? "Provider failed to generate a response") };
+          return;
+        }
+        if (response.status !== "completed" && response.status !== "incomplete") {
+          yield { type: "failed", error: { kind: "protocol", message: "Responses response is malformed", retryable: false } };
+          return;
+        }
+        const text = response.output_text;
+        if (typeof text !== "string") {
+          yield { type: "failed", error: { kind: "protocol", message: "Responses text output is malformed", retryable: false } };
+          return;
+        }
+        if (text) yield { type: "text-delta", text };
+        yield {
+          type: "completed",
+          ...(response.status === "incomplete" ? { finishReason: `incomplete:${response.incomplete_details?.reason ?? "unknown"}` } : {}),
+          ...(response.usage ? { usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } } : {}),
+        };
+        return;
+      }
       const stream = await client.responses.create(
-        {
-          model: request.model,
-          input: request.messages,
-          max_output_tokens: request.maxOutputTokens,
-          store: false,
-          stream: true,
-        },
+        body as unknown as OpenAI.Responses.ResponseCreateParamsStreaming,
         { signal: request.signal },
       );
 
@@ -266,10 +305,19 @@ class OpenAIResponsesTransport implements ChatTransport {
 
 interface GeminiChunk {
   error?: { code?: number; message?: string; status?: string };
+  promptFeedback?: { blockReason?: string; blockReasonMessage?: string };
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
     finishReason?: string;
   }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+}
+
+function blockedGeminiPrompt(chunk: GeminiChunk): ChatFailure | undefined {
+  const reason = chunk.promptFeedback?.blockReason;
+  if (!reason) return undefined;
+  const detail = chunk.promptFeedback?.blockReasonMessage;
+  return providerFailure(reason, `Gemini 拦截了输入（${reason}）。请检查或改写最新消息。${detail ? ` ${detail}` : ""}`);
 }
 
 class GeminiNativeTransport implements ChatTransport {
@@ -277,33 +325,14 @@ class GeminiNativeTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const body = buildProtocolBody("gemini-native", request);
+      const streaming = request.config?.stream ?? true;
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "gemini-native",
         request.baseUrl,
         request.model,
+        streaming,
       );
-      const systemText = request.messages
-        .filter((message) => message.role === "system")
-        .map((message) => message.content)
-        .join("\n\n");
-      const body = {
-        contents: request.messages
-          .filter((message) => message.role !== "system")
-          .map((message) => ({
-            role: message.role === "assistant" ? "model" : "user",
-            parts: [{ text: message.content }],
-          })),
-        ...(systemText
-          ? { systemInstruction: { parts: [{ text: systemText }] } }
-          : {}),
-        ...(request.maxOutputTokens
-          ? {
-              generationConfig: {
-                maxOutputTokens: request.maxOutputTokens,
-              },
-            }
-          : {}),
-      };
       const response = await this.dependencies.fetch(resolvedEndpoint, {
         method: "POST",
         headers: {
@@ -316,6 +345,30 @@ class GeminiNativeTransport implements ChatTransport {
 
       if (!response.ok) {
         throw new HttpStatusError(response.status, `Gemini HTTP ${response.status}`);
+      }
+
+      if (!streaming) {
+        const chunk = await response.json() as GeminiChunk;
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        if (chunk.error) {
+          yield { type: "failed", error: providerFailure(chunk.error.status ?? String(chunk.error.code ?? "provider_error"), chunk.error.message ?? "Gemini response error") };
+          return;
+        }
+        const blocked = blockedGeminiPrompt(chunk);
+        if (blocked) { yield { type: "failed", error: blocked }; return; }
+        const candidate = chunk.candidates?.[0];
+        if (!candidate || !candidate.finishReason || !Array.isArray(candidate.content?.parts)) {
+          yield { type: "failed", error: { kind: "protocol", message: "Gemini response is malformed", retryable: false } };
+          return;
+        }
+        const text = candidate.content.parts.map((part) => part.text ?? "").join("");
+        if (text) yield { type: "text-delta", text };
+        yield {
+          type: "completed",
+          finishReason: candidate.finishReason,
+          ...(chunk.usageMetadata ? { usage: { inputTokens: chunk.usageMetadata.promptTokenCount, outputTokens: chunk.usageMetadata.candidatesTokenCount } } : {}),
+        };
+        return;
       }
 
       let finishReason: string | undefined;
@@ -334,6 +387,8 @@ class GeminiNativeTransport implements ChatTransport {
           };
           return;
         }
+        const blocked = blockedGeminiPrompt(chunk);
+        if (blocked) { yield { type: "failed", error: blocked }; return; }
         for (const candidate of chunk.candidates ?? []) {
           for (const part of candidate.content?.parts ?? []) {
             if (part.text) {
@@ -399,14 +454,12 @@ class AnthropicNativeTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const body = buildProtocolBody("anthropic-native", request);
+      const streaming = request.config?.stream ?? true;
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "anthropic-native",
         request.baseUrl,
       );
-      const system = request.messages
-        .filter((message) => message.role === "system")
-        .map((message) => message.content)
-        .join("\n\n");
       const response = await this.dependencies.fetch(
         resolvedEndpoint,
         {
@@ -416,18 +469,7 @@ class AnthropicNativeTransport implements ChatTransport {
             "content-type": "application/json",
             "x-api-key": request.apiKey,
           },
-          body: JSON.stringify({
-            model: request.model,
-            max_tokens: request.maxOutputTokens ?? 4096,
-            stream: true,
-            ...(system ? { system } : {}),
-            messages: request.messages
-              .filter((message) => message.role !== "system")
-              .map((message) => ({
-                role: message.role,
-                content: message.content,
-              })),
-          }),
+          body: JSON.stringify(body),
           signal: request.signal,
         },
       );
@@ -437,6 +479,32 @@ class AnthropicNativeTransport implements ChatTransport {
           response.status,
           `Anthropic HTTP ${response.status}`,
         );
+      }
+
+      if (!streaming) {
+        const payload = await response.json() as {
+          type?: string;
+          content?: Array<{ type?: string; text?: string }>;
+          stop_reason?: string | null;
+          usage?: { input_tokens?: number; output_tokens?: number };
+          error?: { type?: string; message?: string };
+        };
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        if (payload.type === "error" || payload.error) {
+          yield { type: "failed", error: providerFailure(payload.error?.type ?? null, payload.error?.message ?? "Anthropic response error") };
+          return;
+        }
+        if (payload.type !== "message" || !Array.isArray(payload.content) || !payload.stop_reason) {
+          yield { type: "failed", error: { kind: "protocol", message: "Anthropic response is malformed", retryable: false } };
+          return;
+        }
+        const text = payload.content.filter((block) => block.type === "text").map((block) => block.text ?? "").join("");
+        if (text) yield { type: "text-delta", text };
+        yield {
+          type: "completed", finishReason: payload.stop_reason,
+          ...(payload.usage ? { usage: { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens } } : {}),
+        };
+        return;
       }
 
       let finishReason: string | undefined;
@@ -481,6 +549,10 @@ class AnthropicNativeTransport implements ChatTransport {
         }
 
         if (payload.type === "message_stop") {
+          if (!finishReason) {
+            yield { type: "failed", error: { kind: "protocol", message: "Anthropic stream ended without a stop reason", retryable: false } };
+            return;
+          }
           yield {
             type: "completed",
             finishReason,

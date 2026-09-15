@@ -11,9 +11,11 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Incremental Markdown rendering and cancellation
 - Normalized HTTP, network, protocol, and abort outcomes
 - Three-level supplier → connection → model configuration, including repeated protocols, per-connection model discovery/testing, persisted active-model selection, and deterministic legacy migration
-- Dexie-backed current conversation persistence
+- Assistant presets with shared configuration across their conversations, safe legacy migration, and Dexie persistence
+- Assistant-managed system instruction, model, validated generation settings, local input-history budget, protocol-specific safe JSON supplements, and streaming/non-streaming generation
 - Top-level chat/settings navigation with a dedicated, categorized settings center
 - Persistent light, dark, and system-following appearance modes with safe custom colors and private local backgrounds
+- PNG/JPEG/WebP/PDF/TXT/Markdown attachments from picker, chat drag/drop, or image paste: unsent drafts stay transient; sending stores private copies and history references without a post-send in-memory image cache, with read-only previews
 
 Raw HTML in model output is rendered as inert text. Alpha credentials are stored as plaintext in the local WebView profile; do not use untrusted relay credentials.
 

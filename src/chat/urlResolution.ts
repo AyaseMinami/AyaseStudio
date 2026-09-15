@@ -65,6 +65,7 @@ export function resolveGenerationEndpoint(
   protocol: ChatProtocol,
   configuredBaseUrl: string,
   model?: string,
+  stream = true,
 ): ResolvedUrl {
   const normalizedBaseUrl = normalizeBaseUrl(protocol, configuredBaseUrl);
   let resolvedEndpoint: string;
@@ -78,7 +79,7 @@ export function resolveGenerationEndpoint(
     if (!model?.trim()) {
       throw new UrlResolutionError("missing-model", "请先添加并选择 Gemini 模型 ID。");
     }
-    resolvedEndpoint = `${versionedPath(normalizedBaseUrl, "/v1beta")}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
+    resolvedEndpoint = `${versionedPath(normalizedBaseUrl, "/v1beta")}/models/${encodeURIComponent(model)}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
   }
   return { normalizedBaseUrl, resolvedEndpoint };
 }

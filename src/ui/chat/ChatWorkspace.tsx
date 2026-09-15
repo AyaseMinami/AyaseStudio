@@ -1,51 +1,115 @@
+import { useEffect, useState } from "react";
+import type { ContextSummary } from "../../chat/contextBudget";
+import type { DraftAttachment, RequestAttachment, SentAttachment } from "../../chat/attachments";
+import { attachmentCapabilityFailure, attachmentCapabilityNotice } from "../../chat/attachments";
+import type { ChatProtocol } from "../../chat/types";
 import type { StoredChatMessage } from "../../chat/repository";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
 
 export interface ChatWorkspaceProps {
+  title: string;
+  isGeneratingElsewhere?: boolean;
   draft: string;
+  draftAttachments?: DraftAttachment[];
+  attachmentBusy?: boolean;
+  contextPlan?: ContextSummary;
   error?: string;
   isHydrated: boolean;
-  isStreaming: boolean;
+  isGenerating: boolean;
   messages: StoredChatMessage[];
   protocolLabel: string;
+  modelId?: string;
+  protocol?: ChatProtocol;
   onClear(): void;
   onDraftChange(draft: string): void;
+  onFiles?(files: File[]): void;
+  onRemoveAttachment?(id: string): void;
+  onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment>;
   onSend(): void;
   onStop(): void;
 }
 
 export function ChatWorkspace({
+  title,
+  isGeneratingElsewhere,
   draft,
+  draftAttachments,
+  attachmentBusy,
+  contextPlan,
   error,
   isHydrated,
-  isStreaming,
+  isGenerating,
   messages,
   protocolLabel,
+  modelId,
+  protocol,
   onClear,
   onDraftChange,
+  onFiles,
+  onRemoveAttachment,
+  onReadAttachment,
   onSend,
   onStop,
 }: ChatWorkspaceProps) {
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    const preventFileNavigation = (event: DragEvent) => {
+      if (event.dataTransfer && (event.dataTransfer.types?.includes("Files") || event.dataTransfer.files.length > 0))
+        event.preventDefault();
+    };
+    window.addEventListener("dragover", preventFileNavigation);
+    window.addEventListener("drop", preventFileNavigation);
+    return () => {
+      window.removeEventListener("dragover", preventFileNavigation);
+      window.removeEventListener("drop", preventFileNavigation);
+    };
+  }, []);
   return (
-    <>
+    <div className={`chat-attachment-surface${dragging ? " chat-attachment-over" : ""}`}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.files.length) return;
+        event.preventDefault(); setDragging(false);
+        onFiles?.([...event.dataTransfer.files]);
+      }}>
       <ChatHeader
+        title={title}
         isHydrated={isHydrated}
-        isStreaming={isStreaming}
+        isGenerating={isGenerating}
         protocolLabel={protocolLabel}
         onClear={onClear}
       />
-      <MessageList messages={messages} />
+      {contextPlan && (contextPlan.trimmedTurns > 0 || contextPlan.excludedIncompleteTurns > 0) && (
+        <div className="context-budget-notice" role="status">
+          本次输入保留 {contextPlan.keptTurns} 轮，裁剪 {contextPlan.trimmedTurns} 轮，排除 {contextPlan.excludedIncompleteTurns} 个未完整轮次；
+          {contextPlan.inputTokens} Token（估算，{contextPlan.countingLabel}）。原始记录未修改。
+        </div>
+      )}
+      <MessageList messages={messages} onReadAttachment={onReadAttachment} />
+      {draftAttachments && (attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
+        attachmentCapabilityNotice(modelId ?? "", draftAttachments)) &&
+        <p className="attachment-capability-notice" role="status">{
+          attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
+          attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
+        isGeneratingElsewhere={isGeneratingElsewhere}
         draft={draft}
+        draftAttachments={draftAttachments}
+        attachmentBusy={attachmentBusy}
+        attachmentBlockReason={draftAttachments ? attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) : undefined}
         error={error}
         isHydrated={isHydrated}
-        isStreaming={isStreaming}
+        isGenerating={isGenerating}
         onDraftChange={onDraftChange}
+        onFiles={onFiles}
+        onRemoveAttachment={onRemoveAttachment}
         onSend={onSend}
         onStop={onStop}
       />
-    </>
+      {dragging && <div className="chat-attachment-overlay" role="status">释放文件以加入当前对话草稿，点击发送后才请求</div>}
+    </div>
   );
 }

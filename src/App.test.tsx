@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -14,7 +15,9 @@ import {
 } from "vitest";
 
 import App from "./App";
-import { createChatRepository } from "./chat/repository";
+import * as contextBudget from "./chat/contextBudget";
+import { createChatRepository, type ChatSnapshot } from "./chat/repository";
+import { defaultSessionConfig } from "./chat/sessionConfig";
 import {
   loadConnectionSettings,
   saveConnectionSettings,
@@ -36,7 +39,11 @@ describe("App navigation", () => {
   beforeEach(async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     localStorage.clear();
-    await createChatRepository().clear("current");
+    await createChatRepository().load("current");
+    const database = new Dexie("AyaseStudio");
+    await database.open();
+    await Promise.all(database.tables.map((table) => table.clear()));
+    database.close();
     runtimeMocks.createRuntimeChatTransport.mockReset();
     runtimeMocks.createRuntimeModelCatalogClient.mockReset();
     container = document.createElement("div");
@@ -105,6 +112,12 @@ describe("App navigation", () => {
   }
 
   async function clickButtonWithText(text: string): Promise<void> {
+    if (text === "编辑助手") {
+      if (!container.querySelector('#assistant-navigation')) await clickButtonWithText("助手与对话");
+      const assistant = container.querySelector<HTMLButtonElement>('[aria-label="编辑助手 默认助手"]');
+      await act(async () => assistant!.click());
+      return;
+    }
     const button = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
     ).find((candidate) => candidate.textContent?.trim() === text);
@@ -123,6 +136,212 @@ describe("App navigation", () => {
     }
     expect(predicate()).toBe(true);
   }
+
+  async function waitForSaved(predicate: (snapshot: ChatSnapshot | undefined) => boolean): Promise<ChatSnapshot | undefined> {
+    const repository = createChatRepository();
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const snapshot = await repository.load("current");
+      if (predicate(snapshot)) return snapshot;
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    }
+    const snapshot = await repository.load("current");
+    expect(predicate(snapshot)).toBe(true);
+    return snapshot;
+  }
+
+  function configureChatTarget(protocol: "openai-chat" | "gemini-native" = "openai-chat") {
+    saveConnectionSettings({
+      version: 3,
+      providers: [{ id: "provider", name: "Synthetic", connections: [{
+        id: "connection", name: "Local", protocol,
+        baseUrl: "https://relay.example.com", apiKey: "synthetic-key",
+        models: [{ id: "configured-model", modelId: "test-model" }],
+      }] }],
+      activeModelId: "configured-model",
+    });
+  }
+
+  async function setPanelText(selector: string, value: string): Promise<void> {
+    const element = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
+    expect(element).not.toBeNull();
+    await act(async () => {
+      const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(element, value);
+      element?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  it("saves assistant configuration explicitly and retains it after clear and remount", async () => {
+    configureChatTarget();
+    await renderApp();
+    await clickButtonWithText("编辑助手");
+    await setPanelText("#session-system", "Stay concise.");
+    await setPanelText("#session-custom-json", '{"seed":7}');
+    await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
+    await waitFor(() => container.querySelector<HTMLInputElement>("#session-stream")?.checked === false);
+    await clickButtonWithText("保存助手");
+    await waitFor(() => !container.querySelector('[role="dialog"]'));
+    await clickButtonWithText("清空");
+    await waitFor(() => container.querySelector(".message-bubble") === null);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderApp();
+    await clickButtonWithText("编辑助手");
+    expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Stay concise.");
+    expect(container.querySelector<HTMLTextAreaElement>("#session-custom-json")?.value).toBe('{"seed":7}');
+    expect(container.querySelector<HTMLInputElement>("#session-stream")?.checked).toBe(false);
+    const snapshot = await createChatRepository().load("current");
+    expect(snapshot?.messages).toEqual([]);
+  });
+
+  it("blocks invalid settings before clearing draft, then saves a completed non-streaming reply", async () => {
+    configureChatTarget();
+    let observed: ChatRequest | undefined;
+    runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
+      async *stream(request: ChatRequest) {
+        observed = request;
+        yield { type: "text-delta", text: "Complete answer" };
+        yield { type: "completed" };
+      },
+    } satisfies ChatTransport);
+    await renderApp();
+    await setDraft("Keep draft");
+    await clickButtonWithText("编辑助手");
+    await act(async () => {
+      const select = container.querySelector<HTMLSelectElement>("#config-temperature");
+      if (select) select.value = "custom";
+      select?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await setPanelText('input[aria-label="Temperature 自定义值"]', "bad");
+    const save = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "保存助手");
+    expect(save?.disabled).toBe(true);
+    expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("Keep draft");
+    expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Temperature");
+    await setPanelText('input[aria-label="Temperature 自定义值"]', "0.7");
+    await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
+    await clickButtonWithText("保存助手");
+    await waitFor(() => !container.querySelector('[role="dialog"]'));
+    await clickButton("发送");
+    await waitFor(() => observed !== undefined);
+    await waitFor(() => container.textContent?.includes("Complete answer") === true);
+    expect(observed?.config?.stream).toBe(false);
+    expect(observed?.config?.temperature).toEqual({ mode: "custom", value: "0.7" });
+    await waitFor(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.value === "");
+    const snapshot = await waitForSaved((candidate) => candidate?.messages[1]?.status === "complete");
+    expect(snapshot?.messages.map((message) => message.status)).toEqual(["complete", "complete"]);
+    expect(snapshot?.messages[1]?.content).toBe("Complete answer");
+  });
+
+  it("freezes request settings while preserving edits made during generation", async () => {
+    configureChatTarget();
+    let observed: ChatRequest | undefined;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
+      async *stream(request: ChatRequest) {
+        observed = request;
+        yield { type: "text-delta", text: "partial" };
+        await gate;
+        yield { type: "completed" };
+      },
+    } satisfies ChatTransport);
+    await renderApp();
+    await setDraft("Freeze settings");
+    await clickButton("发送");
+    await waitFor(() => observed !== undefined);
+    await clickButtonWithText("编辑助手");
+    await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
+    expect(observed?.config?.stream).toBe(true);
+    await clickButtonWithText("保存助手");
+    await waitFor(() => !container.querySelector('[role="dialog"]'));
+    release();
+    await waitFor(() => container.textContent?.includes("partial") === true);
+    await waitFor(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
+    const snapshot = await waitForSaved((candidate) => candidate?.messages[1]?.status === "complete");
+    const workspace = await createChatRepository().initializeWorkspace(null, ["configured-model"]);
+    expect(workspace.assistants[0].defaultConfig.stream).toBe(false);
+    expect(observed?.config?.stream).toBe(true);
+    expect(snapshot?.messages[1]?.status).toBe("complete");
+  });
+
+  it("keeps clear unavailable while a slow context calculation is pending", async () => {
+    configureChatTarget();
+    await createChatRepository().save({
+      id: "current", updatedAt: 1, generationConfig: defaultSessionConfig(),
+      messages: [
+        { id: "old-user", role: "user", content: "Old question", status: "complete" },
+        { id: "old-assistant", role: "assistant", content: "Old answer", status: "complete" },
+      ],
+    });
+    const actualPlan = contextBudget.planContextBudget;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(contextBudget, "planContextBudget").mockImplementation(async (...args) => {
+      await gate;
+      return actualPlan(...args);
+    });
+    let observed: ChatRequest | undefined;
+    runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
+      async *stream(request: ChatRequest) {
+        observed = request;
+        yield { type: "text-delta", text: "New answer" };
+        yield { type: "completed", finishReason: "stop" };
+      },
+    } satisfies ChatTransport);
+    await renderApp();
+    await setDraft("New question");
+    await clickButton("发送");
+    const clear = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "清空");
+    expect(clear?.disabled).toBe(true);
+    await act(async () => clear?.click());
+    expect(container.textContent).toContain("Old question");
+    release();
+    await waitFor(() => observed !== undefined);
+    const snapshot = await waitForSaved((candidate) => candidate?.messages[3]?.status === "complete");
+    expect(snapshot?.messages.map((message) => message.content)).toEqual([
+      "Old question", "Old answer", "New question", "New answer",
+    ]);
+  });
+
+  it("stores an incomplete reply without sending that round as future context", async () => {
+    configureChatTarget();
+    const observed: ChatRequest[] = [];
+    runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
+      async *stream(request: ChatRequest) {
+        observed.push(request);
+        yield { type: "text-delta", text: observed.length === 1 ? "Cut short" : "Next answer" };
+        yield { type: "completed", finishReason: observed.length === 1 ? "length" : "stop" };
+      },
+    } satisfies ChatTransport);
+    await renderApp();
+    await setDraft("First question");
+    await clickButton("发送");
+    await waitForSaved((candidate) => candidate?.messages[1]?.status === "incomplete");
+    expect(container.textContent).toContain("回复未完整");
+    await waitFor(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
+    await setDraft("Second question");
+    await clickButton("发送");
+    await waitFor(() => observed.length === 2);
+    expect(observed[1].messages).toEqual([{ role: "user", content: "Second question" }]);
+    const snapshot = await waitForSaved((candidate) => candidate?.messages[3]?.status === "complete");
+    expect(snapshot?.messages[1]).toMatchObject({ content: "Cut short", status: "incomplete" });
+  });
+
+  it("shows Gemini's non-streaming URL in settings when the session disables streaming", async () => {
+    configureChatTarget("gemini-native");
+    await renderApp();
+    await clickButtonWithText("编辑助手");
+    await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
+    await clickButtonWithText("保存助手");
+    await waitFor(() => !container.querySelector('[role="dialog"]'));
+    await clickButton("设置");
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "https://relay.example.com/v1beta/models/test-model:generateContent",
+    );
+    expect(container.querySelector(".endpoint-preview")?.textContent).not.toContain("streamGenerateContent");
+  });
 
   it("keeps the draft and switches between independent settings categories", async () => {
     await renderApp();
@@ -286,6 +505,7 @@ describe("App navigation", () => {
     await clickButton("Gemini Test");
     await clickButton("设为当前模型 gemini-model");
     await clickButton("聊天");
+    await waitFor(() => container.textContent?.includes("Gemini Test · Gemini 专线 · gemini-model") === true);
 
     expect(container.textContent).toContain(
       "Gemini Test · Gemini 专线 · gemini-model",
@@ -786,6 +1006,7 @@ describe("App navigation", () => {
     );
 
     await clickButton("设为当前模型 model/with space");
+    await waitFor(() => container.querySelector(".endpoint-preview")?.textContent?.includes("models/model%2Fwith%20space") === true);
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://gemini.example.com/v1beta/models/model%2Fwith%20space:streamGenerateContent?alt=sse",
     );

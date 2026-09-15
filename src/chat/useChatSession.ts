@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 
 import type { DiscoveredModel } from "./modelCatalog";
+import { ContextBudgetError, planContextBudget,
+  summarizeContextPlan, type ContextPlan } from "./contextBudget";
+import { addDraftAttachments, attachmentCapabilityFailure, materializeDraftAttachment, prepareDraftAttachment,
+  type DraftAttachment, type RequestAttachment, type SentAttachment } from "./attachments";
+import { createTauriAttachmentStore } from "./attachmentResources";
+import { AttachmentLifecycle } from "./attachmentLifecycle";
 import {
   testModelAvailability,
   type ModelAvailabilityResult,
@@ -11,6 +18,10 @@ import {
   type StoredChatMessage,
   type StoredMessageStatus,
 } from "./repository";
+import { defaultSessionConfig } from "./sessionConfig";
+import { useConversationWorkspace } from "./useConversationWorkspace";
+import { validateRequestConfig } from "./requestMapping";
+import { buildProtocolBody } from "./requestMapping";
 import {
   createRuntimeChatTransport,
   createRuntimeModelCatalogClient,
@@ -43,7 +54,21 @@ import {
 } from "./urlResolution";
 
 const chatRepository = createChatRepository();
-const currentChatId = "current";
+const attachmentStore = createTauriAttachmentStore();
+const attachmentLifecycle = new AttachmentLifecycle(attachmentStore, () => chatRepository.attachmentReferences());
+async function cleanupAttachments(): Promise<void> {
+  if (!isTauri()) return;
+  await attachmentLifecycle.cleanup();
+}
+const emptyConfig = defaultSessionConfig();
+
+function completionStatus(protocol: ChatProtocol, reason?: string): StoredMessageStatus {
+  if (!reason) return "complete";
+  if (protocol === "openai-responses") return reason.startsWith("incomplete:") ? "incomplete" : "complete";
+  if (protocol === "openai-chat") return reason === "stop" ? "complete" : "incomplete";
+  if (protocol === "gemini-native") return reason === "STOP" ? "complete" : "incomplete";
+  return reason === "end_turn" || reason === "stop_sequence" ? "complete" : "incomplete";
+}
 
 export interface ModelCatalogViewState {
   status: "idle" | "loading" | "success" | "error";
@@ -89,12 +114,19 @@ export function useChatSession({
   const [connectionSettings, setConnectionSettings] = useState(
     loadConnectionSettings,
   );
-  const [messages, setMessages] = useState<StoredChatMessage[]>([]);
-  const [draft, setDraft] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isHydrated, setIsHydrated] = useState(false);
-  const [error, setError] = useState<string>();
+  const generatingId = useRef<string | null>(null);
+  const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
+    connectionSettings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => model.id))), generatingId, cleanupAttachments);
+  const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
+  const sessionConfig = workspace.assistant?.defaultConfig ?? emptyConfig;
+  const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
+  const imports = useRef(new Map<string, number>());
+  // This per-render binding is captured by a request; navigation never retargets it.
+  const sessionStore = workspace.store;
+  const [isGenerating, setIsGenerating] = useState(false);
+  const isHydrated = workspace.isReady;
   const abortRef = useRef<AbortController>(null);
+  const sendLockRef = useRef(false);
   const catalogAbortControllers = useRef(
     new Map<string, AbortController>(),
   );
@@ -118,8 +150,8 @@ export function useChatSession({
     controller?.abort();
   }
   const activeTarget = useMemo(
-    () => getActiveTarget(connectionSettings),
-    [connectionSettings],
+    () => getActiveTarget({ ...connectionSettings, activeModelId: workspace.assistant?.defaultModelId ?? null }),
+    [connectionSettings, workspace.assistant?.defaultModelId],
   );
   const activeProvider = activeTarget?.provider;
   const activeConnection = activeTarget?.connection;
@@ -129,6 +161,14 @@ export function useChatSession({
       activeConnection ? getProtocolOption(activeConnection.protocol) : undefined,
     [activeConnection],
   );
+
+  useEffect(() => {
+    setConfigErrors(validateRequestConfig(
+      sessionConfig,
+      activeConnection?.protocol ?? "openai-chat",
+      activeModel?.modelId ?? "",
+    ));
+  }, [sessionConfig, activeConnection?.protocol, activeModel?.modelId, workspace.conversation?.id]);
 
   useEffect(() => {
     saveConnectionSettings(connectionSettings);
@@ -177,45 +217,6 @@ export function useChatSession({
     },
     [],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const snapshot = await chatRepository.load(currentChatId);
-        if (snapshot && !cancelled) {
-          const recovered = snapshot.messages.map((message) =>
-            message.status === "streaming"
-              ? { ...message, status: "aborted" as const }
-              : message,
-          );
-          setMessages(recovered);
-          if (
-            recovered.some(
-              (message, index) => message !== snapshot.messages[index],
-            )
-          ) {
-            await chatRepository.save({
-              id: currentChatId,
-              updatedAt: Date.now(),
-              messages: recovered,
-            });
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setError("无法读取本地对话记录；本次对话仍可继续。");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsHydrated(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   function addProviderFromTemplate(templateId: ProviderTemplateId): string {
     const providerId = newId();
@@ -325,7 +326,8 @@ export function useChatSession({
   }
 
   function setActiveModel(modelId: string): void {
-    setConnectionSettings((current) => selectModel(current, modelId));
+    if (!workspace.assistant || !getActiveTarget(selectModel(connectionSettings, modelId))) return;
+    void workspace.execute({ type: "select-model", assistantId: workspace.assistant.id, modelId });
   }
 
   function removeModel(modelId: string): void {
@@ -571,7 +573,8 @@ export function useChatSession({
 
   async function sendMessage(): Promise<void> {
     const content = draft.trim();
-    if (!content || isStreaming || !isHydrated) {
+    const frozenAttachments = [...draftAttachments];
+    if ((!content && !frozenAttachments.length) || isGenerating || sendLockRef.current || !isHydrated || !workspace.canSend() || !sessionStore || imports.current.has(sessionStore.id)) {
       return;
     }
     if (!activeTarget) {
@@ -580,6 +583,9 @@ export function useChatSession({
       return;
     }
     const requestConnection = activeTarget.connection;
+    const capabilityError = attachmentCapabilityFailure(requestConnection.protocol,
+      activeTarget.model.modelId, frozenAttachments);
+    if (capabilityError) { setError(capabilityError); return; }
     if (!requestConnection.baseUrl || !requestConnection.apiKey) {
       onConfigurationRequired();
       setError("请先填写当前模型所属连接的 Base URL 和 API Key。");
@@ -598,16 +604,139 @@ export function useChatSession({
       return;
     }
 
-    setError(undefined);
-    setDraft("");
-    setIsStreaming(true);
+    sendLockRef.current = true;
+    const requestStore = sessionStore;
+
+    const frozenConfig = structuredClone(sessionConfig);
+    const errors = validateRequestConfig(
+      frozenConfig,
+      requestConnection.protocol,
+      activeTarget.model.modelId,
+    );
+    setConfigErrors(errors);
+    if (Object.keys(errors).length) {
+      setError(Object.values(errors)[0]);
+      sendLockRef.current = false;
+      return;
+    }
+    setIsGenerating(true);
+    generatingId.current = sessionStore.id;
     const controller = new AbortController();
     abortRef.current = controller;
+    function releaseBeforeNetwork(): void {
+      setIsGenerating(false);
+      generatingId.current = null;
+      abortRef.current = null;
+      sendLockRef.current = false;
+    }
+    let planned: ContextPlan;
+    try {
+      planned = await planContextBudget(
+        messages, content, frozenConfig,
+        requestConnection.protocol, activeTarget.model.modelId, undefined,
+        frozenAttachments.map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
+      );
+      if (controller.signal.aborted) {
+        setIsGenerating(false);
+        generatingId.current = null;
+        abortRef.current = null;
+        sendLockRef.current = false;
+        return;
+      }
+    } catch (caught) {
+      if (controller.signal.aborted) {
+        setIsGenerating(false);
+        generatingId.current = null;
+        abortRef.current = null;
+        sendLockRef.current = false;
+        return;
+      }
+      if (caught instanceof ContextBudgetError) {
+        setConfigErrors({ contextBudget: caught.message });
+        setError(caught.message);
+      } else {
+        setError(caught instanceof Error ? caught.message : "无法计算上下文预算。");
+      }
+      setIsGenerating(false);
+      generatingId.current = null;
+      abortRef.current = null;
+      sendLockRef.current = false;
+      return;
+    }
+
+    let requestMessages = planned.messages;
+    let sentAttachments: SentAttachment[] = [];
+    async function discardUncommitted(): Promise<boolean> {
+      try {
+        await attachmentLifecycle.discard(sentAttachments);
+        return true;
+      } catch {
+        setError("未发送附件的临时副本清理失败；下次启动将重试。");
+        return false;
+      }
+    }
+    function requireActiveSend(): void {
+      if (controller.signal.aborted) throw new Error("附件读取已停止。");
+    }
+    try {
+      const preparedAttachments: RequestAttachment[] = [];
+      for (const draft of frozenAttachments) {
+        requireActiveSend();
+        preparedAttachments.push(await materializeDraftAttachment(draft));
+        requireActiveSend();
+      }
+      const rebuiltMessages: typeof planned.messages = [];
+      for (const [index, message] of planned.messages.entries()) {
+        requireActiveSend();
+        if (index === planned.messages.length - 1 && preparedAttachments.length) {
+          rebuiltMessages.push({ ...message, attachments: preparedAttachments });
+        } else if (message.attachments?.length) {
+          const loaded: RequestAttachment[] = [];
+          for (const item of message.attachments) {
+            loaded.push("data" in item ? item : await attachmentStore.read(item));
+            requireActiveSend();
+          }
+          rebuiltMessages.push({ ...message, attachments: loaded });
+        } else {
+          rebuiltMessages.push(message);
+        }
+      }
+      requestMessages = rebuiltMessages;
+      // Validate the frozen *final* body (including accumulated history) before
+      // any new private copy or message write, independently from transport.
+      buildProtocolBody(requestConnection.protocol, {
+        baseUrl: requestConnection.baseUrl, apiKey: "", model: activeTarget.model.modelId,
+        messages: requestMessages, config: frozenConfig,
+      });
+      if (controller.signal.aborted) {
+        await discardUncommitted();
+        releaseBeforeNetwork();
+        return;
+      }
+      for (const item of preparedAttachments) {
+        requireActiveSend();
+        sentAttachments.push(await attachmentLifecycle.save(item));
+        requireActiveSend();
+      }
+      if (controller.signal.aborted) {
+        await discardUncommitted();
+        releaseBeforeNetwork();
+        return;
+      }
+    } catch (caught) {
+      const discarded = await discardUncommitted();
+      if (discarded && !controller.signal.aborted) setError(caught instanceof Error ? caught.message : "无法读取或保存附件；未发送请求。");
+      releaseBeforeNetwork();
+      return;
+    }
+    setContextPlan(summarizeContextPlan(planned));
+    setError(undefined);
     const userMessage: StoredChatMessage = {
       id: newId(),
       role: "user",
       content,
       status: "complete",
+      ...(sentAttachments.length ? { attachments: sentAttachments } : {}),
     };
     const assistantId = newId();
     const assistantMessage: StoredChatMessage = {
@@ -616,25 +745,51 @@ export function useChatSession({
       content: "",
       status: "streaming",
     };
-    const requestMessages = [...messages, userMessage]
-      .filter((message) => message.content.trim() !== "")
-      .map(({ role, content: messageContent }) => ({
-        role,
-        content: messageContent,
-      }));
     let workingMessages = [...messages, userMessage, assistantMessage];
+    try {
+      await requestStore.updateMessages(workingMessages);
+    } catch {
+      await requestStore.updateMessages(messages).catch(() => undefined);
+      const discarded = await discardUncommitted();
+      if (discarded) setError("附件或消息保存失败；未发送请求，草稿已保留。");
+      releaseBeforeNetwork();
+      return;
+    }
+    try {
+      await attachmentLifecycle.commit(sentAttachments);
+    } catch {
+      // No provider call may proceed with an unreadable history reference.
+      // Restore the old transcript before deleting copies that lack an owner.
+      const rolledBack = await requestStore.updateMessages(messages).then(() => true, () => false);
+      if (rolledBack) {
+        const discarded = await discardUncommitted();
+        if (discarded) setError("已保存的附件无法读取；请求未发送，草稿已保留。");
+      } else {
+        setMessages(workingMessages);
+        setError("附件无法读取且消息记录回滚失败；请求未发送，请检查当前对话。");
+      }
+      releaseBeforeNetwork();
+      return;
+    }
+    if (controller.signal.aborted) {
+      workingMessages = [...messages, userMessage, { ...assistantMessage, status: "aborted" }];
+      await requestStore.updateMessages(workingMessages).catch(() => undefined);
+      setMessages(workingMessages);
+      setDraft("");
+      setDraftAttachments([]);
+      releaseBeforeNetwork();
+      return;
+    }
     setMessages(workingMessages);
+    setDraft("");
+    setDraftAttachments([]);
 
     let persistChain = Promise.resolve();
     let persistenceFailed = false;
     function queuePersist(snapshotMessages: StoredChatMessage[]) {
       persistChain = persistChain
         .then(() =>
-          chatRepository.save({
-            id: currentChatId,
-            updatedAt: Date.now(),
-            messages: snapshotMessages,
-          }),
+          requestStore.updateMessages(snapshotMessages),
         )
         .catch(() => {
           persistenceFailed = true;
@@ -645,6 +800,7 @@ export function useChatSession({
     let assistantText = "";
     let lastPaint = 0;
     let lastPersist = 0;
+    let terminalSeen = false;
     try {
       const transport = await createRuntimeChatTransport(
         requestConnection.protocol,
@@ -654,6 +810,7 @@ export function useChatSession({
         apiKey: requestConnection.apiKey,
         model: activeTarget.model.modelId,
         messages: requestMessages,
+        config: frozenConfig,
         signal: controller.signal,
       })) {
         if (event.type === "text-delta") {
@@ -677,13 +834,15 @@ export function useChatSession({
         }
 
         if (event.type === "completed") {
+          terminalSeen = true;
           workingMessages = replaceAssistant(
             workingMessages,
             assistantId,
             assistantText,
-            "complete",
+            completionStatus(requestConnection.protocol, event.finishReason),
           );
         } else if (event.type === "aborted") {
+          terminalSeen = true;
           workingMessages = replaceAssistant(
             workingMessages,
             assistantId,
@@ -691,6 +850,7 @@ export function useChatSession({
             "aborted",
           );
         } else {
+          terminalSeen = true;
           workingMessages = replaceAssistant(
             workingMessages,
             assistantId,
@@ -702,6 +862,15 @@ export function useChatSession({
         }
         setMessages(workingMessages);
         queuePersist(workingMessages);
+      }
+      if (!terminalSeen) {
+        workingMessages = replaceAssistant(
+          workingMessages, assistantId, assistantText,
+          controller.signal.aborted ? "aborted" : "failed",
+        );
+        setMessages(workingMessages);
+        queuePersist(workingMessages);
+        if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
       }
     } catch (caught) {
       workingMessages = replaceAssistant(
@@ -720,8 +889,10 @@ export function useChatSession({
       if (persistenceFailed) {
         setError((current) => current ?? "回复已生成，但保存本地记录失败。");
       }
-      setIsStreaming(false);
+      setIsGenerating(false);
+      generatingId.current = null;
       abortRef.current = null;
+      sendLockRef.current = false;
     }
   }
 
@@ -730,15 +901,39 @@ export function useChatSession({
   }
 
   function clearConversation(): void {
+    if (sendLockRef.current || isGenerating || !workspace.canSend() || !sessionStore) return;
     abortRef.current?.abort();
     setMessages([]);
+    setContextPlan(undefined);
     setError(undefined);
-    void chatRepository.clear(currentChatId).catch(() => {
-      setError("界面已清空，但删除本地记录失败。");
+    void sessionStore.clearMessages().then(() => {
+      void cleanupAttachments().catch(() => setError("消息已清空，但附件副本清理失败；下次启动将重试。"));
+    }).catch(() => {
+      setError("界面已清空，但保存本地记录失败。");
     });
   }
 
+  async function addFiles(files: File[]): Promise<void> {
+    if (!workspace.isReady || (isGenerating && generatingId.current === workspace.conversation?.id) || !workspace.conversation) return;
+    const id = workspace.conversation.id;
+    imports.current.set(id, (imports.current.get(id) ?? 0) + 1);
+    setAttachmentBusy(true);
+    try {
+      const prepared: DraftAttachment[] = [];
+      for (const file of files) prepared.push(await prepareDraftAttachment(file));
+      setDraftAttachments((current) => addDraftAttachments(current, prepared));
+      setError(undefined);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "无法读取附件。"); }
+    finally {
+      const remaining = (imports.current.get(id) ?? 1) - 1;
+      if (remaining) imports.current.set(id, remaining); else imports.current.delete(id);
+      setAttachmentBusy(remaining > 0);
+    }
+  }
+
   return {
+    workspace,
+    generatingConversationId: generatingId.current,
     activeConnection,
     activeModel,
     activeProvider,
@@ -748,14 +943,21 @@ export function useChatSession({
     cancelModelCatalogRefresh,
     cancelModelTest,
     clearConversation,
-    connectionSettings,
+    connectionSettings: { ...connectionSettings, activeModelId: activeModel?.id ?? null },
+    configErrors,
+    contextPlan,
     deleteConnection: removeConnection,
     deleteModel: removeModel,
     deleteProvider: removeProvider,
     draft,
+    draftAttachments,
+    attachmentBusy,
+    addFiles,
+    removeDraftAttachment: (id: string) => setDraftAttachments((items) => items.filter((item) => item.id !== id)),
+    readAttachment: attachmentStore.read,
     error,
     isHydrated,
-    isStreaming,
+    isGenerating,
     messages,
     modelCatalogs,
     modelTests,
@@ -765,6 +967,7 @@ export function useChatSession({
     runModelTest,
     sendMessage,
     setDraft,
+    sessionConfig,
     setActiveModel,
     stopGeneration,
     updateConnection: updateConnectionProfile,

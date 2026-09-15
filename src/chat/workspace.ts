@@ -1,0 +1,58 @@
+import type { SessionConfig } from "./sessionConfig";
+
+export const DEFAULT_ASSISTANT_ID = "default";
+
+export interface AssistantPreset {
+  id: string;
+  name: string;
+  icon: string;
+  sortOrder: number;
+  defaultModelId: string | null;
+  defaultConfig: SessionConfig;
+}
+
+export interface Conversation {
+  id: string;
+  assistantId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WorkspaceSelection {
+  id: "selection";
+  activeAssistantId: string;
+  lastSelected: Record<string, string | null>;
+}
+
+export interface WorkspaceSnapshot {
+  assistants: AssistantPreset[];
+  conversations: Conversation[];
+  selection: WorkspaceSelection;
+}
+
+export type AssistantInput = Pick<AssistantPreset, "name" | "icon" | "defaultModelId" | "defaultConfig">;
+
+// Commands express complete atomic user actions, including navigation repair.
+export type WorkspaceCommand =
+  | { type: "create-assistant"; id: string; input: AssistantInput }
+  | { type: "edit-assistant"; id: string; input: AssistantInput }
+  | { type: "move-assistant"; id: string; direction: -1 | 1 }
+  | { type: "delete-assistant"; id: string; mode: "move" | "delete" }
+  | { type: "create-conversation"; id: string; assistantId: string }
+  | { type: "rename-conversation"; id: string; title: string }
+  | { type: "delete-conversation"; id: string }
+  | { type: "select"; assistantId: string; conversationId?: string | null }
+  | { type: "select-model"; assistantId: string; modelId: string | null }
+  | { type: "repair-models"; validModelIds: string[] };
+
+export function selectedConversation(workspace: WorkspaceSnapshot): Conversation | undefined {
+  const assistantId = workspace.selection.activeAssistantId;
+  return workspace.conversations.find((item) =>
+    item.id === workspace.selection.lastSelected[assistantId] && item.assistantId === assistantId,
+  );
+}
+
+export function orderedConversations(conversations: Conversation[]): Conversation[] {
+  return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+}

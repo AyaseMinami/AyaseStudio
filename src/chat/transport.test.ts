@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createChatTransport } from "./transport";
+import { defaultSessionConfig } from "./sessionConfig";
 import type { ChatEvent, ChatRequest, FetchLike } from "./types";
 import { resolveGenerationEndpoint } from "./urlResolution";
 
@@ -44,6 +45,120 @@ async function collectEvents(
 }
 
 describe("ChatTransport", () => {
+  const nonStreamingConfig = { ...defaultSessionConfig(), stream: false };
+  const syntheticNonStreaming: Record<Parameters<typeof createChatTransport>[0], unknown> = {
+    "openai-chat": {
+      id: "chat-synthetic", object: "chat.completion", created: 1, model: "test-model",
+      choices: [{ index: 0, message: { role: "assistant", content: "Full answer" }, finish_reason: "stop" }],
+    },
+    "openai-responses": {
+      id: "resp-synthetic", object: "response", created_at: 1, model: "test-model", status: "completed",
+      output: [{ id: "msg", type: "message", role: "assistant", status: "completed",
+        content: [{ type: "output_text", text: "Full answer", annotations: [] }] }],
+      output_text: "Full answer",
+    },
+    "gemini-native": { candidates: [{ content: { parts: [{ text: "Full answer" }] }, finishReason: "STOP" }] },
+    "anthropic-native": { type: "message", id: "msg", content: [{ type: "text", text: "Full answer" }], stop_reason: "end_turn" },
+  };
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s parses a complete non-streaming response and ends once",
+    async (protocol) => {
+      const requestedUrls: string[] = [];
+      const fetch: FetchLike = async (input, init) => {
+        requestedUrls.push(String(input));
+        const body = JSON.parse(String(init?.body));
+        if (protocol !== "gemini-native") expect(body.stream).toBe(false);
+        return new Response(JSON.stringify(syntheticNonStreaming[protocol]), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      };
+      const events = await collectEvents(protocol, fetch, { ...request, config: nonStreamingConfig });
+      expect(events).toMatchObject([{ type: "text-delta", text: "Full answer" }, { type: "completed" }]);
+      expect(events.filter((event) => event.type === "completed" || event.type === "failed" || event.type === "aborted")).toHaveLength(1);
+      expect(requestedUrls).toEqual([
+        resolveGenerationEndpoint(protocol, request.baseUrl, request.model, false).resolvedEndpoint,
+      ]);
+    },
+  );
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s reports malformed non-streaming payloads as one protocol failure",
+    async (protocol) => {
+      const fetch: FetchLike = async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+      expect(await collectEvents(protocol, fetch, { ...request, config: nonStreamingConfig })).toMatchObject([
+        { type: "failed", error: { kind: "protocol" } },
+      ]);
+    },
+  );
+
+  it("reports Gemini's documented blocked prompt as a provider failure in both modes", async () => {
+    const payload = { promptFeedback: { blockReason: "SAFETY", blockReasonMessage: "Synthetic block" } };
+    const nonStreamFetch: FetchLike = async () => new Response(JSON.stringify(payload), { status: 200 });
+    const streamFetch: FetchLike = async () => sseResponse([`data: ${JSON.stringify(payload)}\n\n`]);
+    for (const [fetch, config] of [[nonStreamFetch, nonStreamingConfig], [streamFetch, defaultSessionConfig()]] as const) {
+      const events = await collectEvents("gemini-native", fetch, { ...request, config });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: "failed", error: { kind: "provider", retryable: false } });
+      expect(events[0].type === "failed" && events[0].error.message).toContain("SAFETY");
+    }
+  });
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s rejects invalid non-streaming JSON without a duplicate terminal",
+    async (protocol) => {
+      const fetch: FetchLike = async () => new Response("{broken", {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+      const events = await collectEvents(protocol, fetch, { ...request, config: nonStreamingConfig });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: "failed", error: { kind: "protocol" } });
+    },
+  );
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s normalizes non-streaming HTTP and network errors",
+    async (protocol) => {
+      const httpFetch: FetchLike = async () => new Response("synthetic", { status: 500 });
+      expect(await collectEvents(protocol, httpFetch, { ...request, config: nonStreamingConfig })).toMatchObject([
+        { type: "failed", error: { kind: "server", status: 500 } },
+      ]);
+      const networkFetch: FetchLike = async () => { throw new Error("synthetic disconnect"); };
+      expect(await collectEvents(protocol, networkFetch, { ...request, config: nonStreamingConfig })).toMatchObject([
+        { type: "failed", error: { kind: "network" } },
+      ]);
+    },
+  );
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s aborts an in-flight non-streaming request",
+    async (protocol) => {
+      const controller = new AbortController();
+      let started: () => void = () => undefined;
+      const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+      const fetch: FetchLike = async (_input, init) => new Promise<Response>((_resolve, reject) => {
+        started();
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("synthetic abort", "AbortError")), { once: true });
+      });
+      const eventsPromise = collectEvents(protocol, fetch, { ...request, config: nonStreamingConfig, signal: controller.signal });
+      await startedPromise;
+      controller.abort();
+      expect(await eventsPromise).toEqual([{ type: "aborted" }]);
+    },
+  );
+
+  it("revalidates protected custom fields at the final transport seam", async () => {
+    let calls = 0;
+    const fetch: FetchLike = async () => { calls += 1; throw new Error("must not send"); };
+    const config = { ...defaultSessionConfig(), customJson: {
+      ...defaultSessionConfig().customJson, "openai-responses": '{"store":true}',
+    } };
+    expect(await collectEvents("openai-responses", fetch, { ...request, config })).toMatchObject([
+      { type: "failed", error: { kind: "protocol" } },
+    ]);
+    expect(calls).toBe(0);
+  });
+
   it.each([
     ["openai-chat", "  https://relay.example:8443/// ", "model-id"],
     ["openai-responses", "https://relay.example/custom/v1//", "model-id"],

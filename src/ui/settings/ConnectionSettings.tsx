@@ -37,8 +37,10 @@ import {
 } from "../../chat/urlResolution";
 
 export interface ConnectionSettingsProps {
+  canSelectModel?: boolean;
   connectionSettings: ConnectionSettingsState;
   isStreaming: boolean;
+  streamPreview?: boolean;
   modelCatalogs: Record<string, ModelCatalogViewState>;
   modelTests: Record<string, ModelTestViewState>;
   onAddConnection(
@@ -98,6 +100,7 @@ interface GenerationPreview {
 function generationPreview(
   connection: ConnectionProfile,
   modelId?: string,
+  stream = true,
 ): GenerationPreview {
   if (!connection.baseUrl.trim()) {
     return { error: "请填写 Base URL 后预览请求端点。" };
@@ -116,6 +119,7 @@ function generationPreview(
       connection.protocol,
       connection.baseUrl,
       modelId,
+      stream,
     );
   } catch (error) {
     return {
@@ -155,8 +159,10 @@ function configuredModelGroups(models: ConfiguredModel[]) {
 }
 
 export function ConnectionSettings({
+  canSelectModel = true,
   connectionSettings,
   isStreaming,
+  streamPreview = true,
   modelCatalogs,
   modelTests,
   onAddConnection,
@@ -576,6 +582,7 @@ export function ConnectionSettings({
           <p className="muted-text">
             供应商用于分组；每条连接独立保存协议、地址和密钥，模型归属于具体连接。
           </p>
+          {!canSelectModel && <p role="status" className="muted-text">请先加载或选择助手，再设置助手使用的模型。</p>}
         </div>
         <details className="provider-create-menu">
           <summary className="settings-button settings-button-primary">
@@ -776,6 +783,7 @@ export function ConnectionSettings({
                         activeTarget?.connection.id === connection.id
                           ? activeTarget.model.modelId
                           : undefined,
+                        streamPreview,
                       )
                     : null;
                   return (
@@ -1104,7 +1112,7 @@ export function ConnectionSettings({
                                       className="icon-button"
                                       aria-label={`设为当前模型 ${model.modelId}`}
                                       title="设为当前模型"
-                                      disabled={isStreaming || current}
+                                      disabled={isStreaming || current || !canSelectModel}
                                       onClick={() => onSelectModel(model.id)}
                                     >
                                       {current ? <Check size={15} /> : <Square size={14} />}

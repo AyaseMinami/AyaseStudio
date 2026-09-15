@@ -52,6 +52,14 @@ AppearanceController
   │ dedicated Tauri commands
   ▼
 App data / backgrounds
+
+React chat runtime
+  │ runtime-only attachment drafts / sent stable references
+  ▼
+AttachmentStore → validated Tauri commands → App data / attachments
+  │ reference ownership from ChatRepository across all conversations
+  ▼
+ref-safe private-copy cleanup
 ```
 
 Tauri 是宿主，不是界面控件库。Panel、主题和布局属于 React 与 CSS；Rust 层不承载聊天业务状态，除非浏览器环境无法安全或可靠地实现某项能力。
@@ -76,6 +84,8 @@ AyaseStudio/
 │  │  ├─ runtime.ts           Tauri HTTP adapter wiring
 │  │  ├─ sse.ts               SSE framing parser
 │  │  ├─ repository.ts        ChatRepository and Dexie adapter
+│  │  ├─ attachments.ts       draft format metadata and transient content
+│  │  ├─ attachmentResources.ts Tauri-only file storage/reading interface
 │  │  ├─ settings.ts          supplier/connection/model domain and v1/v2 migration
 │  │  ├─ modelCatalog.ts      protocol-aware remote model discovery client
 │  │  ├─ urlResolution.ts     shared Base URL validation and endpoint resolution
@@ -91,7 +101,8 @@ AyaseStudio/
 ├─ src-tauri/
 │  ├─ capabilities/           Tauri permission declarations
 │  ├─ src/                    Rust application entry points
-│  │  └─ background.rs        validated private background import and cleanup
+│  │  ├─ background.rs        validated private background import and cleanup
+│  │  └─ attachments.rs       validated sent-copy storage and managed ref cleanup
 │  ├─ Cargo.toml              Rust dependencies and release profile
 │  └─ tauri.conf.json         desktop application configuration
 ├─ scripts/
@@ -134,7 +145,7 @@ AyaseStudio/
 
 连接配置使用一个版本化 localStorage 记录，并通过 `settings.ts` 的纯函数完成加载、校验、迁移、CRUD 和活动引用校验。React 界面不直接读写 localStorage。供应商只提供命名分组；连接完整持有名称、协议、Base URL 与 API Key；每条连接再拥有零到多个已添加模型。同一供应商可以建立多条相同或不同协议的连接，相同实际模型 ID 也可以分别存在于不同连接中。
 
-运行时只持久化一个 `activeModelId`。选择模型时只更新该 ID，聊天从该模型反向解析唯一的父连接和供应商，再从同一对象链取得模型 ID、协议、Base URL 与 Key，避免字段混配。设置页当前浏览的供应商和连接是瞬时 UI 状态，不等于当前聊天模型。删除当前模型或其父连接/供应商时将活动 ID 清空，禁止静默切换到另一条可能计费或隐私边界不同的线路。
+运行时模型选择以当前助手的 `defaultModelId` 为唯一来源；设置页收到由该引用派生的 `activeModelId`，显式选择模型更新当前助手，适用于该助手下所有对话的后续请求。连接配置中的旧全局 `activeModelId` 仅用于首次迁移，不在后续启动覆盖助手选择。聊天从模型反向解析唯一的父连接和供应商，再从同一对象链取得模型 ID、协议、Base URL 与 Key，避免字段混配。设置页浏览供应商和连接不改变聊天模型。删除模型或其祖先后清除相关助手引用，禁止静默切换线路。
 
 加载顺序优先采用 v3 记录；若不存在有效 v3，则将 v2 的单模型连接迁移为每条连接下的一个稳定模型实体；再无 v2 时才迁移旧 `ayase-studio.provider-profiles.v1`。迁移使用稳定 ID 和固定协议顺序，因此重复加载不会产生重复对象。内置 OpenAI、Google Gemini 与 Anthropic 只是只读创建模板；创建结果与自定义供应商使用相同数据类型和运行时路径。
 
@@ -146,7 +157,7 @@ AyaseStudio/
 
 ### AppShell, Settings and Theme
 
-`AppShell` 提供固定的顶层功能导航，并在聊天和设置两个工作区之间切换。聊天工作区组合标题栏、消息列表与输入区；设置工作区拥有自己的分类导航，当前将连接配置与外观拆分为两个页面。页面选择由 `App.tsx` 管理，不引入路由框架，也不会因为切换视图而取消或重发聊天请求。这些是固定职责的 React 与 CSS 模块，不是可插拔 Panel 或 IDE 停靠系统。未来助手栏和对话栏应继续在这个组合根上增加，而不是重新混入聊天运行逻辑。
+`AppShell` 提供固定的顶层功能导航，并在聊天和设置两个工作区之间切换。聊天工作区组合助手栏、对话栏、标题栏、消息列表与输入区；设置工作区拥有自己的分类导航，当前将连接配置与外观拆分为两个页面。页面选择由 `App.tsx` 管理，不引入路由框架，也不会因为切换视图而取消或重发聊天请求。这些是固定职责的 React 与 CSS 模块，不是可插拔 Panel 或 IDE 停靠系统。助手栏和对话栏在这个组合根内参与布局，不混入聊天运行逻辑。
 
 主题模块以 `themeMode`、`resolvedTheme`、自定义颜色、背景显示参数和更新操作作为 React 接口。普通界面模块只使用语义化 CSS 变量，不知道具体的 `stone` 或 `violet` 色阶，也不各自监听系统主题。浅色、深色和跟随系统的解析、系统变化订阅、安全颜色派生、遮罩下限、损坏配置回退与本地持久化集中在 `AppearanceController` 内。自定义强调色会派生具有安全前景色的强调/焦点/用户消息语义变量；自定义画布色按实际浅色或深色主题调整到可读范围，并重新派生 Panel、输入、悬停和边框表面。原始自定义值保持不变，因此跟随系统切换后可以基于新的实际主题重新计算。顶层页面与设置分类属于瞬时导航状态，由应用组合根拥有，不混入外观偏好存储。
 
@@ -156,7 +167,7 @@ AyaseStudio/
 
 ## Domain direction
 
-当前连接配置与后续助手、对话方向的数据关系如下：
+当前连接配置、助手和对话的数据关系如下：
 
 ```text
 ProviderGroup
@@ -172,19 +183,19 @@ ProviderGroup
       └─ optional display name
 
 Assistant
-├─ default model reference
-├─ default system instruction
-├─ default generation settings
+├─ shared model reference
+├─ shared system instruction
+├─ shared generation settings
 └─ Conversation
-   ├─ settings snapshot and overrides
+   ├─ title and timestamps
    ├─ Message
    │  ├─ text
-   │  ├─ attachment references (planned)
+   │  ├─ sent attachment references (app-private copies)
    │  └─ citations/search metadata (planned)
-   └─ last-used model reference
+   └─ text / attachment draft (in memory, per conversation)
 ```
 
-供应商只负责分组，不提供父级配置继承。对话未来引用连接配置时也不复制凭据。助手是预设与对话容器，不是 Agent；附件和供应商托管搜索不会自动引入 MCP 或通用工具执行循环。
+供应商只负责分组，不提供父级配置继承。助手通过已添加模型解析其所属连接，对话不复制连接配置或凭据。助手是预设与对话容器，不是 Agent；附件和供应商托管搜索不会自动引入 MCP 或通用工具执行循环。
 
 ## State ownership
 
@@ -231,3 +242,29 @@ Assistant
 - 改变依赖方向、数据所有权或持久化位置。
 - 新增协议、宿主权限或安全边界。
 - 当前结构与本文的目录说明不再一致。
+
+## Issue #3 conversation generation configuration
+
+生成配置统一保存在 `AssistantPreset.defaultConfig`，模型保存在 `defaultModelId`；旧字段名称保留，但不再表示创建对话时的快照默认值。助手编辑显式保存，所有所属对话的后续请求读取这唯一一份配置。`SessionStore` 仅串行化消息增量和清空消息，不持有或写入配置；加载完整消息不触发保存，恢复中断的流式消息时才写入恢复状态。清空消息不修改助手配置。
+
+## Issue #4 assistants and conversations
+
+`workspace.ts` 定义助手预设、对话元数据、导航记录及完整操作命令。Dexie v3 保留 `chats`、`assistants`、`conversations`、`workspace`，新增 `legacyConversationConfigs`。升级事务将旧对话配置和模型引用按对话 ID 备份，再移除活跃记录中的对应字段；消息与时间戳不变。v1 的 `current` 配置迁入默认助手；v2 保留原助手配置作为统一来源，原对话差异仅保存在本地备份，不再影响请求。备份没有 UI 恢复入口，不会被后续保存覆盖，永久删除对应对话时一同删除。初始化在单个事务内创建不可删除的默认助手，将旧 `current` 和孤立消息记录原地归属，修复失效助手/导航/模型引用。重复初始化不复制数据；加载错误显示重试入口，不按空数据库继续写入。
+
+新对话仅保存归属、标题、消息与时间戳，不复制配置。不存在会话覆盖或重新应用设置操作。删除助手默认迁移其对话到默认助手，后续请求使用默认助手配置，确认界面明确说明；永久删除使用独立二次确认。删除和导航修复同事务完成，消息保存检查对话仍存在，拒绝删除后旧请求复活记录。
+
+`useConversationWorkspace.ts` 拥有导航操作队列、按 ID 缓存的 Store 和消息/草稿/错误/参数校验/上下文提示视图。`useChatSession` 保持生成编排与连接操作，发送时冻结助手配置、模型目标、目标 Store 和对应视图更新函数；切换视图或编辑助手不改变旧请求。全局同时最多一个生成，其他对话可以查看并编辑草稿；停止按钮作用于正在生成的请求。删除生成中对话或其助手前，需先停止并等待终态保存。保存失败后的写入栅栏会尝试重新保存当前状态一次，持续失败则保留错误。
+
+Issue #5 附件草稿是同一按对话 ID 保留的会话内视图状态，只持有 `File` 句柄和元数据，仅读取小段文件头识别 MIME，仅在本次运行保留，不写入 IndexedDB，也不提前缓存整图 Base64。文件选择、拖入聊天区域和图片粘贴只加入草稿；读取途中禁用发送。点击发送后先预算，再逐项读取本次草稿与所需历史附件，每项之后检查中止；新附件只在此时转为请求内联内容并复制到 `$APPDATA/attachments/staging`，得到不包含来源路径的稳定引用。用户消息及占位助手消息通过 `SessionStore` 成功持久化后，原生层按引用一次核对全部副本仍可访问且大小一致（不在 JS 重新加载整图），随后才发起供应商请求；副本缺失则先回滚消息记录且不联网，即使此时用户按了停止也核对所有已入库副本。已入库副本可以留在暂存目录供预览和历史读取，启动或后续引用整理才将其转入活动目录，因此联网前没有批量转正/部分转正的回滚问题。若提交失败或发送前中止，立即清掉未提交暂存副本。即使生成失败或取消，已发送用户消息仍拥有附件，重启可只读预览。清空、删对话或删助手时，仓库汇总所有现存消息引用后原生层只清理不再被引用的托管文件；无法读取数据库时不清理。文件保存和清理串行化，新文件在尚未完成消息提交时作为临时保留引用参与清理计算，避免跨对话误删。桌面主机先持有应用数据目录的进程级文件锁，再手动创建主窗口；Tauri 单实例插件处理重复启动的聚焦，文件锁弥补其 Windows 初始化竞态。消息级操作留给 Issue #14，并必须遵守相同引用规则。
+
+原生清理对活动目录的无主 UUID 文件先同卷移动到私有 `attachments/quarantine`，不信任前端列表立即永久删除可能已发送的副本；已发送预览及历史请求读取同时检查活动、暂存和隔离目录，后来重新扫描为有主时恢复活动副本。隔离满 30 天后仍无主，先记一次扫描，再至少一小时后的独立扫描仍无主才最终回收；此保留期是避免清理错误立即破坏已发送引用的磁盘空间权衡。暂存目录既可容纳尚未完成提交的副本，也可容纳已被数据库引用、待整理转正的副本；明确提交失败或发送前中止只删除未提交副本。启动整理依据数据库权威引用转正已提交副本、清理无主暂存副本。所有操作仅接受受管 UUID 引用，不读取任意用户路径，Windows 拖入使用 HTML5 `File`。
+
+上下文提示按对话只缓存计数摘要，不缓存请求消息或已发送图片 Base64。未发送草稿在当前运行内暂存 `File` 句柄；点击发送才完整读入内容，消息成功入库后立即清空草稿，历史只保留应用私有文件引用和元数据。历史附件仅在该次请求中按引用读取，预览仅在打开期间读取，结束后不建立跨请求或跨预览的内存图片缓存。最终 Body 只检查对应协议可直接测量的官方输入限制，不再使用统一的应用级附件大小或请求体大小上限；校验失败不复制新附件、不写入用户消息也不请求供应商。发送和预览期间的临时 RAM 占用是允许的，实际 GC 释放时点由运行时决定。
+
+`ConversationNavigation` 使用横向级联的两栏导航：助手栏在左，点击助手在右侧展开其对话栏，两栏均参与布局，不悬浮。顶部按钮联动隐藏或恢复两栏；对话栏按钮或 Escape 仅收起对话栏，点击当前助手也可切换对话栏。选择或创建对话后保持导航展开。宽度不超过 860 px 时缩窄两栏，初始隐藏导航。助手编辑复用 `SessionConfigPanel` 字段和请求校验，采用显式保存。图标为内置 Emoji。对话草稿仅在当前应用会话中按 ID 保留，导航选择和助手排序持久化；不提供搜索、置顶、自动标题或工具执行。
+
+`sessionConfig.ts` 负责模式、范围、字段错误和双采样确认；`requestMapping.ts` 负责协议能力、受保护字段、JSON 安全补充字段与最终 Body 构造。界面发送前校验，四个 adapter 在最终构造处再次校验。生成请求冻结配置，生成时修改的配置仅供下一次发送。运行状态表示“正在生成”，流式和非流式都可停止。
+
+`contextBudget.ts` 只构造请求副本：必须保留系统指令与最新用户消息，从新到旧纳入完整且成功的 user/assistant 轮次；失败、取消、空内容及未完成轮次不进入后续请求。自动预算不裁剪完整轮次，自定义预算不足以容纳必保内容时阻止发送。原始消息不截断、不改写。已识别的 OpenAI 模型用本地对应 BPE 分词器，消息封装开销仍是估算；其他模型用 UTF-8 字节保守估算，界面均标注“估算”。分词数据按需加载，避免增加首屏主包。
+
+配置入口仅在助手编辑中；对话标题右侧仅提供重命名（铅笔）和删除（垃圾桶），保留可访问名称和悬停提示。助手编辑复用参数面板，显式保存；无效配置阻止保存，已保存配置因模型变化失效时显示助手编辑入口并阻止发送。协议目录当前只存模型身份，未确认的模型参数能力显示“未知”；已知不支持的参数禁用。
