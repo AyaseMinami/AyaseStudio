@@ -43,7 +43,7 @@ npm.cmd run tauri dev
 
 ## Daily cross-machine workflow
 
-开始工作前先确认本机没有遗留修改，再同步 `dev`：
+以下是需要同步机器时的人工操作示例，不是代理每次任务的启动脚本。先检查工作区；仅在任务需要同步且现有修改可安全保留时更新 `dev`，依赖未变化时无需重复安装：
 
 ```powershell
 git status --short --branch
@@ -54,7 +54,7 @@ npm.cmd ci
 
 如果 `git status` 显示未提交修改，不要直接拉取、重置或覆盖。先确认这些修改属于哪台机器和哪个任务，再决定继续完成、提交，或向用户请求处理方式。
 
-办公室与家里之间的事实来源是 Git 远端，不是手工复制整个项目目录。切换机器前应确保需要保留的工作已经经过检查、提交并推送；不要让两台机器同时积累彼此不可见的修改。
+办公室与家里之间通过 Git 远端交换已检查的工作。提交、推送和 PR 操作需要用户明确授权；已有授权涵盖本次操作时不重复询问。没有授权时完成本地工作并报告待同步状态。
 
 当前分支约定：
 
@@ -87,7 +87,7 @@ npm.cmd run probe:live -- --disableConsoleIntercept
 规则：
 
 - `.env.probe.local` 已被 Git 忽略，不应强制添加或粘贴到 Issue、PR、日志和聊天记录中。
-- 探针会消耗少量真实模型 Token，只在明确需要验证中转站或协议兼容性时运行。
+- 探针会消耗少量真实模型 Token，只在用户明确授权该次真实调用范围后运行；技术上需要验证不等于已获授权。
 - 429、500、畸形 SSE 与取消行为由确定性测试覆盖，不需要用真实服务制造故障。
 - 远程凭据和消息内容使用 HTTPS；明文 HTTP 仅允许 `localhost` 与 `127.0.0.1` 调试。
 
@@ -122,7 +122,7 @@ npm.cmd run probe:live -- --disableConsoleIntercept
 
 ## Required verification before handoff
 
-普通代码修改至少运行：
+纯文档修改检查内容、相对链接和 `git diff --check`，并查看 `git status --short --branch`；无需构建、启动桌面或运行真实探针。普通代码修改默认运行：
 
 ```powershell
 npm.cmd run check
@@ -137,7 +137,7 @@ git status --short --branch
 npm.cmd run tauri dev
 ```
 
-并完成与修改范围相称的桌面烟雾测试。只有中转站兼容性发生变化时才需要真实 API 探针。
+并完成与修改范围相称的桌面烟雾测试。真实 API 探针仅用于确有需要且用户已授权的兼容性验证。检查通过后，只有相关修改、失败或新的疑点才需要扩大或重复检查。
 
 ## Troubleshooting
 

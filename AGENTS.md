@@ -4,15 +4,17 @@ These instructions apply to the entire repository.
 
 ## Read first
 
-Before making non-trivial changes, read:
+Use `README.md` for orientation and read the references relevant to the task:
 
-1. `README.md`
-2. `docs/DEVELOPMENT.md`
-3. `docs/ARCHITECTURE.md`
-4. `docs/PLAN.md`
-5. `docs/PROTOCOLS.md` for transport, URL, streaming, or provider work
+- `docs/DEVELOPMENT.md`: environment, commands, and verification.
+- `docs/ARCHITECTURE.md`: module boundaries, state ownership, persistence, and security.
+- `docs/PLAN.md`: feature scope and acceptance criteria.
+- `docs/PROTOCOLS.md`: transport, URL, streaming, and provider work.
+- `CONTEXT.md`: domain terminology.
 
-GitHub Issues define approved feature scope and acceptance criteria. Do not broaden an issue with adjacent roadmap work.
+GitHub Issues record approved feature scope and acceptance criteria. Explicit user changes in the current task take precedence; document any resulting discrepancy without updating the remote unless authorized. Do not broaden the task with adjacent roadmap work.
+
+Complete authorized local edits and relevant checks without asking again for routine implementation choices. Ask when a missing product decision or authorization affects the outcome, and continue independent work while waiting.
 
 ## Branch and remote policy
 
@@ -54,7 +56,7 @@ GitHub Issues define approved feature scope and acceptance criteria. Do not broa
 - Use `apply_patch` for intentional text edits.
 - Prefer `rg` and `rg --files` for search.
 - On Windows, use `npm.cmd` when PowerShell blocks `npm.ps1`.
-- Add or update deterministic tests with behavior changes.
+- Add or update deterministic tests for changed behavior. Documentation-only edits require content/link review and Git diff checks, not application builds or desktop launch.
 - Before handoff, run the checks proportional to the change. The default code gate is:
 
 ```powershell
