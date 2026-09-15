@@ -4,6 +4,10 @@ import type {
   FetchLike,
 } from "./types";
 import { redactCredential } from "./redaction";
+import {
+  resolveModelCatalogEndpoint,
+  UrlResolutionError,
+} from "./urlResolution";
 
 export interface DiscoveredModel {
   id: string;
@@ -187,41 +191,6 @@ function catalogPageEndpoint(
   return url.toString();
 }
 
-function normalizedBaseUrl(baseUrl: string): URL {
-  let url: URL;
-  try {
-    url = new URL(baseUrl.trim());
-  } catch {
-    throw new ModelCatalogError("Base URL 不是有效网址。");
-  }
-  if (
-    (url.protocol !== "https:" && url.protocol !== "http:") ||
-    url.search ||
-    url.hash
-  ) {
-    throw new ModelCatalogError("Base URL 必须是没有查询参数或片段的 HTTP(S) 地址。");
-  }
-  url.pathname = url.pathname.replace(/\/+$/, "");
-  return url;
-}
-
-export function resolveModelCatalogEndpoint(
-  protocol: ChatProtocol,
-  baseUrl: string,
-): string {
-  const url = normalizedBaseUrl(baseUrl);
-  const path = url.pathname === "/" ? "" : url.pathname;
-  if (protocol === "gemini-native") {
-    url.pathname = `${path}${path.endsWith("/v1beta") ? "" : "/v1beta"}/models`;
-  } else if (protocol === "anthropic-native") {
-    url.pathname = `${path}${path.endsWith("/v1") ? "" : "/v1"}/models`;
-  } else {
-    const versionPath = path === "" ? "/v1" : path;
-    url.pathname = `${versionPath}/models`;
-  }
-  return url.toString();
-}
-
 function catalogHeaders(
   protocol: ChatProtocol,
   apiKey: string,
@@ -247,7 +216,18 @@ class FetchModelCatalogClient implements ModelCatalogClient {
   ) {}
 
   async list(request: ModelCatalogRequest): Promise<DiscoveredModel[]> {
-    const endpoint = resolveModelCatalogEndpoint(this.protocol, request.baseUrl);
+    let endpoint: string;
+    try {
+      endpoint = resolveModelCatalogEndpoint(
+        this.protocol,
+        request.baseUrl,
+      ).resolvedEndpoint;
+    } catch (error) {
+      if (error instanceof UrlResolutionError) {
+        throw new ModelCatalogError(error.message);
+      }
+      throw error;
+    }
     const collected: DiscoveredModel[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;

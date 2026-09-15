@@ -20,6 +20,7 @@ import {
   providerTemplates,
   type ConfiguredModel,
   type ConnectionField,
+  type ConnectionProfile,
   type ConnectionSettingsState,
   type ModelField,
   type ProviderTemplateId,
@@ -29,6 +30,11 @@ import type {
   ModelTestViewState,
 } from "../../chat/useChatSession";
 import type { ChatProtocol } from "../../chat/types";
+import {
+  normalizeBaseUrl,
+  resolveGenerationEndpoint,
+  UrlResolutionError,
+} from "../../chat/urlResolution";
 
 export interface ConnectionSettingsProps {
   connectionSettings: ConnectionSettingsState;
@@ -79,6 +85,45 @@ function connectionHost(baseUrl: string): string {
     return new URL(baseUrl).host || baseUrl;
   } catch {
     return baseUrl;
+  }
+}
+
+interface GenerationPreview {
+  normalizedBaseUrl?: string;
+  resolvedEndpoint?: string;
+  note?: string;
+  error?: string;
+}
+
+function generationPreview(
+  connection: ConnectionProfile,
+  modelId?: string,
+): GenerationPreview {
+  if (!connection.baseUrl.trim()) {
+    return { error: "请填写 Base URL 后预览请求端点。" };
+  }
+  try {
+    if (connection.protocol === "gemini-native" && !modelId) {
+      return {
+        normalizedBaseUrl: normalizeBaseUrl(
+          connection.protocol,
+          connection.baseUrl,
+        ),
+        note: "添加并选择该连接的模型后可预览完整生成端点。",
+      };
+    }
+    return resolveGenerationEndpoint(
+      connection.protocol,
+      connection.baseUrl,
+      modelId,
+    );
+  } catch (error) {
+    return {
+      error:
+        error instanceof UrlResolutionError
+          ? error.message
+          : "无法解析请求端点。",
+    };
   }
 }
 
@@ -725,6 +770,14 @@ export function ConnectionSettings({
                 selectedProvider.connections.map((connection) => {
                   const selected = connection.id === selectedConnectionId;
                   const protocol = getProtocolOption(connection.protocol);
+                  const preview = selected
+                    ? generationPreview(
+                        connection,
+                        activeTarget?.connection.id === connection.id
+                          ? activeTarget.model.modelId
+                          : undefined,
+                      )
+                    : null;
                   return (
                     <article
                       key={connection.id}
@@ -799,6 +852,8 @@ export function ConnectionSettings({
                             id="base-url"
                             className="field"
                             value={connection.baseUrl}
+                            aria-invalid={preview?.error ? true : undefined}
+                            aria-describedby={`base-url-preview-${connection.id}`}
                             disabled={isStreaming}
                             onChange={(event) =>
                               onConnectionChange(
@@ -811,6 +866,32 @@ export function ConnectionSettings({
                             spellCheck={false}
                           />
                           <p className="field-hint">{protocol.hint}</p>
+                          <div
+                            id={`base-url-preview-${connection.id}`}
+                            className="endpoint-preview"
+                            aria-live="polite"
+                          >
+                            {preview?.error ? (
+                              <p className="endpoint-preview-error">
+                                {preview.error}
+                              </p>
+                            ) : (
+                              <>
+                                <p>
+                                  <strong>归一化 Base URL</strong>
+                                  <code>{preview?.normalizedBaseUrl}</code>
+                                </p>
+                                {preview?.resolvedEndpoint ? (
+                                  <p>
+                                    <strong>最终生成端点</strong>
+                                    <code>{preview.resolvedEndpoint}</code>
+                                  </p>
+                                ) : (
+                                  <p>{preview?.note}</p>
+                                )}
+                              </>
+                            )}
+                          </div>
                           <label className="field-label" htmlFor="api-key">
                             API Key
                           </label>

@@ -78,6 +78,7 @@ AyaseStudio/
 │  │  ├─ repository.ts        ChatRepository and Dexie adapter
 │  │  ├─ settings.ts          supplier/connection/model domain and v1/v2 migration
 │  │  ├─ modelCatalog.ts      protocol-aware remote model discovery client
+│  │  ├─ urlResolution.ts     shared Base URL validation and endpoint resolution
 │  │  ├─ modelGrouping.ts     stable configured/discovered model grouping
 │  │  ├─ modelAvailability.ts explicit single-model availability test
 │  │  ├─ useChatSession.ts    chat runtime and persistence orchestration
@@ -127,7 +128,7 @@ AyaseStudio/
 
 ### URL resolution
 
-配置预览和真实请求必须共享同一个 URL 解析规则。配置值、标准化 Base URL 和最终请求端点是三个不同概念；解析必须确定、幂等，且不能通过自动回退发送第二次生成请求。
+`urlResolution.ts` 为配置预览、四种生成 adapter 与模型目录提供同一套 Base URL 校验、协议归一化和最终端点解析。配置值、标准化 Base URL 和最终请求端点是三个不同概念；设置页只保存用户输入，直接从当前连接和明确选中的模型计算预览，Gemini 无模型上下文时不显示虚假的最终端点。OpenAI SDK 接收解析后的标准化 Base URL；原生协议 fetch 接收解析后的最终端点。聊天发送、目录读取和模型测速都在建立运行时请求前调用这一校验；解析确定、幂等，且不能通过自动回退发送第二次生成请求。
 
 ### Connection settings
 

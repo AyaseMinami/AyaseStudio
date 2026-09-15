@@ -36,7 +36,7 @@ Chat generation knows only the `ChatTransport` interface and neutral `ChatEvent`
 
 Conversation storage sits behind `ChatRepository`; UI code does not call Dexie directly.
 
-URL resolution will sit at one seam shared by settings preview and transports. The UI supplies the configured base URL; the resolver returns the normalized base URL and final endpoint. Adapters must not independently duplicate normalization rules.
+URL resolution sits in `src/chat/urlResolution.ts`, shared by settings preview, generation transports, and model discovery. The UI supplies the configured base URL; the resolver returns the normalized base URL and final endpoint. Adapters do not independently duplicate normalization rules.
 
 ## Configuration model
 
@@ -87,9 +87,9 @@ After connection profiles are stable, multiple conversations can add create, swi
 3. **Persistence**: conversations/messages in Dexie with throttled writes and unfinished-message recovery.
 4. **Acceptance**: packaged Tauri smoke tests against the configured relay, including cancellation and provider switching.
 
-## Next implementation slice
+## Protocol-aware URL slice
 
-Add protocol-aware URL resolution before expanding the feature set:
+Issue #13 implements protocol-aware URL resolution before expanding the feature set:
 
 - Trim whitespace and redundant trailing slashes.
 - For OpenAI Chat and Responses only, append `/v1` when the configured URL has no path.
@@ -97,6 +97,7 @@ Add protocol-aware URL resolution before expanding the feature set:
 - Do not change scheme, host, or port, and do not perform fallback network requests.
 - Resolve Gemini and Anthropic automatically from a relay root by appending their complete versioned resource paths (`/v1beta/models/...` and `/v1/messages`); do not prepend an extra generic `/v1` to their normalized base.
 - Show the exact final request endpoint below the Base URL field before sending.
+- For Gemini without an explicitly selected model on that connection, show the normalized base and a clear prompt instead of a fictitious final endpoint.
 - Cover root, trailing-slash, existing-version, custom-path, port, and invalid-URL cases with deterministic tests.
 
 ## Known issues

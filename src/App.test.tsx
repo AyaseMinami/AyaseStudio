@@ -16,6 +16,7 @@ import {
 import App from "./App";
 import { createChatRepository } from "./chat/repository";
 import {
+  loadConnectionSettings,
   saveConnectionSettings,
   type ConnectionSettingsState,
 } from "./chat/settings";
@@ -81,6 +82,19 @@ describe("App navigation", () => {
       )?.set;
       valueSetter?.call(draft, value);
       draft?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  async function setBaseUrl(value: string): Promise<void> {
+    const field = container.querySelector<HTMLInputElement>("#base-url");
+    expect(field).toBeInstanceOf(HTMLInputElement);
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(field, value);
+      field?.dispatchEvent(new Event("input", { bubbles: true }));
     });
   }
 
@@ -712,5 +726,108 @@ describe("App navigation", () => {
     await act(async () => deleteConnectionButton?.click());
     await clickButton("聊天");
     expect(container.textContent).toContain("未选择模型");
+  });
+
+  it("previews the current route and blocks invalid URL actions before runtime requests", async () => {
+    saveConnectionSettings({
+      version: 3,
+      providers: [{
+        id: "provider-relay",
+        name: "Synthetic Relay",
+        connections: [
+          {
+            id: "connection-chat",
+            name: "OpenAI 连接",
+            protocol: "openai-chat",
+            baseUrl: "https://relay.example.com",
+            apiKey: "synthetic-key",
+            models: [{ id: "model-chat", modelId: "chat-model" }],
+          },
+          {
+            id: "connection-gemini",
+            name: "Gemini 连接",
+            protocol: "gemini-native",
+            baseUrl: "https://gemini.example.com",
+            apiKey: "synthetic-key",
+            models: [{ id: "model-gemini", modelId: "model/with space" }],
+          },
+        ],
+      }],
+      activeModelId: "model-chat",
+    });
+    Object.assign(window, { confirm: vi.fn(() => true) });
+
+    await renderApp();
+    await clickButton("设置");
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "https://relay.example.com/v1/chat/completions",
+    );
+
+    await setBaseUrl("  https://relay.example.com///  ");
+    expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe(
+      "  https://relay.example.com///  ",
+    );
+    expect(loadConnectionSettings().providers[0]?.connections[0]?.baseUrl).toBe(
+      "  https://relay.example.com///  ",
+    );
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "https://relay.example.com/v1/chat/completions",
+    );
+
+    await clickButton("查看连接 Gemini 连接");
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "https://gemini.example.com",
+    );
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "添加并选择该连接的模型后可预览完整生成端点。",
+    );
+    expect(container.querySelector(".endpoint-preview")?.textContent).not.toContain(
+      ":streamGenerateContent",
+    );
+
+    await clickButton("设为当前模型 model/with space");
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "https://gemini.example.com/v1beta/models/model%2Fwith%20space:streamGenerateContent?alt=sse",
+    );
+
+    const protocol = container.querySelector<HTMLSelectElement>(
+      "#connection-protocol",
+    );
+    expect(protocol).toBeInstanceOf(HTMLSelectElement);
+    await act(async () => {
+      if (protocol) protocol.value = "anthropic-native";
+      protocol?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "https://gemini.example.com/v1/messages",
+    );
+    expect(container.querySelector(".endpoint-preview")?.textContent).not.toContain(
+      ":streamGenerateContent",
+    );
+
+    await setBaseUrl("https://gemini.example.com/?guess=1");
+    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+      "Base URL 不能包含查询参数。",
+    );
+    expect(container.querySelector(".endpoint-preview")?.textContent).not.toContain(
+      "/v1/messages",
+    );
+    await clickButtonWithText("获取模型列表");
+    await clickButton("测试模型 model/with space");
+    expect(runtimeMocks.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+    expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+
+    await clickButton("聊天");
+    await setDraft("must not send");
+    await clickButton("发送");
+    expect(getButton("设置").getAttribute("aria-current")).toBe("page");
+    expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+    await clickButton("聊天");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "must not send",
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Base URL 不能包含查询参数。",
+    );
   });
 });

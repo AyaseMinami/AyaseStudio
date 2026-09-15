@@ -30,9 +30,7 @@ For a new Windows machine, cross-machine Git workflow, local probe setup, verifi
 
 ## Base URL behavior
 
-At the current snapshot, OpenAI-compatible Base URLs must include their `/v1` prefix. Gemini and Anthropic use the relay root because their adapters append `/v1beta/models/...` and `/v1/messages` respectively.
-
-Protocol-aware route completion for all four adapters and a live preview of the exact resolved endpoint are specified in the v0.1 plan as the next implementation slice; they are not implemented yet. OpenAI root URLs gain `/v1`, while Gemini and Anthropic append their complete `/v1beta/models/...` and `/v1/messages` routes directly.
+OpenAI Chat and Responses add `/v1` to a relay root; an existing version suffix or custom path is preserved. Gemini and Anthropic append their own versioned resource paths without adding a generic OpenAI `/v1` prefix. The connection editor keeps the entered Base URL and shows the normalized base and resolved generation endpoint. Gemini shows a complete endpoint only when that connection has an explicitly selected model. Invalid URLs are rejected before catalog, model-test, or chat network requests.
 
 ## Local relay probes
 

@@ -24,17 +24,17 @@ Three values are deliberately distinct:
 - **Normalized base URL**: the protocol-aware base after deterministic local normalization.
 - **Resolved endpoint**: the exact URL used for the HTTP request and shown in settings.
 
-Normalization never changes the scheme, host, or port and never probes alternative routes. URLs containing an invalid scheme, query, or fragment are rejected before a request. Repeated normalization must return the same result.
+`urlResolution.ts` validates and resolves all generation and model-directory routes. It trims surrounding whitespace and redundant trailing slashes; only an OpenAI root gains `/v1`. Native Gemini and Anthropic routes append `/v1beta` and `/v1` respectively unless the configured path already ends with that version. Normalization never changes the effective scheme, host, or port and never probes alternative routes. Invalid URLs, non-HTTP(S) schemes, query, fragment, or URL userinfo are rejected before a request. Repeated normalization returns the same result.
 
 | Adapter | Configured example | Normalized base | Resolved endpoint |
 | --- | --- | --- | --- |
 | OpenAI Chat | `https://relay.example.com` | `https://relay.example.com/v1` | `https://relay.example.com/v1/chat/completions` |
-| OpenAI Chat | `https://relay.example.com/custom/v1` | unchanged | `https://relay.example.com/custom/v1/chat/completions` |
+| OpenAI Chat | `https://relay.example.com/custom/v1` | `https://relay.example.com/custom/v1` | `https://relay.example.com/custom/v1/chat/completions` |
 | OpenAI Responses | `https://relay.example.com/` | `https://relay.example.com/v1` | `https://relay.example.com/v1/responses` |
-| Gemini native | `https://relay.example.com` | unchanged | `https://relay.example.com/v1beta/models/{model}:streamGenerateContent?alt=sse` |
-| Anthropic native | `https://relay.example.com` | unchanged | `https://relay.example.com/v1/messages` |
+| Gemini native | `https://relay.example.com` | `https://relay.example.com` | `https://relay.example.com/v1beta/models/{encoded-model}:streamGenerateContent?alt=sse` |
+| Anthropic native | `https://relay.example.com` | `https://relay.example.com` | `https://relay.example.com/v1/messages` |
 
-The UI previews the resolved endpoint but stores the configured value. Automatic fallback from one endpoint to another is prohibited because an ambiguous failure could otherwise duplicate a generation.
+The UI previews the resolved endpoint but stores the configured value. Gemini has no final endpoint preview until that connection's model is explicitly selected; its model ID is URI-component encoded in the final route. OpenAI SDK requests use the normalized base and are tested against the same resolved endpoint returned to the UI. Invalid addresses use the same resolver message in the editor and send-before-network checks. Automatic fallback from one endpoint to another is prohibited because an ambiguous failure could otherwise duplicate a generation.
 
 ## Neutral events
 

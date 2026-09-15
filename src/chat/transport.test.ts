@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createChatTransport } from "./transport";
 import type { ChatEvent, ChatRequest, FetchLike } from "./types";
+import { resolveGenerationEndpoint } from "./urlResolution";
 
 const request: ChatRequest = {
   baseUrl: "https://relay.example/v1",
@@ -43,6 +44,56 @@ async function collectEvents(
 }
 
 describe("ChatTransport", () => {
+  it.each([
+    ["openai-chat", "  https://relay.example:8443/// ", "model-id"],
+    ["openai-responses", "https://relay.example/custom/v1//", "model-id"],
+    ["gemini-native", "https://relay.example/custom//", "model/with space"],
+    ["anthropic-native", "https://relay.example/custom/v1//", "model-id"],
+  ] satisfies [Parameters<typeof createChatTransport>[0], string, string][])(
+    "%s sends exactly the endpoint returned for settings preview",
+    async (protocol, baseUrl, model) => {
+      const requestedUrls: string[] = [];
+      const fetch: FetchLike = async (input) => {
+        requestedUrls.push(String(input));
+        return new Response("synthetic upstream failure", { status: 500 });
+      };
+      const events = await collectEvents(protocol, fetch, {
+        ...request,
+        baseUrl,
+        model,
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.type).toBe("failed");
+      expect(requestedUrls).toEqual([
+        resolveGenerationEndpoint(protocol, baseUrl, model).resolvedEndpoint,
+      ]);
+    },
+  );
+
+  it.each([
+    "openai-chat",
+    "openai-responses",
+    "gemini-native",
+    "anthropic-native",
+  ] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s rejects an invalid Base URL before any network request",
+    async (protocol) => {
+      let requestCount = 0;
+      const fetch: FetchLike = async () => {
+        requestCount += 1;
+        throw new Error("fetch must not run");
+      };
+      const events = await collectEvents(protocol, fetch, {
+        ...request,
+        baseUrl: "https://relay.example/?route=guess",
+      });
+      expect(requestCount).toBe(0);
+      expect(events).toMatchObject([
+        { type: "failed", error: { kind: "protocol", retryable: false } },
+      ]);
+    },
+  );
+
   it("streams OpenAI Chat text in order and completes once", async () => {
     const fetch: FetchLike = async (_input, init) => {
       expect(init?.method).toBe("POST");

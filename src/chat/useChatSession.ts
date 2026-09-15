@@ -36,6 +36,11 @@ import {
   type ProviderTemplateId,
 } from "./settings";
 import type { ChatProtocol } from "./types";
+import {
+  resolveGenerationEndpoint,
+  resolveModelCatalogEndpoint,
+  UrlResolutionError,
+} from "./urlResolution";
 
 const chatRepository = createChatRepository();
 const currentChatId = "current";
@@ -383,6 +388,20 @@ export function useChatSession({
       }));
       return;
     }
+    try {
+      resolveModelCatalogEndpoint(connection.protocol, connection.baseUrl);
+    } catch (error) {
+      if (!(error instanceof UrlResolutionError)) throw error;
+      setModelCatalogs((current) => ({
+        ...current,
+        [connectionId]: {
+          status: "error",
+          models: current[connectionId]?.models ?? [],
+          error: error.message,
+        },
+      }));
+      return;
+    }
 
     catalogAbortControllers.current.get(connectionId)?.abort();
     const controller = new AbortController();
@@ -462,6 +481,24 @@ export function useChatSession({
             message: "请先填写连接的 Base URL、API Key 和模型 ID。",
             retryable: false,
           },
+        },
+      }));
+      return;
+    }
+    try {
+      resolveGenerationEndpoint(
+        connection.protocol,
+        connection.baseUrl,
+        model.modelId,
+      );
+    } catch (error) {
+      if (!(error instanceof UrlResolutionError)) throw error;
+      setModelTests((current) => ({
+        ...current,
+        [configuredModelId]: {
+          status: "failed",
+          totalMs: 0,
+          error: { kind: "protocol", message: error.message, retryable: false },
         },
       }));
       return;
@@ -546,6 +583,18 @@ export function useChatSession({
     if (!requestConnection.baseUrl || !requestConnection.apiKey) {
       onConfigurationRequired();
       setError("请先填写当前模型所属连接的 Base URL 和 API Key。");
+      return;
+    }
+    try {
+      resolveGenerationEndpoint(
+        requestConnection.protocol,
+        requestConnection.baseUrl,
+        activeTarget.model.modelId,
+      );
+    } catch (error) {
+      if (!(error instanceof UrlResolutionError)) throw error;
+      onConfigurationRequired();
+      setError(error.message);
       return;
     }
 

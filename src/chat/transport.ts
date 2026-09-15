@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 import { parseServerSentEvents } from "./sse";
+import { resolveGenerationEndpoint, UrlResolutionError } from "./urlResolution";
 import type {
   ChatEvent,
   ChatFailure,
@@ -18,10 +19,6 @@ class HttpStatusError extends Error {
     super(message);
     this.name = "HttpStatusError";
   }
-}
-
-function withoutTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
 }
 
 function providerFailure(code: string | null, message: string): ChatFailure {
@@ -42,6 +39,9 @@ function providerFailure(code: string | null, message: string): ChatFailure {
 }
 
 function failureFrom(error: unknown): ChatFailure {
+  if (error instanceof UrlResolutionError) {
+    return { kind: "protocol", message: error.message, retryable: false };
+  }
   const rawStatus =
     typeof error === "object" && error !== null && "status" in error
       ? (error as { status?: unknown }).status
@@ -85,9 +85,13 @@ class OpenAIChatTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const { normalizedBaseUrl } = resolveGenerationEndpoint(
+        "openai-chat",
+        request.baseUrl,
+      );
       const client = new OpenAI({
         apiKey: request.apiKey,
-        baseURL: withoutTrailingSlash(request.baseUrl),
+        baseURL: normalizedBaseUrl,
         fetch: this.dependencies.fetch,
         dangerouslyAllowBrowser: true,
         maxRetries: 0,
@@ -149,9 +153,13 @@ class OpenAIResponsesTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const { normalizedBaseUrl } = resolveGenerationEndpoint(
+        "openai-responses",
+        request.baseUrl,
+      );
       const client = new OpenAI({
         apiKey: request.apiKey,
-        baseURL: withoutTrailingSlash(request.baseUrl),
+        baseURL: normalizedBaseUrl,
         fetch: this.dependencies.fetch,
         dangerouslyAllowBrowser: true,
         maxRetries: 0,
@@ -269,6 +277,11 @@ class GeminiNativeTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const { resolvedEndpoint } = resolveGenerationEndpoint(
+        "gemini-native",
+        request.baseUrl,
+        request.model,
+      );
       const systemText = request.messages
         .filter((message) => message.role === "system")
         .map((message) => message.content)
@@ -291,8 +304,7 @@ class GeminiNativeTransport implements ChatTransport {
             }
           : {}),
       };
-      const url = `${withoutTrailingSlash(request.baseUrl)}/v1beta/models/${encodeURIComponent(request.model)}:streamGenerateContent?alt=sse`;
-      const response = await this.dependencies.fetch(url, {
+      const response = await this.dependencies.fetch(resolvedEndpoint, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -387,12 +399,16 @@ class AnthropicNativeTransport implements ChatTransport {
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
+      const { resolvedEndpoint } = resolveGenerationEndpoint(
+        "anthropic-native",
+        request.baseUrl,
+      );
       const system = request.messages
         .filter((message) => message.role === "system")
         .map((message) => message.content)
         .join("\n\n");
       const response = await this.dependencies.fetch(
-        `${withoutTrailingSlash(request.baseUrl)}/v1/messages`,
+        resolvedEndpoint,
         {
           method: "POST",
           headers: {

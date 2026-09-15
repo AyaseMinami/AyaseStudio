@@ -797,6 +797,30 @@ textarea:disabled {
   font-size: 0.62rem;
 }
 
+.endpoint-preview {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 0.5rem;
+  padding: 0.55rem;
+  font-size: 0.68rem;
+}
+
+.endpoint-preview p {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+}
+
+.endpoint-preview code {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.endpoint-preview-error {
+  color: rgb(var(--color-error-text));
+}
+
 .connection-card-editor .settings-button-danger {
   justify-self: start;
   margin-top: 0.25rem;

@@ -16,6 +16,28 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("model catalog client", () => {
   it.each([
+    "openai-chat",
+    "openai-responses",
+    "gemini-native",
+    "anthropic-native",
+  ] satisfies ChatProtocol[])(
+    "%s rejects an invalid Base URL before fetching a catalog",
+    async (protocol) => {
+      const fetch = vi.fn<FetchLike>();
+      await expect(
+        createModelCatalogClient(protocol, { fetch }).list({
+          baseUrl: "https://relay.example.com/#invalid",
+          apiKey: "synthetic-key",
+        }),
+      ).rejects.toMatchObject({
+        name: "ModelCatalogError",
+        message: "Base URL 不能包含片段。",
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
     ["openai-chat", "https://relay.example.com/v1/models"],
     ["openai-responses", "https://relay.example.com/v1/models"],
   ] satisfies [ChatProtocol, string][])(
