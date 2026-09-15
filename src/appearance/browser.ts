@@ -4,6 +4,7 @@ import {
   type AppearanceController,
   type SystemThemeSource,
 } from "./appearance";
+import { createTauriBackgroundResourceStore } from "./backgroundResources";
 
 export const darkModeMediaQuery = "(prefers-color-scheme: dark)";
 
@@ -38,6 +39,7 @@ export function getBrowserAppearanceController(): AppearanceController {
       window.matchMedia(darkModeMediaQuery),
     ),
     target: document.documentElement,
+    backgroundResources: createTauriBackgroundResourceStore(),
   });
   return browserController;
 }

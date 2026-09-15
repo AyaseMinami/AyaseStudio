@@ -49,7 +49,27 @@ function App() {
           activeSection={activeSettingsSection}
           appearance={{
             themeMode: appearance.themeMode,
+            resolvedTheme: appearance.resolvedTheme,
+            accentColor: appearance.accentColor,
+            canvasColor: appearance.canvasColor,
+            effectiveAccentColor: appearance.effectiveAccentColor,
+            effectiveCanvasColor: appearance.effectiveCanvasColor,
+            backgroundReference: appearance.backgroundReference,
+            backgroundFit: appearance.backgroundFit,
+            backgroundMask: appearance.backgroundMask,
+            backgroundBlur: appearance.backgroundBlur,
+            backgroundBusy: appearance.backgroundBusy,
+            backgroundError: appearance.backgroundError,
+            readabilityWarnings: appearance.readabilityWarnings,
             onThemeModeChange: appearance.setThemeMode,
+            onAccentColorChange: appearance.setAccentColor,
+            onCanvasColorChange: appearance.setCanvasColor,
+            onBackgroundFitChange: appearance.setBackgroundFit,
+            onBackgroundMaskChange: appearance.setBackgroundMask,
+            onBackgroundBlurChange: appearance.setBackgroundBlur,
+            onSelectBackground: appearance.selectBackground,
+            onRemoveBackground: appearance.removeBackground,
+            onResetCustomAppearance: appearance.resetCustomAppearance,
           }}
           connection={{
             connectionSettings: chat.connectionSettings,

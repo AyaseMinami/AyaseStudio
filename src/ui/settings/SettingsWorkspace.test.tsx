@@ -34,7 +34,27 @@ const connectionSettings: ConnectionSettingsState = {
 const sharedProps = {
   appearance: {
     themeMode: "system" as const,
+    resolvedTheme: "light" as const,
+    accentColor: null,
+    canvasColor: null,
+    effectiveAccentColor: "#6d28d9",
+    effectiveCanvasColor: "#fafaf9",
+    backgroundReference: null,
+    backgroundFit: "cover" as const,
+    backgroundMask: 65,
+    backgroundBlur: 0,
+    backgroundBusy: false,
+    backgroundError: null,
+    readabilityWarnings: [],
     onThemeModeChange: () => undefined,
+    onAccentColorChange: () => undefined,
+    onCanvasColorChange: () => undefined,
+    onBackgroundFitChange: () => undefined,
+    onBackgroundMaskChange: () => undefined,
+    onBackgroundBlurChange: () => undefined,
+    onSelectBackground: () => undefined,
+    onRemoveBackground: () => undefined,
+    onResetCustomAppearance: () => undefined,
   },
   connection: {
     connectionSettings,
@@ -90,6 +110,38 @@ describe("SettingsWorkspace", () => {
     );
     expect(html).toContain("主题模式");
     expect(html).toContain("跟随系统");
+    expect(html).toContain("自定义配色");
+    expect(html).toContain('type="color"');
+    expect(html).toContain("选择本地图片");
+    expect(html).toContain("填充");
+    expect(html).toContain("适应");
+    expect(html).toContain("遮罩强度");
+    expect(html).toContain("模糊程度");
+    expect(html).toContain("恢复当前主题默认外观");
     expect(html).not.toContain("API Key");
+  });
+
+  it("shows replacement and removal controls for an imported background", () => {
+    const html = renderToStaticMarkup(
+      <SettingsWorkspace
+        {...sharedProps}
+        activeSection="appearance"
+        appearance={{
+          ...sharedProps.appearance,
+          backgroundReference:
+            "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp",
+          backgroundFit: "contain",
+          backgroundMask: 52,
+          backgroundBlur: 8,
+        }}
+      />,
+    );
+
+    expect(html).toContain("本地背景已应用");
+    expect(html).toContain("替换本地图片");
+    expect(html).toContain("移除背景");
+    expect(html).toContain("52%");
+    expect(html).toContain("8px");
+    expect(html).toMatch(/<option value="contain" selected=""/);
   });
 });

@@ -19,6 +19,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 - Stop generation with `AbortController`.
 - Local conversation persistence through a small repository interface backed by Dexie/IndexedDB.
 - Clear terminal states for success, cancellation, HTTP failure, network failure, and malformed streams.
+- Persistent semantic appearance customization with safe accent/canvas colors and validated local PNG, JPEG, or WebP backgrounds copied into app-private storage.
 
 ## Explicitly out of scope
 
@@ -112,6 +113,7 @@ Add protocol-aware URL resolution before expanding the feature set:
 - Restart restores the last selected model and resolves its complete parent connection; corrupt stored selection becomes explicitly unselected.
 - Model-provided single newlines remain visually distinct without enabling raw HTML.
 - Secrets and local probe configuration are ignored by Git.
+- Custom appearance survives restart, invalid or missing backgrounds fall back safely, and unreferenced private copies are cleaned without deleting source files.
 - `npm test`, TypeScript build, Rust check, and production bundle build pass.
 
 ## Reference policy

@@ -44,6 +44,14 @@ React UI
 ChatRepository interface
   ▼
 Dexie / IndexedDB
+
+React appearance settings
+  │ stable background reference
+  ▼
+AppearanceController
+  │ dedicated Tauri commands
+  ▼
+App data / backgrounds
 ```
 
 Tauri 是宿主，不是界面控件库。Panel、主题和布局属于 React 与 CSS；Rust 层不承载聊天业务状态，除非浏览器环境无法安全或可靠地实现某项能力。
@@ -60,6 +68,7 @@ AyaseStudio/
 │  │  ├─ appearance.ts        validated preferences and theme controller
 │  │  ├─ bootstrap.ts         pre-render theme application
 │  │  ├─ browser.ts           localStorage and matchMedia adapters
+│  │  ├─ backgroundResources.ts Tauri command and asset URL adapter
 │  │  └─ useAppearance.ts     React subscription seam
 │  ├─ chat/
 │  │  ├─ types.ts             neutral request, event and transport interface
@@ -81,6 +90,7 @@ AyaseStudio/
 ├─ src-tauri/
 │  ├─ capabilities/           Tauri permission declarations
 │  ├─ src/                    Rust application entry points
+│  │  └─ background.rs        validated private background import and cleanup
 │  ├─ Cargo.toml              Rust dependencies and release profile
 │  └─ tauri.conf.json         desktop application configuration
 ├─ scripts/
@@ -137,9 +147,11 @@ AyaseStudio/
 
 `AppShell` 提供固定的顶层功能导航，并在聊天和设置两个工作区之间切换。聊天工作区组合标题栏、消息列表与输入区；设置工作区拥有自己的分类导航，当前将连接配置与外观拆分为两个页面。页面选择由 `App.tsx` 管理，不引入路由框架，也不会因为切换视图而取消或重发聊天请求。这些是固定职责的 React 与 CSS 模块，不是可插拔 Panel 或 IDE 停靠系统。未来助手栏和对话栏应继续在这个组合根上增加，而不是重新混入聊天运行逻辑。
 
-主题模块以 `themeMode`、`resolvedTheme` 和主题更新操作作为 React 接口。普通界面模块只使用语义化 CSS 变量，不知道具体的 `stone` 或 `violet` 色阶，也不各自监听系统主题。浅色、深色和跟随系统的解析、系统变化订阅、损坏配置回退与本地持久化集中在 `AppearanceController` 内。顶层页面与设置分类属于瞬时导航状态，由应用组合根拥有，不混入外观偏好存储。
+主题模块以 `themeMode`、`resolvedTheme`、自定义颜色、背景显示参数和更新操作作为 React 接口。普通界面模块只使用语义化 CSS 变量，不知道具体的 `stone` 或 `violet` 色阶，也不各自监听系统主题。浅色、深色和跟随系统的解析、系统变化订阅、安全颜色派生、遮罩下限、损坏配置回退与本地持久化集中在 `AppearanceController` 内。自定义强调色会派生具有安全前景色的强调/焦点/用户消息语义变量；自定义画布色按实际浅色或深色主题调整到可读范围，并重新派生 Panel、输入、悬停和边框表面。原始自定义值保持不变，因此跟随系统切换后可以基于新的实际主题重新计算。顶层页面与设置分类属于瞬时导航状态，由应用组合根拥有，不混入外观偏好存储。
 
-外观偏好使用一个版本化的 localStorage 记录。`bootstrap.ts` 在主 React 入口前应用已保存或系统解析后的实际主题，React 随后通过同一个解析规则建立实时订阅。只有真实出现第二种布局实现时，才增加新的布局 adapter。
+外观偏好使用一个版本化的 localStorage 记录，只保存颜色、`backgrounds/<uuid>.<ext>` 稳定引用、填充/适应、35%–90% 遮罩和 0–32 px 模糊。`bootstrap.ts` 在主 React 入口前应用已保存或系统解析后的实际主题与颜色；React 随后通过同一个解析规则建立实时订阅，并异步解析背景私有副本。只有资源重新通过大小、类型、完整解码和引用校验后，asset URL 才进入语义化背景变量。
+
+背景选择、复制、恢复与清理由 `background.rs` 的专用 Tauri 命令完成。选择器不把原文件路径返回 React；导入只复制到应用数据目录的 `backgrounds` 子目录。替换、移除和启动整理按当前稳定引用集合删除未引用的受管副本，永不删除原文件或非 UUID 管理文件。asset protocol 只开放 `$APPDATA/backgrounds/**`，CSP 只允许本地 `asset:`/`http://asset.localhost` 图片源；背景内容不会进入聊天或任何供应商 transport。
 
 ## Domain direction
 
@@ -177,7 +189,7 @@ Assistant
 
 - 瞬时视图状态：顶层页面与设置分类由应用组合根管理，局部交互由拥有它的 React 界面模块管理。
 - 聊天运行状态：集中管理流式消息、取消、唯一终态和持久化队列。
-- 外观状态：由主题控制器管理主题模式、实际配色与系统变化订阅。
+- 外观状态：由主题控制器管理主题模式、实际配色、安全派生、背景稳定引用、显示参数与系统变化订阅；原生 adapter 管理私有文件生命周期。
 - 用户设置：通过明确的加载、校验、确定性迁移与保存入口管理；当前模型由单一 ID 标识，父连接按归属关系解析。
 - 供应商差异：只存在于协议 adapter 内。
 - 长期数据：通过 repository seam 进入 Dexie 或后续本地文件存储。
@@ -193,6 +205,7 @@ Assistant
 - OpenAI Responses 继续使用本地历史和 `store: false`，除非单独 Issue 明确改变隐私模型。
 - 不对模糊网络失败自动重试生成请求，避免得到重复回复或重复计费。
 - 自定义请求参数不能覆盖模型、消息、System Instruction、流式模式、最大输出和其他受保护字段。
+- 背景图片不进入消息、模型请求、遥测、日志或 Git；原文件路径不持久化，asset protocol 只暴露应用私有背景目录。
 
 ## Testing strategy
 
@@ -204,6 +217,7 @@ Assistant
 - 三栏设置界面覆盖“浏览连接不会改变当前模型”、右栏随中栏切换、目录候选需显式添加，以及删除当前对象不静默回退。
 - 顶层页面导航、设置分类或主题变化必须保留发送、流式增量、停止生成、草稿与错误状态，以及重启恢复行为。
 - 主题解析、系统变化、持久化与损坏配置回退使用注入式依赖完成确定性测试。
+- 自定义颜色安全派生、背景显示参数、缺失资源回退和引用集合清理通过 `AppearanceController` 接口测试；Rust 测试覆盖 20 MB（20,000,000 字节）、PNG/JPEG/WebP 完整解码、稳定引用、复制不改原文件和受管副本清理。
 - 涉及 Tauri 权限、窗口或本地文件的改动必须完成桌面烟雾测试。
 
 ## Change rules
