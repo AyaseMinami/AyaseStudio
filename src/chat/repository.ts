@@ -13,6 +13,7 @@ export type StoredMessageStatus =
 
 export interface StoredChatMessage extends ChatMessage {
   id: string;
+  thinkingSummary?: string;
   status: StoredMessageStatus;
   attachments?: import("./attachments").SentAttachment[];
 }

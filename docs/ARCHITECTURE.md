@@ -123,6 +123,8 @@ AyaseStudio/
 
 ### ChatTransport
 
+Gemini 思考首版由 `geminiThinking.ts` 集中维护精确型号能力、选项、预算校验和请求字段映射。助手配置中的可选 `geminiThinking` 保持旧记录兼容；输入区快捷修改持久化到当前助手。发送时继续冻结整个配置。`thinking-delta` 与 `text-delta` 独立，`StoredChatMessage.thinkingSummary` 仅用于本地展示，不进入 `ChatMessage` 请求历史；复用现有节流保存与中止恢复。`ThinkingSummary` 用 SafeMarkdown 渲染供应商可读摘要，不展示或存储 thoughtSignature。折叠状态属于组件临时状态，用户手动展开后不随正文增量强制收起。
+
 界面只提交中立的聊天请求并消费中立事件。每个协议适配器独占以下知识：
 
 - 端点和请求头。

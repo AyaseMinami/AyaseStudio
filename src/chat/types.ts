@@ -44,6 +44,7 @@ export interface ChatFailure {
 
 export type ChatEvent =
   | { type: "text-delta"; text: string }
+  | { type: "thinking-delta"; text: string }
   | { type: "completed"; finishReason?: string; usage?: TokenUsage }
   | { type: "failed"; error: ChatFailure }
   | { type: "aborted" };

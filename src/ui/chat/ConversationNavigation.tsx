@@ -6,6 +6,8 @@ import { validateRequestConfig } from "../../chat/requestMapping";
 import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settings";
 import { DEFAULT_ASSISTANT_ID, type AssistantInput, type AssistantPreset, type WorkspaceCommand } from "../../chat/workspace";
 import { SessionConfigPanel } from "./SessionConfigPanel";
+import { ThinkingControl } from "./ThinkingControl";
+import { defaultGeminiThinking, isGeminiThinkingSettings, validateGeminiThinking } from "../../chat/geminiThinking";
 
 function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -41,6 +43,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 860);
   const [conversationPanelOpen, setConversationPanelOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>();
+  const [thinkingNotice, setThinkingNotice] = useState("");
   const { snapshot, conversation, busy, execute } = workspace;
   const selectedAssistant = snapshot?.assistants.find((item) => item.id === snapshot.selection.activeAssistantId);
   const conversations = snapshot?.conversations.filter((item) => item.assistantId === selectedAssistant?.id) ?? [];
@@ -49,6 +52,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
     if (await execute(command)) setDialog(undefined);
   }
   function editAssistant(existing?: AssistantPreset) {
+    setThinkingNotice("");
     setDialog({ type: "assistant", existing, input: existing ? structuredClone(existing) : {
       name: "新助手", icon: "", defaultModelId: selectedAssistant?.defaultModelId ?? null, defaultConfig: defaultSessionConfig(),
     } });
@@ -156,11 +160,30 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
           {["", "💬", "📝", "💻", "🌐", "📚", "🎨"].map((icon) => <option key={icon} value={icon}>{icon || "无图标"}</option>)}
         </select>
         <label htmlFor="assistant-model">助手模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
-          onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, defaultModelId: event.target.value || null } })}>
+          onChange={(event) => {
+            const defaultModelId = event.target.value || null;
+            const target = getActiveTarget({ ...settings, activeModelId: defaultModelId });
+            let config = dialog.input.defaultConfig;
+            const saved = config.geminiThinking;
+            setThinkingNotice("");
+            if (target?.connection.protocol === "gemini-native" && isGeminiThinkingSettings(saved) &&
+                validateGeminiThinking(target.model.modelId, saved)) {
+              config = { ...config, geminiThinking: { ...defaultGeminiThinking, includeSummary: saved.includeSummary } };
+              setThinkingNotice("原思考选项不适用于此模型，已恢复默认；保存助手后生效。");
+            }
+            setDialog({ ...dialog, input: { ...dialog.input, defaultModelId, defaultConfig: config } });
+          }}>
           <option value="">未选择模型</option>
           {dialog.input.defaultModelId && !editorTarget && <option value={dialog.input.defaultModelId}>原模型已失效，请重新选择</option>}
           {settings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
         </select>
+        {editorTarget?.connection.protocol === "gemini-native" && <ThinkingControl
+          key={`${editorTarget.model.modelId}-${dialog.input.defaultConfig.geminiThinking?.budget}`}
+          model={editorTarget.model.modelId} value={dialog.input.defaultConfig.geminiThinking}
+          disabled={busy} notice={thinkingNotice} hint="保存助手后生效"
+          onChange={(geminiThinking) => setDialog({ ...dialog, input: { ...dialog.input,
+            defaultConfig: { ...dialog.input.defaultConfig, geminiThinking } } })} />}
+        {editorErrors.thinking && <p className="session-config-error" role="alert">{editorErrors.thinking}</p>}
       </section>
     </SessionConfigPanel>}
     {dialog && dialog.type !== "assistant" && <ManagementDialog title={dialog.type === "rename" ? "重命名对话" : "删除确认"} onClose={close}>

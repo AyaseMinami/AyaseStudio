@@ -47,11 +47,12 @@ describe("SessionStore", () => {
   it("recovers an unfinished message without adding conversation config", async () => {
     const repo = createChatRepository(`AyaseSessionTest-${crypto.randomUUID()}`);
     await repo.save({ id: "old", updatedAt: 1, messages: [
-      { id: "a", role: "assistant", content: "partial", status: "streaming" },
+      { id: "a", role: "assistant", content: "partial", thinkingSummary: "retained thought", status: "streaming" },
     ] });
     const store = new SessionStore(repo, "old");
     const state = await store.hydrate();
     expect(state.messages[0].status).toBe("aborted");
+    expect(state.messages[0].thinkingSummary).toBe("retained thought");
     expect((await repo.load("old"))?.generationConfig).toBeUndefined();
   });
 });

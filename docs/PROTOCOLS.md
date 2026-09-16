@@ -52,6 +52,7 @@ The UI previews the resolved endpoint but stores the configured value. Gemini ha
 ## Neutral events
 
 - `text-delta`: append text to the active assistant message.
+- `thinking-delta`: append provider-readable thought summary to a separate local display field (Gemini Native first slice); never append to answer text or input history.
 - `completed`: one successful terminal event, optionally carrying finish reason and token usage.
 - `failed`: one terminal event with normalized kind, message, HTTP status, and retryability.
 - `aborted`: one terminal event when the caller cancels.
@@ -67,7 +68,7 @@ Adapters ignore unknown non-terminal provider events. They must not emit events 
 | Gemini native | `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | SSE data records | `candidates[].content.parts[].text` |
 | Anthropic native | `POST /v1/messages` | named SSE events | `content_block_delta` with `text_delta` |
 
-With stream disabled, OpenAI Chat and Responses use the same POST paths with `stream: false`; Gemini uses `POST /v1beta/models/{model}:generateContent` (without `alt=sse`); Anthropic uses `POST /v1/messages` with `stream: false`. The shared URL resolver takes the request mode, so the generation endpoint preview and actual Gemini URL agree. Non-streaming adapters parse the complete JSON before yielding one `text-delta` followed by exactly one `completed`; cancellation or error yields exactly one `aborted` or `failed`.
+With stream disabled, OpenAI Chat and Responses use the same POST paths with `stream: false`; Gemini uses `POST /v1beta/models/{model}:generateContent` (without `alt=sse`); Anthropic uses `POST /v1/messages` with `stream: false`. The shared URL resolver takes the request mode, so the generation endpoint preview and actual Gemini URL agree. Non-streaming adapters parse the complete JSON before yielding text followed by exactly one `completed`; Gemini routes each part to `text-delta` or `thinking-delta`, while the other adapters yield one `text-delta`. Cancellation or error yields exactly one `aborted` or `failed`.
 
 | Config | OpenAI Chat | OpenAI Responses | Gemini Native | Anthropic Native |
 | --- | --- | --- | --- | --- |
@@ -84,6 +85,12 @@ Known OpenAI reasoning families (`o1`, `o3`, `o4-mini`, GPT-5/5.1/5.2 and GPT-6 
 Official references checked for Issue #3: [OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat/create), [OpenAI Responses](https://platform.openai.com/docs/api-reference/responses/create), [OpenAI reasoning-model guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2), [Gemini GenerateContent and GenerationConfig](https://ai.google.dev/api/generate-content), [Gemini 3.x guidance](https://ai.google.dev/gemini-api/docs/generate-content/whats-new-gemini-3.5), [Gemini model metadata and Top-K support](https://ai.google.dev/api/models), [Anthropic Messages](https://platform.claude.com/docs/en/api/messages/create), and [Anthropic parameter deprecations](https://platform.claude.com/docs/en/about-claude/model-deprecations). Relay compatibility is observed separately; it does not define official defaults or model capabilities.
 
 ## Relay observations
+
+### Gemini thinking first slice
+
+Official GenerateContent [thinking table and summary contract](https://ai.google.dev/gemini-api/docs/generate-content/thinking) checked 2026-09-16. `geminiThinking.ts` uses exact documented text-model aliases; unknown, relay-renamed, image and future models receive no thinking fields. Recognized Gemini 3 models use only their listed `thinkingLevel` values (3.8/3.7 Flash exclude `minimal`); 2.5 Pro/Flash/Flash-Lite use validated `thinkingBudget`, with `-1` for dynamic and `0` only where disabling is supported. Flash's zero budget is presented separately as Off. Unsupported choices and invalid budgets fail at the final request boundary. Model changes restore incompatible saved selections to default with a visible notice.
+
+Default effort omits level/budget. The independent summary preference defaults on for recognized models and adds `generationConfig.thinkingConfig.includeThoughts: true`; turning it off with default effort omits the whole thinkingConfig. Both streaming and non-streaming decoders route only parts with `thought === true` to summaries; all other text remains answer text. When summary display is off, returned thought parts are discarded rather than leaked into the answer. Opaque signatures are ignored. No model-internal duration is inferred. Summary request support on a relay is not proven by official documentation and there is no retry/fallback. Other protocols' thinking request/decoding paths are unchanged.
 
 The initial relay returned HTTP 200 and `text/event-stream` for all four streaming routes. OpenAI Responses also emitted non-standard `codex.rate_limits` and `codex.response.metadata` events. These are treated as optional unknown events; Ayase Studio depends only on standard terminal and text events.
 

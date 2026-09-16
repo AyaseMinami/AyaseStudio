@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Paperclip, Send, Square, X } from "lucide-react";
 import type { DraftAttachment } from "../../chat/attachments";
 
 export interface ComposerProps {
+  thinkingControl?: ReactNode;
   isGeneratingElsewhere?: boolean;
   draft: string;
   draftAttachments?: DraftAttachment[];
@@ -30,6 +31,7 @@ function DraftImageThumbnail({ item }: { item: DraftAttachment }) {
 }
 
 export function Composer({
+  thinkingControl,
   isGeneratingElsewhere,
   draft,
   draftAttachments = [],
@@ -92,11 +94,14 @@ export function Composer({
                 onClick={() => onRemoveAttachment?.(item.id)}><X size={14} /></button>
             </span>)}
           </div>}
-          <div className="flex justify-between px-1 pb-1">
-            <button className="attachment-add" type="button" aria-label="添加附件"
+          <div className="composer-toolbar">
+            <div className="composer-tools" role="group" aria-label="聊天功能">
+            <button className="composer-tool-button" type="button" aria-label="添加附件"
               title="添加附件（选择文件、拖入对话或粘贴图片；点击发送后才请求）"
               disabled={!isHydrated || (isGenerating && !isGeneratingElsewhere)}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
+            {thinkingControl}
+            </div>
             {isGenerating ? (
               <button
                 className="send-button"

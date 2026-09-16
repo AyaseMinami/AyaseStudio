@@ -13,6 +13,7 @@ export type NumericField =
 
 export interface SessionConfig {
   version: 1;
+  geminiThinking?: import("./geminiThinking").GeminiThinkingSettings;
   systemInstruction: string;
   temperature: NumericSetting;
   topP: NumericSetting;
@@ -25,7 +26,7 @@ export interface SessionConfig {
   invalidStoredConfig?: string;
 }
 
-export type ConfigErrors = Partial<Record<NumericField | "systemInstruction" | "stream" | "customJson" | "dualSampling" | "stored", string>>;
+export type ConfigErrors = Partial<Record<NumericField | "systemInstruction" | "stream" | "customJson" | "dualSampling" | "stored" | "thinking", string>>;
 
 const protocols: ChatProtocol[] = [
   "openai-chat",

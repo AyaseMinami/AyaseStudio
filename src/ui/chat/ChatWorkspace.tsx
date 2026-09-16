@@ -7,8 +7,13 @@ import type { StoredChatMessage } from "../../chat/repository";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
+import { ThinkingToolbarControl } from "./ThinkingControl";
+import type { GeminiThinkingSettings } from "../../chat/geminiThinking";
 
 export interface ChatWorkspaceProps {
+  geminiThinking?: GeminiThinkingSettings;
+  thinkingNotice?: string;
+  onThinkingChange?(value: GeminiThinkingSettings): void;
   title: string;
   isGeneratingElsewhere?: boolean;
   draft: string;
@@ -32,6 +37,9 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  geminiThinking,
+  thinkingNotice,
+  onThinkingChange,
   title,
   isGeneratingElsewhere,
   draft,
@@ -95,6 +103,9 @@ export function ChatWorkspace({
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
           attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
+        thinkingControl={protocol === "gemini-native" && onThinkingChange ? <ThinkingToolbarControl
+          key={modelId} model={modelId ?? ""} value={geminiThinking}
+          disabled={!isHydrated || isGenerating} notice={thinkingNotice} onChange={onThinkingChange} /> : undefined}
         isGeneratingElsewhere={isGeneratingElsewhere}
         draft={draft}
         draftAttachments={draftAttachments}

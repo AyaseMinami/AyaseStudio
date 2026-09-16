@@ -31,7 +31,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 - Provider-managed conversation state. OpenAI Responses uses local history with `store: false`.
 - Rendering raw HTML from model output. `rehype-raw` is prohibited.
 - Conversation search, folders, pinning, and automatic title generation.
-- A later thinking-intensity control; its available options and request fields must follow each protocol's official contract rather than a shared numeric field.
+- Thinking controls for protocols other than Gemini Native (later Issue #10 slices).
 
 ## Module seams
 
@@ -114,6 +114,10 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 按用户 2026-09-15 确认，原 #3/#4 的独立会话快照规则改为助手统一管理。配置仅在助手编辑中保存，对话无覆盖或重新应用入口。四协议请求映射、非流式、上下文预算与安全校验保持原合同。自动数值省略可选请求字段；Anthropic 必填 `max_tokens` 自动模式使用标明为 Ayase 回退的 4096。流式默认开启是 Ayase 产品推荐。未知模型的能力不从模型 ID 或目录身份信息猜测。自定义 JSON 按协议隔离，并在最终请求构造处安全校验。旧会话配置本地备份后退出运行配置，桌面交互与确定性测试共同组成验收证据。远端 Issue 尚未同步此调整。
 
 ## Acceptance gates
+
+### Issue #10 Gemini first slice (2026-09-16)
+
+本轮按用户要求将思考摘要展示纳入首版，仅实现 Gemini Native。输入区提供按明确型号能力变化的强度/预算菜单及独立的摘要开关，沿用当前助手共享配置（不同于原 Issue 的按对话保存）。Gemini 3 使用型号声明的档位，2.5 使用预算；未知型号省略思考参数。摘要独立于正文保存和折叠展示，不作为聊天历史回传。没有收到摘要时不显示空框，不推断模型思考用时。其他协议和中转站专属兼容规则留待后续；远端 Issue 未修改。
 
 Issue #4 adds create/switch/rename/delete, assistant ordering/shared configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. One generation may run across navigation or assistant edits; its request settings remain frozen and all deltas, errors and saves remain bound to its original conversation. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
 

@@ -41,6 +41,9 @@ function App() {
           isGenerating={chat.isGenerating}
           messages={chat.messages}
           modelId={chat.activeModel?.modelId}
+          geminiThinking={chat.sessionConfig.geminiThinking}
+          thinkingNotice={chat.thinkingNotice}
+          onThinkingChange={(value) => void chat.setGeminiThinking(value)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={
             chat.activeProvider && chat.activeConnection && chat.activeModel

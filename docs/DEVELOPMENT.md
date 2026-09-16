@@ -155,6 +155,8 @@ npm.cmd run tauri dev
 
 ## Conversation configuration and deterministic checks
 
+Gemini 思考首版的针对性检查可运行 `npm.cmd test -- src/chat/geminiThinking.test.ts src/ui/chat/Thinking.test.tsx src/chat/transport.test.ts src/chat/requestMapping.test.ts src/chat/sessionStore.test.ts src/Workspace.test.tsx`，再运行前端构建和 Rust check。输入区底部附件与思考图标同排，点击灯泡向上展开强度列表，摘要勾选位于弹层内的独立分区；Escape 关闭并将焦点还给灯泡，点击外部或 Tab 离开时收起。快捷菜单保存当前助手配置；自定义预算需要点击“应用预算”，助手编辑器内则仍需“保存助手”。验收应检查受支持档位、切换型号回默认的提示、独立摘要开关、流式摘要折叠、停止后保留内容及重启恢复。模拟 transport 的验收不代表真实中转站兼容性已验证。
+
 系统指令、自动/自定义数值、流式开关和四协议 JSON 统一保存在助手配置中，编辑后必须点击“保存助手”；“清空”只清除当前对话消息。“恢复默认配置”修改助手编辑草稿，保存后才影响后续请求。验证多对话共享同一配置、助手之间隔离、发送前及请求端校验、非流式成功/失败/取消、完整轮次裁剪和生成时配置冻结；不要为这些测试消耗真实供应商 Token。
 
 本地输入预算是 Token **估算**，不是供应商公布的模型上下文上限。已知 OpenAI 模型按对应本地 BPE 分词，未知或非 OpenAI 模型按 UTF-8 字节保守估算；消息封装开销仍可能与供应商计费值不同。真实中转站若出现传输差异，应先核对官方协议，再把中转站观测单独记录。桌面烟雾测试需要实际操作配置面板、非流式停止、协议切换与恢复，单纯启动 `tauri dev` 不构成交互验收。

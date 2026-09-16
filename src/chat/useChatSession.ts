@@ -19,6 +19,7 @@ import {
   type StoredMessageStatus,
 } from "./repository";
 import { defaultSessionConfig } from "./sessionConfig";
+import { defaultGeminiThinking, isGeminiThinkingSettings, validateGeminiThinking, type GeminiThinkingSettings } from "./geminiThinking";
 import { useConversationWorkspace } from "./useConversationWorkspace";
 import { validateRequestConfig } from "./requestMapping";
 import { buildProtocolBody } from "./requestMapping";
@@ -161,6 +162,32 @@ export function useChatSession({
       activeConnection ? getProtocolOption(activeConnection.protocol) : undefined,
     [activeConnection],
   );
+
+  const [thinkingNotice, setThinkingNotice] = useState("");
+  const thinkingResetAttempt = useRef("");
+  async function setGeminiThinking(settings: GeminiThinkingSettings): Promise<boolean> {
+    if (!workspace.assistant || !workspace.canSend()) return false;
+    const input = { ...workspace.assistant, defaultConfig: { ...sessionConfig, geminiThinking: settings } };
+    return workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input });
+  }
+  useEffect(() => {
+    setThinkingNotice("");
+    thinkingResetAttempt.current = "";
+  }, [workspace.assistant?.id, activeConnection?.protocol, activeModel?.modelId]);
+  useEffect(() => {
+    const saved = sessionConfig.geminiThinking;
+    if (activeConnection?.protocol !== "gemini-native" || !isGeminiThinkingSettings(saved) ||
+        saved.choice === "default" || !validateGeminiThinking(activeModel?.modelId ?? "", saved) || !workspace.isReady) return;
+    const key = JSON.stringify([workspace.assistant?.id, activeModel?.modelId, saved]);
+    if (thinkingResetAttempt.current === key) return;
+    thinkingResetAttempt.current = key;
+    setThinkingNotice("当前模型不支持原思考选项，正在恢复供应商默认。");
+    void setGeminiThinking({ ...defaultGeminiThinking, includeSummary: saved.includeSummary }).then((success) => {
+      if (thinkingResetAttempt.current === key) setThinkingNotice(success
+        ? "当前模型不支持原思考选项，已恢复供应商默认；摘要偏好保留。"
+        : "思考选项恢复失败，请重新选择默认后重试。");
+    });
+  }, [sessionConfig, activeConnection?.protocol, activeModel?.modelId, workspace.assistant?.id, workspace.isReady]);
 
   useEffect(() => {
     setConfigErrors(validateRequestConfig(
@@ -813,8 +840,10 @@ export function useChatSession({
         config: frozenConfig,
         signal: controller.signal,
       })) {
-        if (event.type === "text-delta") {
-          assistantText += event.text;
+        if (event.type === "text-delta" || event.type === "thinking-delta") {
+          if (event.type === "text-delta") assistantText += event.text;
+          else workingMessages = workingMessages.map((message) => message.id === assistantId
+            ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
           workingMessages = replaceAssistant(
             workingMessages,
             assistantId,
@@ -968,6 +997,8 @@ export function useChatSession({
     sendMessage,
     setDraft,
     sessionConfig,
+    setGeminiThinking,
+    thinkingNotice,
     setActiveModel,
     stopGeneration,
     updateConnection: updateConnectionProfile,

@@ -1,5 +1,42 @@
 @import "tailwindcss";
 
+.thinking-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 4px 8px 10px; font-size: 12px; }
+.thinking-select, .thinking-summary-toggle, .thinking-budget { display: inline-flex; align-items: center; gap: 6px; }
+.thinking-select select, .thinking-budget input { color: rgb(var(--color-text)); background: rgb(var(--color-panel)); border: 1px solid rgb(var(--color-border)); border-radius: 7px; padding: 5px 7px; max-width: 210px; }
+.thinking-budget input { width: 100px; }
+.thinking-hint { color: rgb(var(--color-muted)); }
+.thinking-notice { width: 100%; color: rgb(var(--color-warning-text)); }
+.composer-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 4px; }
+.composer-tools { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.composer-tool-button { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 7px; color: rgb(var(--color-text-soft)); cursor: pointer; }
+.composer-tool-button:hover:not(:disabled), .composer-tool-button[aria-expanded="true"] { background: rgb(var(--color-accent) / 0.1); }
+.composer-tool-button.is-active { color: rgb(var(--color-accent)); }
+.composer-tool-button:disabled { opacity: 0.45; cursor: default; }
+.composer-tool-button:focus-visible { outline: 2px solid rgb(var(--color-accent)); outline-offset: 2px; }
+.thinking-toolbar-control { display: flex; flex-shrink: 0; }
+.thinking-popover { position: absolute; z-index: 40; bottom: calc(100% + 10px); left: 0; width: min(290px, 100%); max-height: min(420px, 65vh); overflow-y: auto; border: 1px solid rgb(var(--color-border)); border-radius: 12px; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); box-shadow: 0 8px 30px rgb(var(--color-shadow) / 0.22); padding: 8px; }
+.thinking-popover .thinking-control { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.thinking-options { border: 0; padding: 0; margin: 0; min-width: 0; }
+.thinking-options legend { padding: 6px 8px; font-size: 12px; color: rgb(var(--color-muted)); }
+.thinking-option { position: relative; display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.thinking-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.thinking-option span { flex: 1; }
+.thinking-option svg { visibility: hidden; }
+.thinking-option:has(input:checked) { color: rgb(var(--color-accent)); background: rgb(var(--color-accent) / 0.1); }
+.thinking-option:has(input:checked) svg { visibility: visible; }
+.thinking-option:hover { background: rgb(var(--color-accent) / 0.08); }
+.thinking-option:has(input:focus-visible) { outline: 2px solid rgb(var(--color-accent)); outline-offset: -2px; }
+.thinking-options:disabled { opacity: 0.5; }
+.thinking-popover .thinking-summary-toggle { border-top: 1px solid rgb(var(--color-border)); margin-top: 6px; padding: 12px 8px; font-size: 13px; }
+.thinking-popover .thinking-budget { flex-wrap: wrap; padding: 8px; }
+.thinking-popover .thinking-hint, .thinking-popover .thinking-notice { padding: 6px 8px; font-size: 11px; }
+.thinking-notice-dot { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: rgb(var(--color-warning-text)); }
+.thinking-summary { border: 1px solid rgb(var(--color-border)); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.thinking-summary-heading { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 12px; color: rgb(var(--color-muted)); font-size: 13px; cursor: pointer; }
+.thinking-summary-heading span { flex: 1; }
+.thinking-chevron-open { transform: rotate(90deg); }
+.thinking-summary-content { padding: 0 14px 12px; color: rgb(var(--color-muted)); font-size: 13px; max-height: 360px; overflow-y: auto; overflow-wrap: anywhere; }
+
 :root {
   --color-canvas: 12 10 9;
   --color-panel: 28 25 23;

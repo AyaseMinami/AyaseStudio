@@ -5,6 +5,7 @@ import type { StoredChatMessage } from "../../chat/repository";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 import type { RequestAttachment, SentAttachment } from "../../chat/attachments";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
+import { ThinkingSummary } from "./ThinkingSummary";
 
 export function MessageList({ messages, onReadAttachment }: { messages: StoredChatMessage[];
   onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment> }) {
@@ -51,6 +52,7 @@ export function MessageList({ messages, onReadAttachment }: { messages: StoredCh
                       : "assistant-message markdown"
                   }
                 >
+                  {message.role === "assistant" && <ThinkingSummary message={message} />}
                   {message.role === "assistant" ? (
                     message.content ? (
                       <SafeMarkdown>{message.content}</SafeMarkdown>

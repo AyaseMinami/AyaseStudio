@@ -97,6 +97,62 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector(".conversation-cascade-pane")).not.toBeNull();
   });
 
+  it("saves Gemini controls, resets incompatible model choices, and restores stopped summaries", async () => {
+    await act(async () => root.unmount());
+    saveConnectionSettings({ version: 3, activeModelId: "model-a", providers: [{ id: "p", name: "Synthetic", connections: [{
+      id: "c", name: "Gemini", protocol: "gemini-native", baseUrl: "https://test.example", apiKey: "synthetic-only",
+      models: [{ id: "model-a", modelId: "gemini-3-flash-preview" }, { id: "model-b", modelId: "gemini-3.8-flash" }],
+    }] }] });
+    root = createRoot(container); await act(async () => root.render(<App />));
+    await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
+    async function thinkingReady() {
+      await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
+      if (!container.querySelector(".thinking-popover")) await click("思考设置");
+      await wait(() => container.querySelector<HTMLFieldSetElement>(".thinking-options")?.disabled === false);
+    }
+    async function choose(selector: string, value: string) {
+      await act(async () => {
+        const field = container.querySelector<HTMLSelectElement>(selector)!;
+        expect(field).toBeTruthy(); field.value = value; field.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+    await thinkingReady();
+    await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="minimal"]')!.click());
+    await thinkingReady();
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).assistants.find((item) => item.id === "default")?.defaultConfig.geminiThinking?.choice).toBe("minimal");
+    await click("编辑助手 默认助手");
+    await choose("#assistant-model", "model-b");
+    expect(container.textContent).toContain("原思考选项不适用于此模型");
+    await click("保存助手");
+    await thinkingReady();
+    expect(container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value).toBe("default");
+    await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="high"]')!.click());
+    await thinkingReady();
+    let captured: ChatRequest | undefined;
+    const transport: ChatTransport = { async *stream(request) {
+      captured = request;
+      yield { type: "thinking-delta", text: "可恢复的摘要" };
+      yield { type: "text-delta", text: "部分回答" };
+      await new Promise<void>((resolve) => request.signal!.addEventListener("abort", () => resolve(), { once: true }));
+      yield { type: "aborted" };
+    } };
+    runtime.createRuntimeChatTransport.mockResolvedValue(transport);
+    await fill(".composer-input", "测试思考"); await click("发送");
+    await wait(() => !!container.querySelector(".thinking-summary"));
+    expect(captured?.config?.geminiThinking?.choice).toBe("high");
+    await click("停止生成");
+    await wait(() => !container.querySelector('[aria-label="停止生成"]'));
+    const savedMessages = (await repo.load("current"))!.messages;
+    const saved = savedMessages[savedMessages.length - 1];
+    expect(saved).toMatchObject({ thinkingSummary: "可恢复的摘要", content: "部分回答", status: "aborted" });
+    await act(async () => root.unmount()); root = createRoot(container);
+    await act(async () => root.render(<App />));
+    await wait(() => !!container.querySelector(".thinking-summary"));
+    expect(container.querySelector('button[aria-label="思考设置"]')?.getAttribute("title")).toContain("思考：高");
+    await act(async () => container.querySelector<HTMLButtonElement>(".thinking-summary-heading")!.click());
+    expect(container.querySelector(".thinking-summary-content")?.textContent).toContain("可恢复的摘要");
+  });
+
   it("keeps both columns on narrow screens until explicitly collapsed", async () => {
     await act(async () => root.unmount());
     vi.stubGlobal("innerWidth", 720);

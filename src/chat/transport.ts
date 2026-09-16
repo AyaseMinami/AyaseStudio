@@ -307,7 +307,7 @@ interface GeminiChunk {
   error?: { code?: number; message?: string; status?: string };
   promptFeedback?: { blockReason?: string; blockReasonMessage?: string };
   candidates?: Array<{
-    content?: { parts?: Array<{ text?: string }> };
+    content?: { parts?: Array<{ text?: string; thought?: boolean }> };
     finishReason?: string;
   }>;
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
@@ -361,8 +361,10 @@ class GeminiNativeTransport implements ChatTransport {
           yield { type: "failed", error: { kind: "protocol", message: "Gemini response is malformed", retryable: false } };
           return;
         }
-        const text = candidate.content.parts.map((part) => part.text ?? "").join("");
-        if (text) yield { type: "text-delta", text };
+        for (const part of candidate.content.parts) {
+          if (part.thought === true && request.config?.geminiThinking?.includeSummary === false) continue;
+          if (part.text) yield { type: part.thought === true ? "thinking-delta" : "text-delta", text: part.text };
+        }
         yield {
           type: "completed",
           finishReason: candidate.finishReason,
@@ -391,8 +393,9 @@ class GeminiNativeTransport implements ChatTransport {
         if (blocked) { yield { type: "failed", error: blocked }; return; }
         for (const candidate of chunk.candidates ?? []) {
           for (const part of candidate.content?.parts ?? []) {
+            if (part.thought === true && request.config?.geminiThinking?.includeSummary === false) continue;
             if (part.text) {
-              yield { type: "text-delta", text: part.text };
+              yield { type: part.thought === true ? "thinking-delta" : "text-delta", text: part.text };
             }
           }
           if (candidate.finishReason) {

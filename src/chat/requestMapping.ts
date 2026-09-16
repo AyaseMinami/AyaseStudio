@@ -7,6 +7,7 @@ import {
   type SessionConfig,
 } from "./sessionConfig";
 import type { ChatProtocol, ChatRequest } from "./types";
+import { geminiThinkingBody, validateGeminiThinking } from "./geminiThinking";
 import { attachmentCapabilityFailure, safeTextAttachment, type RequestAttachment } from "./attachments";
 
 export class RequestConfigError extends Error {
@@ -168,6 +169,10 @@ export function parseCustomBody(protocol: ChatProtocol, json: string): Record<st
 
 export function validateRequestConfig(config: SessionConfig, protocol: ChatProtocol, model: string): ConfigErrors {
   const errors = validateSessionConfig(config, protocol);
+  if (protocol === "gemini-native") {
+    const thinkingError = validateGeminiThinking(model, config.geminiThinking);
+    if (thinkingError) errors.thinking = thinkingError;
+  }
   if (protocol === "anthropic-native" && config.temperature?.mode === "custom" &&
       !errors.temperature && numericValue(config.temperature)! > 1) {
     errors.temperature = "Anthropic Temperature 范围为 0–1。";
@@ -295,8 +300,10 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   }
   if (protocol === "gemini-native") {
     const customGeneration = isRecord(custom.generationConfig) ? custom.generationConfig : {};
+    const thinkingConfig = geminiThinkingBody(request.model, config.geminiThinking);
     const generationConfig = {
       ...customGeneration,
+      ...(thinkingConfig ? { thinkingConfig } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(topP !== undefined ? { topP } : {}),
       ...(topK !== undefined ? { topK } : {}),
