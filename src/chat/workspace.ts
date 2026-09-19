@@ -17,6 +17,8 @@ export interface Conversation {
   title: string;
   createdAt: number;
   updatedAt: number;
+  // Historical record only. Requests continue to use the owning assistant.
+  creationConfig?: { modelId: string | null; config: SessionConfig };
 }
 
 export interface WorkspaceSelection {
@@ -41,6 +43,10 @@ export type WorkspaceCommand =
   | { type: "delete-assistant"; id: string; mode: "move" | "delete" }
   | { type: "create-conversation"; id: string; assistantId: string }
   | { type: "rename-conversation"; id: string; title: string }
+  | { type: "edit-message"; conversationId: string; messageId: string; content: string }
+  | { type: "delete-message"; conversationId: string; messageId: string }
+  | { type: "fork-conversation"; id: string; conversationId: string; messageId: string;
+      creationConfig: NonNullable<Conversation["creationConfig"]> }
   | { type: "delete-conversation"; id: string }
   | { type: "select"; assistantId: string; conversationId?: string | null }
   | { type: "select-model"; assistantId: string; modelId: string | null }

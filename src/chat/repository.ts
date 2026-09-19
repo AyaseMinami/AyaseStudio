@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
+import { copyBranchMessages, withReplyLinks } from "./messageOperations";
 
 import type { ChatMessage } from "./types";
 import { defaultSessionConfig, restoreSessionConfig, type SessionConfig } from "./sessionConfig";
@@ -13,6 +14,8 @@ export type StoredMessageStatus =
 
 export interface StoredChatMessage extends ChatMessage {
   id: string;
+  replyToId?: string | null;
+  editedAt?: number;
   thinkingSummary?: string;
   status: StoredMessageStatus;
   attachments?: import("./attachments").SentAttachment[];
@@ -245,6 +248,39 @@ class DexieChatRepository implements WorkspaceRepository {
           await requireConversation(action.id);
           if (!action.title.trim()) throw new Error("请输入对话标题。");
           await db.conversations.update(action.id, { title: action.title.trim() });
+          break;
+        }
+        case "edit-message":
+        case "delete-message":
+        case "fork-conversation": {
+          const source = await requireConversation(action.conversationId);
+          const chat = await db.chats.get(source.id);
+          const messages = withReplyLinks(chat?.messages ?? []);
+          const index = messages.findIndex((message) => message.id === action.messageId);
+          if (index < 0) throw new Error("消息不存在。");
+          const now = Date.now();
+          if (action.type === "fork-conversation") {
+            const siblings = await db.conversations.where("assistantId").equals(source.assistantId).toArray();
+            const base = source.title.replace(/ \(\d+\)$/, "");
+            let suffix = 1;
+            while (siblings.some((item) => item.title === `${base} (${suffix})`)) suffix++;
+            await db.conversations.add({ id: action.id, assistantId: source.assistantId,
+              title: `${base} (${suffix})`, createdAt: now, updatedAt: now,
+              creationConfig: action.creationConfig });
+            await db.chats.add({ id: action.id, updatedAt: now,
+              messages: copyBranchMessages(messages.slice(0, index + 1)) });
+            selection.activeAssistantId = source.assistantId;
+            selection.lastSelected[source.assistantId] = action.id;
+          } else {
+            let next: StoredChatMessage[];
+            if (action.type === "edit-message") {
+              const message = messages[index];
+              if (!action.content.trim() && !message.attachments?.length) throw new Error("消息正文不能为空。");
+              next = [...messages.slice(0, index), { ...message, content: action.content, editedAt: now }];
+            } else next = messages.filter((message) => message.id !== action.messageId);
+            await db.chats.put({ id: source.id, updatedAt: now, messages: next });
+            await db.conversations.update(source.id, { updatedAt: now });
+          }
           break;
         }
         case "delete-conversation": {

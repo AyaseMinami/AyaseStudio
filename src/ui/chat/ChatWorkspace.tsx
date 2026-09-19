@@ -6,7 +6,7 @@ import type { ChatProtocol } from "../../chat/types";
 import type { StoredChatMessage } from "../../chat/repository";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
-import { MessageList } from "./MessageList";
+import { MessageList, type MessageActions } from "./MessageList";
 import { ThinkingToolbarControl } from "./ThinkingControl";
 import type { ThinkingSettings } from "../../chat/thinking";
 
@@ -23,6 +23,9 @@ export interface ChatWorkspaceProps {
   isHydrated: boolean;
   isGenerating: boolean;
   messages: StoredChatMessage[];
+  messageActions?: MessageActions;
+  messageActionsDisabled?: boolean;
+  messageActionError?: string;
   protocolLabel: string;
   modelId?: string;
   protocol?: ChatProtocol;
@@ -48,6 +51,9 @@ export function ChatWorkspace({
   isHydrated,
   isGenerating,
   messages,
+  messageActions,
+  messageActionsDisabled,
+  messageActionError,
   protocolLabel,
   modelId,
   protocol,
@@ -94,7 +100,8 @@ export function ChatWorkspace({
           {contextPlan.inputTokens} Token（估算，{contextPlan.countingLabel}）。原始记录未修改。
         </div>
       )}
-      <MessageList messages={messages} onReadAttachment={onReadAttachment} />
+      <MessageList messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
+        actionsDisabled={messageActionsDisabled} actionError={messageActionError} />
       {draftAttachments && (attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
         attachmentCapabilityNotice(modelId ?? "", draftAttachments)) &&
         <p className="attachment-capability-notice" role="status">{

@@ -96,13 +96,15 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
       try {
         const current = snapshotRef.current!;
         const running = generatingId.current;
+        const messageAction = action.type === "edit-message" || action.type === "delete-message" || action.type === "fork-conversation";
         if (running && (
+          (messageAction && action.conversationId === running) ||
           (action.type === "delete-conversation" && action.id === running) ||
           (action.type === "delete-assistant" && current.conversations.some((item) => item.id === running && item.assistantId === action.id))
         )) throw new Error("请先停止该对话的生成并等待保存完成，再执行此操作。");
         const affected = action.type === "delete-assistant"
           ? current.conversations.filter((item) => item.assistantId === action.id).map((item) => item.id)
-          : action.type === "delete-conversation" ? [action.id] : [];
+          : action.type === "delete-conversation" ? [action.id] : messageAction ? [action.conversationId] : [];
         await Promise.all(affected.map((id) => stores.current.get(id)?.flush()));
         const updated = await repository.execute(action);
         success = true;
@@ -112,8 +114,18 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
         for (const id of stores.current.keys()) {
           if (!remaining.has(id)) { stores.current.delete(id); views.current.delete(id); }
         }
+        if (action.type === "edit-message" || action.type === "delete-message") {
+          const id = action.conversationId;
+          const view = views.current.get(id);
+          // If reloading fails, the old writable store must not resurrect the
+          // transcript that the transaction has already edited or deleted.
+          stores.current.delete(id);
+          if (view) views.current.set(id, { ...view, contextPlan: undefined, error: undefined });
+          await loadView(id);
+        }
         await publish(updated);
-        if (affected.length && affected.some((affectedId) => !remaining.has(affectedId))) {
+        if (action.type === "edit-message" || action.type === "delete-message" ||
+          (affected.length && affected.some((affectedId) => !remaining.has(affectedId)))) {
           try { await cleanupAttachments?.(); }
           catch { if (alive.current) setOperationError("操作已保存，但附件副本整理失败；下次启动可重试。"); }
         }

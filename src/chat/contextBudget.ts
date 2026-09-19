@@ -2,6 +2,7 @@ import { numericValue, type SessionConfig } from "./sessionConfig";
 import type { StoredChatMessage } from "./repository";
 import type { ChatMessage, ChatProtocol } from "./types";
 import type { RequestAttachment } from "./attachments";
+import { withReplyLinks } from "./messageOperations";
 
 export class ContextBudgetError extends Error {
   constructor(readonly mandatoryTokens: number, readonly budget: number) {
@@ -92,13 +93,13 @@ function completeRounds(history: StoredChatMessage[]): { rounds: Round[]; exclud
   const rounds: Round[] = [];
   let pending: StoredChatMessage | undefined;
   let excluded = 0;
-  for (const message of history) {
+  for (const message of withReplyLinks(history)) {
     if (message.role === "user") {
       if (pending) excluded += 1;
       pending = message.status === "complete" && (message.content.trim() || message.attachments?.length) ? message : undefined;
       if (!pending) excluded += 1;
     } else if (message.role === "assistant") {
-      if (pending && message.status === "complete" && message.content.trim()) {
+      if (pending && message.replyToId === pending.id && message.status === "complete" && message.content.trim()) {
         rounds.push({ user: pending, assistant: message });
       } else if (pending) {
         excluded += 1;

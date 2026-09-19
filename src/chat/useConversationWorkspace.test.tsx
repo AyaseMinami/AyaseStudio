@@ -55,6 +55,25 @@ describe("workspace failure recovery", () => {
     expect((await repo.load("b"))).toBeUndefined();
   });
 
+  it("reloads a committed edit after a read failure without resurrecting the old transcript", async () => {
+    const repo = createChatRepository(`EditRecovery-${crypto.randomUUID()}`);
+    await repo.initializeWorkspace(null, []);
+    await repo.save({ id: "current", updatedAt: 1, messages: [
+      { id: "u", role: "user", content: "old", status: "complete" },
+      { id: "a", role: "assistant", content: "discard", status: "complete" },
+    ] });
+    await mount(repo);
+    await act(async () => current.setDraft("unsent"));
+    vi.spyOn(repo, "load").mockRejectedValueOnce(new Error("read failed"));
+    await act(async () => { expect(await current.execute({ type: "edit-message", conversationId: "current", messageId: "u", content: "edited" })).toBe(true); });
+    expect(current.canSend()).toBe(false);
+    expect(current.loadError).toContain("操作已保存");
+    await act(async () => current.retry()); await wait(() => current.isReady);
+    expect(current.view.messages.map((item) => item.content)).toEqual(["edited"]);
+    expect(current.view.draft).toBe("unsent");
+    expect((await repo.load("current"))?.messages).toHaveLength(1);
+  });
+
   it("never retains a deleted selection when loading its replacement fails", async () => {
     const repo = createChatRepository(`Recovery-${crypto.randomUUID()}`);
     await repo.initializeWorkspace(null, []);

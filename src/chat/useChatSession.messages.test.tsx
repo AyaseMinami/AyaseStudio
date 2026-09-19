@@ -1,0 +1,158 @@
+// @vitest-environment happy-dom
+import "fake-indexeddb/auto";
+import Dexie from "dexie";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useChatSession } from "./useChatSession";
+import { createChatRepository, type StoredChatMessage } from "./repository";
+import { saveConnectionSettings } from "./settings";
+import type { ChatRequest, ChatTransport } from "./types";
+
+const runtime = vi.hoisted(() => ({ createRuntimeChatTransport: vi.fn(), createRuntimeModelCatalogClient: vi.fn(),
+  read: vi.fn(), cleanup: vi.fn(), save: vi.fn(), verify: vi.fn() }));
+vi.mock("./runtime", () => runtime);
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
+vi.mock("./attachmentResources", () => ({ createTauriAttachmentStore: () => ({
+  read: runtime.read, cleanup: runtime.cleanup, save: runtime.save, verify: runtime.verify,
+}) }));
+
+const attachment = { name: "note.txt", reference: "attachments/retained.txt", mimeType: "text/plain" as const, size: 4 };
+const history: StoredChatMessage[] = [
+  { id: "u1", role: "user", content: "one", status: "complete" },
+  { id: "a1", role: "assistant", content: "old one", status: "complete" },
+  { id: "u2", role: "user", content: "two", status: "complete", attachments: [attachment] },
+  { id: "a2", role: "assistant", content: "old two", status: "complete" },
+  { id: "u3", role: "user", content: "three", status: "complete", attachments: [{ ...attachment, reference: "attachments/truncated.txt" }] },
+  { id: "a3", role: "assistant", content: "old three", status: "complete" },
+];
+
+describe("message actions through the session", () => {
+  const repo = createChatRepository();
+  let root: ReturnType<typeof createRoot>;
+  let container: HTMLDivElement;
+  let session: ReturnType<typeof useChatSession>;
+  beforeEach(async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    localStorage.clear();
+    await repo.load("current");
+    const db = new Dexie("AyaseStudio"); await db.open();
+    await Promise.all(db.tables.map((table) => table.clear())); db.close();
+    for (const mock of Object.values(runtime)) mock.mockReset();
+    runtime.read.mockImplementation(async (item) => ({ ...item, data: "bm90ZQ==" }));
+    runtime.cleanup.mockResolvedValue(undefined);
+    runtime.verify.mockResolvedValue(undefined);
+    saveConnectionSettings({ version: 3, activeModelId: "m", providers: [{ id: "p", name: "Synthetic", connections: [{
+      id: "c", name: "Test", baseUrl: "https://test.example", apiKey: "synthetic-key", protocol: "openai-chat",
+      models: [{ id: "m", modelId: "any-model" }, { id: "m2", modelId: "other-model" }],
+    }] }] });
+    await repo.initializeWorkspace("m", ["m", "m2"]);
+    await repo.save({ id: "current", updatedAt: 1, messages: history });
+    container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+    function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
+    await act(async () => root.render(<Probe />));
+    await wait(() => session.isHydrated);
+  });
+  afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
+  async function wait(predicate: () => boolean) {
+    for (let i = 0; i < 100 && !predicate(); i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+    expect(predicate()).toBe(true);
+  }
+  function respond(observe?: (request: ChatRequest) => void) {
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      observe?.(request);
+      yield { type: "text-delta", text: "new answer" };
+      yield { type: "completed", finishReason: "stop" };
+    } } satisfies ChatTransport);
+  }
+
+  it.each(["u2", "a2"])("retries %s once with current config and only its preceding history", async (id) => {
+    let request: ChatRequest | undefined;
+    respond((value) => { request = value; });
+    await act(async () => {
+      const assistant = session.workspace.assistant!;
+      await session.workspace.execute({ type: "edit-assistant", id: assistant.id,
+        input: { ...assistant, defaultModelId: "m2", defaultConfig: { ...assistant.defaultConfig, systemInstruction: "Current instruction" } } });
+    });
+    await act(async () => session.setDraft("keep draft"));
+    await act(async () => session.retryMessage(id));
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+    expect(request?.model).toBe("other-model");
+    expect(request?.config?.systemInstruction).toBe("Current instruction");
+    expect(request?.messages.map((item) => item.content)).toEqual(["one", "old one", "two"]);
+    expect(request?.messages.slice(-1)[0]?.attachments?.[0]).toMatchObject({ data: "bm90ZQ==" });
+    expect(session.messages.map((item) => item.content)).toEqual(["one", "old one", "two", "new answer"]);
+    expect(session.messages.slice(-1)[0]?.replyToId).toBe("u2");
+    expect(session.draft).toBe("keep draft");
+    expect(runtime.save).not.toHaveBeenCalled();
+    expect(runtime.cleanup).toHaveBeenLastCalledWith([attachment.reference], []);
+    expect((await repo.load("current"))!.messages).toEqual(session.messages);
+  });
+
+  it("preserves the original transcript on failed preflight, then persists a provider failure without retry", async () => {
+    const original = session.messages;
+    runtime.read.mockRejectedValueOnce(new Error("missing attachment"));
+    await act(async () => session.retryMessage("a2"));
+    expect(session.messages).toEqual(original);
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
+      yield { type: "failed", error: { kind: "network", message: "ambiguous failure", retryable: true } };
+    } } satisfies ChatTransport);
+    await act(async () => session.retryMessage("a2"));
+    expect(session.messages).toHaveLength(4);
+    expect(session.messages.slice(-1)[0]?.status).toBe("failed");
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+    expect((await repo.load("current"))?.messages.slice(-1)[0]?.status).toBe("failed");
+  });
+
+  it("keeps request ownership across navigation, blocks conflicts and double send, and persists Stop", async () => {
+    let request: ChatRequest | undefined;
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(value) {
+      request = value;
+      yield { type: "text-delta", text: "partial" };
+      await new Promise<void>((resolve) => value.signal!.addEventListener("abort", () => resolve(), { once: true }));
+      yield { type: "aborted" };
+    } } satisfies ChatTransport);
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.retryMessage("u2"); });
+    await wait(() => !!request);
+    await act(async () => {
+      expect(await session.deleteMessage("u1")).toBe(false);
+      expect(await session.editMessage("u1", "changed")).toBe(false);
+      expect(await session.branchMessage("u1")).toBe(false);
+      await session.retryMessage("u2");
+    });
+    await act(async () => session.workspace.execute({ type: "create-conversation", id: "elsewhere", assistantId: "default" }));
+    await act(async () => session.setActiveModel("m2"));
+    expect(request?.model).toBe("any-model");
+    await act(async () => { session.stopGeneration(); await sending; });
+    expect(session.messages).toEqual([]);
+    expect((await repo.load("current"))?.messages.slice(-1)[0]).toMatchObject({ content: "partial", status: "aborted" });
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates an offline branch, uses shared settings for later requests, and retains shared attachments after edit", async () => {
+    await act(async () => { expect(await session.branchMessage("a2")).toBe(true); });
+    const branchId = session.workspace.conversation!.id;
+    expect(branchId).not.toBe("current");
+    expect(session.messages).toHaveLength(4);
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(session.workspace.conversation?.creationConfig?.modelId).toBe("m");
+    await act(async () => session.setActiveModel("m2"));
+    await wait(() => session.isHydrated && session.activeModel?.id === "m2");
+    let request: ChatRequest | undefined;
+    respond((value) => { request = value; });
+    await act(async () => session.retryMessage(session.messages[3].id));
+    expect(request?.model).toBe("other-model");
+    expect(session.workspace.conversation?.creationConfig?.modelId).toBe("m");
+    await act(async () => { expect(await session.editMessage(session.messages[0].id, "changed")).toBe(true); });
+    expect(session.messages).toHaveLength(1);
+    expect((await repo.load("current"))?.messages).toHaveLength(6);
+    expect(await repo.attachmentReferences()).toContain(attachment.reference);
+    expect(runtime.cleanup.mock.calls.slice(-1)[0]?.[0]).toContain(attachment.reference);
+    await act(async () => session.workspace.execute({ type: "select", assistantId: "default", conversationId: "current" }));
+    expect(session.messages).toHaveLength(6);
+    await act(async () => session.workspace.execute({ type: "select", assistantId: "default", conversationId: branchId }));
+    expect(session.messages.map((item) => item.content)).toEqual(["changed"]);
+  });
+});

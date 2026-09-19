@@ -117,6 +117,8 @@ On 2026-09-14, explicit live probes completed successfully for all four adapters
 
 ## Error policy
 
+Issue #14 的“重新生成”是用户确认后发起的一次新请求，使用点击时的当前助手配置和连接。它以选中用户消息或助手回复所绑定的用户消息为末条输入，排除切点后的历史；助手正文不会转换成用户输入。预检通过后旧回复及后续消息被截断，失败/停止保留新请求终态，不回退或自动重发。正文编辑、删除和分支创建不调用 transport。单条删除留下的孤立消息继续在界面保留；上下文预算仍只收集归属匹配且完成的用户/助手轮次。
+
 - 429 is `rate-limit` and retryable.
 - 500-599 is `server` and retryable.
 - Other non-success HTTP statuses are `http`; retryability depends on the status.

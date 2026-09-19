@@ -1,4 +1,5 @@
 import type { ChatRepository, StoredChatMessage } from "./repository";
+import { withReplyLinks } from "./messageOperations";
 
 export interface SessionState {
   messages: StoredChatMessage[];
@@ -17,7 +18,7 @@ export class SessionStore {
       message.status === "streaming" ? { ...message, status: "aborted" as const } : message,
     );
     this.state = {
-      messages: recovered,
+      messages: withReplyLinks(recovered),
     };
     if (recovered.some((message, index) => message !== snapshot.messages[index])) {
       await this.enqueueSave();

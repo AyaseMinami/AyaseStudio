@@ -18,6 +18,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
   - Anthropic native Messages
 - Stop generation with `AbortController`.
 - Local conversation persistence through a small repository interface backed by Dexie/IndexedDB.
+- Message copying, editing with history truncation, single-message deletion, explicit regeneration, and independent conversation branches.
 - Clear terminal states for success, cancellation, HTTP failure, network failure, and malformed streams.
 - Persistent semantic appearance customization with safe accent/canvas colors and validated local PNG, JPEG, or WebP backgrounds copied into app-private storage.
 - Issue #5 local attachments: draft picker/drop/image paste, explicit send, private copies and references for sent messages without a post-send image cache, read-only previews, and protocol-specific official input limits instead of shared 10/20 MB caps.
@@ -25,7 +26,8 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 ## Explicitly out of scope
 
 - Agents, MCP, RAG, knowledge bases, tools, and web search.
-- Provider Files API uploads, audio/video/Office attachments, unsent attachment persistence, and per-message edit/delete/branch actions (separate Issue #14).
+- Provider Files API uploads, audio/video/Office attachments, and unsent attachment persistence.
+- Saved edit/regeneration versions and arrow navigation (separate Issue #17).
 - Accounts, cloud sync, telemetry, auto-update, plugins, and marketplace features.
 - Global shortcuts, tray behavior, frameless-window tricks, and multi-window behavior.
 - Provider-managed conversation state. OpenAI Responses uses local history with `store: false`.
@@ -83,7 +85,7 @@ Assistant
 
 ## Conversation roadmap
 
-Issue #4 extends the original `current` state into assistant-owned conversations. Each assistant owns one shared model reference and generation configuration for its conversations; conversations keep their own titles and messages but do not copy credentials or configuration snapshots. Search, folders, pinning, and automatic titles remain separate later decisions.
+Issue #4 extends the original `current` state into assistant-owned conversations. Each assistant owns one shared model reference and generation configuration for its conversations; conversations keep their own titles and messages without copying credentials. Issue #14 branches retain a creation-time configuration record, but requests still use the owning assistant's current settings. Search, folders, pinning, and automatic titles remain separate later decisions.
 
 ## Delivery stages
 
@@ -114,6 +116,12 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 按用户 2026-09-15 确认，原 #3/#4 的独立会话快照规则改为助手统一管理。配置仅在助手编辑中保存，对话无覆盖或重新应用入口。四协议请求映射、非流式、上下文预算与安全校验保持原合同。自动数值省略可选请求字段；Anthropic 必填 `max_tokens` 自动模式使用标明为 Ayase 回退的 4096。流式默认开启是 Ayase 产品推荐。未知模型的能力不从模型 ID 或目录身份信息猜测。自定义 JSON 按协议隔离，并在最终请求构造处安全校验。旧会话配置本地备份后退出运行配置，桌面交互与确定性测试共同组成验收证据。远端 Issue 尚未同步此调整。
 
 ## Acceptance gates
+
+### Issue #14 message operations (2026-09-19)
+
+按用户确认，两类消息均提供复制 Markdown 原文、编辑、单条删除、重新请求和分支。编辑保存截断后续消息且不自动请求；重新请求冻结当前配置，以对应用户消息及上文生成一次新回复，丢弃原回复和后续记录。截断和删除前明确确认。分支保留切点并复制为同助手下独立对话，使用 `(N)` 后缀，不显示来源、不请求网络；创建快照仅作记录，后续仍跟随助手共享配置。附件清理按所有对话的剩余引用执行。
+
+这取代远端 #14 中“原结果仍可访问”的首版要求。编辑版本与替代回复的保存、左右箭头导航已移至低优先级 [Issue #17](https://github.com/AyaseMinami/AyaseStudio/issues/17)，无法追溯恢复首版已丢弃内容。未修改远端 #14。验证集中于消息操作、截断、配置冻结、生成冲突、分支恢复与附件引用，不新增模型白名单或供应商参数组合限制。
 
 ### Issue #16 protocol thinking extension (2026-09-19)
 

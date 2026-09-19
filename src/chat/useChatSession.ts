@@ -8,6 +8,7 @@ import { addDraftAttachments, attachmentCapabilityFailure, materializeDraftAttac
   type DraftAttachment, type RequestAttachment, type SentAttachment } from "./attachments";
 import { createTauriAttachmentStore } from "./attachmentResources";
 import { AttachmentLifecycle } from "./attachmentLifecycle";
+import { retryUser, withReplyLinks } from "./messageOperations";
 import {
   testModelAvailability,
   type ModelAvailabilityResult,
@@ -580,12 +581,17 @@ export function useChatSession({
     testAbortControllers.current.get(modelId)?.abort();
   }
 
-  async function sendMessage(): Promise<void> {
-    const content = draft.trim();
-    const frozenAttachments = [...draftAttachments];
-    if ((!content && !frozenAttachments.length) || isGenerating || sendLockRef.current || !isHydrated || !workspace.canSend() || !sessionStore || imports.current.has(sessionStore.id)) {
+  async function sendMessage(retryMessageId?: string): Promise<void> {
+    const targetUser = retryMessageId ? retryUser(messages, retryMessageId) : undefined;
+    const content = targetUser ? targetUser.content : draft.trim();
+    const frozenAttachments = retryMessageId ? [] : [...draftAttachments];
+    const existingAttachments = targetUser?.attachments ?? [];
+    if (isGenerating || sendLockRef.current || !isHydrated || !workspace.canSend() || !sessionStore || imports.current.has(sessionStore.id)) {
       return;
     }
+    if (retryMessageId && !targetUser) { setError("原用户消息已删除，无法重新请求此回复。"); return; }
+    if (!content.trim() && !frozenAttachments.length && !existingAttachments.length) return;
+    const history = withReplyLinks(targetUser ? messages.slice(0, messages.findIndex((message) => message.id === targetUser.id)) : messages);
     if (!activeTarget) {
       onConfigurationRequired();
       setError("请先添加并选择一个模型。");
@@ -593,7 +599,7 @@ export function useChatSession({
     }
     const requestConnection = activeTarget.connection;
     const capabilityError = attachmentCapabilityFailure(requestConnection.protocol,
-      activeTarget.model.modelId, frozenAttachments);
+      activeTarget.model.modelId, [...frozenAttachments, ...existingAttachments]);
     if (capabilityError) { setError(capabilityError); return; }
     if (!requestConnection.baseUrl || !requestConnection.apiKey) {
       onConfigurationRequired();
@@ -641,9 +647,9 @@ export function useChatSession({
     let planned: ContextPlan;
     try {
       planned = await planContextBudget(
-        messages, content, frozenConfig,
+        history, content, frozenConfig,
         requestConnection.protocol, activeTarget.model.modelId, undefined,
-        frozenAttachments.map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
+        [...frozenAttachments, ...existingAttachments].map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
       );
       if (controller.signal.aborted) {
         setIsGenerating(false);
@@ -694,6 +700,11 @@ export function useChatSession({
         preparedAttachments.push(await materializeDraftAttachment(draft));
         requireActiveSend();
       }
+      for (const item of existingAttachments) {
+        requireActiveSend();
+        preparedAttachments.push(await attachmentStore.read(item));
+        requireActiveSend();
+      }
       const rebuiltMessages: typeof planned.messages = [];
       for (const [index, message] of planned.messages.entries()) {
         requireActiveSend();
@@ -722,7 +733,7 @@ export function useChatSession({
         releaseBeforeNetwork();
         return;
       }
-      for (const item of preparedAttachments) {
+      for (const item of targetUser ? [] : preparedAttachments) {
         requireActiveSend();
         sentAttachments.push(await attachmentLifecycle.save(item));
         requireActiveSend();
@@ -740,7 +751,7 @@ export function useChatSession({
     }
     setContextPlan(summarizeContextPlan(planned));
     setError(undefined);
-    const userMessage: StoredChatMessage = {
+    const userMessage: StoredChatMessage = targetUser ?? {
       id: newId(),
       role: "user",
       content,
@@ -751,10 +762,11 @@ export function useChatSession({
     const assistantMessage: StoredChatMessage = {
       id: assistantId,
       role: "assistant",
+      replyToId: userMessage.id,
       content: "",
       status: "streaming",
     };
-    let workingMessages = [...messages, userMessage, assistantMessage];
+    let workingMessages = [...history, userMessage, assistantMessage];
     try {
       await requestStore.updateMessages(workingMessages);
     } catch {
@@ -781,17 +793,16 @@ export function useChatSession({
       return;
     }
     if (controller.signal.aborted) {
-      workingMessages = [...messages, userMessage, { ...assistantMessage, status: "aborted" }];
+      workingMessages = [...history, userMessage, { ...assistantMessage, status: "aborted" }];
       await requestStore.updateMessages(workingMessages).catch(() => undefined);
       setMessages(workingMessages);
-      setDraft("");
-      setDraftAttachments([]);
+      if (!targetUser) { setDraft(""); setDraftAttachments([]); }
+      if (targetUser) await cleanupAttachments().catch(() => setError("消息已保存，但附件副本整理失败；下次启动将重试。"));
       releaseBeforeNetwork();
       return;
     }
     setMessages(workingMessages);
-    setDraft("");
-    setDraftAttachments([]);
+    if (!targetUser) { setDraft(""); setDraftAttachments([]); }
 
     let persistChain = Promise.resolve();
     let persistenceFailed = false;
@@ -901,6 +912,7 @@ export function useChatSession({
       if (persistenceFailed) {
         setError((current) => current ?? "回复已生成，但保存本地记录失败。");
       }
+      if (targetUser) await cleanupAttachments().catch(() => setError((current) => current ?? "消息已保存，但附件副本整理失败；下次启动将重试。"));
       setIsGenerating(false);
       generatingId.current = null;
       abortRef.current = null;
@@ -910,6 +922,22 @@ export function useChatSession({
 
   function stopGeneration(): void {
     abortRef.current?.abort();
+  }
+
+  async function editMessage(id: string, content: string): Promise<boolean> {
+    if (!workspace.canSend() || !sessionStore) return false;
+    return workspace.execute({ type: "edit-message", conversationId: sessionStore.id, messageId: id, content });
+  }
+
+  async function deleteMessage(id: string): Promise<boolean> {
+    if (!workspace.canSend() || !sessionStore) return false;
+    return workspace.execute({ type: "delete-message", conversationId: sessionStore.id, messageId: id });
+  }
+
+  async function branchMessage(id: string): Promise<boolean> {
+    if (!workspace.canSend() || !sessionStore) return false;
+    return workspace.execute({ type: "fork-conversation", id: newId(), conversationId: sessionStore.id, messageId: id,
+      creationConfig: { modelId: workspace.assistant?.defaultModelId ?? null, config: structuredClone(sessionConfig) } });
   }
 
   function clearConversation(): void {
@@ -955,6 +983,10 @@ export function useChatSession({
     cancelModelCatalogRefresh,
     cancelModelTest,
     clearConversation,
+    editMessage,
+    deleteMessage,
+    branchMessage,
+    retryMessage: (id: string) => sendMessage(id),
     connectionSettings: { ...connectionSettings, activeModelId: activeModel?.id ?? null },
     configErrors,
     contextPlan,

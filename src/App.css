@@ -1631,8 +1631,20 @@ textarea:disabled {
   justify-content: flex-end;
 }
 
-.user-message {
+.user-message-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
   max-width: 85%;
+}
+
+.user-message-group .message-actions { justify-content: flex-end; max-width: 100%; }
+.user-message-group .message-copy-feedback { text-align: right; }
+.user-message-group:has(.message-editor) { width: 100%; }
+
+.user-message {
+  max-width: 100%;
   border-radius: 1rem 1rem 0.3rem 1rem;
   background: rgb(var(--color-user-message));
   padding: 0.75rem 1rem;
@@ -1648,6 +1660,21 @@ textarea:disabled {
   font-size: 0.875rem;
   line-height: 1.75rem;
 }
+
+.message-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+.message-action { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 0.4rem; padding: 0.28rem 0.42rem; color: rgb(var(--color-muted)); font-size: 0.72rem; }
+.message-action:hover:not(:disabled), .message-action:focus-visible { color: rgb(var(--color-text)); background: rgb(var(--color-elevated)); }
+.message-action:focus-visible { outline: 2px solid rgb(var(--color-accent)); outline-offset: 2px; }
+.user-message:has(.message-editor), .assistant-message:has(.message-editor) { width: 100%; min-width: 0; }
+.message-editor { display: grid; min-width: 0; gap: 0.5rem; }
+.message-editor label, .message-edited, .message-copy-feedback { font-size: 0.72rem; color: rgb(var(--color-muted)); }
+.user-message .message-editor label, .user-message .message-edited { color: rgb(var(--color-user-message-text)); }
+.message-editor textarea { width: 100%; min-height: 7rem; resize: vertical; border: 1px solid rgb(var(--color-border)); border-radius: 0.5rem; padding: 0.55rem; background: rgb(var(--color-input)); color: rgb(var(--color-text)); line-height: 1.45rem; }
+.message-editor > div { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.message-confirm-backdrop { position: fixed; inset: 0; z-index: 75; display: grid; place-items: center; padding: 1rem; background: #0008; }
+.message-confirm-dialog { width: min(100%, 28rem); display: grid; gap: 0.8rem; padding: 1.25rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.8rem; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); box-shadow: 0 1rem 3rem #0005; }
+.message-confirm-dialog h2 { font-weight: 700; }
+.message-confirm-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 0.5rem; }
 
 .message-status {
   margin-top: 0.5rem;
