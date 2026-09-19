@@ -19,24 +19,32 @@
     "@tauri-apps/plugin-opener": "^2.5.5",
     "dexie": "^4.4.6",
     "js-tiktoken": "^1.0.21",
+    "katex": "^0.16.47",
     "lucide-react": "^1.45.0",
     "openai": "^7.15.0",
     "pdfjs-dist": "^6.3.289",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2",
+    "@types/mdast": "^4.0.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
     "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.14.5",
+    "micromark-extension-math": "^3.1.0",
+    "micromark-util-types": "^2.0.2",
+    "remark-parse": "^11.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
+    "unified": "^11.0.5",
     "vite": "^8.0.16",
     "vitest": "^5.0.0"
   }

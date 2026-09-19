@@ -136,7 +136,7 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
                 onClick={() => setConfirmation({ kind: "edit", message, content: editing.content, removed: editRemoved })}>保存编辑</button></div>
           </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
-              : <span className="subtle-text">（无文本输出）</span>) : message.content ? <p className="whitespace-pre-wrap">{message.content}</p> : null}</>}
+              : <span className="subtle-text">（无文本输出）</span>) : message.content ? <SafeMarkdown>{message.content}</SafeMarkdown> : null}</>}
           {message.role === "assistant" && message.search && <SearchResults search={message.search} />}
           {message.editedAt !== undefined && <p className="message-edited">已编辑</p>}
           {!!message.attachments?.length && <div className="sent-attachment-list">{message.attachments.map((item) => <button type="button" key={item.reference} aria-label={`预览附件 ${item.name}`}
@@ -162,7 +162,7 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
       </>;
       return <article key={message.id} className={message.role === "user" ? "message-row message-row-user" : "message-row"}>
         {message.role === "user" ? <div className="user-message-group">
-          <div className="user-message">{body}</div>
+          <div className="user-message markdown">{body}</div>
           {controls}
         </div> : <div className="assistant-message markdown">{body}{controls}</div>}
       </article>;

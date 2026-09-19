@@ -1861,6 +1861,32 @@ textarea:disabled {
   border-color: rgb(var(--color-border));
 }
 
+.markdown .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+
+.markdown .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  vertical-align: middle;
+  padding: 0.2em 0;
+  /* KaTeX's .vlist-t2 has a -2px right margin for its baseline spacer. */
+  padding-right: 2px;
+}
+
+.markdown .katex-display > .katex { display: block; max-width: none; overflow: visible; padding: 0; }
+.markdown table:has(.katex) { table-layout: fixed; }
+.markdown .katex-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+.user-message.markdown { min-width: 0; overflow-wrap: anywhere; }
+.user-message.markdown p { white-space: pre-wrap; }
+.user-message.markdown a { color: inherit; }
+
 .typing-dot {
   width: 0.35rem;
   height: 0.35rem;

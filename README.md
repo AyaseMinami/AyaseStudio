@@ -9,6 +9,7 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Gemini native GenerateContent streaming
 - Anthropic native Messages streaming
 - Incremental Markdown rendering and cancellation
+- Safe Markdown and LaTeX math in user messages, assistant replies, and thinking summaries, with locally bundled fonts
 - Provider-native web search toggle, inline citations, source lists, Gemini search suggestions, and explicit Anthropic pause continuation
 - Protocol-based thinking controls for arbitrary model IDs for all four protocols, with separate local summaries for Gemini, OpenAI Responses, and Anthropic; official Chat Completions has no readable-summary contract
 - Normalized HTTP, network, protocol, and abort outcomes

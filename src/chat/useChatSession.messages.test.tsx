@@ -66,6 +66,15 @@ describe("message actions through the session", () => {
     } } satisfies ChatTransport);
   }
 
+  it("sends the original math source from restored history", async () => {
+    const source = String.raw`设 $A^2=I$，求 \(A\)。`;
+    await act(async () => { await session.editMessage("u3", source); });
+    let sent: ChatRequest | undefined;
+    respond((request) => { sent = request; });
+    await act(async () => { await session.retryMessage("u3"); });
+    expect(sent?.messages[sent.messages.length - 1]?.content).toBe(source);
+  });
+
   it("native search persists citations and clears them on edited text", async () => {
     await act(async () => session.setWebSearch(true));
     const search = { enabled: true, status: "completed" as const,

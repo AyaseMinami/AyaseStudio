@@ -5,11 +5,42 @@ import { expect, it, vi } from "vitest";
 
 import type { StoredChatMessage } from "../../chat/repository";
 import { MessageList, type MessageActions } from "./MessageList";
+import "fake-indexeddb/auto";
+import { createChatRepository } from "../../chat/repository";
 
 const messages: StoredChatMessage[] = [
   { id: "user", role: "user", content: "**raw markdown**", status: "complete", replyToId: null },
   { id: "answer", role: "assistant", content: "Answer", status: "complete", replyToId: "user" },
 ];
+
+it("restores raw math and renders user, summary and streamed assistant consistently", async () => {
+  const name = `MathMessages-${crypto.randomUUID()}`;
+  const source = String.raw`**公式** $\frac{x_1}{2}$`;
+  const original: StoredChatMessage[] = [
+    { id: "u", role: "user", content: source, status: "complete" },
+    { id: "a", role: "assistant", content: source, thinkingSummary: source, status: "complete", replyToId: "u" },
+  ];
+  await createChatRepository(name).save({ id: "current", updatedAt: 1, messages: original });
+  const restored = (await createChatRepository(name).load("current"))!.messages;
+  expect(restored).toEqual(original);
+  const { host, root } = setup();
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  try {
+    await act(async () => root.render(<MessageList messages={restored} />));
+    await act(async () => host.querySelector<HTMLButtonElement>(".thinking-summary-heading")!.click());
+    expect(host.querySelectorAll(".katex")).toHaveLength(3);
+    expect(host.querySelector(".user-message strong")?.textContent).toBe("公式");
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='复制']")!.click());
+    expect(writeText).toHaveBeenCalledWith(source);
+    const stream = String.raw`$\frac{x}{2}$`;
+    for (let end = 0; end <= stream.length; end++) {
+      await act(async () => root.render(<MessageList messages={[{ ...original[1], content: stream.slice(0, end), status: "streaming" }]} />));
+    }
+    expect(host.querySelector(".assistant-message > p .katex")).not.toBeNull();
+    expect(restored).toEqual(original);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 function setup(actions: Partial<MessageActions> = {}, actionsDisabled = false, onKeyDown?: () => void) {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

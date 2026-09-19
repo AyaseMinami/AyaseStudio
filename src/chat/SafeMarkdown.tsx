@@ -1,6 +1,10 @@
 import type { ComponentPropsWithoutRef, MouseEvent, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { remarkMathSyntax } from "./markdownMath";
 
 import type { SearchRecord } from "./nativeSearch";
 import { openExternal, safeExternalUrl } from "./externalLinks";
@@ -106,9 +110,10 @@ function ExternalLink({ node: _node, href, children, ...props }: ComponentPropsW
 
 export function SafeMarkdown({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
   const citations = validCitations(search, children);
-  const remarkPlugins = citations.length ? [remarkGfm, () => (tree: unknown) => addCitationBadges(tree, citations, children)] : [remarkGfm];
-  return <ReactMarkdown remarkPlugins={remarkPlugins} components={{
+  const remarkPlugins = [remarkGfm, remarkMath, remarkMathSyntax,
+    ...(citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : [])];
+  return <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[[rehypeKatex, { trust: false, errorColor: "currentColor" }]]} components={{
     a: ExternalLink,
-    span: (props) => search ? CitationSpan(props, search) : <span {...props} />,
+    span: ({ node: _node, ...props }) => search ? CitationSpan(props, search) : <span {...props} />,
   }}>{children}</ReactMarkdown>;
 }

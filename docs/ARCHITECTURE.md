@@ -18,7 +18,7 @@ Ayase Studio 是一个轻量、local-first 的桌面聊天客户端。架构目�
 | HTTP | Tauri HTTP plugin | 从 WebView 发起允许的跨域请求 |
 | OpenAI client | OpenAI JavaScript SDK | OpenAI 协议类型与流式请求支持；其他协议仍使用显式适配器 |
 | Persistence | Dexie 4 / IndexedDB | 本地设置、会话和消息持久化 |
-| Rendering | react-markdown + remark-gfm | 安全 Markdown 渲染，不启用原始 HTML |
+| Rendering | react-markdown + remark-gfm + remark-math + rehype-katex | 安全 Markdown 与数学公式渲染，不启用原始 HTML |
 | Tests | Vitest 5 | 确定性协议、存储和 UI 逻辑测试 |
 
 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml` 与 `src-tauri/Cargo.lock` 是实际依赖版本的权威来源，本表用于解释选型，不替代锁文件。
@@ -286,3 +286,9 @@ Issue #5 附件草稿是同一按对话 ID 保留的会话内视图状态，只�
 搜索通过 ChatTransport 的 `search-update` 与 `provider-replay` 事件进入会话。SearchRecord 是展示快照；Anthropic ProviderReplay 保留完整原始块，按连接 ID/地址隔离，仅在原协议回传。paused 消息携带冻结配置与初始历史；用户显式继续，普通后续消息仍按完整轮次裁剪。记录不含凭据。
 
 SafeMarkdown 继续禁止原始 HTML。Gemini searchEntryPoint 只进入 scriptless sandbox iframe 的独立文档；主 DOM 不注入供应商 HTML，父组件绑定链接和高度。外链统一使用受限 HTTP(S) opener。新可选字段沿用 repository 持久化，无新增表/索引；编辑正文清除引用和 replay，删除使旧续接失效。详见 [#6 实施记录](ISSUE-6-NATIVE-SEARCH-PLAN.md)。
+
+### Issue #15 math rendering
+
+用户消息、助手正文和思考摘要共享 SafeMarkdown，用户消息同时支持安全 Markdown，普通段落保留单换行。remark-math 提供数学节点，markdownMath.ts 在 Markdown 解析阶段识别 `$...$`、`$$...$$`、`\(...\)` 和 `\[...\]`；双美元及 `\[...\]` 使用独立公式排版。单美元内部首尾不能留空白，结束符后不能紧接数字，以避免常见货币误判；有歧义的美元文本使用 `\$`。不做全局替换，原文位置供搜索引用继续使用；公式内的引用角标放在公式后。
+
+行内代码、缩进代码及围栏代码（包括 math 标签）保持字面显示。rehype-katex 使用 `trust: false`，非法公式沿用插件的可读源码降级；不开放原始 HTML 或可信命令。KaTeX 引擎与 CSS/字体版本保持一致并本地打包；公式继承主题文字颜色，超长公式局部横向滚动。所有转换限于渲染树，持久化、复制、编辑及请求仍使用原始消息，无数据库迁移或协议变更。
