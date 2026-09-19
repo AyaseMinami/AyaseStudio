@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { useAppearance } from "./appearance/useAppearance";
 import { useChatSession } from "./chat/useChatSession";
+import { getThinkingSettings } from "./chat/thinking";
 import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
@@ -41,9 +42,9 @@ function App() {
           isGenerating={chat.isGenerating}
           messages={chat.messages}
           modelId={chat.activeModel?.modelId}
-          geminiThinking={chat.sessionConfig.geminiThinking}
+          thinking={getThinkingSettings(chat.sessionConfig, chat.activeConnection?.protocol ?? "gemini-native")}
           thinkingNotice={chat.thinkingNotice}
-          onThinkingChange={(value) => void chat.setGeminiThinking(value)}
+          onThinkingChange={(value) => void chat.setThinking(value)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={
             chat.activeProvider && chat.activeConnection && chat.activeModel

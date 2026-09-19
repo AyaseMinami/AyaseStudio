@@ -7,7 +7,8 @@ import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settin
 import { DEFAULT_ASSISTANT_ID, type AssistantInput, type AssistantPreset, type WorkspaceCommand } from "../../chat/workspace";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
-import { defaultGeminiThinking, isGeminiThinkingSettings, validateGeminiThinking } from "../../chat/geminiThinking";
+import { defaultThinking, getThinkingSettings, isThinkingSettings, validateThinkingSelection,
+  withThinkingSettings } from "../../chat/thinking";
 
 function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -164,11 +165,12 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
             const defaultModelId = event.target.value || null;
             const target = getActiveTarget({ ...settings, activeModelId: defaultModelId });
             let config = dialog.input.defaultConfig;
-            const saved = config.geminiThinking;
+            const saved = target ? getThinkingSettings(config, target.connection.protocol) : undefined;
             setThinkingNotice("");
-            if (target?.connection.protocol === "gemini-native" && isGeminiThinkingSettings(saved) &&
-                validateGeminiThinking(target.model.modelId, saved)) {
-              config = { ...config, geminiThinking: { ...defaultGeminiThinking, includeSummary: saved.includeSummary } };
+            if (target && isThinkingSettings(saved) &&
+                validateThinkingSelection(target.connection.protocol, target.model.modelId, saved)) {
+              config = withThinkingSettings(config, target.connection.protocol,
+                { ...defaultThinking, includeSummary: saved.includeSummary });
               setThinkingNotice("原思考选项不适用于此模型，已恢复默认；保存助手后生效。");
             }
             setDialog({ ...dialog, input: { ...dialog.input, defaultModelId, defaultConfig: config } });
@@ -177,12 +179,12 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
           {dialog.input.defaultModelId && !editorTarget && <option value={dialog.input.defaultModelId}>原模型已失效，请重新选择</option>}
           {settings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
         </select>
-        {editorTarget?.connection.protocol === "gemini-native" && <ThinkingControl
-          key={`${editorTarget.model.modelId}-${dialog.input.defaultConfig.geminiThinking?.budget}`}
-          model={editorTarget.model.modelId} value={dialog.input.defaultConfig.geminiThinking}
+        {editorTarget && <ThinkingControl
+          key={`${editorTarget.connection.protocol}-${editorTarget.model.modelId}-${getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)?.budget}`}
+          protocol={editorTarget.connection.protocol} model={editorTarget.model.modelId} value={getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)}
           disabled={busy} notice={thinkingNotice} hint="保存助手后生效"
-          onChange={(geminiThinking) => setDialog({ ...dialog, input: { ...dialog.input,
-            defaultConfig: { ...dialog.input.defaultConfig, geminiThinking } } })} />}
+          onChange={(thinking) => setDialog({ ...dialog, input: { ...dialog.input,
+            defaultConfig: withThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol, thinking) } })} />}
         {editorErrors.thinking && <p className="session-config-error" role="alert">{editorErrors.thinking}</p>}
       </section>
     </SessionConfigPanel>}

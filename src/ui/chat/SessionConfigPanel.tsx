@@ -43,7 +43,7 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
 
   function settingRow(field: NumericField, label: string) {
     const setting: NumericSetting = config[field] ?? { mode: "auto" };
-    const capability = protocol ? parameterCapability(protocol, model, field) : undefined;
+    const capability = protocol ? parameterCapability(protocol, model, field, config) : undefined;
     const unsupported = capability?.support === "unsupported";
     return (
       <div className="session-config-field" key={field}>

@@ -1,13 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, Lightbulb } from "lucide-react";
-import { defaultGeminiThinking, geminiThinkingCapability, isGeminiThinkingSettings, thinkingLabels,
-  validateGeminiThinking, type GeminiThinkingSettings, type ThinkingChoice } from "../../chat/geminiThinking";
+import type { ChatProtocol } from "../../chat/types";
+import { defaultThinking, isThinkingSettings, thinkingCapability, thinkingLabels,
+  validateThinkingSelection, type ThinkingSettings, type ThinkingChoice } from "../../chat/thinking";
 
 interface ThinkingControlProps {
-  model: string; value?: GeminiThinkingSettings; disabled: boolean; notice?: string;
+  protocol?: ChatProtocol; model: string; value?: ThinkingSettings; disabled: boolean; notice?: string;
   hint?: string;
   optionList?: boolean;
-  onChange(value: GeminiThinkingSettings): void;
+  onChange(value: ThinkingSettings): void;
 }
 
 export function ThinkingToolbarControl(props: ThinkingControlProps) {
@@ -15,8 +16,9 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panelId = useId();
-  const settings = isGeminiThinkingSettings(props.value) ? props.value : defaultGeminiThinking;
-  const known = !!geminiThinkingCapability(props.model);
+  const protocol = props.protocol ?? "gemini-native";
+  const settings = isThinkingSettings(props.value) ? props.value : defaultThinking;
+  const known = !!thinkingCapability(protocol, props.model);
   const active = known && settings.choice !== "default" && settings.choice !== "off";
   useEffect(() => {
     if (!open) return;
@@ -44,12 +46,12 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
   </div>;
 }
 
-export function ThinkingControl({ model, value, disabled, notice, hint = "当前助手 · 自动保存", optionList, onChange }: ThinkingControlProps) {
-  const settings = isGeminiThinkingSettings(value) ? value : defaultGeminiThinking;
-  const capability = geminiThinkingCapability(model);
+export function ThinkingControl({ protocol = "gemini-native", model, value, disabled, notice, hint = "当前助手 · 自动保存", optionList, onChange }: ThinkingControlProps) {
+  const settings = isThinkingSettings(value) ? value : defaultThinking;
+  const capability = thinkingCapability(protocol, model);
   const [budget, setBudget] = useState(settings.budget);
   const [budgetError, setBudgetError] = useState("");
-  const invalid = value !== undefined && !isGeminiThinkingSettings(value);
+  const invalid = value !== undefined && !isThinkingSettings(value);
   const groupName = useId();
   function choose(choice: ThinkingChoice) {
     const next = { ...settings, choice, budget: choice === "budget" ? "1024" : settings.budget };
@@ -71,20 +73,24 @@ export function ThinkingControl({ model, value, disabled, notice, hint = "当前
         {(capability?.choices ?? ["default"]).map((choice) => <option key={choice} value={choice}>{thinkingLabels[choice]}</option>)}
       </select>
     </label>}
-    {capability && <label className="thinking-summary-toggle"><input type="checkbox" checked={settings.includeSummary}
+    {capability?.summary && <label className="thinking-summary-toggle"><input type="checkbox" checked={settings.includeSummary}
       disabled={disabled} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考摘要</label>}
+    {capability?.efforts && <label className="thinking-select"><span>思考力度</span><select aria-label="思考力度（当前助手）"
+      disabled={disabled} value={settings.effort ?? "default"} onChange={(event) => onChange({ ...settings, effort: event.target.value as ThinkingSettings["effort"] })}>
+      {capability.efforts.map((effort) => <option key={effort} value={effort}>{thinkingLabels[effort]}</option>)}
+    </select></label>}
     {settings.choice === "budget" && capability?.minBudget !== undefined && <label className="thinking-budget">
       Token 预算<input type="number" aria-label="思考 Token 预算" min={capability.minBudget} max={capability.maxBudget}
         value={budget} disabled={disabled} onChange={(event) => { setBudget(event.target.value); setBudgetError(""); }} />
       <button type="button" disabled={disabled || budget === settings.budget} onClick={() => {
           const next = { ...settings, budget };
-          const error = validateGeminiThinking(model, next);
+          const error = validateThinkingSelection(protocol, model, next);
           setBudgetError(error ?? "");
           if (!error && budget !== settings.budget) onChange(next);
         }}>应用预算</button><span>已应用：{settings.budget}</span>
     </label>}
-    <span className="thinking-hint">{capability ? disabled ? "暂不可修改" : hint : "模型思考能力未识别，不发送思考参数"}</span>
-    {invalid && <button type="button" disabled={disabled} onClick={() => onChange(defaultGeminiThinking)}>恢复思考默认配置</button>}
+    <span className="thinking-hint">{capability ? disabled ? "暂不可修改" : capability.summaryHint ?? hint : "模型思考能力未识别，不发送思考参数"}</span>
+    {invalid && <button type="button" disabled={disabled} onClick={() => onChange(defaultThinking)}>恢复思考默认配置</button>}
     {(notice || budgetError) && <span className="thinking-notice" role="status">{budgetError || notice}</span>}
   </div>;
 }

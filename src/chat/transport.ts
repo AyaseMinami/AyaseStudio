@@ -2,6 +2,8 @@ import OpenAI from "openai";
 
 import { parseServerSentEvents } from "./sse";
 import { buildProtocolBody, RequestConfigError } from "./requestMapping";
+import { includeThinkingSummary } from "./thinking";
+import { ResponseThinking } from "./responseThinking";
 import { resolveGenerationEndpoint, UrlResolutionError } from "./urlResolution";
 import type {
   ChatEvent,
@@ -171,6 +173,7 @@ class OpenAIResponsesTransport implements ChatTransport {
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
       const body = buildProtocolBody("openai-responses", request);
+      const thinking = new ResponseThinking(includeThinkingSummary(request.config, "openai-responses"));
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-responses",
         request.baseUrl,
@@ -188,6 +191,7 @@ class OpenAIResponsesTransport implements ChatTransport {
           { signal: request.signal },
         );
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        yield* thinking.output(response.output);
         if (response.status === "failed") {
           yield { type: "failed", error: providerFailure(response.error?.code ?? null, response.error?.message ?? "Provider failed to generate a response") };
           return;
@@ -215,6 +219,8 @@ class OpenAIResponsesTransport implements ChatTransport {
       );
 
       for await (const event of stream) {
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        yield* thinking.event(event);
         if (event.type === "response.output_text.delta") {
           yield { type: "text-delta", text: event.delta };
           continue;
@@ -438,8 +444,11 @@ type AnthropicEvent =
     }
   | {
       type: "content_block_delta";
-      delta?: { type?: string; text?: string };
+      index?: number;
+      delta?: { type?: string; text?: string; thinking?: string };
     }
+  | { type: "content_block_start"; index?: number; content_block?: { type?: string; thinking?: string } }
+  | { type: "content_block_stop"; index?: number }
   | {
       type: "message_delta";
       delta?: { stop_reason?: string };
@@ -458,6 +467,7 @@ class AnthropicNativeTransport implements ChatTransport {
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
     try {
       const body = buildProtocolBody("anthropic-native", request);
+      const showThinking = includeThinkingSummary(request.config, "anthropic-native");
       const streaming = request.config?.stream ?? true;
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "anthropic-native",
@@ -487,7 +497,7 @@ class AnthropicNativeTransport implements ChatTransport {
       if (!streaming) {
         const payload = await response.json() as {
           type?: string;
-          content?: Array<{ type?: string; text?: string }>;
+          content?: Array<{ type?: string; text?: string; thinking?: string }>;
           stop_reason?: string | null;
           usage?: { input_tokens?: number; output_tokens?: number };
           error?: { type?: string; message?: string };
@@ -501,8 +511,13 @@ class AnthropicNativeTransport implements ChatTransport {
           yield { type: "failed", error: { kind: "protocol", message: "Anthropic response is malformed", retryable: false } };
           return;
         }
-        const text = payload.content.filter((block) => block.type === "text").map((block) => block.text ?? "").join("");
-        if (text) yield { type: "text-delta", text };
+        for (const block of payload.content) {
+          if (block.type === "text" && block.text) yield { type: "text-delta", text: block.text };
+          if (showThinking && block.type === "thinking" && block.thinking) {
+            if (typeof block.thinking !== "string") throw new SyntaxError("Anthropic thinking text is malformed");
+            yield { type: "thinking-delta", text: block.thinking };
+          }
+        }
         yield {
           type: "completed", finishReason: payload.stop_reason,
           ...(payload.usage ? { usage: { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens } } : {}),
@@ -513,9 +528,29 @@ class AnthropicNativeTransport implements ChatTransport {
       let finishReason: string | undefined;
       let inputTokens: number | undefined;
       let outputTokens: number | undefined;
+      const thinkingBlocks = new Set<number>();
+      const startedBlocks = new Set<number>();
 
       for await (const event of parseServerSentEvents(response.body)) {
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         const payload = JSON.parse(event.data) as AnthropicEvent;
+
+        if (payload.type === "content_block_start" && "content_block" in payload && payload.index !== undefined) {
+          if (startedBlocks.has(payload.index)) continue;
+          startedBlocks.add(payload.index);
+          if (payload.content_block?.type === "thinking") {
+            thinkingBlocks.add(payload.index);
+            if (showThinking && payload.content_block.thinking) {
+              if (typeof payload.content_block.thinking !== "string") throw new SyntaxError("Anthropic thinking text is malformed");
+              yield { type: "thinking-delta", text: payload.content_block.thinking };
+            }
+          }
+          continue;
+        }
+        if (payload.type === "content_block_stop" && "index" in payload && payload.index !== undefined) {
+          thinkingBlocks.delete(payload.index);
+          continue;
+        }
 
         if (payload.type === "message_start" && "message" in payload) {
           inputTokens = payload.message?.usage?.input_tokens;
@@ -524,6 +559,10 @@ class AnthropicNativeTransport implements ChatTransport {
         }
 
         if (payload.type === "content_block_delta" && "delta" in payload) {
+          if (showThinking && payload.delta?.type === "thinking_delta" && payload.index !== undefined && thinkingBlocks.has(payload.index)) {
+            if (typeof payload.delta.thinking !== "string") throw new SyntaxError("Anthropic thinking delta is malformed");
+            if (payload.delta.thinking) yield { type: "thinking-delta", text: payload.delta.thinking };
+          }
           if (payload.delta?.type === "text_delta" && payload.delta.text) {
             yield { type: "text-delta", text: payload.delta.text };
           }

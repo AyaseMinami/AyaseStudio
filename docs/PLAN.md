@@ -31,7 +31,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 - Provider-managed conversation state. OpenAI Responses uses local history with `store: false`.
 - Rendering raw HTML from model output. `rehype-raw` is prohibited.
 - Conversation search, folders, pinning, and automatic title generation.
-- Thinking controls for protocols other than Gemini Native (later Issue #10 slices).
+- Unverified relay-specific reasoning extensions (including Chat `reasoning_content`).
 
 ## Module seams
 
@@ -114,6 +114,12 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 按用户 2026-09-15 确认，原 #3/#4 的独立会话快照规则改为助手统一管理。配置仅在助手编辑中保存，对话无覆盖或重新应用入口。四协议请求映射、非流式、上下文预算与安全校验保持原合同。自动数值省略可选请求字段；Anthropic 必填 `max_tokens` 自动模式使用标明为 Ayase 回退的 4096。流式默认开启是 Ayase 产品推荐。未知模型的能力不从模型 ID 或目录身份信息猜测。自定义 JSON 按协议隔离，并在最终请求构造处安全校验。旧会话配置本地备份后退出运行配置，桌面交互与确定性测试共同组成验收证据。远端 Issue 尚未同步此调整。
 
 ## Acceptance gates
+
+### Issue #16 protocol thinking extension (2026-09-19)
+
+在 #10 Gemini 首版上扩展 OpenAI Chat 的强度、Responses 的强度与摘要，以及 Anthropic 的型号相关模式、预算、effort 与可读摘要。复用灯泡弹层、助手共享配置、冻结请求和本地摘要存储。能力表只识别经官方资料确认的精确型号；未知型号保留默认。Chat 官方接口不承诺可读摘要，未确认的中转扩展不启用。参数与多轮历史合同见 [PROTOCOLS.md](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)。
+
+Issue 原文“仅记录后续需求，本次不开始实现”已被用户 2026-09-19 的本次实施指令取代；未修改远端 Issue。真实线路验收需要单独授权，确定性测试与桌面启动不代表中转站兼容性通过。
 
 ### Issue #10 Gemini first slice (2026-09-16)
 

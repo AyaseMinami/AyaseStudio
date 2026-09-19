@@ -8,12 +8,12 @@ import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
 import { ThinkingToolbarControl } from "./ThinkingControl";
-import type { GeminiThinkingSettings } from "../../chat/geminiThinking";
+import type { ThinkingSettings } from "../../chat/thinking";
 
 export interface ChatWorkspaceProps {
-  geminiThinking?: GeminiThinkingSettings;
+  thinking?: ThinkingSettings;
   thinkingNotice?: string;
-  onThinkingChange?(value: GeminiThinkingSettings): void;
+  onThinkingChange?(value: ThinkingSettings): void;
   title: string;
   isGeneratingElsewhere?: boolean;
   draft: string;
@@ -37,7 +37,7 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
-  geminiThinking,
+  thinking,
   thinkingNotice,
   onThinkingChange,
   title,
@@ -103,8 +103,8 @@ export function ChatWorkspace({
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
           attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
-        thinkingControl={protocol === "gemini-native" && onThinkingChange ? <ThinkingToolbarControl
-          key={modelId} model={modelId ?? ""} value={geminiThinking}
+        thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
+          key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
           disabled={!isHydrated || isGenerating} notice={thinkingNotice} onChange={onThinkingChange} /> : undefined}
         isGeneratingElsewhere={isGeneratingElsewhere}
         draft={draft}

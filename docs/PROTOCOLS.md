@@ -52,7 +52,7 @@ The UI previews the resolved endpoint but stores the configured value. Gemini ha
 ## Neutral events
 
 - `text-delta`: append text to the active assistant message.
-- `thinking-delta`: append provider-readable thought summary to a separate local display field (Gemini Native first slice); never append to answer text or input history.
+- `thinking-delta`: append provider-readable thought summary to a separate local display field (Gemini, Responses, Anthropic); never append to answer text or input history.
 - `completed`: one successful terminal event, optionally carrying finish reason and token usage.
 - `failed`: one terminal event with normalized kind, message, HTTP status, and retryability.
 - `aborted`: one terminal event when the caller cancels.
@@ -68,7 +68,7 @@ Adapters ignore unknown non-terminal provider events. They must not emit events 
 | Gemini native | `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | SSE data records | `candidates[].content.parts[].text` |
 | Anthropic native | `POST /v1/messages` | named SSE events | `content_block_delta` with `text_delta` |
 
-With stream disabled, OpenAI Chat and Responses use the same POST paths with `stream: false`; Gemini uses `POST /v1beta/models/{model}:generateContent` (without `alt=sse`); Anthropic uses `POST /v1/messages` with `stream: false`. The shared URL resolver takes the request mode, so the generation endpoint preview and actual Gemini URL agree. Non-streaming adapters parse the complete JSON before yielding text followed by exactly one `completed`; Gemini routes each part to `text-delta` or `thinking-delta`, while the other adapters yield one `text-delta`. Cancellation or error yields exactly one `aborted` or `failed`.
+With stream disabled, OpenAI Chat and Responses use the same POST paths with `stream: false`; Gemini uses `POST /v1beta/models/{model}:generateContent` (without `alt=sse`); Anthropic uses `POST /v1/messages` with `stream: false`. The shared URL resolver takes the request mode, so the generation endpoint preview and actual Gemini URL agree. Non-streaming adapters parse complete JSON and route readable summary and answer fields independently before exactly one terminal event. Cancellation or error yields exactly one `aborted` or `failed`.
 
 | Config | OpenAI Chat | OpenAI Responses | Gemini Native | Anthropic Native |
 | --- | --- | --- | --- | --- |
@@ -80,7 +80,7 @@ With stream disabled, OpenAI Chat and Responses use the same POST paths with `st
 
 Auto omits optional numeric request fields. Custom Temperature and Top-P together require explicit confirmation. Protocol/model limitations and ranges are checked before network. OpenAI Responses always sends `store: false` with local history. Custom JSON cannot set model, input/history, system instruction, stream, output cap, `store`, URL, headers, key, tools, provider-managed state or aliases/nested variants. A positive allowlist limits safe supplements: OpenAI Chat `seed`, `presence_penalty`, `frequency_penalty`, `stop`; OpenAI Responses text-only `metadata`; Gemini `generationConfig.stopSequences` and `generationConfig.seed`; Anthropic `stop_sequences`. Non-allowlisted fields fail validation instead of being forwarded. Each protocol's JSON text is retained separately when the selected protocol changes.
 
-Known OpenAI reasoning families (`o1`, `o3`, `o4-mini`, GPT-5/5.1/5.2 and GPT-6 Astra) reject custom Temperature and Top-P because Ayase does not request `reasoning.effort: none`. Unknown model IDs retain an unknown capability label. For Gemini 3.x, the UI relays Google's recommendation to use automatic sampling; the model's precise Top-K support remains unknown without model metadata. Anthropic `top_k` accepts zero, and Ayase does not invent a provider maximum; numeric input is limited to a JavaScript safe integer. An incomplete finish is stored as an incomplete local reply and its whole user/assistant round is omitted from the next input history. Gemini's documented prompt block feedback is a provider failure with its block reason, even when no candidates are returned.
+Known OpenAI reasoning models reject custom Temperature and Top-P by default. Documented exceptions are explicit `none` on the recognized GPT-5.1/5.2/5.4 aliases and snapshots; changing back to active reasoning makes conflicting sampling values a validation error. See [GPT-5.2 compatibility](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2) and [GPT-5.4 compatibility](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.4); this exception is not inferred for other models. Unknown model IDs retain an unknown capability label. For Gemini 3.x, the UI relays Google's recommendation to use automatic sampling; the model's precise Top-K support remains unknown without model metadata. Anthropic `top_k` accepts zero outside thinking on models that support it; while thinking is active it must be omitted. Numeric input is limited to a JavaScript safe integer. An incomplete finish is stored as an incomplete local reply and its whole user/assistant round is omitted from the next input history. Gemini's documented prompt block feedback is a provider failure with its block reason, even when no candidates are returned.
 
 Official references checked for Issue #3: [OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat/create), [OpenAI Responses](https://platform.openai.com/docs/api-reference/responses/create), [OpenAI reasoning-model guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2), [Gemini GenerateContent and GenerationConfig](https://ai.google.dev/api/generate-content), [Gemini 3.x guidance](https://ai.google.dev/gemini-api/docs/generate-content/whats-new-gemini-3.5), [Gemini model metadata and Top-K support](https://ai.google.dev/api/models), [Anthropic Messages](https://platform.claude.com/docs/en/api/messages/create), and [Anthropic parameter deprecations](https://platform.claude.com/docs/en/about-claude/model-deprecations). Relay compatibility is observed separately; it does not define official defaults or model capabilities.
 
@@ -90,7 +90,32 @@ Official references checked for Issue #3: [OpenAI Chat Completions](https://plat
 
 Official GenerateContent [thinking table and summary contract](https://ai.google.dev/gemini-api/docs/generate-content/thinking) checked 2026-09-16. `geminiThinking.ts` uses exact documented text-model aliases; unknown, relay-renamed, image and future models receive no thinking fields. Recognized Gemini 3 models use only their listed `thinkingLevel` values (3.8/3.7 Flash exclude `minimal`); 2.5 Pro/Flash/Flash-Lite use validated `thinkingBudget`, with `-1` for dynamic and `0` only where disabling is supported. Flash's zero budget is presented separately as Off. Unsupported choices and invalid budgets fail at the final request boundary. Model changes restore incompatible saved selections to default with a visible notice.
 
-Default effort omits level/budget. The independent summary preference defaults on for recognized models and adds `generationConfig.thinkingConfig.includeThoughts: true`; turning it off with default effort omits the whole thinkingConfig. Both streaming and non-streaming decoders route only parts with `thought === true` to summaries; all other text remains answer text. When summary display is off, returned thought parts are discarded rather than leaked into the answer. Opaque signatures are ignored. No model-internal duration is inferred. Summary request support on a relay is not proven by official documentation and there is no retry/fallback. Other protocols' thinking request/decoding paths are unchanged.
+Default effort omits level/budget. The independent summary preference defaults on for recognized models and adds `generationConfig.thinkingConfig.includeThoughts: true`; turning it off with default effort omits the whole thinkingConfig. Both streaming and non-streaming decoders route only parts with `thought === true` to summaries; all other text remains answer text. When summary display is off, returned thought parts are discarded rather than leaked into the answer. Opaque signatures are ignored. No model-internal duration is inferred. Summary request support on a relay is not proven by official documentation and there is no retry/fallback. Issue #16 extends the other protocols as described below.
+
+## Issue #16 thinking controls and readable summaries
+
+官方资料核对日期：2026-09-19。`thinking.ts` 是已确认的精确别名/快照表，不使用前缀推断新版、Codex、Pro 或中转改名型号；未列入的型号保持默认并省略思考参数。已支持的范围如下，具体精确 ID 见代码表：
+
+| 协议/型号 | 控制 | 可读摘要 |
+| --- | --- | --- |
+| OpenAI o1、o3-mini | low / medium / high | 本实现未确认摘要能力，不主动请求 |
+| OpenAI o3、o4-mini | low / medium / high | Responses summary |
+| GPT-5、mini、nano | minimal / low / medium / high | Responses summary |
+| GPT-5.1 | none / low / medium / high | Responses summary |
+| GPT-5.2、5.4、5.5 | none / low / medium / high / xhigh | Responses summary |
+| GPT-6 Astra | low / medium / high / xhigh / max，无 none | Responses summary |
+| Claude 3.7、4/4.1、Sonnet/Haiku 4.5 | disabled / manual budget | thinking 文本 |
+| Claude Opus 4.5 | disabled / manual budget；独立 low / medium / high effort | thinking 文本 |
+| Claude Opus/Sonnet 4.6 | disabled / adaptive / manual budget（已弃用）；独立 low / medium / high / max effort | thinking 文本 |
+| Claude Opus 4.7/4.8 | disabled / adaptive；独立 low / medium / high / xhigh / max effort | thinking 文本 |
+
+所有行均另有“供应商默认”，不写入可选强度、模式、预算或 effort。OpenAI Chat 使用 `reasoning_effort`，Responses 使用 `reasoning.effort`；UI 的“关闭”映射为 `none`。Responses 的摘要偏好独立控制 `reasoning.summary: "auto"`，关闭时省略该项，保留 `store: false` 和本地历史。官方 Chat 没有在本合同内确认可读摘要；不读取兼容扩展 `reasoning_content`，不解析正文中的 `<think>` 标签。来源：[Chat 参数](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[reasoning 与摘要](https://developers.openai.com/api/docs/guides/reasoning)、[GPT-5](https://developers.openai.com/api/docs/models/gpt-5)、[GPT-5.1](https://developers.openai.com/api/docs/models/gpt-5.1)、[GPT-5.2](https://developers.openai.com/api/docs/models/gpt-5.2)、[GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4)、[GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5)、[GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)。
+
+Anthropic 用 `thinking.type` 表示模式、`budget_tokens` 表示手动预算，`output_config.effort` 独立表示力度。手动预算须为至少 1024 的整数且小于本次有效 `max_tokens`（自动输出为 Ayase 的 4096）。开启思考时，Temperature 仅允许自动或显式 1，Top-K 必须自动，Top-P 须为 0.95–1；已弃用采样参数的新型号继续要求自动。冲突在 UI/最终映射中报错，不改写用户配置。明确启用 adaptive/manual 时，摘要开关分别写入 `display: "summarized"` 或 `"omitted"`；disabled 时不携带 display。此表内 Claude 默认思考关闭，选择供应商默认时不因勾选摘要而开启思考。来源：[模式表](https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting)、[预算](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)、[effort 档位](https://platform.claude.com/docs/en/build-with-claude/effort)、[display 与采样约束](https://platform.claude.com/docs/en/build-with-claude/thinking)。
+
+Responses 只解码 reasoning item 的 `summary_text`，协调 summary text delta/done、summary part done、output item done 与 terminal 完整快照；已显示部分不重复追加。相同文字但不同事件序号的合法增量保留。Anthropic 按 block index 路由 `thinking_delta`，处理初始 thinking block，忽略 signature、redacted 和不透明数据。非流式也使用独立中立摘要事件。关闭摘要时 adapter 与运行时都丢弃意外返回的片段；取消/失败保留此前已经显示并保存的可读部分。来源：[Responses 流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)、[Claude 流式 thinking](https://platform.claude.com/docs/en/build-with-claude/thinking#streaming-thinking)。
+
+纯聊天、无工具调用的 Claude 多轮允许省略旧 thinking blocks；Ayase 只回传普通正文，不保存/回传签名或把展示摘要伪装成模型原始思考。工具调用轮次的完整 block 回传要求不属于本 Issue。参见 [Preserving thinking blocks](https://platform.claude.com/docs/en/build-with-claude/thinking#preserving-thinking-blocks)。未执行真实线路探针；没有新增中转站覆盖规则、自动降级或重试。
 
 The initial relay returned HTTP 200 and `text/event-stream` for all four streaming routes. OpenAI Responses also emitted non-standard `codex.rate_limits` and `codex.response.metadata` events. These are treated as optional unknown events; Ayase Studio depends only on standard terminal and text events.
 

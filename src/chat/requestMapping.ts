@@ -7,7 +7,8 @@ import {
   type SessionConfig,
 } from "./sessionConfig";
 import type { ChatProtocol, ChatRequest } from "./types";
-import { geminiThinkingBody, validateGeminiThinking } from "./geminiThinking";
+import { geminiThinkingBody } from "./geminiThinking";
+import { getThinkingSettings, thinkingCapability, validateThinkingSelection, protocolThinkingBody } from "./thinking";
 import { attachmentCapabilityFailure, safeTextAttachment, type RequestAttachment } from "./attachments";
 
 export class RequestConfigError extends Error {
@@ -35,7 +36,7 @@ export interface ParameterCapability {
 }
 
 function isKnownReasoningModel(model: string): boolean {
-  return /^(o1|o3|o4-mini)(?:$|-)/i.test(model) ||
+  return !!thinkingCapability("openai-chat", model) || /^(o1|o3|o4-mini)(?:$|-)/i.test(model) ||
     /^gpt-5(?:$|-(?:mini|nano|pro)(?:$|-)|\.(?:1|2)(?:$|-))/i.test(model) ||
     /^gpt-6-astra(?:$|-)/i.test(model);
 }
@@ -52,6 +53,7 @@ export function parameterCapability(
   protocol: ChatProtocol,
   model: string,
   field: NumericField,
+  config?: SessionConfig,
 ): ParameterCapability {
   if (field === "contextBudget") {
     return { support: "supported", reason: "Ayase 本地输入历史预算，不是供应商请求参数。" };
@@ -66,6 +68,12 @@ export function parameterCapability(
   }
   if ((protocol === "openai-chat" || protocol === "openai-responses") &&
       isKnownReasoningModel(model) && (field === "temperature" || field === "topP")) {
+    // GPT-5.1/5.2/5.4 document sampling at explicit none; do not infer it for other models.
+    if (config && ["gpt-5.1", "gpt-5.1-2025-11-13", "gpt-5.2", "gpt-5.2-2025-12-11",
+      "gpt-5.4", "gpt-5.4-2026-03-05"].includes(model) &&
+        getThinkingSettings(config, protocol)?.choice === "off") {
+      return { support: "supported", reason: "此模型显式关闭推理时支持采样参数。" };
+    }
     return { support: "unsupported", reason: "此 OpenAI 推理模型不支持自定义采样参数。" };
   }
   if (protocol === "gemini-native" && field === "topK") {
@@ -169,17 +177,32 @@ export function parseCustomBody(protocol: ChatProtocol, json: string): Record<st
 
 export function validateRequestConfig(config: SessionConfig, protocol: ChatProtocol, model: string): ConfigErrors {
   const errors = validateSessionConfig(config, protocol);
-  if (protocol === "gemini-native") {
-    const thinkingError = validateGeminiThinking(model, config.geminiThinking);
-    if (thinkingError) errors.thinking = thinkingError;
+  const thinking = getThinkingSettings(config, protocol);
+  const thinkingError = validateThinkingSelection(protocol, model, thinking);
+  if (thinkingError) errors.thinking = thinkingError;
+  if (config.thinking !== undefined && (!config.thinking || typeof config.thinking !== "object" || Array.isArray(config.thinking))) {
+    errors.thinking = "思考配置无效，请恢复默认配置。";
+  }
+  if (protocol === "anthropic-native" && !thinkingError && thinking &&
+      (thinking.choice === "budget" || thinking.choice === "adaptive")) {
+    if (thinking.choice === "budget" && Number(thinking.budget) >= (numericValue(config.maxOutput) ?? 4096)) {
+      errors.thinking = "思考预算必须小于最大输出（自动模式为 4096），请调整预算或最大输出。";
+    }
+    if (config.temperature?.mode === "custom" && numericValue(config.temperature) !== 1) {
+      errors.temperature = "Anthropic 开启思考时 Temperature 只能省略或为 1，请调整配置。";
+    }
+    if (config.topK?.mode === "custom") errors.topK = "Anthropic 开启思考时不能设置 Top-K。";
+    if (config.topP?.mode === "custom" && numericValue(config.topP)! < 0.95) {
+      errors.topP = "Anthropic 开启思考时 Top-P 必须为 0.95–1。";
+    }
   }
   if (protocol === "anthropic-native" && config.temperature?.mode === "custom" &&
       !errors.temperature && numericValue(config.temperature)! > 1) {
     errors.temperature = "Anthropic Temperature 范围为 0–1。";
   }
   for (const field of ["temperature", "topP", "topK"] as NumericField[]) {
-    if (config[field]?.mode === "custom" && parameterCapability(protocol, model, field).support === "unsupported") {
-      errors[field] = parameterCapability(protocol, model, field).reason;
+    if (config[field]?.mode === "custom" && parameterCapability(protocol, model, field, config).support === "unsupported") {
+      errors[field] = parameterCapability(protocol, model, field, config).reason;
     }
   }
   if (!errors.customJson && typeof config.customJson?.[protocol] === "string") {
@@ -212,6 +235,11 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   const topP = numericValue(config.topP);
   const topK = numericValue(config.topK);
   const maxOutput = request.maxOutputTokens ?? numericValue(config.maxOutput);
+  const thinking = getThinkingSettings(config, protocol);
+  if (protocol === "anthropic-native" && thinking?.choice === "budget" && Number(thinking.budget) >= (maxOutput ?? 4096)) {
+    throw new RequestConfigError({ thinking: "思考预算必须小于本次请求的最大输出。" });
+  }
+  const thinkingBody = protocolThinkingBody(protocol, request.model, config);
   const custom = parseCustomBody(protocol, config.customJson[protocol]);
   const system = [
     ...request.messages.filter((message) => message.role === "system").map((message) => message.content),
@@ -249,6 +277,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   if (protocol === "openai-chat") {
     return checkedInlineBody(protocol, {
       ...custom,
+      ...thinkingBody,
       model: request.model,
       messages: system ? [{ role: "system", content: system }, ...mapped.map(({ message, attachments }) => ({
         role: message.role,
@@ -280,6 +309,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   if (protocol === "openai-responses") {
     return checkedInlineBody(protocol, {
       ...custom,
+      ...thinkingBody,
       model: request.model,
       input: mapped.map(({ message, attachments }) => ({ role: message.role,
         content: !attachments.length ? message.content : [
@@ -321,6 +351,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   }
   const body = {
     ...custom,
+    ...thinkingBody,
     model: request.model,
     max_tokens: maxOutput ?? 4096,
     stream,

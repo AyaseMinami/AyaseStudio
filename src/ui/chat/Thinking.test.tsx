@@ -6,6 +6,7 @@ import { ThinkingSummary } from "./ThinkingSummary";
 import { ThinkingControl, ThinkingToolbarControl } from "./ThinkingControl";
 import { Composer } from "./Composer";
 import { defaultGeminiThinking } from "../../chat/geminiThinking";
+import type { ThinkingSettings } from "../../chat/thinking";
 import type { StoredChatMessage } from "../../chat/repository";
 
 it("streams summaries, folds for the answer, respects manual expansion and shows interrupted content safely", async () => {
@@ -41,11 +42,34 @@ it("shows model-specific options and clearly disables unknown model controls", a
   } finally { await act(async () => root.unmount()); }
 });
 
+it("uses Anthropic choices and its independent effort selector", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThinkingControl protocol="anthropic-native" model="claude-opus-4-6" disabled={false} onChange={() => {}} />));
+    expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual([
+      "default", "off", "adaptive", "budget", "default", "low", "medium", "high", "max",
+    ]);
+    expect(host.textContent).toContain("显示思考摘要");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("keeps OpenAI Chat summary unavailable in the shared control", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThinkingControl protocol="openai-chat" model="o3" disabled={false} onChange={() => {}} />));
+    expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "low", "medium", "high"]);
+    expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(host.textContent).toContain("不提供可读思考摘要");
+  } finally { await act(async () => root.unmount()); }
+});
+
 it("keeps tools on one row and hides thinking settings until opened; supports choice, summary and dismissal", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
-  let settings = { ...defaultGeminiThinking };
+  let settings: ThinkingSettings = { ...defaultGeminiThinking };
   const render = () => root.render(<Composer draft="" isHydrated isGenerating={false}
     onDraftChange={() => {}} onSend={() => {}} onStop={() => {}}
     thinkingControl={<ThinkingToolbarControl model="gemini-3.8-flash" value={settings} disabled={false}

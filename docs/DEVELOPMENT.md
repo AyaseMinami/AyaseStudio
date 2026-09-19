@@ -155,6 +155,12 @@ npm.cmd run tauri dev
 
 ## Conversation configuration and deterministic checks
 
+Issue #16 思考扩展可针对运行 `npm.cmd test -- src/chat/thinking.test.ts src/ui/chat/Thinking.test.tsx src/Workspace.test.tsx src/chat/transport.test.ts src/chat/requestMapping.test.ts src/chat/geminiThinking.test.ts`。覆盖精确型号能力、字段省略、协议配置隔离、手动预算与输出/采样冲突、流式与非流式摘要分离、关闭摘要、Responses 重复/最终事件、失败和历史不回传摘要。默认代码门禁仍为 `npm.cmd run check` 与 Rust check。
+
+交互验收检查 Chat 的摘要能力提示、Responses 独立摘要开关、Anthropic 模式与 effort 独立选择、预算应用、切换型号重置提示及重启恢复；在浅色/深色和 720×520 下确认弹层可滚动且输入区常驻高度不变。真实供应商调用需要授权，不能用自动重试绕过参数错误。只启动桌面程序不能算完成交互或联网验收。
+
+2026-09-19 本地内置浏览器以无密钥配置手动添加 `claude-opus-4-6`，实测灯泡弹层、预算选择、720×520 浅色/深色布局和刷新后配置恢复通过。`tauri dev` 编译并启动桌面进程成功；当前工具的原生窗口控制不可用，未将原生交互或真实线路验收记为通过。
+
 Gemini 思考首版的针对性检查可运行 `npm.cmd test -- src/chat/geminiThinking.test.ts src/ui/chat/Thinking.test.tsx src/chat/transport.test.ts src/chat/requestMapping.test.ts src/chat/sessionStore.test.ts src/Workspace.test.tsx`，再运行前端构建和 Rust check。输入区底部附件与思考图标同排，点击灯泡向上展开强度列表，摘要勾选位于弹层内的独立分区；Escape 关闭并将焦点还给灯泡，点击外部或 Tab 离开时收起。快捷菜单保存当前助手配置；自定义预算需要点击“应用预算”，助手编辑器内则仍需“保存助手”。验收应检查受支持档位、切换型号回默认的提示、独立摘要开关、流式摘要折叠、停止后保留内容及重启恢复。模拟 transport 的验收不代表真实中转站兼容性已验证。
 
 系统指令、自动/自定义数值、流式开关和四协议 JSON 统一保存在助手配置中，编辑后必须点击“保存助手”；“清空”只清除当前对话消息。“恢复默认配置”修改助手编辑草稿，保存后才影响后续请求。验证多对话共享同一配置、助手之间隔离、发送前及请求端校验、非流式成功/失败/取消、完整轮次裁剪和生成时配置冻结；不要为这些测试消耗真实供应商 Token。

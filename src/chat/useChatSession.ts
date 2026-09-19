@@ -19,7 +19,8 @@ import {
   type StoredMessageStatus,
 } from "./repository";
 import { defaultSessionConfig } from "./sessionConfig";
-import { defaultGeminiThinking, isGeminiThinkingSettings, validateGeminiThinking, type GeminiThinkingSettings } from "./geminiThinking";
+import { defaultThinking, getThinkingSettings, includeThinkingSummary, isThinkingSettings,
+  validateThinkingSelection, withThinkingSettings, type ThinkingSettings } from "./thinking";
 import { useConversationWorkspace } from "./useConversationWorkspace";
 import { validateRequestConfig } from "./requestMapping";
 import { buildProtocolBody } from "./requestMapping";
@@ -165,9 +166,11 @@ export function useChatSession({
 
   const [thinkingNotice, setThinkingNotice] = useState("");
   const thinkingResetAttempt = useRef("");
-  async function setGeminiThinking(settings: GeminiThinkingSettings): Promise<boolean> {
+  async function setThinking(settings: ThinkingSettings): Promise<boolean> {
     if (!workspace.assistant || !workspace.canSend()) return false;
-    const input = { ...workspace.assistant, defaultConfig: { ...sessionConfig, geminiThinking: settings } };
+    const protocol = activeConnection?.protocol;
+    if (!protocol) return false;
+    const input = { ...workspace.assistant, defaultConfig: withThinkingSettings(sessionConfig, protocol, settings) };
     return workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input });
   }
   useEffect(() => {
@@ -175,14 +178,16 @@ export function useChatSession({
     thinkingResetAttempt.current = "";
   }, [workspace.assistant?.id, activeConnection?.protocol, activeModel?.modelId]);
   useEffect(() => {
-    const saved = sessionConfig.geminiThinking;
-    if (activeConnection?.protocol !== "gemini-native" || !isGeminiThinkingSettings(saved) ||
-        saved.choice === "default" || !validateGeminiThinking(activeModel?.modelId ?? "", saved) || !workspace.isReady) return;
-    const key = JSON.stringify([workspace.assistant?.id, activeModel?.modelId, saved]);
+    const protocol = activeConnection?.protocol;
+    const saved = protocol ? getThinkingSettings(sessionConfig, protocol) : undefined;
+    const hasExplicitSelection = saved?.choice !== "default" || (saved?.effort !== undefined && saved.effort !== "default");
+    if (!protocol || !isThinkingSettings(saved) || !hasExplicitSelection ||
+        !validateThinkingSelection(protocol, activeModel?.modelId ?? "", saved) || !workspace.isReady) return;
+    const key = JSON.stringify([workspace.assistant?.id, protocol, activeModel?.modelId, saved]);
     if (thinkingResetAttempt.current === key) return;
     thinkingResetAttempt.current = key;
     setThinkingNotice("当前模型不支持原思考选项，正在恢复供应商默认。");
-    void setGeminiThinking({ ...defaultGeminiThinking, includeSummary: saved.includeSummary }).then((success) => {
+    void setThinking({ ...defaultThinking, includeSummary: saved.includeSummary }).then((success) => {
       if (thinkingResetAttempt.current === key) setThinkingNotice(success
         ? "当前模型不支持原思考选项，已恢复供应商默认；摘要偏好保留。"
         : "思考选项恢复失败，请重新选择默认后重试。");
@@ -841,6 +846,7 @@ export function useChatSession({
         signal: controller.signal,
       })) {
         if (event.type === "text-delta" || event.type === "thinking-delta") {
+          if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
           if (event.type === "text-delta") assistantText += event.text;
           else workingMessages = workingMessages.map((message) => message.id === assistantId
             ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
@@ -997,7 +1003,7 @@ export function useChatSession({
     sendMessage,
     setDraft,
     sessionConfig,
-    setGeminiThinking,
+    setThinking,
     thinkingNotice,
     setActiveModel,
     stopGeneration,
