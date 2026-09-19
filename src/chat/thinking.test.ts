@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildProtocolBody, validateRequestConfig } from "./requestMapping";
+import { buildProtocolBody } from "./requestMapping";
 import { defaultSessionConfig, restoreSessionConfig } from "./sessionConfig";
-import { defaultThinking, getThinkingSettings, thinkingCapability, withThinkingSettings, type ThinkingSettings } from "./thinking";
+import { defaultThinking, getThinkingSettings, thinkingOptions, withThinkingSettings, type ThinkingSettings } from "./thinking";
 import { createChatTransport } from "./transport";
 import { planContextBudget } from "./contextBudget";
 import type { ChatEvent, ChatProtocol, ChatRequest } from "./types";
@@ -40,77 +40,75 @@ describe("protocol thinking requests", () => {
     expect(getThinkingSettings(restored, "openai-responses")?.choice).toBe("xhigh");
     expect(getThinkingSettings(restored, "anthropic-native")?.budget).toBe("2048");
   });
-  it.each(["openai-chat", "openai-responses", "anthropic-native"] as const)("%s leaves unknown aliases alone", (protocol) => {
-    const req = request(protocol, "relay-renamed-model");
-    const body = buildProtocolBody(protocol, req);
-    for (const key of ["reasoning_effort", "reasoning", "thinking", "output_config"]) expect(body).not.toHaveProperty(key);
-    expect(() => buildProtocolBody(protocol, request(protocol, "gpt-5.2-relay", { choice: "high" }))).toThrow("不支持");
+  it.each(["openai-chat", "openai-responses", "anthropic-native"] as const)("%s applies its options to arbitrary relay model IDs", (protocol) => {
+    const model = protocol === "anthropic-native" ? "claude-opus-5" : "gpt-5.6-sol";
+    const body = buildProtocolBody(protocol, request(protocol, model,
+      protocol === "anthropic-native" ? { choice: "adaptive", effort: "high", includeSummary: true } : { choice: "high", includeSummary: true }));
+    if (protocol === "openai-chat") expect(body).toMatchObject({ model, reasoning_effort: "high" });
+    if (protocol === "openai-responses") expect(body).toMatchObject({ model, reasoning: { effort: "high", summary: "auto" } });
+    if (protocol === "anthropic-native") expect(body).toMatchObject({ model, thinking: { type: "adaptive" }, output_config: { effort: "high" } });
   });
   it("maps OpenAI effort and summary independently, preserving local history and store:false", () => {
     expect(buildProtocolBody("openai-chat", request("openai-chat", "gpt-5.2", { choice: "off" }))).toMatchObject({ reasoning_effort: "none" });
     const defaults = buildProtocolBody("openai-chat", request("openai-chat", "gpt-5.2"));
     expect(defaults).not.toHaveProperty("reasoning_effort"); expect(defaults).not.toHaveProperty("reasoning");
-    expect(buildProtocolBody("openai-responses", request("openai-responses", "gpt-5.2"))).toMatchObject({ reasoning: { summary: "auto" }, store: false });
+    expect(buildProtocolBody("openai-responses", request("openai-responses", "gpt-5.2"))).toMatchObject({ store: false });
+    expect(buildProtocolBody("openai-responses", request("openai-responses", "gpt-5.2"))).not.toHaveProperty("reasoning");
     expect(buildProtocolBody("openai-responses", request("openai-responses", "gpt-5.2", { choice: "high", includeSummary: false }))).toMatchObject({ reasoning: { effort: "high" } });
     expect(buildProtocolBody("openai-responses", request("openai-responses", "gpt-5.2", { includeSummary: false }))).not.toHaveProperty("reasoning");
-    expect(buildProtocolBody("openai-responses", request("openai-responses", "o1"))).not.toHaveProperty("reasoning");
+    expect(buildProtocolBody("openai-responses", request("openai-responses", "relay-anything", { choice: "max" }))).toMatchObject({ reasoning: { effort: "max" } });
   });
-  it("uses exact per-model effort lists, never infers off or future variants", () => {
-    expect(thinkingCapability("openai-chat", "gpt-5")?.choices).toEqual(["default", "minimal", "low", "medium", "high"]);
-    expect(thinkingCapability("openai-responses", "gpt-5.1")?.choices).not.toContain("xhigh");
-    expect(thinkingCapability("openai-responses", "gpt-6-astra")?.choices).toContain("max");
-    expect(thinkingCapability("openai-responses", "gpt-6-astra")?.choices).not.toContain("off");
-    expect(thinkingCapability("openai-chat", "gpt-5.2-chat-latest")).toBeUndefined();
-    for (const [model, choice] of [["gpt-5", "off"], ["o3", "minimal"], ["gpt-5.1", "xhigh"], ["gpt-6-astra", "off"]] as const) {
-      expect(() => buildProtocolBody("openai-chat", request("openai-chat", model, { choice }))).toThrow("不支持");
-    }
+  it("exposes only protocol wire options, independently of model IDs", () => {
+    expect(thinkingOptions("openai-chat").choices).toEqual(["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+    expect(thinkingOptions("openai-responses").choices).toContain("max");
+    expect(thinkingOptions("anthropic-native").efforts).toEqual(["default", "low", "medium", "high", "xhigh", "max"]);
   });
-  it("allows documented explicit-none sampling without allowing sampling on active reasoning", () => {
-    const req = request("openai-responses", "gpt-5.2", { choice: "off" });
-    req.config!.temperature = { mode: "custom", value: "0.5" };
-    expect(buildProtocolBody("openai-responses", req)).toMatchObject({ temperature: 0.5, reasoning: { effort: "none" } });
-    req.config = withThinkingSettings(req.config!, "openai-responses", { ...defaultThinking, choice: "high" });
-    expect(() => buildProtocolBody("openai-responses", req)).toThrow("采样");
-  });
-  it.each(["gpt-5.4", "gpt-5.4-2026-03-05"])("allows %s explicit-none sampling on both OpenAI protocols", (model) => {
+  it("forwards valid sampling and thinking combinations unchanged", () => {
     for (const protocol of ["openai-chat", "openai-responses"] as const) {
-      for (const field of ["temperature", "topP"] as const) {
-        const req = request(protocol, model, { choice: "off" });
-        req.config![field] = { mode: "custom", value: "0.5" };
-        const body = buildProtocolBody(protocol, req);
-        expect(body[field === "topP" ? "top_p" : field]).toBe(0.5);
-        expect(protocol === "openai-chat" ? body.reasoning_effort : (body.reasoning as { effort: string }).effort).toBe("none");
-        req.config = withThinkingSettings(req.config!, protocol, { ...defaultThinking, choice: "low" });
-        expect(() => buildProtocolBody(protocol, req)).toThrow("采样");
-      }
+      const req = request(protocol, "arbitrary-relay-name", { choice: "high" });
+      req.config!.temperature = { mode: "custom", value: "0.5" };
+      req.config!.topP = { mode: "custom", value: "0.8" };
+      req.config!.dualSamplingConfirmed = true;
+      const body = buildProtocolBody(protocol, req);
+      expect(body).toMatchObject(protocol === "openai-chat"
+        ? { reasoning_effort: "high", temperature: 0.5, top_p: 0.8 }
+        : { reasoning: { effort: "high" }, temperature: 0.5, top_p: 0.8 });
     }
   });
   it("maps Anthropic default, disabled, manual and adaptive without conflating display", () => {
     expect(buildProtocolBody("anthropic-native", request("anthropic-native", "claude-opus-4-7"))).not.toHaveProperty("thinking");
     expect(buildProtocolBody("anthropic-native", request("anthropic-native", "claude-opus-4-7", { choice: "off" }))).toMatchObject({ thinking: { type: "disabled" } });
-    expect(buildProtocolBody("anthropic-native", request("anthropic-native", "claude-opus-4-7", { choice: "adaptive", effort: "xhigh" }))).toMatchObject({
+    expect(buildProtocolBody("anthropic-native", request("anthropic-native", "claude-opus-5", { choice: "adaptive", effort: "xhigh", includeSummary: true }))).toMatchObject({
       thinking: { type: "adaptive", display: "summarized" }, output_config: { effort: "xhigh" },
     });
     expect(buildProtocolBody("anthropic-native", request("anthropic-native", "claude-opus-4-5", { choice: "budget", budget: "1024", effort: "low", includeSummary: false }))).toMatchObject({
       thinking: { type: "enabled", budget_tokens: 1024, display: "omitted" }, output_config: { effort: "low" },
     });
-    expect(() => buildProtocolBody("anthropic-native", request("anthropic-native", "claude-opus-4-7", { choice: "budget" }))).toThrow("不支持");
-    expect(() => buildProtocolBody("anthropic-native", request("anthropic-native", "claude-sonnet-4-5", { choice: "adaptive" }))).toThrow("不支持");
-    expect(() => buildProtocolBody("anthropic-native", request("anthropic-native", "claude-sonnet-4-5", { effort: "high" }))).toThrow("不支持");
+    expect(buildProtocolBody("anthropic-native", request("anthropic-native", "relay-alias", { choice: "budget", budget: "1" }))).toMatchObject({ thinking: { budget_tokens: 1 } });
   });
-  it.each(["", "NaN", "1023", "1024.1", "4096", "99999999999999999"])("rejects invalid/manual budget %s against effective max", (budget) => {
-    expect(() => buildProtocolBody("anthropic-native", request("anthropic-native", "claude-sonnet-4-6", { choice: "budget", budget }))).toThrow("预算");
+  it.each(["", "NaN", "1024.1", "99999999999999999"])("rejects invalid budget integer syntax %s", (budget) => {
+    expect(() => buildProtocolBody("anthropic-native", request("anthropic-native", "claude-opus-5", { choice: "budget", budget }))).toThrow("预算");
   });
-  it("checks request-level output override and sampling conflicts without rewriting settings", () => {
-    const req = request("anthropic-native", "claude-sonnet-4-6", { choice: "budget", budget: "2048" });
-    expect(() => buildProtocolBody("anthropic-native", { ...req, maxOutputTokens: 2048 })).toThrow("预算");
-    req.config!.temperature = { mode: "custom", value: "0.9" };
-    req.config!.topP = { mode: "custom", value: "0.9" };
-    req.config!.topK = { mode: "custom", value: "1" };
-    const before = JSON.stringify(req);
-    expect(validateRequestConfig(req.config!, "anthropic-native", req.model)).toMatchObject({ temperature: expect.any(String), topP: expect.any(String), topK: expect.any(String) });
-    expect(JSON.stringify(req)).toBe(before);
+  it("forwards Anthropic budget/output and sampling combinations for the provider to validate", () => {
+    const req = request("anthropic-native", "claude-opus-5", { choice: "budget", budget: "4096" });
+    req.config!.temperature = { mode: "custom", value: "2.5" };
+    req.config!.topP = { mode: "custom", value: "1.2" };
+    req.config!.topK = { mode: "custom", value: "-1" };
+    const before = JSON.stringify(req.config);
+    expect(buildProtocolBody("anthropic-native", { ...req, maxOutputTokens: 1024 })).toMatchObject({
+      model: "claude-opus-5", max_tokens: 1024, temperature: 2.5, top_p: 1.2, top_k: -1,
+      thinking: { type: "enabled", budget_tokens: 4096, display: "omitted" },
+    });
+    expect(JSON.stringify(req.config)).toBe(before);
   });
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] as const)(
+    "%s omits thinking and summary fields when no preference has been saved", (protocol) => {
+      const body = buildProtocolBody(protocol, { ...base, model: "any-new-model" });
+      for (const key of ["reasoning_effort", "reasoning", "thinking", "output_config", "generationConfig"]) {
+        expect(body).not.toHaveProperty(key);
+      }
+    },
+  );
   it.each(["openai-chat", "openai-responses", "anthropic-native"] as const)("%s rejects custom JSON thinking bypass", (protocol) => {
     const req = request(protocol, "unknown"); req.config!.customJson[protocol] = '{"thinking":{"type":"adaptive"}}';
     expect(() => buildProtocolBody(protocol, req)).toThrow("不允许");
@@ -167,7 +165,7 @@ describe("readable summary decoding", () => {
       { type: "message_delta", delta: { stop_reason: "end_turn" } }, { type: "message_stop" },
     ];
     const fetch = async () => new Response(records.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
-    for await (const event of createChatTransport(protocol, { fetch }).stream({ ...request(protocol, "unknown"), signal: controller.signal })) {
+    for await (const event of createChatTransport(protocol, { fetch }).stream({ ...request(protocol, "unknown", { includeSummary: true }), signal: controller.signal })) {
       events.push(event);
       if (event.type === "thinking-delta") controller.abort();
     }

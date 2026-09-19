@@ -146,26 +146,23 @@ describe("protocol request mapping", () => {
     }
   });
 
-  it("blocks unsupported custom fields while marking unverified models unknown", () => {
+  it("keeps Top-K unavailable for OpenAI because it has no mapped request field", () => {
     expect(parameterCapability("openai-chat", "any", "topK").support).toBe("unsupported");
+    expect(parameterCapability("openai-responses", "gpt-5.6-sol", "topK").support).toBe("unsupported");
     expect(parameterCapability("gemini-native", "any", "topK").support).toBe("unknown");
     expect(validateRequestConfig({ ...defaultSessionConfig(), topK: { mode: "custom", value: "20" } }, "openai-chat", "x").topK).toBeTruthy();
-    expect(parameterCapability("anthropic-native", "claude-opus-4-7", "temperature").support).toBe("unsupported");
-    expect(parameterCapability("anthropic-native", "claude-opus-6", "temperature").support).toBe("unknown");
-    expect(parameterCapability("gemini-native", "gemini-3.8-flash", "topP").reason).toContain("建议 Gemini 3.x 使用自动");
+    expect(parameterCapability("anthropic-native", "claude-opus-5", "temperature").support).toBe("unknown");
+    expect(parameterCapability("gemini-native", "arbitrary-relay", "topP").support).toBe("unknown");
   });
 
-  it.each(["gpt-5", "gpt-5-mini", "gpt-5.1", "gpt-5.2", "gpt-6-astra"])(
-    "blocks known OpenAI reasoning model %s before and at final mapping",
-    (model) => {
-      const config = { ...defaultSessionConfig(), temperature: { mode: "custom" as const, value: "0.5" } };
-      for (const protocol of ["openai-chat", "openai-responses"] as const) {
-        expect(parameterCapability(protocol, model, "temperature").support).toBe("unsupported");
-        expect(validateRequestConfig(config, protocol, model).temperature).toBeTruthy();
-        expect(() => buildProtocolBody(protocol, { ...request, model, config })).toThrow(RequestConfigError);
-      }
-    },
-  );
+  it.each(["gpt-5.6-sol", "relay-unlisted"])("forwards valid OpenAI sampling for %s", (model) => {
+    const config = { ...defaultSessionConfig(), temperature: { mode: "custom" as const, value: "0.5" } };
+    for (const protocol of ["openai-chat", "openai-responses"] as const) {
+      expect(parameterCapability(protocol, model, "temperature").support).toBe("unknown");
+      expect(validateRequestConfig(config, protocol, model).temperature).toBeUndefined();
+      expect(buildProtocolBody(protocol, { ...request, model, config }).temperature).toBe(0.5);
+    }
+  });
 
   it.each([
     ["openai-chat", '{"model":"other"}'],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultGeminiThinking, geminiThinkingCapability } from "./geminiThinking";
+import { defaultGeminiThinking, geminiThinkingBody, geminiThinkingChoices } from "./geminiThinking";
 import { buildProtocolBody } from "./requestMapping";
 import { defaultSessionConfig, restoreSessionConfig } from "./sessionConfig";
 import { createChatTransport } from "./transport";
@@ -9,16 +9,16 @@ import { planContextBudget } from "./contextBudget";
 const request: ChatRequest = { model: "gemini-3.8-flash", baseUrl: "https://synthetic.example", apiKey: "fake",
   messages: [{ role: "user", content: "hello" }], config: defaultSessionConfig() };
 describe("Gemini thinking vertical slice", () => {
-  it("offers only documented options for exact models and preserves old config", () => {
-    expect(geminiThinkingCapability("gemini-3.8-flash")?.choices).toEqual(["default", "low", "medium", "high"]);
-    expect(geminiThinkingCapability("gemini-3-flash-preview")?.choices).toContain("minimal");
-    expect(geminiThinkingCapability("gemini-2.5-pro")?.choices).not.toContain("off");
-    expect(geminiThinkingCapability("gemini-3.8-flash-relay")).toBeUndefined();
+  it("exports protocol-wide choices and preserves old config", () => {
+    expect(geminiThinkingChoices).toEqual(["default", "off", "minimal", "low", "medium", "high", "dynamic", "budget"]);
     expect(restoreSessionConfig(defaultSessionConfig()).invalidStoredConfig).toBeUndefined();
   });
-  it("separates default effort from requesting a summary and omits all fields for unknown models", () => {
-    expect(buildProtocolBody("gemini-native", request).generationConfig).toEqual({ thinkingConfig: { includeThoughts: true } });
-    expect(buildProtocolBody("gemini-native", { ...request, model: "unknown" }).generationConfig).toBeUndefined();
+  it("separates default effort from requesting a summary for every model ID", () => {
+    expect(buildProtocolBody("gemini-native", request).generationConfig).toBeUndefined();
+    expect(buildProtocolBody("gemini-native", { ...request, model: "arbitrary-relay-name" }).generationConfig).toBeUndefined();
+    expect(buildProtocolBody("gemini-native", { ...request, config: { ...defaultSessionConfig(), geminiThinking: {
+      ...defaultGeminiThinking, includeSummary: true,
+    } } }).generationConfig).toEqual({ thinkingConfig: { includeThoughts: true } });
     expect(buildProtocolBody("gemini-native", { ...request, config: { ...defaultSessionConfig(), geminiThinking: {
       ...defaultGeminiThinking, includeSummary: false,
     } } }).generationConfig).toBeUndefined();
@@ -26,19 +26,19 @@ describe("Gemini thinking vertical slice", () => {
       ...defaultGeminiThinking, choice: "high",
     } } })).not.toHaveProperty("reasoning_effort");
   });
-  it("maps levels and budgets without allowing conflicting custom JSON or unsupported choices", () => {
+  it("maps all protocol choices and budgets for arbitrary model IDs without allowing custom JSON bypass", () => {
     const configured = (model: string, choice: "high" | "minimal" | "off" | "budget", budget = "1024") => ({
       ...request, model, config: { ...defaultSessionConfig(), geminiThinking: { ...defaultGeminiThinking, choice, budget } },
     });
-    expect(buildProtocolBody("gemini-native", configured(request.model, "high")).generationConfig).toEqual({
-      thinkingConfig: { thinkingLevel: "high", includeThoughts: true },
+    expect(buildProtocolBody("gemini-native", configured("gemini-relay-x", "high")).generationConfig).toEqual({
+      thinkingConfig: { thinkingLevel: "high" },
     });
     expect(buildProtocolBody("gemini-native", configured("gemini-2.5-flash", "off")).generationConfig).toEqual({
-      thinkingConfig: { thinkingBudget: 0, includeThoughts: true },
+      thinkingConfig: { thinkingBudget: 0 },
     });
-    expect(() => buildProtocolBody("gemini-native", configured(request.model, "minimal"))).toThrow("不支持");
-    expect(() => buildProtocolBody("gemini-native", configured("gemini-2.5-pro", "off"))).toThrow("不支持");
-    expect(() => buildProtocolBody("gemini-native", configured("gemini-2.5-pro", "budget", "127"))).toThrow("128");
+    expect(buildProtocolBody("gemini-native", configured("relay", "minimal")).generationConfig).toEqual({ thinkingConfig: { thinkingLevel: "minimal" } });
+    expect(buildProtocolBody("gemini-native", configured("relay", "budget", "127")).generationConfig).toEqual({ thinkingConfig: { thinkingBudget: 127 } });
+    expect(geminiThinkingBody({ ...defaultGeminiThinking, choice: "dynamic" })).toEqual({ thinkingBudget: -1 });
     const config = defaultSessionConfig(); config.customJson["gemini-native"] = '{"generationConfig":{"thinkingConfig":{"thinkingLevel":"high"}}}';
     expect(() => buildProtocolBody("gemini-native", { ...request, config })).toThrow();
   });

@@ -97,7 +97,7 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector(".conversation-cascade-pane")).not.toBeNull();
   });
 
-  it("saves Gemini controls, resets incompatible model choices, and restores stopped summaries", async () => {
+  it("saves Gemini controls, preserves choices across model switches, and restores stopped summaries", async () => {
     await act(async () => root.unmount());
     saveConnectionSettings({ version: 3, activeModelId: "model-a", providers: [{ id: "p", name: "Synthetic", connections: [{
       id: "c", name: "Gemini", protocol: "gemini-native", baseUrl: "https://test.example", apiKey: "synthetic-only",
@@ -122,12 +122,16 @@ describe("assistant workspace public behavior", () => {
     expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).assistants.find((item) => item.id === "default")?.defaultConfig.geminiThinking?.choice).toBe("minimal");
     await click("编辑助手 默认助手");
     await choose("#assistant-model", "model-b");
-    expect(container.textContent).toContain("原思考选项不适用于此模型");
+    expect(container.textContent).not.toContain("原思考选项不适用于此模型");
     await click("保存助手");
     await thinkingReady();
-    expect(container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value).toBe("default");
+    expect(container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value).toBe("minimal");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="high"]')!.click());
     await thinkingReady();
+    await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
+    if (!container.querySelector(".thinking-popover")) await click("思考设置");
+    await act(async () => container.querySelector<HTMLInputElement>('.thinking-summary-toggle input')!.click());
+    await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     let captured: ChatRequest | undefined;
     const transport: ChatTransport = { async *stream(request) {
       captured = request;
@@ -187,11 +191,11 @@ describe("assistant workspace public behavior", () => {
     });
   });
 
-  it("freezes, resets, and restores stopped OpenAI Responses thinking summaries", async () => {
+  it("freezes, preserves choices, and restores stopped OpenAI Responses thinking summaries", async () => {
     await act(async () => root.unmount());
     saveConnectionSettings({ version: 3, activeModelId: "model-a", providers: [{ id: "p", name: "Synthetic", connections: [{
       id: "responses", name: "Responses", protocol: "openai-responses", baseUrl: "https://test.example", apiKey: "synthetic-only",
-      models: [{ id: "model-a", modelId: "gpt-5" }, { id: "model-b", modelId: "gpt-6-astra" }],
+      models: [{ id: "model-a", modelId: "gpt-5" }, { id: "model-b", modelId: "gpt-5.6-sol" }],
     }] }] });
     root = createRoot(container); await act(async () => root.render(<App />));
     await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
@@ -203,12 +207,16 @@ describe("assistant workspace public behavior", () => {
       const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
       field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(container.textContent).toContain("原思考选项不适用于此模型");
+    expect(container.textContent).not.toContain("原思考选项不适用于此模型");
     await click("保存助手");
     await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     if (!container.querySelector(".thinking-popover")) await click("思考设置");
-    await wait(() => container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value === "default");
+    await wait(() => container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value === "minimal");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="max"]')!.click());
+    await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
+    if (!container.querySelector(".thinking-popover")) await click("思考设置");
+    await act(async () => container.querySelector<HTMLInputElement>('.thinking-summary-toggle input')!.click());
+    await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     let captured: ChatRequest | undefined;
     const transport: ChatTransport = { async *stream(request) {
       captured = request;
@@ -234,11 +242,11 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector('button[aria-label="思考设置"]')?.getAttribute("title")).toContain("思考：最高");
   });
 
-  it("freezes, resets, and restores stopped Anthropic summaries with effort", async () => {
+  it("freezes, preserves choices, and restores stopped Anthropic summaries with effort", async () => {
     await act(async () => root.unmount());
     saveConnectionSettings({ version: 3, activeModelId: "model-a", providers: [{ id: "p", name: "Synthetic", connections: [{
       id: "anthropic", name: "Anthropic", protocol: "anthropic-native", baseUrl: "https://test.example", apiKey: "synthetic-only",
-      models: [{ id: "model-a", modelId: "claude-opus-4-6" }, { id: "model-b", modelId: "claude-opus-4-7" }],
+      models: [{ id: "model-a", modelId: "claude-opus-4-6" }, { id: "model-b", modelId: "claude-opus-5" }],
     }] }] });
     root = createRoot(container); await act(async () => root.render(<App />));
     await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
@@ -250,11 +258,11 @@ describe("assistant workspace public behavior", () => {
       const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
       field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(container.textContent).toContain("原思考选项不适用于此模型");
+    expect(container.textContent).not.toContain("原思考选项不适用于此模型");
     await click("保存助手");
     await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     if (!container.querySelector(".thinking-popover")) await click("思考设置");
-    await wait(() => container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value === "default");
+    await wait(() => container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value === "budget");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="adaptive"]')!.click());
     let savedChoice: string | undefined;
     for (let attempt = 0; attempt < 150 && savedChoice !== "adaptive"; attempt++) {
@@ -278,6 +286,10 @@ describe("assistant workspace public behavior", () => {
       if (savedEffort !== "xhigh") await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
     }
     expect(savedEffort).toBe("xhigh");
+    await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
+    if (!container.querySelector(".thinking-popover")) await click("思考设置");
+    await act(async () => container.querySelector<HTMLInputElement>('.thinking-summary-toggle input')!.click());
+    await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     let captured: ChatRequest | undefined;
     const transport: ChatTransport = { async *stream(request) {
       captured = request;
@@ -304,7 +316,7 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前助手）"]')?.value).toBe("xhigh");
   });
 
-  it("resets a standalone incompatible Anthropic effort during an editor model switch", async () => {
+  it("preserves a standalone Anthropic effort during an editor model switch", async () => {
     await act(async () => root.unmount());
     saveConnectionSettings({ version: 3, activeModelId: "model-a", providers: [{ id: "p", name: "Synthetic", connections: [{
       id: "anthropic", name: "Anthropic", protocol: "anthropic-native", baseUrl: "https://test.example", apiKey: "synthetic-only",
@@ -323,12 +335,12 @@ describe("assistant workspace public behavior", () => {
       const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
       field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(container.textContent).toContain("原思考选项不适用于此模型");
+    expect(container.textContent).not.toContain("原思考选项不适用于此模型");
     await click("保存助手");
     const restored = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     const thinking = restored.assistants.find((item) => item.id === "default")?.defaultConfig.thinking?.["anthropic-native"];
     expect(thinking).toMatchObject({ choice: "default", includeSummary: false });
-    expect(thinking).not.toHaveProperty("effort");
+    expect(thinking?.effort).toBe("max");
   });
 
   it("drops malicious thinking deltas when the frozen summary preference is off", async () => {

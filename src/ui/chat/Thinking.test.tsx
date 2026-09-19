@@ -30,15 +30,15 @@ it("streams summaries, folds for the answer, respects manual expansion and shows
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it("shows model-specific options and clearly disables unknown model controls", async () => {
+it("shows protocol-specific options for arbitrary model IDs", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div"); const root = createRoot(host);
   try {
     await act(async () => root.render(<ThinkingControl model="gemini-3.8-flash" disabled={false} onChange={() => {}} />));
-    expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "low", "medium", "high"]);
+    expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "off", "minimal", "low", "medium", "high", "dynamic", "budget"]);
     await act(async () => root.render(<ThinkingControl model="relay-alias" disabled={false} onChange={() => {}} />));
-    expect(host.querySelector("select")?.disabled).toBe(true);
-    expect(host.textContent).toContain("能力未识别");
+    expect(host.querySelector("select")?.disabled).toBe(false);
+    expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "off", "minimal", "low", "medium", "high", "dynamic", "budget"]);
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -46,9 +46,9 @@ it("uses Anthropic choices and its independent effort selector", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div"); const root = createRoot(host);
   try {
-    await act(async () => root.render(<ThinkingControl protocol="anthropic-native" model="claude-opus-4-6" disabled={false} onChange={() => {}} />));
+    await act(async () => root.render(<ThinkingControl protocol="anthropic-native" model="claude-opus-5" disabled={false} onChange={() => {}} />));
     expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual([
-      "default", "off", "adaptive", "budget", "default", "low", "medium", "high", "max",
+      "default", "off", "adaptive", "budget", "default", "low", "medium", "high", "xhigh", "max",
     ]);
     expect(host.textContent).toContain("显示思考摘要");
   } finally { await act(async () => root.unmount()); }
@@ -58,10 +58,10 @@ it("keeps OpenAI Chat summary unavailable in the shared control", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div"); const root = createRoot(host);
   try {
-    await act(async () => root.render(<ThinkingControl protocol="openai-chat" model="o3" disabled={false} onChange={() => {}} />));
-    expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "low", "medium", "high"]);
+    await act(async () => root.render(<ThinkingControl protocol="openai-chat" model="gpt-5.6-sol" disabled={false} onChange={() => {}} />));
+    expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"]);
     expect(host.querySelector('input[type="checkbox"]')).toBeNull();
-    expect(host.textContent).toContain("不提供可读思考摘要");
+    expect(host.textContent).toContain("尚未接入 Chat Completions 的思考摘要扩展");
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -87,7 +87,7 @@ it("keeps tools on one row and hides thinking settings until opened; supports ch
     expect(settings.choice).toBe("high");
     expect(trigger.classList.contains("is-active")).toBe(true);
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    expect(settings.includeSummary).toBe(false);
+    expect(settings.includeSummary).toBe(true);
     await act(async () => host.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(host.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);

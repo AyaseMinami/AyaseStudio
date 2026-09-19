@@ -93,7 +93,7 @@ describe("ChatTransport", () => {
   );
 
   it("reports Gemini's documented blocked prompt as a provider failure in both modes", async () => {
-    const payload = { promptFeedback: { blockReason: "SAFETY", blockReasonMessage: "Synthetic block" } };
+    const payload = { promptFeedback: { blockReason: "SAFETY", blockReasonMessage: `Synthetic block ${request.apiKey}`, extraDetail: "retained detail" } };
     const nonStreamFetch: FetchLike = async () => new Response(JSON.stringify(payload), { status: 200 });
     const streamFetch: FetchLike = async () => sseResponse([`data: ${JSON.stringify(payload)}\n\n`]);
     for (const [fetch, config] of [[nonStreamFetch, nonStreamingConfig], [streamFetch, defaultSessionConfig()]] as const) {
@@ -101,6 +101,10 @@ describe("ChatTransport", () => {
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ type: "failed", error: { kind: "provider", retryable: false } });
       expect(events[0].type === "failed" && events[0].error.message).toContain("SAFETY");
+      const message = events[0].type === "failed" ? events[0].error.message : "";
+      expect(message).toContain("retained detail");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain(request.apiKey);
     }
   });
 
@@ -129,6 +133,71 @@ describe("ChatTransport", () => {
       ]);
     },
   );
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s retains a complete redacted HTTP error body while streaming",
+    async (protocol) => {
+      let requestCount = 0;
+      const fetch: FetchLike = async () => {
+        requestCount += 1;
+        return new Response(JSON.stringify({
+          error: {
+            message: "Full synthetic provider detail",
+            type: "invalid_request_error",
+            api_key: "test-key",
+            nested: { authorization: "Bearer synthetic-secret", retained: "all fields stay visible",
+              access_token: "private-access", refresh_token: "private-refresh", client_secret: "private-client" },
+          },
+        }), { status: 401, headers: { "content-type": "application/json" } });
+      };
+
+      const events = await collectEvents(protocol, fetch);
+
+      expect(requestCount).toBe(1);
+      expect(events).toMatchObject([{ type: "failed", error: { kind: "http", status: 401 } }]);
+      const message = events[0]?.type === "failed" ? events[0].error.message : "";
+      expect(message).toContain("Full synthetic provider detail");
+      expect(message).toContain("all fields stay visible");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("test-key");
+      expect(message).not.toContain("synthetic-secret");
+      expect(message).not.toContain("private-access");
+      expect(message).not.toContain("private-refresh");
+      expect(message).not.toContain("private-client");
+      expect(message).not.toContain("[REDACTED]]");
+    },
+  );
+
+  it("redacts the transmitted trimmed key and uses a fallback for whitespace-only error bodies", async () => {
+    const events = await collectEvents("gemini-native", async () => new Response(
+      "Incorrect API key provided: trimmed-secret; access_token=other-secret", { status: 401 },
+    ), { ...request, apiKey: "  trimmed-secret  " });
+    const message = events[0]?.type === "failed" ? events[0].error.message : "";
+    expect(message).not.toContain("trimmed-secret");
+    expect(message).not.toContain("other-secret");
+    expect(message).toContain("[REDACTED]");
+    const empty = await collectEvents("anthropic-native", async () => new Response(" \n\t", { status: 500 }));
+    expect(empty).toMatchObject([{ type: "failed", error: { status: 500, message: "Provider returned no error body." } }]);
+  });
+
+  it("redacts complete Basic and proxy authorization values in plain-text errors", async () => {
+    const body = [
+      "Authorization: Basic dXNlcjpwYXNz",
+      "Proxy-Authorization: Api-Key proxy-secret",
+      "Authorization: Digest username=alice, response=digest-signature",
+      "Authorization: AWS4-HMAC-SHA256 Credential=access-id/region, Signature=aws-signature",
+    ].join("\n");
+    const events = await collectEvents("openai-chat", async () => new Response(body, { status: 401 }));
+    const message = events[0]?.type === "failed" ? events[0].error.message : "";
+    expect(message).toContain("Authorization: [REDACTED]");
+    expect(message).toContain("Proxy-Authorization: [REDACTED]");
+    expect(message).not.toContain("dXNlcjpwYXNz");
+    expect(message).not.toContain("proxy-secret");
+    expect(message).not.toContain("alice");
+    expect(message).not.toContain("digest-signature");
+    expect(message).not.toContain("access-id");
+    expect(message).not.toContain("aws-signature");
+  });
 
   it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
     "%s aborts an in-flight non-streaming request",
@@ -420,6 +489,33 @@ describe("ChatTransport", () => {
     ]);
   });
 
+  it("only emits Gemini thought parts when summary display is explicitly enabled", async () => {
+    const payload = {
+      candidates: [{
+        content: { parts: [{ text: "private", thought: true }, { text: "answer" }] },
+        finishReason: "STOP",
+      }],
+    };
+    const fetch: FetchLike = async () => sseResponse([`data: ${JSON.stringify(payload)}\n\n`]);
+    const baseRequest = { ...request, baseUrl: "https://relay.example" };
+
+    await expect(collectEvents("gemini-native", fetch, baseRequest)).resolves.toEqual([
+      { type: "text-delta", text: "answer" },
+      { type: "completed", finishReason: "STOP" },
+    ]);
+    await expect(collectEvents("gemini-native", fetch, {
+      ...baseRequest,
+      config: {
+        ...defaultSessionConfig(),
+        geminiThinking: { choice: "default", budget: "1024", includeSummary: true },
+      },
+    })).resolves.toEqual([
+      { type: "thinking-delta", text: "private" },
+      { type: "text-delta", text: "answer" },
+      { type: "completed", finishReason: "STOP" },
+    ]);
+  });
+
   it("maps Anthropic native message events and ignores ping events", async () => {
     const fetch: FetchLike = async (input, init) => {
       expect(String(input)).toBe("https://relay.example/v1/messages");
@@ -489,16 +585,10 @@ describe("ChatTransport", () => {
 
     const events = await collectEvents("openai-responses", fetch);
 
-    expect(events).toEqual([
-      {
-        type: "failed",
-        error: {
-          kind: "server",
-          message: "Synthetic provider failure",
-          retryable: true,
-        },
-      },
+    expect(events).toMatchObject([
+      { type: "failed", error: { kind: "server", retryable: true } },
     ]);
+    expect(events[0]?.type === "failed" && events[0].error.message).toContain("Synthetic provider failure");
   });
 
   it("normalizes a fetch rejection as a retryable network failure", async () => {
@@ -566,16 +656,10 @@ describe("ChatTransport", () => {
       baseUrl: "https://relay.example",
     });
 
-    expect(events).toEqual([
-      {
-        type: "failed",
-        error: {
-          kind: "server",
-          message: "Synthetic overload",
-          retryable: true,
-        },
-      },
+    expect(events).toMatchObject([
+      { type: "failed", error: { kind: "server", retryable: true } },
     ]);
+    expect(events[0]?.type === "failed" && events[0].error.message).toContain("Synthetic overload");
   });
 
   it("preserves a top-level Responses error event", async () => {
@@ -586,15 +670,29 @@ describe("ChatTransport", () => {
 
     const events = await collectEvents("openai-responses", fetch);
 
-    expect(events).toEqual([
-      {
-        type: "failed",
-        error: {
-          kind: "rate-limit",
-          message: "Synthetic stream limit",
-          retryable: true,
-        },
-      },
+    expect(events).toMatchObject([
+      { type: "failed", error: { kind: "rate-limit", retryable: true } },
     ]);
+    expect(events[0]?.type === "failed" && events[0].error.message).toContain("Synthetic stream limit");
+  });
+
+  it("keeps Gemini stream error fields while redacting credentials", async () => {
+    const fetch: FetchLike = async () =>
+      sseResponse([
+        'data: {"error":{"status":"INVALID_ARGUMENT","message":"Detailed Gemini stream error","apiKey":"test-key","authorization":"Bearer synthetic-secret","details":[{"reason":"retained"}]}}\n\n',
+      ]);
+
+    const events = await collectEvents("gemini-native", fetch, {
+      ...request,
+      baseUrl: "https://relay.example",
+    });
+
+    expect(events).toMatchObject([{ type: "failed", error: { kind: "provider" } }]);
+    const message = events[0]?.type === "failed" ? events[0].error.message : "";
+    expect(message).toContain("Detailed Gemini stream error");
+    expect(message).toContain("retained");
+    expect(message).toContain("[REDACTED]");
+    expect(message).not.toContain("test-key");
+    expect(message).not.toContain("synthetic-secret");
   });
 });

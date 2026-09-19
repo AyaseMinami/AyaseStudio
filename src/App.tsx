@@ -43,7 +43,6 @@ function App() {
           messages={chat.messages}
           modelId={chat.activeModel?.modelId}
           thinking={getThinkingSettings(chat.sessionConfig, chat.activeConnection?.protocol ?? "gemini-native")}
-          thinkingNotice={chat.thinkingNotice}
           onThinkingChange={(value) => void chat.setThinking(value)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={

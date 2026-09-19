@@ -12,7 +12,6 @@ import type { ThinkingSettings } from "../../chat/thinking";
 
 export interface ChatWorkspaceProps {
   thinking?: ThinkingSettings;
-  thinkingNotice?: string;
   onThinkingChange?(value: ThinkingSettings): void;
   title: string;
   isGeneratingElsewhere?: boolean;
@@ -38,7 +37,6 @@ export interface ChatWorkspaceProps {
 
 export function ChatWorkspace({
   thinking,
-  thinkingNotice,
   onThinkingChange,
   title,
   isGeneratingElsewhere,
@@ -105,7 +103,7 @@ export function ChatWorkspace({
       <Composer
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
-          disabled={!isHydrated || isGenerating} notice={thinkingNotice} onChange={onThinkingChange} /> : undefined}
+          disabled={!isHydrated || isGenerating} onChange={onThinkingChange} /> : undefined}
         isGeneratingElsewhere={isGeneratingElsewhere}
         draft={draft}
         draftAttachments={draftAttachments}

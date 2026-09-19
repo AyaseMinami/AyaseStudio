@@ -80,6 +80,16 @@ const sharedProps = {
 };
 
 describe("SettingsWorkspace", () => {
+  it("shows the HTTP status and provider detail in a failed model test", () => {
+    const html = renderToStaticMarkup(<SettingsWorkspace {...sharedProps} activeSection="connections"
+      connection={{ ...sharedProps.connection, modelTests: { "model-example": {
+        status: "failed", totalMs: 10,
+        error: { kind: "http", status: 401, message: "Unauthorized <script>unsafe</script>", retryable: false },
+      } } }} />);
+    expect(html).toContain("HTTP 401");
+    expect(html).toContain("Unauthorized &lt;script&gt;unsafe&lt;/script&gt;");
+    expect(html).not.toContain("<script>");
+  });
   it("renders the three-level connection workspace with distinct selection states", () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace {...sharedProps} activeSection="connections" />,

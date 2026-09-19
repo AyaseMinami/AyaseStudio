@@ -7,8 +7,7 @@ import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settin
 import { DEFAULT_ASSISTANT_ID, type AssistantInput, type AssistantPreset, type WorkspaceCommand } from "../../chat/workspace";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
-import { defaultThinking, getThinkingSettings, isThinkingSettings, validateThinkingSelection,
-  withThinkingSettings } from "../../chat/thinking";
+import { getThinkingSettings, withThinkingSettings } from "../../chat/thinking";
 
 function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -44,7 +43,6 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 860);
   const [conversationPanelOpen, setConversationPanelOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>();
-  const [thinkingNotice, setThinkingNotice] = useState("");
   const { snapshot, conversation, busy, execute } = workspace;
   const selectedAssistant = snapshot?.assistants.find((item) => item.id === snapshot.selection.activeAssistantId);
   const conversations = snapshot?.conversations.filter((item) => item.assistantId === selectedAssistant?.id) ?? [];
@@ -53,7 +51,6 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
     if (await execute(command)) setDialog(undefined);
   }
   function editAssistant(existing?: AssistantPreset) {
-    setThinkingNotice("");
     setDialog({ type: "assistant", existing, input: existing ? structuredClone(existing) : {
       name: "新助手", icon: "", defaultModelId: selectedAssistant?.defaultModelId ?? null, defaultConfig: defaultSessionConfig(),
     } });
@@ -163,17 +160,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
         <label htmlFor="assistant-model">助手模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
           onChange={(event) => {
             const defaultModelId = event.target.value || null;
-            const target = getActiveTarget({ ...settings, activeModelId: defaultModelId });
-            let config = dialog.input.defaultConfig;
-            const saved = target ? getThinkingSettings(config, target.connection.protocol) : undefined;
-            setThinkingNotice("");
-            if (target && isThinkingSettings(saved) &&
-                validateThinkingSelection(target.connection.protocol, target.model.modelId, saved)) {
-              config = withThinkingSettings(config, target.connection.protocol,
-                { ...defaultThinking, includeSummary: saved.includeSummary });
-              setThinkingNotice("原思考选项不适用于此模型，已恢复默认；保存助手后生效。");
-            }
-            setDialog({ ...dialog, input: { ...dialog.input, defaultModelId, defaultConfig: config } });
+            setDialog({ ...dialog, input: { ...dialog.input, defaultModelId } });
           }}>
           <option value="">未选择模型</option>
           {dialog.input.defaultModelId && !editorTarget && <option value={dialog.input.defaultModelId}>原模型已失效，请重新选择</option>}
@@ -182,7 +169,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
         {editorTarget && <ThinkingControl
           key={`${editorTarget.connection.protocol}-${editorTarget.model.modelId}-${getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)?.budget}`}
           protocol={editorTarget.connection.protocol} model={editorTarget.model.modelId} value={getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)}
-          disabled={busy} notice={thinkingNotice} hint="保存助手后生效"
+          disabled={busy} hint="保存助手后生效"
           onChange={(thinking) => setDialog({ ...dialog, input: { ...dialog.input,
             defaultConfig: withThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol, thinking) } })} />}
         {editorErrors.thinking && <p className="session-config-error" role="alert">{editorErrors.thinking}</p>}

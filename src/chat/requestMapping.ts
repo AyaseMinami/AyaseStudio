@@ -8,7 +8,7 @@ import {
 } from "./sessionConfig";
 import type { ChatProtocol, ChatRequest } from "./types";
 import { geminiThinkingBody } from "./geminiThinking";
-import { getThinkingSettings, thinkingCapability, validateThinkingSelection, protocolThinkingBody } from "./thinking";
+import { getThinkingSettings, validateThinkingSelection, protocolThinkingBody } from "./thinking";
 import { attachmentCapabilityFailure, safeTextAttachment, type RequestAttachment } from "./attachments";
 
 export class RequestConfigError extends Error {
@@ -35,25 +35,11 @@ export interface ParameterCapability {
   reason: string;
 }
 
-function isKnownReasoningModel(model: string): boolean {
-  return !!thinkingCapability("openai-chat", model) || /^(o1|o3|o4-mini)(?:$|-)/i.test(model) ||
-    /^gpt-5(?:$|-(?:mini|nano|pro)(?:$|-)|\.(?:1|2)(?:$|-))/i.test(model) ||
-    /^gpt-6-astra(?:$|-)/i.test(model);
-}
-
-function isNewAnthropicModel(model: string): boolean {
-  return new Set([
-    "claude-opus-4-7", "claude-opus-4-8", "claude-opus-5",
-    "claude-sonnet-5", "claude-fable-5", "claude-mythos-5",
-    "claude-mythos-preview",
-  ]).has(model.toLowerCase());
-}
-
 export function parameterCapability(
   protocol: ChatProtocol,
-  model: string,
+  _model: string,
   field: NumericField,
-  config?: SessionConfig,
+  _config?: SessionConfig,
 ): ParameterCapability {
   if (field === "contextBudget") {
     return { support: "supported", reason: "Ayase 本地输入历史预算，不是供应商请求参数。" };
@@ -62,31 +48,7 @@ export function parameterCapability(
   if (field === "topK" && (protocol === "openai-chat" || protocol === "openai-responses")) {
     return { support: "unsupported", reason: "OpenAI API 不提供 Top-K 请求字段。" };
   }
-  if (protocol === "anthropic-native" && isNewAnthropicModel(model) &&
-      (field === "temperature" || field === "topP" || field === "topK")) {
-    return { support: "unsupported", reason: "Anthropic 此模型已弃用采样参数；请使用自动。" };
-  }
-  if ((protocol === "openai-chat" || protocol === "openai-responses") &&
-      isKnownReasoningModel(model) && (field === "temperature" || field === "topP")) {
-    // GPT-5.1/5.2/5.4 document sampling at explicit none; do not infer it for other models.
-    if (config && ["gpt-5.1", "gpt-5.1-2025-11-13", "gpt-5.2", "gpt-5.2-2025-12-11",
-      "gpt-5.4", "gpt-5.4-2026-03-05"].includes(model) &&
-        getThinkingSettings(config, protocol)?.choice === "off") {
-      return { support: "supported", reason: "此模型显式关闭推理时支持采样参数。" };
-    }
-    return { support: "unsupported", reason: "此 OpenAI 推理模型不支持自定义采样参数。" };
-  }
-  if (protocol === "gemini-native" && field === "topK") {
-    return { support: "unknown", reason: /^gemini-3(?:$|[.-])/i.test(model)
-      ? "Google 建议 Gemini 3.x 使用自动采样；Top-K 能力仍取决于模型元数据，请自行确认。"
-      : "Top-K 取决于模型元数据；当前模型目录未保存该能力，发送前请自行确认。" };
-  }
-  if (protocol === "gemini-native" && /^gemini-3(?:$|[.-])/i.test(model) &&
-      (field === "temperature" || field === "topP")) {
-    return { support: "unknown", reason: "Google 建议 Gemini 3.x 使用自动采样；当前模型目录未保存具体能力。" };
-  }
-  if (!model.trim()) return { support: "unknown", reason: "尚未选择模型。" };
-  return { support: "unknown", reason: "当前模型目录只有身份信息；具体模型能力未知。" };
+  return { support: "unknown", reason: "按当前协议发送，参数支持情况由供应商判断。" };
 }
 
 const safeCustomFields: Record<ChatProtocol, Record<string, "integer" | "number" | "stop" | "metadata" | "gemini-config">> = {
@@ -178,27 +140,10 @@ export function parseCustomBody(protocol: ChatProtocol, json: string): Record<st
 export function validateRequestConfig(config: SessionConfig, protocol: ChatProtocol, model: string): ConfigErrors {
   const errors = validateSessionConfig(config, protocol);
   const thinking = getThinkingSettings(config, protocol);
-  const thinkingError = validateThinkingSelection(protocol, model, thinking);
+  const thinkingError = validateThinkingSelection(protocol, thinking);
   if (thinkingError) errors.thinking = thinkingError;
   if (config.thinking !== undefined && (!config.thinking || typeof config.thinking !== "object" || Array.isArray(config.thinking))) {
     errors.thinking = "思考配置无效，请恢复默认配置。";
-  }
-  if (protocol === "anthropic-native" && !thinkingError && thinking &&
-      (thinking.choice === "budget" || thinking.choice === "adaptive")) {
-    if (thinking.choice === "budget" && Number(thinking.budget) >= (numericValue(config.maxOutput) ?? 4096)) {
-      errors.thinking = "思考预算必须小于最大输出（自动模式为 4096），请调整预算或最大输出。";
-    }
-    if (config.temperature?.mode === "custom" && numericValue(config.temperature) !== 1) {
-      errors.temperature = "Anthropic 开启思考时 Temperature 只能省略或为 1，请调整配置。";
-    }
-    if (config.topK?.mode === "custom") errors.topK = "Anthropic 开启思考时不能设置 Top-K。";
-    if (config.topP?.mode === "custom" && numericValue(config.topP)! < 0.95) {
-      errors.topP = "Anthropic 开启思考时 Top-P 必须为 0.95–1。";
-    }
-  }
-  if (protocol === "anthropic-native" && config.temperature?.mode === "custom" &&
-      !errors.temperature && numericValue(config.temperature)! > 1) {
-    errors.temperature = "Anthropic Temperature 范围为 0–1。";
   }
   for (const field of ["temperature", "topP", "topK"] as NumericField[]) {
     if (config[field]?.mode === "custom" && parameterCapability(protocol, model, field, config).support === "unsupported") {
@@ -207,12 +152,7 @@ export function validateRequestConfig(config: SessionConfig, protocol: ChatProto
   }
   if (!errors.customJson && typeof config.customJson?.[protocol] === "string") {
     try {
-      const custom = parseCustomBody(protocol, config.customJson[protocol]);
-      if (isKnownReasoningModel(model) &&
-          (protocol === "openai-chat" || protocol === "openai-responses") &&
-          Object.keys(custom).some((key) => key !== "metadata")) {
-        errors.customJson = "当前 OpenAI 推理模型的补充采样字段能力未知；请移除这些自定义字段。";
-      }
+      parseCustomBody(protocol, config.customJson[protocol]);
     }
     catch (error) {
       if (error instanceof RequestConfigError) errors.customJson = error.message;
@@ -235,11 +175,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   const topP = numericValue(config.topP);
   const topK = numericValue(config.topK);
   const maxOutput = request.maxOutputTokens ?? numericValue(config.maxOutput);
-  const thinking = getThinkingSettings(config, protocol);
-  if (protocol === "anthropic-native" && thinking?.choice === "budget" && Number(thinking.budget) >= (maxOutput ?? 4096)) {
-    throw new RequestConfigError({ thinking: "思考预算必须小于本次请求的最大输出。" });
-  }
-  const thinkingBody = protocolThinkingBody(protocol, request.model, config);
+  const thinkingBody = protocolThinkingBody(protocol, config);
   const custom = parseCustomBody(protocol, config.customJson[protocol]);
   const system = [
     ...request.messages.filter((message) => message.role === "system").map((message) => message.content),
@@ -330,7 +266,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   }
   if (protocol === "gemini-native") {
     const customGeneration = isRecord(custom.generationConfig) ? custom.generationConfig : {};
-    const thinkingConfig = geminiThinkingBody(request.model, config.geminiThinking);
+    const thinkingConfig = geminiThinkingBody(config.geminiThinking);
     const generationConfig = {
       ...customGeneration,
       ...(thinkingConfig ? { thinkingConfig } : {}),

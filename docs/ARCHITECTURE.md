@@ -123,9 +123,11 @@ AyaseStudio/
 
 ### ChatTransport
 
-Gemini 思考首版由 `geminiThinking.ts` 集中维护精确型号能力、选项、预算校验和请求字段映射。助手配置中的可选 `geminiThinking` 保持旧记录兼容；输入区快捷修改持久化到当前助手。发送时继续冻结整个配置。`thinking-delta` 与 `text-delta` 独立，`StoredChatMessage.thinkingSummary` 仅用于本地展示，不进入 `ChatMessage` 请求历史；复用现有节流保存与中止恢复。`ThinkingSummary` 用 SafeMarkdown 渲染供应商可读摘要，不展示或存储 thoughtSignature。折叠状态属于组件临时状态，用户手动展开后不随正文增量强制收起。
+Gemini 思考首版由 `geminiThinking.ts` 集中维护协议选项、数值结构校验和请求字段映射。助手配置中的可选 `geminiThinking` 保持旧记录兼容；输入区快捷修改持久化到当前助手。发送时继续冻结整个配置。`thinking-delta` 与 `text-delta` 独立，`StoredChatMessage.thinkingSummary` 仅用于本地展示，不进入 `ChatMessage` 请求历史；复用现有节流保存与中止恢复。`ThinkingSummary` 用 SafeMarkdown 渲染供应商可读摘要，不展示或存储 thoughtSignature。折叠状态属于组件临时状态，用户手动展开后不随正文增量强制收起。
 
-Issue #16 的 `thinking.ts` 为四协议控件提供能力查询、结构校验与配置读写；Gemini 委托原模块，其他协议使用可选 `SessionConfig.thinking[protocol]` 独立保存。旧配置缺字段即供应商默认，无数据库版本迁移。切换型号只重置当前协议的不兼容选择，保留摘要偏好和其他协议配置；预算与最大输出、采样冲突必须显式修正，不能以重置代替报错。Anthropic 模式/预算与 effort 分开表达，OpenAI 则使用型号允许的 effort 档位。最终请求仍由 `requestMapping.ts` 复核。
+Issue #16 的 `thinking.ts` 为四协议控件提供协议选项、结构校验与配置读写；Gemini 委托原模块，其他协议使用可选 `SessionConfig.thinking[protocol]` 独立保存。2026-09-19 按用户修订移除模型能力白名单、型号档位限制、预算与输出/采样冲突拦截。模型 ID 不参与思考配置准入；供应商验证能力与参数组合。切换模型不重置配置，切换协议使用其独立保存值。缺字段即供应商默认，摘要默认关闭；旧记录明确保存的摘要偏好不变，无数据库版本迁移。Anthropic 模式/预算与 effort 分开表达。最终请求由 `requestMapping.ts` 验证结构和可映射字段；本地历史、受保护 JSON 与附件安全边界保留。
+
+供应商 HTTP 错误保留状态码和完整响应正文，流式错误保留错误载荷；凭据在 transport 内脱敏后进入中立错误事件，界面以文本展示。错误不会触发自动降级、删除参数或重试。
 
 Responses 的 `responseThinking.ts` 是 adapter 内部的摘要拼接器，按 item/summary 索引和事件序号协调增量与完整结果，避免 done、output item、terminal 重复添加内容。Anthropic 只接收 thinking block 的可读字段；签名、密文和 redacted block 不保存。每次生成拥有独立解码状态；adapter 和会话运行时均按冻结配置丢弃被关闭的摘要。普通无工具多轮仅回传正文，不增加供应商托管状态或结构化思考历史。
 

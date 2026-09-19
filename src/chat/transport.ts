@@ -24,7 +24,73 @@ class HttpStatusError extends Error {
   }
 }
 
-function providerFailure(code: string | null, message: string): ChatFailure {
+const credentialName = "(?:(?:x[-_ ]?)?api[-_ ]?key|(?:proxy[-_ ]?)?authorization|(?:(?:access|refresh|id|auth|session)[-_ ]?)?token|(?:client[-_ ]?)?secret|password|credential)";
+const credentialField = new RegExp(`^${credentialName}$`, "i");
+const credentialAssignment = new RegExp(`(["']?\\b${credentialName}["']?\\s*[:=]\\s*["']?)([^\\s"',}\\]]+)`, "gi");
+
+const authorizationAssignment = /((?:proxy[-_ ]?)?authorization["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\r\n<]+)/gi;
+
+function redactProviderText(value: string, apiKey?: string): string {
+  let redacted = value;
+  if (apiKey) {
+    redacted = redacted.split(apiKey).join("[REDACTED]");
+    if (apiKey.trim()) redacted = redacted.split(apiKey.trim()).join("[REDACTED]");
+  }
+  return redacted
+    .replace(authorizationAssignment, (_match, prefix: string) => prefix + "[REDACTED]")
+    .replace(/\b(Bearer\s+)([^\s"',}\]]+)/gi, (match, prefix: string, value: string) =>
+      value.startsWith("[REDACTED") ? match : `${prefix}[REDACTED]`)
+    .replace(credentialAssignment, (match, prefix: string, value: string) =>
+      value.startsWith("[REDACTED") ? match : `${prefix}[REDACTED]`);
+}
+
+function redactProviderPayload(value: unknown, apiKey?: string): unknown {
+  if (typeof value === "string") return redactProviderText(value, apiKey);
+  if (Array.isArray(value)) return value.map((item) => redactProviderPayload(item, apiKey));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        credentialField.test(key) ? "[REDACTED]" : redactProviderPayload(item, apiKey),
+      ]),
+    );
+  }
+  return value;
+}
+
+function providerPayloadMessage(payload: unknown, fallback: string, apiKey?: string): string {
+  if (typeof payload === "string") {
+    if (!payload.trim()) return fallback;
+    try {
+      return JSON.stringify(redactProviderPayload(JSON.parse(payload), apiKey), null, 2);
+    } catch {
+      return redactProviderText(payload, apiKey);
+    }
+  }
+  if (payload !== undefined) {
+    try {
+      return JSON.stringify(redactProviderPayload(payload, apiKey), null, 2);
+    } catch {
+      // Use the readable provider message if an unexpected value cannot be serialized.
+    }
+  }
+  return redactProviderText(fallback, apiKey);
+}
+
+async function httpStatusError(response: Response, apiKey: string): Promise<HttpStatusError> {
+  const body = await response.clone().text().catch(() => "");
+  return new HttpStatusError(
+    response.status,
+    providerPayloadMessage(body, "Provider returned no error body.", apiKey),
+  );
+}
+
+function providerFailure(
+  code: string | null,
+  message: string,
+  payload?: unknown,
+  apiKey?: string,
+): ChatFailure {
   const normalizedCode = (code ?? "provider_error").toLowerCase();
   const isRateLimit =
     normalizedCode.includes("rate_limit") ||
@@ -36,12 +102,12 @@ function providerFailure(code: string | null, message: string): ChatFailure {
 
   return {
     kind: isRateLimit ? "rate-limit" : isServer ? "server" : "provider",
-    message,
+    message: providerPayloadMessage(payload, message, apiKey),
     retryable: isRateLimit || isServer,
   };
 }
 
-function failureFrom(error: unknown): ChatFailure {
+function failureFrom(error: unknown, apiKey?: string): ChatFailure {
   if (error instanceof UrlResolutionError || error instanceof RequestConfigError) {
     return { kind: "protocol", message: error.message, retryable: false };
   }
@@ -51,7 +117,7 @@ function failureFrom(error: unknown): ChatFailure {
       : undefined;
   const numericStatus = Number(rawStatus);
   const status = Number.isFinite(numericStatus) ? numericStatus : undefined;
-  const message = error instanceof Error ? error.message : "Unknown transport error";
+  const message = error instanceof Error ? redactProviderText(error.message, apiKey) : "Unknown transport error";
 
   if (error instanceof SyntaxError) {
     return { kind: "protocol", message, retryable: false };
@@ -77,26 +143,47 @@ function failureFrom(error: unknown): ChatFailure {
       ? (error as { code: string }).code
       : undefined;
   if (providerCode) {
-    return providerFailure(providerCode, message);
+    const payload =
+      typeof error === "object" && error !== null && "error" in error
+        ? (error as { error?: unknown }).error
+        : undefined;
+    return providerFailure(providerCode, message, payload, apiKey);
   }
 
   return { kind: "network", message, retryable: true };
+}
+
+function openAIFetch(
+  dependencies: ChatTransportDependencies,
+  apiKey: string,
+): { fetch: ChatTransportDependencies["fetch"]; lastHttpError(): HttpStatusError | undefined } {
+  let lastError: HttpStatusError | undefined;
+  return {
+    fetch: async (input, init) => {
+      const response = await dependencies.fetch(input, init);
+      if (!response.ok) lastError = await httpStatusError(response, apiKey);
+      return response;
+    },
+    lastHttpError: () => lastError,
+  };
 }
 
 class OpenAIChatTransport implements ChatTransport {
   constructor(private readonly dependencies: ChatTransportDependencies) {}
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
+    let capturedFetch: ReturnType<typeof openAIFetch> | undefined;
     try {
       const body = buildProtocolBody("openai-chat", request);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-chat",
         request.baseUrl,
       );
+      capturedFetch = openAIFetch(this.dependencies, request.apiKey);
       const client = new OpenAI({
         apiKey: request.apiKey,
         baseURL: normalizedBaseUrl,
-        fetch: this.dependencies.fetch,
+        fetch: capturedFetch.fetch,
         dangerouslyAllowBrowser: true,
         maxRetries: 0,
       });
@@ -162,7 +249,7 @@ class OpenAIChatTransport implements ChatTransport {
         return;
       }
 
-      yield { type: "failed", error: failureFrom(error) };
+      yield { type: "failed", error: failureFrom(capturedFetch?.lastHttpError() ?? error, request.apiKey) };
     }
   }
 }
@@ -171,6 +258,7 @@ class OpenAIResponsesTransport implements ChatTransport {
   constructor(private readonly dependencies: ChatTransportDependencies) {}
 
   async *stream(request: ChatRequest): AsyncIterable<ChatEvent> {
+    let capturedFetch: ReturnType<typeof openAIFetch> | undefined;
     try {
       const body = buildProtocolBody("openai-responses", request);
       const thinking = new ResponseThinking(includeThinkingSummary(request.config, "openai-responses"));
@@ -178,10 +266,11 @@ class OpenAIResponsesTransport implements ChatTransport {
         "openai-responses",
         request.baseUrl,
       );
+      capturedFetch = openAIFetch(this.dependencies, request.apiKey);
       const client = new OpenAI({
         apiKey: request.apiKey,
         baseURL: normalizedBaseUrl,
-        fetch: this.dependencies.fetch,
+        fetch: capturedFetch.fetch,
         dangerouslyAllowBrowser: true,
         maxRetries: 0,
       });
@@ -193,7 +282,7 @@ class OpenAIResponsesTransport implements ChatTransport {
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         yield* thinking.output(response.output);
         if (response.status === "failed") {
-          yield { type: "failed", error: providerFailure(response.error?.code ?? null, response.error?.message ?? "Provider failed to generate a response") };
+          yield { type: "failed", error: providerFailure(response.error?.code ?? null, response.error?.message ?? "Provider failed to generate a response", response.error, request.apiKey) };
           return;
         }
         if (response.status !== "completed" && response.status !== "incomplete") {
@@ -254,6 +343,8 @@ class OpenAIResponsesTransport implements ChatTransport {
             error: providerFailure(
               providerError?.code ?? null,
               providerError?.message ?? "Provider failed to generate a response",
+              event,
+              request.apiKey,
             ),
           };
           return;
@@ -262,7 +353,7 @@ class OpenAIResponsesTransport implements ChatTransport {
         if (event.type === "error") {
           yield {
             type: "failed",
-            error: providerFailure(event.code, event.message),
+            error: providerFailure(event.code, event.message, event, request.apiKey),
           };
           return;
         }
@@ -304,7 +395,7 @@ class OpenAIResponsesTransport implements ChatTransport {
         return;
       }
 
-      yield { type: "failed", error: failureFrom(error) };
+      yield { type: "failed", error: failureFrom(capturedFetch?.lastHttpError() ?? error, request.apiKey) };
     }
   }
 }
@@ -319,11 +410,11 @@ interface GeminiChunk {
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
-function blockedGeminiPrompt(chunk: GeminiChunk): ChatFailure | undefined {
+function blockedGeminiPrompt(chunk: GeminiChunk, apiKey: string): ChatFailure | undefined {
   const reason = chunk.promptFeedback?.blockReason;
   if (!reason) return undefined;
   const detail = chunk.promptFeedback?.blockReasonMessage;
-  return providerFailure(reason, `Gemini 拦截了输入（${reason}）。请检查或改写最新消息。${detail ? ` ${detail}` : ""}`);
+  return providerFailure(reason, `Gemini 拦截了输入（${reason}）。${detail ? ` ${detail}` : ""}`, chunk, apiKey);
 }
 
 class GeminiNativeTransport implements ChatTransport {
@@ -333,6 +424,7 @@ class GeminiNativeTransport implements ChatTransport {
     try {
       const body = buildProtocolBody("gemini-native", request);
       const streaming = request.config?.stream ?? true;
+      const showThinking = includeThinkingSummary(request.config, "gemini-native");
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "gemini-native",
         request.baseUrl,
@@ -350,17 +442,17 @@ class GeminiNativeTransport implements ChatTransport {
       });
 
       if (!response.ok) {
-        throw new HttpStatusError(response.status, `Gemini HTTP ${response.status}`);
+        throw await httpStatusError(response, request.apiKey);
       }
 
       if (!streaming) {
         const chunk = await response.json() as GeminiChunk;
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         if (chunk.error) {
-          yield { type: "failed", error: providerFailure(chunk.error.status ?? String(chunk.error.code ?? "provider_error"), chunk.error.message ?? "Gemini response error") };
+          yield { type: "failed", error: providerFailure(chunk.error.status ?? String(chunk.error.code ?? "provider_error"), chunk.error.message ?? "Gemini response error", chunk, request.apiKey) };
           return;
         }
-        const blocked = blockedGeminiPrompt(chunk);
+        const blocked = blockedGeminiPrompt(chunk, request.apiKey);
         if (blocked) { yield { type: "failed", error: blocked }; return; }
         const candidate = chunk.candidates?.[0];
         if (!candidate || !candidate.finishReason || !Array.isArray(candidate.content?.parts)) {
@@ -368,7 +460,7 @@ class GeminiNativeTransport implements ChatTransport {
           return;
         }
         for (const part of candidate.content.parts) {
-          if (part.thought === true && request.config?.geminiThinking?.includeSummary === false) continue;
+          if (part.thought === true && !showThinking) continue;
           if (part.text) yield { type: part.thought === true ? "thinking-delta" : "text-delta", text: part.text };
         }
         yield {
@@ -391,15 +483,17 @@ class GeminiNativeTransport implements ChatTransport {
             error: providerFailure(
               chunk.error.status ?? String(chunk.error.code ?? "provider_error"),
               chunk.error.message ?? "Gemini stream error",
+              chunk,
+              request.apiKey,
             ),
           };
           return;
         }
-        const blocked = blockedGeminiPrompt(chunk);
+        const blocked = blockedGeminiPrompt(chunk, request.apiKey);
         if (blocked) { yield { type: "failed", error: blocked }; return; }
         for (const candidate of chunk.candidates ?? []) {
           for (const part of candidate.content?.parts ?? []) {
-            if (part.thought === true && request.config?.geminiThinking?.includeSummary === false) continue;
+            if (part.thought === true && !showThinking) continue;
             if (part.text) {
               yield { type: part.thought === true ? "thinking-delta" : "text-delta", text: part.text };
             }
@@ -432,7 +526,7 @@ class GeminiNativeTransport implements ChatTransport {
         return;
       }
 
-      yield { type: "failed", error: failureFrom(error) };
+      yield { type: "failed", error: failureFrom(error, request.apiKey) };
     }
   }
 }
@@ -488,10 +582,7 @@ class AnthropicNativeTransport implements ChatTransport {
       );
 
       if (!response.ok) {
-        throw new HttpStatusError(
-          response.status,
-          `Anthropic HTTP ${response.status}`,
-        );
+        throw await httpStatusError(response, request.apiKey);
       }
 
       if (!streaming) {
@@ -504,7 +595,7 @@ class AnthropicNativeTransport implements ChatTransport {
         };
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         if (payload.type === "error" || payload.error) {
-          yield { type: "failed", error: providerFailure(payload.error?.type ?? null, payload.error?.message ?? "Anthropic response error") };
+          yield { type: "failed", error: providerFailure(payload.error?.type ?? null, payload.error?.message ?? "Anthropic response error", payload, request.apiKey) };
           return;
         }
         if (payload.type !== "message" || !Array.isArray(payload.content) || !payload.stop_reason) {
@@ -585,6 +676,8 @@ class AnthropicNativeTransport implements ChatTransport {
             error: providerFailure(
               payload.error?.type ?? null,
               payload.error?.message ?? "Anthropic stream error",
+              payload,
+              request.apiKey,
             ),
           };
           return;
@@ -624,7 +717,7 @@ class AnthropicNativeTransport implements ChatTransport {
         return;
       }
 
-      yield { type: "failed", error: failureFrom(error) };
+      yield { type: "failed", error: failureFrom(error, request.apiKey) };
     }
   }
 }

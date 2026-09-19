@@ -19,8 +19,8 @@ import {
   type StoredMessageStatus,
 } from "./repository";
 import { defaultSessionConfig } from "./sessionConfig";
-import { defaultThinking, getThinkingSettings, includeThinkingSummary, isThinkingSettings,
-  validateThinkingSelection, withThinkingSettings, type ThinkingSettings } from "./thinking";
+import { includeThinkingSummary,
+  withThinkingSettings, type ThinkingSettings } from "./thinking";
 import { useConversationWorkspace } from "./useConversationWorkspace";
 import { validateRequestConfig } from "./requestMapping";
 import { buildProtocolBody } from "./requestMapping";
@@ -164,8 +164,6 @@ export function useChatSession({
     [activeConnection],
   );
 
-  const [thinkingNotice, setThinkingNotice] = useState("");
-  const thinkingResetAttempt = useRef("");
   async function setThinking(settings: ThinkingSettings): Promise<boolean> {
     if (!workspace.assistant || !workspace.canSend()) return false;
     const protocol = activeConnection?.protocol;
@@ -173,27 +171,6 @@ export function useChatSession({
     const input = { ...workspace.assistant, defaultConfig: withThinkingSettings(sessionConfig, protocol, settings) };
     return workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input });
   }
-  useEffect(() => {
-    setThinkingNotice("");
-    thinkingResetAttempt.current = "";
-  }, [workspace.assistant?.id, activeConnection?.protocol, activeModel?.modelId]);
-  useEffect(() => {
-    const protocol = activeConnection?.protocol;
-    const saved = protocol ? getThinkingSettings(sessionConfig, protocol) : undefined;
-    const hasExplicitSelection = saved?.choice !== "default" || (saved?.effort !== undefined && saved.effort !== "default");
-    if (!protocol || !isThinkingSettings(saved) || !hasExplicitSelection ||
-        !validateThinkingSelection(protocol, activeModel?.modelId ?? "", saved) || !workspace.isReady) return;
-    const key = JSON.stringify([workspace.assistant?.id, protocol, activeModel?.modelId, saved]);
-    if (thinkingResetAttempt.current === key) return;
-    thinkingResetAttempt.current = key;
-    setThinkingNotice("当前模型不支持原思考选项，正在恢复供应商默认。");
-    void setThinking({ ...defaultThinking, includeSummary: saved.includeSummary }).then((success) => {
-      if (thinkingResetAttempt.current === key) setThinkingNotice(success
-        ? "当前模型不支持原思考选项，已恢复供应商默认；摘要偏好保留。"
-        : "思考选项恢复失败，请重新选择默认后重试。");
-    });
-  }, [sessionConfig, activeConnection?.protocol, activeModel?.modelId, workspace.assistant?.id, workspace.isReady]);
-
   useEffect(() => {
     setConfigErrors(validateRequestConfig(
       sessionConfig,
@@ -1004,7 +981,6 @@ export function useChatSession({
     setDraft,
     sessionConfig,
     setThinking,
-    thinkingNotice,
     setActiveModel,
     stopGeneration,
     updateConnection: updateConnectionProfile,

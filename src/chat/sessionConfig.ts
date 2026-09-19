@@ -103,8 +103,8 @@ export function validateNumericSetting(field: NumericField, setting: unknown): s
   }
   const value = Number(setting.value);
   const { min, max, integer } = ranges[field];
-  if (!Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
-    if (field === "topK") return "请输入非负安全整数；模型允许范围取决于供应商能力。";
+  if (!Number.isFinite(value) || (field === "contextBudget" && (value < min || value > max)) || (integer && !Number.isSafeInteger(value))) {
+    if (field !== "contextBudget") return integer ? "请输入可精确表示的整数。" : "请输入有限数值。";
     return `请输入 ${min}–${max} ${integer ? "之间的整数" : "之间的数值"}。`;
   }
   return undefined;
@@ -118,13 +118,6 @@ export function validateSessionConfig(config: SessionConfig, protocol?: ChatProt
   for (const field of Object.keys(ranges) as NumericField[]) {
     const error = validateNumericSetting(field, config[field]);
     if (error) errors[field] = error;
-  }
-  if (
-    config.temperature?.mode === "custom" &&
-    config.topP?.mode === "custom" &&
-    config.dualSamplingConfirmed !== true
-  ) {
-    errors.dualSampling = "Temperature 与 Top-P 通常二选一；请明确选择继续。";
   }
   if (!isRecord(config.customJson) || protocols.some((item) => typeof config.customJson[item] !== "string")) {
     errors.customJson = "四种协议的自定义 JSON 必须分别保存为文本。";

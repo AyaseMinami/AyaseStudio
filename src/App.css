@@ -1688,6 +1688,13 @@ textarea:disabled {
   font-size: 0.875rem;
 }
 
+.composer-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
 .composer-frame {
   border: 1px solid rgb(var(--color-border));
   border-radius: 1rem;

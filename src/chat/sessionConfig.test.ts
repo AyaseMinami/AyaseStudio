@@ -19,15 +19,20 @@ describe("SessionConfig", () => {
     });
   });
 
-  it("requires an explicit fresh confirmation after either sampling field changes", () => {
+  it("accepts finite sampling combinations without protocol-model restrictions", () => {
     const both = {
       ...defaultSessionConfig(),
       temperature: { mode: "custom" as const, value: "0.5" },
       topP: { mode: "custom" as const, value: "0.9" },
       dualSamplingConfirmed: true,
     };
-    expect(validateSessionConfig(both, "gemini-native").dualSampling).toBeUndefined();
-    expect(changeNumericSetting(both, "temperature", { mode: "custom", value: "0.6" }).dualSamplingConfirmed).toBe(false);
+    expect(validateSessionConfig({ ...both, dualSamplingConfirmed: false }, "openai-responses").dualSampling).toBeUndefined();
+    expect(changeNumericSetting(both, "temperature", { mode: "custom", value: "0.6" }).temperature).toEqual({ mode: "custom", value: "0.6" });
+  });
+
+  it.each(["NaN", "Infinity", "-Infinity"]) ("rejects non-finite sampling %s", (value) => {
+    const config = { ...defaultSessionConfig(), temperature: { mode: "custom" as const, value } };
+    expect(validateSessionConfig(config, "anthropic-native").temperature).toBeTruthy();
   });
 
   it("marks structurally corrupt stored records without silently accepting them", () => {

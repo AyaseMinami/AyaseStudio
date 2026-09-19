@@ -1,11 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, Lightbulb } from "lucide-react";
 import type { ChatProtocol } from "../../chat/types";
-import { defaultThinking, isThinkingSettings, thinkingCapability, thinkingLabels,
+import { defaultThinking, isThinkingSettings, thinkingOptions, thinkingLabels,
   validateThinkingSelection, type ThinkingSettings, type ThinkingChoice } from "../../chat/thinking";
 
 interface ThinkingControlProps {
-  protocol?: ChatProtocol; model: string; value?: ThinkingSettings; disabled: boolean; notice?: string;
+  protocol?: ChatProtocol; model: string; value?: ThinkingSettings; disabled: boolean;
   hint?: string;
   optionList?: boolean;
   onChange(value: ThinkingSettings): void;
@@ -16,10 +16,8 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panelId = useId();
-  const protocol = props.protocol ?? "gemini-native";
   const settings = isThinkingSettings(props.value) ? props.value : defaultThinking;
-  const known = !!thinkingCapability(protocol, props.model);
-  const active = known && settings.choice !== "default" && settings.choice !== "off";
+  const active = settings.choice !== "default" && settings.choice !== "off";
   useEffect(() => {
     if (!open) return;
     container.current?.querySelector<HTMLElement>('[role="dialog"] input:checked, [role="dialog"] input:not(:disabled), [role="dialog"] button:not(:disabled)')?.focus();
@@ -36,9 +34,8 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
   }}>
     <button ref={trigger} type="button" className={`composer-tool-button${active ? " is-active" : ""}`}
       aria-label="思考设置" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
-      title={known ? `思考：${thinkingLabels[settings.choice]}${props.notice ? ` · ${props.notice}` : ""}` : "思考设置：模型能力未识别"}
+      title={`思考：${thinkingLabels[settings.choice]}`}
       onClick={() => setOpen((current) => !current)}><Lightbulb size={18} />
-      {props.notice && <span className="thinking-notice-dot" aria-label="思考设置有提示" />}
     </button>
     {open && <div id={panelId} className="thinking-popover" role="dialog" aria-label="思考设置">
       <ThinkingControl key={settings.budget} {...props} optionList />
@@ -46,51 +43,51 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
   </div>;
 }
 
-export function ThinkingControl({ protocol = "gemini-native", model, value, disabled, notice, hint = "当前助手 · 自动保存", optionList, onChange }: ThinkingControlProps) {
+export function ThinkingControl({ protocol = "gemini-native", value, disabled, hint = "当前助手 · 自动保存", optionList, onChange }: ThinkingControlProps) {
   const settings = isThinkingSettings(value) ? value : defaultThinking;
-  const capability = thinkingCapability(protocol, model);
+  const capability = thinkingOptions(protocol);
   const [budget, setBudget] = useState(settings.budget);
   const [budgetError, setBudgetError] = useState("");
   const invalid = value !== undefined && !isThinkingSettings(value);
   const groupName = useId();
   function choose(choice: ThinkingChoice) {
-    const next = { ...settings, choice, budget: choice === "budget" ? "1024" : settings.budget };
+    const next = { ...settings, choice, budget: settings.budget };
     setBudget(next.budget); setBudgetError(""); onChange(next);
   }
   return <div className="thinking-control">
-    {optionList ? <fieldset className="thinking-options" disabled={disabled || !capability}>
+    {optionList ? <fieldset className="thinking-options" disabled={disabled}>
       <legend>思考强度</legend>
-      {(capability?.choices ?? ["default"]).map((choice) => <label className="thinking-option" key={choice}>
+      {capability.choices.map((choice) => <label className="thinking-option" key={choice}>
         <input type="radio" name={groupName} value={choice} checked={settings.choice === choice}
           onChange={() => choose(choice)} />
         <span>{thinkingLabels[choice]}</span><Check size={15} aria-hidden="true" />
       </label>)}
     </fieldset> : <label className="thinking-select"><Lightbulb size={16} />
       <span>思考</span>
-      <select aria-label="思考强度（当前助手）" disabled={disabled || !capability}
-        value={capability?.choices.includes(settings.choice) ? settings.choice : "default"}
+      <select aria-label="思考强度（当前助手）" disabled={disabled}
+        value={settings.choice}
         onChange={(event) => choose(event.target.value as ThinkingChoice)}>
-        {(capability?.choices ?? ["default"]).map((choice) => <option key={choice} value={choice}>{thinkingLabels[choice]}</option>)}
+        {capability.choices.map((choice) => <option key={choice} value={choice}>{thinkingLabels[choice]}</option>)}
       </select>
     </label>}
-    {capability?.summary && <label className="thinking-summary-toggle"><input type="checkbox" checked={settings.includeSummary}
+    {capability.summary && <label className="thinking-summary-toggle"><input type="checkbox" checked={settings.includeSummary}
       disabled={disabled} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考摘要</label>}
-    {capability?.efforts && <label className="thinking-select"><span>思考力度</span><select aria-label="思考力度（当前助手）"
+    {capability.efforts && <label className="thinking-select"><span>思考力度</span><select aria-label="思考力度（当前助手）"
       disabled={disabled} value={settings.effort ?? "default"} onChange={(event) => onChange({ ...settings, effort: event.target.value as ThinkingSettings["effort"] })}>
       {capability.efforts.map((effort) => <option key={effort} value={effort}>{thinkingLabels[effort]}</option>)}
     </select></label>}
-    {settings.choice === "budget" && capability?.minBudget !== undefined && <label className="thinking-budget">
-      Token 预算<input type="number" aria-label="思考 Token 预算" min={capability.minBudget} max={capability.maxBudget}
+    {settings.choice === "budget" && <label className="thinking-budget">
+      Token 预算<input type="number" aria-label="思考 Token 预算" step="1"
         value={budget} disabled={disabled} onChange={(event) => { setBudget(event.target.value); setBudgetError(""); }} />
       <button type="button" disabled={disabled || budget === settings.budget} onClick={() => {
           const next = { ...settings, budget };
-          const error = validateThinkingSelection(protocol, model, next);
+          const error = validateThinkingSelection(protocol, next);
           setBudgetError(error ?? "");
           if (!error && budget !== settings.budget) onChange(next);
         }}>应用预算</button><span>已应用：{settings.budget}</span>
     </label>}
-    <span className="thinking-hint">{capability ? disabled ? "暂不可修改" : capability.summaryHint ?? hint : "模型思考能力未识别，不发送思考参数"}</span>
+    <span className="thinking-hint">{disabled ? "暂不可修改" : capability.summaryHint ?? hint}</span>
     {invalid && <button type="button" disabled={disabled} onClick={() => onChange(defaultThinking)}>恢复思考默认配置</button>}
-    {(notice || budgetError) && <span className="thinking-notice" role="status">{budgetError || notice}</span>}
+    {budgetError && <span className="thinking-notice" role="status">{budgetError}</span>}
   </div>;
 }

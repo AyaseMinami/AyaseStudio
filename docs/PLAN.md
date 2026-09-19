@@ -117,13 +117,13 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 
 ### Issue #16 protocol thinking extension (2026-09-19)
 
-在 #10 Gemini 首版上扩展 OpenAI Chat 的强度、Responses 的强度与摘要，以及 Anthropic 的型号相关模式、预算、effort 与可读摘要。复用灯泡弹层、助手共享配置、冻结请求和本地摘要存储。能力表只识别经官方资料确认的精确型号；未知型号保留默认。Chat 官方接口不承诺可读摘要，未确认的中转扩展不启用。参数与多轮历史合同见 [PROTOCOLS.md](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)。
+在 #10 Gemini 首版上扩展 OpenAI Chat 的强度、Responses 的强度与摘要，以及 Anthropic 的协议模式、预算、effort 与可读摘要。复用灯泡弹层、助手共享配置、冻结请求和本地摘要存储。按用户 2026-09-19 修订，移除型号白名单；任意模型 ID 均可设置所选协议的思考选项，服务端负责参数兼容性判断。切换型号保留设置，不再拦截预算/输出或思考/采样组合。默认不请求摘要，显式已保存的摘要偏好继续保留；错误展示完整响应正文及 HTTP 状态并脱敏。Chat 官方接口不承诺可读摘要，未确认的中转扩展不启用。参数与多轮历史合同见 [PROTOCOLS.md](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)。
 
-Issue 原文“仅记录后续需求，本次不开始实现”已被用户 2026-09-19 的本次实施指令取代；未修改远端 Issue。真实线路验收需要单独授权，确定性测试与桌面启动不代表中转站兼容性通过。
+Issue 原文的未知模型默认限制、切换型号重置与供应商预算/采样兼容性前置拦截，以及“仅记录后续需求，本次不开始实现”，均被用户 2026-09-19 的实施与修订指令取代；未修改远端 Issue。真实线路验收需要单独授权，确定性测试与桌面启动不代表中转站兼容性通过。
 
 ### Issue #10 Gemini first slice (2026-09-16)
 
-本轮按用户要求将思考摘要展示纳入首版，仅实现 Gemini Native。输入区提供按明确型号能力变化的强度/预算菜单及独立的摘要开关，沿用当前助手共享配置（不同于原 Issue 的按对话保存）。Gemini 3 使用型号声明的档位，2.5 使用预算；未知型号省略思考参数。摘要独立于正文保存和折叠展示，不作为聊天历史回传。没有收到摘要时不显示空框，不推断模型思考用时。其他协议和中转站专属兼容规则留待后续；远端 Issue 未修改。
+以下为 2026-09-16 首版历史记录，型号限制已由上述 #16 修订取代。本轮按用户要求将思考摘要展示纳入首版，仅实现 Gemini Native。输入区提供按明确型号能力变化的强度/预算菜单及独立的摘要开关，沿用当前助手共享配置（不同于原 Issue 的按对话保存）。Gemini 3 使用型号声明的档位，2.5 使用预算；未知型号省略思考参数。摘要独立于正文保存和折叠展示，不作为聊天历史回传。没有收到摘要时不显示空框，不推断模型思考用时。其他协议和中转站专属兼容规则留待后续；远端 Issue 未修改。
 
 Issue #4 adds create/switch/rename/delete, assistant ordering/shared configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. One generation may run across navigation or assistant edits; its request settings remain frozen and all deltas, errors and saves remain bound to its original conversation. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
 

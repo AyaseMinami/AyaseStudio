@@ -58,7 +58,7 @@ export function Composer({
     <footer className="composer-footer">
       <div className="composer-width">
         {error && (
-          <div className="error-banner" role="alert">
+          <div className="error-banner composer-error" role="alert">
             {error}
           </div>
         )}

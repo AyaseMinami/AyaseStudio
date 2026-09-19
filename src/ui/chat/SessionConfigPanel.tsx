@@ -106,13 +106,6 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
           <section className="session-config-section">
             <h3>生成参数</h3>
             {numericFields.filter((item) => item.group === "sampling").map((item) => settingRow(item.field, item.label))}
-            {config.temperature?.mode === "custom" && config.topP?.mode === "custom" && (
-              <label className="session-config-check">
-                <input type="checkbox" checked={config.dualSamplingConfirmed === true} onChange={(event) => onChange({ ...config, dualSamplingConfirmed: event.target.checked })} />
-                Temperature 与 Top-P 通常二选一；我明确选择同时发送
-              </label>
-            )}
-            {errors.dualSampling && <small className="session-config-error" role="alert">{errors.dualSampling}</small>}
             <label className="session-config-check">
               <input id="session-stream" type="checkbox" checked={config.stream === true} onChange={(event) => onChange({ ...config, stream: event.target.checked })} />
               流式输出（Ayase 推荐，默认开启）

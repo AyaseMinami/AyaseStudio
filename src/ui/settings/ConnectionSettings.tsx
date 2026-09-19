@@ -139,7 +139,8 @@ function modelTestSummary(test: ModelTestViewState | undefined): string | undefi
   }
   if (test.status === "timeout") return "测试超时";
   if (test.status === "cancelled") return "测试已取消";
-  return `不可用 · ${test.error.message}`;
+  const status = test.error.status !== undefined ? ` (HTTP ${test.error.status})` : "";
+  return `不可用${status} · ${test.error.message}`;
 }
 
 function configuredModelGroups(models: ConfiguredModel[]) {
