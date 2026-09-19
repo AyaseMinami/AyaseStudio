@@ -25,7 +25,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## Explicitly out of scope
 
-- Agents, MCP, RAG, knowledge bases, tools, and web search.
+- Agents, MCP, RAG, knowledge bases, and client-executed tools/search.
 - Provider Files API uploads, audio/video/Office attachments, and unsent attachment persistence.
 - Saved edit/regeneration versions and arrow navigation (separate Issue #17).
 - Accounts, cloud sync, telemetry, auto-update, plugins, and marketplace features.
@@ -149,3 +149,7 @@ Issue #4 adds create/switch/rename/delete, assistant ordering/shared configurati
 ## Reference policy
 
 Official provider documentation is authoritative. Relay behavior is verified by probes. Cherry Studio may be inspected only for a specific UX or compatibility question; its architecture is not imported and code is not copied without an explicit license review and source record.
+
+## Issue #6 用户范围调整（2026-09-19）
+
+本次在同一 Issue 实现四协议原生搜索、输入区开关、正文角标、底部来源/查询、Gemini 建议及历史保存，Anthropic 暂停提供手动继续。客户端工具搜索留后续 Issue。不引入模型白名单、前置能力探针或自动重试。用户确认功能验收通过：Gemini、Anthropic 实际搜索及展示通过；OpenAI 真实线路验证转入低优先级 [#18](https://github.com/AyaseMinami/AyaseStudio/issues/18)，不阻塞 #6。按用户要求仅做必要定向验证。详见 [实施记录](ISSUE-6-NATIVE-SEARCH-PLAN.md)。

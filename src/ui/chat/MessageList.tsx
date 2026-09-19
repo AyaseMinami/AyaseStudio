@@ -7,12 +7,14 @@ import { SafeMarkdown } from "../../chat/SafeMarkdown";
 import type { RequestAttachment, SentAttachment } from "../../chat/attachments";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
 import { ThinkingSummary } from "./ThinkingSummary";
+import { SearchResults } from "./SearchResults";
 
 export interface MessageActions {
   edit(id: string, content: string): Promise<boolean>;
   delete(id: string): Promise<boolean>;
   retry(id: string): Promise<void>;
   branch(id: string): Promise<boolean>;
+  continue?(id: string): Promise<void>;
 }
 
 type Confirmation =
@@ -132,14 +134,19 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
             <div><button type="button" disabled={!!pending} onClick={() => setEditing(undefined)}>取消</button>
               <button type="button" className="settings-button" disabled={actionsDisabled || !!pending}
                 onClick={() => setConfirmation({ kind: "edit", message, content: editing.content, removed: editRemoved })}>保存编辑</button></div>
-          </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown>{message.content}</SafeMarkdown>
+          </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
               : <span className="subtle-text">（无文本输出）</span>) : message.content ? <p className="whitespace-pre-wrap">{message.content}</p> : null}</>}
+          {message.role === "assistant" && message.search && <SearchResults search={message.search} />}
           {message.editedAt !== undefined && <p className="message-edited">已编辑</p>}
           {!!message.attachments?.length && <div className="sent-attachment-list">{message.attachments.map((item) => <button type="button" key={item.reference} aria-label={`预览附件 ${item.name}`}
             disabled={!onReadAttachment} onClick={() => setPreview(item)}>{item.name} · {(item.size / 1_000_000).toFixed(2)} MB</button>)}</div>}
           {message.status === "aborted" && <p className="message-status message-status-warning">已停止</p>}
           {message.status === "incomplete" && <p className="message-status message-status-warning">回复未完整；下次请求不会带入这一轮</p>}
+          {message.status === "paused" && <p className="message-status message-status-warning">回复已暂停，可以继续生成。</p>}
+          {message.status === "paused" && index === messages.length - 1 && message.continuation && actions?.continue &&
+            <button type="button" className="settings-button" disabled={actionsDisabled || !!pending}
+              onClick={() => void run(actionKey("continue", message.id), () => actions.continue!(message.id))}>继续生成</button>}
           {message.status === "failed" && <p className="message-status message-status-error">生成失败</p>}
       </>;
       const controls = <>

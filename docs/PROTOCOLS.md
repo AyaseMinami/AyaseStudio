@@ -127,3 +127,11 @@ Issue #14 的“重新生成”是用户确认后发起的一次新请求，使�
 - Fetch rejection is `network`, unless the request signal is aborted.
 - Invalid JSON in a data-bearing standard event is `protocol`.
 - v0.1 reports retryable failures but does not retry automatically, avoiding duplicate generations after ambiguous disconnects.
+
+## Native web search (#6)
+
+开启时 Responses 声明 `web_search` 并 include `web_search_call.action.sources`，Chat 设置 `web_search_options:{}`，Gemini GenerateContent 声明 `googleSearch:{}`，Anthropic 声明 `web_search_20250305`。关闭省略本功能字段，不改变 Responses 的 `store:false`。不建立型号白名单或自动兼容降级；搜索专用模型本身可能始终联网。
+
+Gemini 使用标准 JSON 驼峰字段 `googleSearch`。2026-09-19 同线路实测中，`google_search` 请求缺少 grounding 元数据，仅替换为 `googleSearch` 后返回搜索词、来源、引用和建议。这个结果说明该线路的字段兼容差异，不表示 Google 官方废弃下划线写法；不采用失败后自动换字段重试。
+
+引用和来源由响应结构产生，Chat 运行时 annotations 是否存在取决于线路；Gemini grounding 坐标使用 Part 内 UTF-8 字节偏移；Anthropic 网页引用附着于 text block。HTTP 200 搜索工具错误单独展示。Anthropic replay 保留 encrypted/signature 内容，pause_turn 仅由用户继续，不自动循环。具体合同和来源见 [#6 实施记录](ISSUE-6-NATIVE-SEARCH-PLAN.md)。

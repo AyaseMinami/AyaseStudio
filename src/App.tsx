@@ -41,12 +41,14 @@ function App() {
           isHydrated={chat.isHydrated}
           isGenerating={chat.isGenerating}
           messages={chat.messages}
-          messageActions={{ edit: chat.editMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage }}
+          messageActions={{ edit: chat.editMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage, continue: chat.continueMessage }}
           messageActionsDisabled={!chat.isHydrated || chat.isGenerating}
           messageActionError={chat.workspace.operationError}
           modelId={chat.activeModel?.modelId}
           thinking={getThinkingSettings(chat.sessionConfig, chat.activeConnection?.protocol ?? "gemini-native")}
           onThinkingChange={(value) => void chat.setThinking(value)}
+          webSearch={chat.sessionConfig.webSearch ?? false}
+          onWebSearchChange={(enabled) => void chat.setWebSearch(enabled)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={
             chat.activeProvider && chat.activeConnection && chat.activeModel

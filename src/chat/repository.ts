@@ -8,6 +8,7 @@ import { DEFAULT_ASSISTANT_ID, orderedConversations, type AssistantPreset, type 
 export type StoredMessageStatus =
   | "complete"
   | "incomplete"
+  | "paused"
   | "streaming"
   | "aborted"
   | "failed";
@@ -17,6 +18,7 @@ export interface StoredChatMessage extends ChatMessage {
   replyToId?: string | null;
   editedAt?: number;
   thinkingSummary?: string;
+  continuation?: import("./nativeSearch").SearchContinuation;
   status: StoredMessageStatus;
   attachments?: import("./attachments").SentAttachment[];
 }
@@ -276,8 +278,11 @@ class DexieChatRepository implements WorkspaceRepository {
             if (action.type === "edit-message") {
               const message = messages[index];
               if (!action.content.trim() && !message.attachments?.length) throw new Error("消息正文不能为空。");
-              next = [...messages.slice(0, index), { ...message, content: action.content, editedAt: now }];
-            } else next = messages.filter((message) => message.id !== action.messageId);
+              next = [...messages.slice(0, index), { ...message, content: action.content, editedAt: now,
+                search: undefined, providerReplay: undefined, continuation: undefined,
+                status: message.status === "paused" ? "incomplete" : message.status }];
+            } else next = messages.filter((message) => message.id !== action.messageId).map((message) =>
+              message.status === "paused" ? { ...message, status: "incomplete" as const, continuation: undefined } : message);
             await db.chats.put({ id: source.id, updatedAt: now, messages: next });
             await db.conversations.update(source.id, { updatedAt: now });
           }

@@ -4,6 +4,7 @@ import { parseServerSentEvents } from "./sse";
 import { buildProtocolBody, RequestConfigError } from "./requestMapping";
 import { includeThinkingSummary } from "./thinking";
 import { ResponseThinking } from "./responseThinking";
+import { SearchDecoder } from "./searchDecoding";
 import { resolveGenerationEndpoint, UrlResolutionError } from "./urlResolution";
 import type {
   ChatEvent,
@@ -175,6 +176,7 @@ class OpenAIChatTransport implements ChatTransport {
     let capturedFetch: ReturnType<typeof openAIFetch> | undefined;
     try {
       const body = buildProtocolBody("openai-chat", request);
+      const search = new SearchDecoder(request.config?.webSearch === true);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-chat",
         request.baseUrl,
@@ -194,12 +196,14 @@ class OpenAIChatTransport implements ChatTransport {
         );
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         const choice = response.choices?.[0];
+        search.openAI(choice?.message as unknown);
         const text = choice?.message?.content || choice?.message?.refusal;
         if (!choice || typeof text !== "string" || !choice.finish_reason) {
           yield { type: "failed", error: { kind: "protocol", message: "Chat Completions response is malformed", retryable: false } };
           return;
         }
         if (text) yield { type: "text-delta", text };
+        const update = search.complete(); if (update) yield { type: "search-update", search: update };
         yield {
           type: "completed",
           finishReason: choice.finish_reason,
@@ -215,6 +219,8 @@ class OpenAIChatTransport implements ChatTransport {
 
       for await (const chunk of stream) {
         for (const choice of chunk.choices) {
+          search.openAI(choice.delta as unknown);
+          const searchUpdate = search.snapshot(); if (searchUpdate) yield { type: "search-update", search: searchUpdate };
           if (choice.delta.content) {
             yield { type: "text-delta", text: choice.delta.content };
           }
@@ -232,6 +238,7 @@ class OpenAIChatTransport implements ChatTransport {
         return;
       }
       if (finishReason) {
+        const completedSearch = search.complete(); if (completedSearch) yield { type: "search-update", search: completedSearch };
         yield { type: "completed", finishReason };
       } else {
         yield {
@@ -262,6 +269,7 @@ class OpenAIResponsesTransport implements ChatTransport {
     try {
       const body = buildProtocolBody("openai-responses", request);
       const thinking = new ResponseThinking(includeThinkingSummary(request.config, "openai-responses"));
+      const search = new SearchDecoder(request.config?.webSearch === true);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-responses",
         request.baseUrl,
@@ -281,6 +289,7 @@ class OpenAIResponsesTransport implements ChatTransport {
         );
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         yield* thinking.output(response.output);
+        search.openAIOutput(response.output);
         if (response.status === "failed") {
           yield { type: "failed", error: providerFailure(response.error?.code ?? null, response.error?.message ?? "Provider failed to generate a response", response.error, request.apiKey) };
           return;
@@ -295,6 +304,7 @@ class OpenAIResponsesTransport implements ChatTransport {
           return;
         }
         if (text) yield { type: "text-delta", text };
+        const completedSearch = search.complete(); if (completedSearch) yield { type: "search-update", search: completedSearch };
         yield {
           type: "completed",
           ...(response.status === "incomplete" ? { finishReason: `incomplete:${response.incomplete_details?.reason ?? "unknown"}` } : {}),
@@ -307,10 +317,20 @@ class OpenAIResponsesTransport implements ChatTransport {
         { signal: request.signal },
       );
 
+      const outputParts = new Map<number, Map<number, string>>();
+      const offsetFor = (outputIndex: number, contentIndex: number) => [...outputParts.entries()]
+        .sort(([a], [b]) => a - b).reduce((total, [index, parts]) => total + [...parts.entries()]
+          .sort(([a], [b]) => a - b).reduce((partTotal, [partIndex, text]) => partTotal + ((index < outputIndex || index === outputIndex && partIndex < contentIndex) ? text.length : 0), 0), 0);
       for await (const event of stream) {
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         yield* thinking.event(event);
         if (event.type === "response.output_text.delta") {
+          const raw = event as unknown as { output_index?: unknown; content_index?: unknown };
+          const outputIndex = Number(raw.output_index ?? 0); const contentIndex = Number(raw.content_index ?? 0);
+          if (Number.isInteger(outputIndex) && Number.isInteger(contentIndex)) {
+            const parts = outputParts.get(outputIndex) ?? new Map<number, string>();
+            parts.set(contentIndex, `${parts.get(contentIndex) ?? ""}${event.delta}`); outputParts.set(outputIndex, parts);
+          }
           yield { type: "text-delta", text: event.delta };
           continue;
         }
@@ -321,6 +341,8 @@ class OpenAIResponsesTransport implements ChatTransport {
         }
 
         if (event.type === "response.completed") {
+          search.openAIOutput(event.response.output);
+          const update = search.complete(); if (update) yield { type: "search-update", search: update };
           const usage = event.response.usage;
           yield {
             type: "completed",
@@ -359,6 +381,8 @@ class OpenAIResponsesTransport implements ChatTransport {
         }
 
         if (event.type === "response.incomplete") {
+          search.openAIOutput(event.response.output);
+          const update = search.complete(); if (update) yield { type: "search-update", search: update };
           const usage = event.response.usage;
           const reason = event.response.incomplete_details?.reason ?? "unknown";
           yield {
@@ -375,6 +399,13 @@ class OpenAIResponsesTransport implements ChatTransport {
           };
           return;
         }
+
+        const raw = event as unknown as { type?: string; item?: unknown; output_index?: unknown; content_index?: unknown };
+        if (raw.type === "response.web_search_call.completed") search.searched();
+        else if (raw.type?.startsWith("response.web_search_call.")) search.activity();
+        search.openAI(event as unknown, offsetFor(Number(raw.output_index ?? 0), Number(raw.content_index ?? 0)));
+        search.openAI(raw.item);
+        const update = search.snapshot(); if (update) yield { type: "search-update", search: update };
       }
 
       if (request.signal?.aborted) {
@@ -406,6 +437,7 @@ interface GeminiChunk {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string; thought?: boolean }> };
     finishReason?: string;
+    groundingMetadata?: unknown;
   }>;
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
@@ -425,6 +457,7 @@ class GeminiNativeTransport implements ChatTransport {
       const body = buildProtocolBody("gemini-native", request);
       const streaming = request.config?.stream ?? true;
       const showThinking = includeThinkingSummary(request.config, "gemini-native");
+      const search = new SearchDecoder(request.config?.webSearch === true);
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "gemini-native",
         request.baseUrl,
@@ -459,10 +492,18 @@ class GeminiNativeTransport implements ChatTransport {
           yield { type: "failed", error: { kind: "protocol", message: "Gemini response is malformed", retryable: false } };
           return;
         }
-        for (const part of candidate.content.parts) {
+        let answerText = "";
+        const groundedParts: Array<{ text: string; offset: number }> = [];
+        for (const [partIndex, part] of candidate.content.parts.entries()) {
+          groundedParts[partIndex] = { text: part.thought ? "" : part.text ?? "", offset: answerText.length };
           if (part.thought === true && !showThinking) continue;
-          if (part.text) yield { type: part.thought === true ? "thinking-delta" : "text-delta", text: part.text };
+          if (part.text) {
+            if (part.thought !== true) answerText += part.text;
+            yield { type: part.thought === true ? "thinking-delta" : "text-delta", text: part.text };
+          }
         }
+        search.gemini(candidate.groundingMetadata, groundedParts);
+        const update = search.complete(); if (update) yield { type: "search-update", search: update };
         yield {
           type: "completed",
           finishReason: candidate.finishReason,
@@ -472,6 +513,8 @@ class GeminiNativeTransport implements ChatTransport {
       }
 
       let finishReason: string | undefined;
+      let answerText = "";
+      let singleTextPart = true;
       for await (const event of parseServerSentEvents(response.body)) {
         if (event.data === "[DONE]") {
           continue;
@@ -491,16 +534,21 @@ class GeminiNativeTransport implements ChatTransport {
         }
         const blocked = blockedGeminiPrompt(chunk, request.apiKey);
         if (blocked) { yield { type: "failed", error: blocked }; return; }
-        for (const candidate of chunk.candidates ?? []) {
+        const candidate = chunk.candidates?.[0];
+        if (candidate) {
+          if ((candidate.content?.parts?.length ?? 0) > 1 || candidate.content?.parts?.some((part) => part.thought)) singleTextPart = false;
           for (const part of candidate.content?.parts ?? []) {
             if (part.thought === true && !showThinking) continue;
             if (part.text) {
+              if (part.thought !== true) answerText += part.text;
               yield { type: part.thought === true ? "thinking-delta" : "text-delta", text: part.text };
             }
           }
           if (candidate.finishReason) {
             finishReason = candidate.finishReason;
           }
+          search.gemini(candidate.groundingMetadata, singleTextPart ? [{ text: answerText, offset: 0 }] : [], answerText);
+          const update = search.snapshot(); if (update) yield { type: "search-update", search: update };
         }
       }
 
@@ -509,6 +557,7 @@ class GeminiNativeTransport implements ChatTransport {
         return;
       }
       if (finishReason) {
+        const update = search.complete(); if (update) yield { type: "search-update", search: update };
         yield { type: "completed", finishReason };
       } else {
         yield {
@@ -539,9 +588,9 @@ type AnthropicEvent =
   | {
       type: "content_block_delta";
       index?: number;
-      delta?: { type?: string; text?: string; thinking?: string };
+      delta?: { type?: string; text?: string; thinking?: string; signature?: string; partial_json?: string; citation?: unknown };
     }
-  | { type: "content_block_start"; index?: number; content_block?: { type?: string; thinking?: string } }
+  | { type: "content_block_start"; index?: number; content_block?: Record<string, unknown> }
   | { type: "content_block_stop"; index?: number }
   | {
       type: "message_delta";
@@ -563,6 +612,7 @@ class AnthropicNativeTransport implements ChatTransport {
       const body = buildProtocolBody("anthropic-native", request);
       const showThinking = includeThinkingSummary(request.config, "anthropic-native");
       const streaming = request.config?.stream ?? true;
+      const search = new SearchDecoder(request.config?.webSearch === true);
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "anthropic-native",
         request.baseUrl,
@@ -588,7 +638,7 @@ class AnthropicNativeTransport implements ChatTransport {
       if (!streaming) {
         const payload = await response.json() as {
           type?: string;
-          content?: Array<{ type?: string; text?: string; thinking?: string }>;
+          content?: Array<Record<string, unknown>>;
           stop_reason?: string | null;
           usage?: { input_tokens?: number; output_tokens?: number };
           error?: { type?: string; message?: string };
@@ -602,13 +652,24 @@ class AnthropicNativeTransport implements ChatTransport {
           yield { type: "failed", error: { kind: "protocol", message: "Anthropic response is malformed", retryable: false } };
           return;
         }
+        let answerText = "";
         for (const block of payload.content) {
-          if (block.type === "text" && block.text) yield { type: "text-delta", text: block.text };
+          const textStart = answerText.length;
+          search.anthropic(block, textStart);
+          if (block.type === "text" && typeof block.text === "string" && block.text) {
+            answerText += block.text;
+            yield { type: "text-delta", text: block.text };
+          }
           if (showThinking && block.type === "thinking" && block.thinking) {
             if (typeof block.thinking !== "string") throw new SyntaxError("Anthropic thinking text is malformed");
             yield { type: "thinking-delta", text: block.thinking };
           }
+          search.anthropic(block, textStart, answerText.length);
         }
+        const update = payload.stop_reason === "pause_turn" ? search.snapshot() : search.complete();
+        if (update) yield { type: "search-update", search: update };
+        if (payload.stop_reason === "pause_turn" || search.search && search.search.status !== "not-used") yield { type: "provider-replay", replay: { protocol: "anthropic-native", scope: request.replayScope ?? request.baseUrl, content: payload.content } };
+
         yield {
           type: "completed", finishReason: payload.stop_reason,
           ...(payload.usage ? { usage: { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens } } : {}),
@@ -621,6 +682,10 @@ class AnthropicNativeTransport implements ChatTransport {
       let outputTokens: number | undefined;
       const thinkingBlocks = new Set<number>();
       const startedBlocks = new Set<number>();
+      const replayBlocks = new Map<number, Record<string, unknown>>();
+      const jsonDeltas = new Map<number, string>();
+      const textStarts = new Map<number, number>();
+      let answerText = "";
 
       for await (const event of parseServerSentEvents(response.body)) {
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
@@ -629,6 +694,14 @@ class AnthropicNativeTransport implements ChatTransport {
         if (payload.type === "content_block_start" && "content_block" in payload && payload.index !== undefined) {
           if (startedBlocks.has(payload.index)) continue;
           startedBlocks.add(payload.index);
+          const block = { ...payload.content_block };
+          replayBlocks.set(payload.index, block);
+          if (block.type !== "text") search.anthropic(block, answerText.length);
+          if (block.type === "text") textStarts.set(payload.index, answerText.length);
+          if (block.type === "text" && typeof block.text === "string" && block.text) {
+            answerText += block.text;
+            yield { type: "text-delta", text: block.text };
+          }
           if (payload.content_block?.type === "thinking") {
             thinkingBlocks.add(payload.index);
             if (showThinking && payload.content_block.thinking) {
@@ -636,9 +709,17 @@ class AnthropicNativeTransport implements ChatTransport {
               yield { type: "thinking-delta", text: payload.content_block.thinking };
             }
           }
+          const update = search.snapshot(); if (update) yield { type: "search-update", search: update };
           continue;
         }
         if (payload.type === "content_block_stop" && "index" in payload && payload.index !== undefined) {
+          const json = jsonDeltas.get(payload.index);
+          if (json) {
+            try { replayBlocks.get(payload.index)!.input = JSON.parse(json); } catch { /* preserve start block when partial JSON is malformed */ }
+          }
+          const block = replayBlocks.get(payload.index);
+          if (block) search.anthropic(block, textStarts.get(payload.index) ?? answerText.length, answerText.length);
+          const update = search.snapshot(); if (update) yield { type: "search-update", search: update };
           thinkingBlocks.delete(payload.index);
           continue;
         }
@@ -650,6 +731,25 @@ class AnthropicNativeTransport implements ChatTransport {
         }
 
         if (payload.type === "content_block_delta" && "delta" in payload) {
+          const block = payload.index === undefined ? undefined : replayBlocks.get(payload.index);
+          if (block && payload.delta?.type === "text_delta" && typeof payload.delta.text === "string") {
+            block.text = `${typeof block.text === "string" ? block.text : ""}${payload.delta.text}`;
+            answerText += payload.delta.text;
+          }
+          if (block && payload.delta?.type === "thinking_delta" && typeof payload.delta.thinking === "string") {
+            block.thinking = `${typeof block.thinking === "string" ? block.thinking : ""}${payload.delta.thinking}`;
+          }
+          if (block && payload.delta?.type === "signature_delta" && typeof payload.delta.signature === "string") {
+            block.signature = `${typeof block.signature === "string" ? block.signature : ""}${payload.delta.signature}`;
+          }
+          if (block && payload.delta?.type === "citations_delta" && payload.delta.citation) {
+            const citations = Array.isArray(block.citations) ? block.citations : [];
+            citations.push(payload.delta.citation); block.citations = citations;
+          }
+          if (block && payload.delta?.type === "input_json_delta") {
+            const partial = (payload.delta as { partial_json?: unknown }).partial_json;
+            if (typeof partial === "string") jsonDeltas.set(payload.index!, `${jsonDeltas.get(payload.index!) ?? ""}${partial}`);
+          }
           if (showThinking && payload.delta?.type === "thinking_delta" && payload.index !== undefined && thinkingBlocks.has(payload.index)) {
             if (typeof payload.delta.thinking !== "string") throw new SyntaxError("Anthropic thinking delta is malformed");
             if (payload.delta.thinking) yield { type: "thinking-delta", text: payload.delta.thinking };
@@ -657,6 +757,7 @@ class AnthropicNativeTransport implements ChatTransport {
           if (payload.delta?.type === "text_delta" && payload.delta.text) {
             yield { type: "text-delta", text: payload.delta.text };
           }
+          const update = search.snapshot(); if (update) yield { type: "search-update", search: update };
           continue;
         }
 
@@ -688,6 +789,12 @@ class AnthropicNativeTransport implements ChatTransport {
             yield { type: "failed", error: { kind: "protocol", message: "Anthropic stream ended without a stop reason", retryable: false } };
             return;
           }
+          const update = finishReason === "pause_turn" ? search.snapshot() : search.complete();
+          if (update) yield { type: "search-update", search: update };
+          if (finishReason === "pause_turn" || search.search && search.search.status !== "not-used") yield { type: "provider-replay", replay: {
+            protocol: "anthropic-native", scope: request.replayScope ?? request.baseUrl,
+            content: [...replayBlocks.entries()].sort(([a], [b]) => a - b).map(([, block]) => block),
+          } };
           yield {
             type: "completed",
             finishReason,

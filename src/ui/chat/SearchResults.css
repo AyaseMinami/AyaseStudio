@@ -1,0 +1,20 @@
+.search-results { display: grid; gap: 0.35rem; max-width: 44rem; margin-top: 0.65rem; color: rgb(var(--color-muted)); font-size: 0.75rem; line-height: 1.35rem; }
+.search-status { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 400; }
+.search-status svg { flex-shrink: 0; }
+.search-status-failed, .search-error { color: rgb(var(--color-error-text)); }
+.search-results .search-queries, .search-results .search-error { margin: 0; overflow-wrap: anywhere; }
+.search-sources summary { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; width: fit-content; padding: 0.15rem 0; cursor: pointer; list-style: none; }
+.search-sources summary::-webkit-details-marker { display: none; }
+.search-sources summary:hover { color: rgb(var(--color-text-soft)); }
+.search-source-chevron { flex-shrink: 0; }
+.search-sources[open] .search-source-chevron { transform: rotate(90deg); }
+.search-results .search-sources ol { display: grid; gap: 0.3rem; margin: 0.35rem 0 0.15rem; padding: 0; list-style: none; }
+.search-sources button { display: inline-flex; max-width: 100%; gap: 0.4rem; color: rgb(var(--color-text-soft)); text-align: left; overflow-wrap: anywhere; }
+.search-sources button:hover { color: rgb(var(--color-accent)); text-decoration: underline; text-underline-offset: 0.15em; }
+.search-source-number { flex: 0 0 auto; min-width: 1rem; color: rgb(var(--color-muted)); }
+.gemini-suggestion { min-width: 0; max-width: 100%; }
+.gemini-suggestion iframe { display: block; width: 100%; min-height: 1px; border: 0; background: transparent; }
+.citation-badge { display: inline; margin-left: 0.15em; color: rgb(var(--color-accent) / 0.75); font-size: 0.7em; font-weight: 500; line-height: 0; vertical-align: super; border-radius: 0.2em; }
+.citation-badge:hover, .citation-badge:focus-visible { color: rgb(var(--color-accent)); background: rgb(var(--color-accent) / 0.08); }
+.citation-badge:focus-visible, .search-sources button:focus-visible, .search-sources summary:focus-visible { outline: 2px solid rgb(var(--color-accent)); outline-offset: 2px; }
+@media (max-width: 720px) { .search-results { max-width: 100%; } .gemini-suggestion iframe { max-width: 100%; } }

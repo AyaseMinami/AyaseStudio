@@ -66,6 +66,50 @@ describe("message actions through the session", () => {
     } } satisfies ChatTransport);
   }
 
+  it("native search persists citations and clears them on edited text", async () => {
+    await act(async () => session.setWebSearch(true));
+    const search = { enabled: true, status: "completed" as const,
+      sources: [{ id: "https://example.test", url: "https://example.test", title: "Example" }],
+      citations: [{ start: 0, end: 6, sourceIds: ["https://example.test"] }], queries: ["query"] };
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      expect(request.config?.webSearch).toBe(true);
+      yield { type: "text-delta", text: "answer" };
+      yield { type: "search-update", search };
+      yield { type: "completed", finishReason: "stop" };
+    } } satisfies ChatTransport);
+    await act(async () => session.retryMessage("a2"));
+    const answer = session.messages[3];
+    expect((await repo.load("current"))?.messages[3].search).toEqual(search);
+    await act(async () => { await session.editMessage(answer.id, "edited"); });
+    expect(session.messages[3].search).toBeUndefined();
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+  });
+
+  it("native search continues a paused Anthropic response once with frozen config and original blocks", async () => {
+    await act(async () => session.updateConnection("c", "protocol", "anthropic-native"));
+    await act(async () => session.setWebSearch(true));
+    const requests: ChatRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      requests.push(request);
+      yield { type: "text-delta", text: requests.length === 1 ? "first" : "second" };
+      yield { type: "provider-replay", replay: { protocol: "anthropic-native", scope: request.replayScope!,
+        content: [{ type: "text", text: requests.length === 1 ? "first" : "second" }] } };
+      yield { type: "completed", finishReason: requests.length === 1 ? "pause_turn" : "end_turn" };
+    } } satisfies ChatTransport);
+    await act(async () => session.retryMessage("a2"));
+    const paused = session.messages[3];
+    expect(paused.status).toBe("paused");
+    expect(requests).toHaveLength(1);
+    await act(async () => session.setWebSearch(false));
+    await act(async () => session.continueMessage(paused.id));
+    expect(requests).toHaveLength(2);
+    expect(requests[1].config?.webSearch).toBe(true);
+    expect(requests[1].messages.slice(-1)[0].providerReplay?.content).toEqual([{ type: "text", text: "first" }]);
+    expect(session.messages[3]).toMatchObject({ id: paused.id, content: "firstsecond", status: "complete" });
+    expect(session.messages[3].continuation).toBeUndefined();
+    expect((await repo.load("current"))?.messages[3].providerReplay?.responses).toHaveLength(2);
+  });
+
   it.each(["u2", "a2"])("retries %s once with current config and only its preceding history", async (id) => {
     let request: ChatRequest | undefined;
     respond((value) => { request = value; });

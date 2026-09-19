@@ -1,5 +1,6 @@
 import type { ChatRepository, StoredChatMessage } from "./repository";
 import { withReplyLinks } from "./messageOperations";
+import { finishSearch } from "./nativeSearch";
 
 export interface SessionState {
   messages: StoredChatMessage[];
@@ -15,7 +16,7 @@ export class SessionStore {
     const snapshot = await this.repository.load(this.id);
     if (!snapshot) return this.state;
     const recovered = snapshot.messages.map((message) =>
-      message.status === "streaming" ? { ...message, status: "aborted" as const } : message,
+      message.status === "streaming" ? { ...message, status: "aborted" as const, search: finishSearch(message.search, "aborted"), continuation: undefined } : message,
     );
     this.state = {
       messages: withReplyLinks(recovered),

@@ -125,7 +125,8 @@ export async function planContextBudget(
     : await selectTokenCounter(protocol, model);
   const count = selected.count;
   // Media tokenization is provider-dependent; include a local, labelled size estimate.
-  const messageTokens = (message: ChatMessage) => count(message.content) + 8 +
+  const messageTokens = (message: ChatMessage) => count(protocol === "anthropic-native" && message.providerReplay
+    ? JSON.stringify(message.providerReplay.content) : message.content) + 8 +
     (message.attachments ?? []).reduce((cost, attachment) => cost + Math.ceil(attachment.size / 4), 0);
   const system: ChatMessage | undefined = config.systemInstruction.trim()
     ? { role: "system", content: config.systemInstruction.trim() } : undefined;
@@ -150,7 +151,8 @@ export async function planContextBudget(
       ...kept.flatMap((round) => [
         { role: "user" as const, content: round.user.content,
           ...(round.user.attachments?.length ? { attachments: round.user.attachments } : {}) },
-        { role: "assistant" as const, content: round.assistant.content },
+        { role: "assistant" as const, content: round.assistant.content,
+          ...(protocol === "anthropic-native" && round.assistant.providerReplay ? { providerReplay: round.assistant.providerReplay } : {}) },
       ]),
       latest,
     ],

@@ -9,8 +9,11 @@ import { Composer } from "./Composer";
 import { MessageList, type MessageActions } from "./MessageList";
 import { ThinkingToolbarControl } from "./ThinkingControl";
 import type { ThinkingSettings } from "../../chat/thinking";
+import { Globe } from "lucide-react";
 
 export interface ChatWorkspaceProps {
+  webSearch?: boolean;
+  onWebSearchChange?(enabled: boolean): void;
   thinking?: ThinkingSettings;
   onThinkingChange?(value: ThinkingSettings): void;
   title: string;
@@ -39,6 +42,8 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  webSearch,
+  onWebSearchChange,
   thinking,
   onThinkingChange,
   title,
@@ -108,6 +113,11 @@ export function ChatWorkspace({
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
           attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
+        searchControl={onWebSearchChange ? <button type="button" className="composer-tool-button"
+          aria-label="联网搜索" aria-pressed={webSearch ?? false}
+          style={webSearch ? { color: "rgb(var(--color-accent))", background: "rgb(var(--color-accent) / 0.1)" } : undefined}
+          title={`${webSearch ? "已开启" : "已关闭"}：允许模型按需联网，可能产生额外费用。搜索专用模型可能始终联网。`}
+          disabled={!isHydrated || isGenerating} onClick={() => onWebSearchChange(!webSearch)}><Globe size={17} /></button> : undefined}
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
           disabled={!isHydrated || isGenerating} onChange={onThinkingChange} /> : undefined}

@@ -10,6 +10,7 @@ import type { ChatProtocol, ChatRequest } from "./types";
 import { geminiThinkingBody } from "./geminiThinking";
 import { getThinkingSettings, validateThinkingSelection, protocolThinkingBody } from "./thinking";
 import { attachmentCapabilityFailure, safeTextAttachment, type RequestAttachment } from "./attachments";
+import { searchRequestBody } from "./nativeSearch";
 
 export class RequestConfigError extends Error {
   constructor(readonly errors: ConfigErrors) {
@@ -213,6 +214,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   if (protocol === "openai-chat") {
     return checkedInlineBody(protocol, {
       ...custom,
+      ...searchRequestBody(protocol, config.webSearch === true),
       ...thinkingBody,
       model: request.model,
       messages: system ? [{ role: "system", content: system }, ...mapped.map(({ message, attachments }) => ({
@@ -245,6 +247,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   if (protocol === "openai-responses") {
     return checkedInlineBody(protocol, {
       ...custom,
+      ...searchRequestBody(protocol, config.webSearch === true),
       ...thinkingBody,
       model: request.model,
       input: mapped.map(({ message, attachments }) => ({ role: message.role,
@@ -276,6 +279,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
       ...(maxOutput !== undefined ? { maxOutputTokens: maxOutput } : {}),
     };
     return checkedInlineBody(protocol, {
+      ...searchRequestBody(protocol, config.webSearch === true),
       contents: mapped.map(({ message, attachments }) => ({
         role: message.role === "assistant" ? "model" : "user",
         parts: [{ text: message.content }, ...attachments.map((item) => item.mimeType.startsWith("text/")
@@ -287,19 +291,24 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   }
   const body = {
     ...custom,
+    ...searchRequestBody(protocol, config.webSearch === true),
     ...thinkingBody,
     model: request.model,
     max_tokens: maxOutput ?? 4096,
     stream,
     ...(system ? { system } : {}),
-    messages: mapped.map(({ message, attachments }) => ({ role: message.role,
-      content: !attachments.length ? message.content : [
+    messages: mapped.flatMap(({ message, attachments }): Array<{ role: typeof message.role; content: unknown }> => {
+      const replay = message.role === "assistant" && request.replayScope && message.providerReplay?.scope === request.replayScope
+        ? (message.providerReplay.responses ?? [message.providerReplay.content]) : undefined;
+      if (replay) return replay.map((content) => ({ role: message.role, content }));
+      return [{ role: message.role, content: !attachments.length ? message.content : [
         { type: "text", text: message.content },
         ...attachments.map((item) => item.mimeType.startsWith("text/")
           ? { type: "text", text: documentText(item) }
           : { type: item.mimeType === "application/pdf" ? "document" : "image",
             source: { type: "base64", media_type: item.mimeType, data: item.data } }),
-      ] })),
+      ] }];
+    }),
     ...(temperature !== undefined ? { temperature } : {}),
     ...(topP !== undefined ? { top_p: topP } : {}),
     ...(topK !== undefined ? { top_k: topK } : {}),

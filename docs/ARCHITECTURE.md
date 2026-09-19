@@ -280,3 +280,9 @@ Issue #5 附件草稿是同一按对话 ID 保留的会话内视图状态，只�
 `contextBudget.ts` 只构造请求副本：必须保留系统指令与最新用户消息，从新到旧纳入完整且成功的 user/assistant 轮次；失败、取消、空内容及未完成轮次不进入后续请求。自动预算不裁剪完整轮次，自定义预算不足以容纳必保内容时阻止发送。原始消息不截断、不改写。已识别的 OpenAI 模型用本地对应 BPE 分词器，消息封装开销仍是估算；其他模型用 UTF-8 字节保守估算，界面均标注“估算”。分词数据按需加载，避免增加首屏主包。
 
 完整配置入口在助手编辑中，思考设置另有输入区灯泡快捷入口并自动保存到当前助手；对话标题右侧仅提供重命名（铅笔）和删除（垃圾桶），保留可访问名称和悬停提示。助手编辑复用参数面板，显式保存；无效配置阻止保存，已保存配置因模型变化失效时显示助手编辑入口并阻止发送。协议目录当前只存模型身份，未确认的模型参数能力显示“未知”；已知不支持的参数禁用。
+
+## Provider-native search
+
+搜索通过 ChatTransport 的 `search-update` 与 `provider-replay` 事件进入会话。SearchRecord 是展示快照；Anthropic ProviderReplay 保留完整原始块，按连接 ID/地址隔离，仅在原协议回传。paused 消息携带冻结配置与初始历史；用户显式继续，普通后续消息仍按完整轮次裁剪。记录不含凭据。
+
+SafeMarkdown 继续禁止原始 HTML。Gemini searchEntryPoint 只进入 scriptless sandbox iframe 的独立文档；主 DOM 不注入供应商 HTML，父组件绑定链接和高度。外链统一使用受限 HTTP(S) opener。新可选字段沿用 repository 持久化，无新增表/索引；编辑正文清除引用和 replay，删除使旧续接失效。详见 [#6 实施记录](ISSUE-6-NATIVE-SEARCH-PLAN.md)。

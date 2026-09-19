@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 
 import type { DiscoveredModel } from "./modelCatalog";
+import { initialSearch, finishSearch, mergeSearch } from "./nativeSearch";
 import { ContextBudgetError, planContextBudget,
   summarizeContextPlan, type ContextPlan } from "./contextBudget";
 import { addDraftAttachments, attachmentCapabilityFailure, materializeDraftAttachment, prepareDraftAttachment,
@@ -66,6 +67,7 @@ async function cleanupAttachments(): Promise<void> {
 const emptyConfig = defaultSessionConfig();
 
 function completionStatus(protocol: ChatProtocol, reason?: string): StoredMessageStatus {
+  if (protocol === "anthropic-native" && reason === "pause_turn") return "paused";
   if (!reason) return "complete";
   if (protocol === "openai-responses") return reason.startsWith("incomplete:") ? "incomplete" : "complete";
   if (protocol === "openai-chat") return reason === "stop" ? "complete" : "incomplete";
@@ -105,7 +107,10 @@ function replaceAssistant(
   status: StoredMessageStatus,
 ): StoredChatMessage[] {
   return messages.map((message) =>
-    message.id === id ? { ...message, content, status } : message,
+    message.id === id ? { ...message, content, status,
+      search: status === "streaming" || status === "paused" ? message.search : finishSearch(message.search,
+        status === "aborted" ? "aborted" : status === "failed" ? "failed" : "completed"),
+      continuation: status === "streaming" || status === "paused" ? message.continuation : undefined } : message,
   );
 }
 
@@ -171,6 +176,11 @@ export function useChatSession({
     if (!protocol) return false;
     const input = { ...workspace.assistant, defaultConfig: withThinkingSettings(sessionConfig, protocol, settings) };
     return workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input });
+  }
+  async function setWebSearch(enabled: boolean): Promise<boolean> {
+    if (!workspace.assistant || !workspace.canSend()) return false;
+    return workspace.execute({ type: "edit-assistant", id: workspace.assistant.id,
+      input: { ...workspace.assistant, defaultConfig: { ...sessionConfig, webSearch: enabled } } });
   }
   useEffect(() => {
     setConfigErrors(validateRequestConfig(
@@ -581,15 +591,17 @@ export function useChatSession({
     testAbortControllers.current.get(modelId)?.abort();
   }
 
-  async function sendMessage(retryMessageId?: string): Promise<void> {
-    const targetUser = retryMessageId ? retryUser(messages, retryMessageId) : undefined;
+  async function sendMessage(retryMessageId?: string, resumeMessageId?: string): Promise<void> {
+    const resume = resumeMessageId ? messages.find((message) => message.id === resumeMessageId && message.status === "paused") : undefined;
+    if (resumeMessageId && (!resume?.continuation || !resume.providerReplay || messages[messages.length - 1]?.id !== resume.id)) return;
+    const targetUser = retryMessageId || resumeMessageId ? retryUser(messages, (retryMessageId ?? resumeMessageId)!) : undefined;
     const content = targetUser ? targetUser.content : draft.trim();
-    const frozenAttachments = retryMessageId ? [] : [...draftAttachments];
+    const frozenAttachments = retryMessageId || resumeMessageId ? [] : [...draftAttachments];
     const existingAttachments = targetUser?.attachments ?? [];
     if (isGenerating || sendLockRef.current || !isHydrated || !workspace.canSend() || !sessionStore || imports.current.has(sessionStore.id)) {
       return;
     }
-    if (retryMessageId && !targetUser) { setError("原用户消息已删除，无法重新请求此回复。"); return; }
+    if ((retryMessageId || resumeMessageId) && !targetUser) { setError("原用户消息已删除，无法重新请求此回复。"); return; }
     if (!content.trim() && !frozenAttachments.length && !existingAttachments.length) return;
     const history = withReplyLinks(targetUser ? messages.slice(0, messages.findIndex((message) => message.id === targetUser.id)) : messages);
     if (!activeTarget) {
@@ -598,6 +610,10 @@ export function useChatSession({
       return;
     }
     const requestConnection = activeTarget.connection;
+    const replayScope = `${requestConnection.id}|${requestConnection.baseUrl}`;
+    if (resume?.continuation && (resume.continuation.scope !== replayScope || resume.continuation.model !== activeTarget.model.modelId || requestConnection.protocol !== "anthropic-native")) {
+      setError("请切回这条回复使用的连接和模型后继续生成。"); return;
+    }
     const capabilityError = attachmentCapabilityFailure(requestConnection.protocol,
       activeTarget.model.modelId, [...frozenAttachments, ...existingAttachments]);
     if (capabilityError) { setError(capabilityError); return; }
@@ -622,7 +638,7 @@ export function useChatSession({
     sendLockRef.current = true;
     const requestStore = sessionStore;
 
-    const frozenConfig = structuredClone(sessionConfig);
+    const frozenConfig = structuredClone(resume?.continuation?.config ?? sessionConfig);
     const errors = validateRequestConfig(
       frozenConfig,
       requestConnection.protocol,
@@ -646,8 +662,10 @@ export function useChatSession({
     }
     let planned: ContextPlan;
     try {
-      planned = await planContextBudget(
-        history, content, frozenConfig,
+      planned = resume?.continuation ? { messages: [...resume.continuation.messages,
+        { role: "assistant", content: resume.content, providerReplay: resume.providerReplay }],
+        keptTurns: 0, trimmedTurns: 0, excludedIncompleteTurns: 0, inputTokens: 0, countingLabel: "继续原请求", estimated: true } : await planContextBudget(
+        history.map((message) => message.providerReplay?.scope === replayScope ? message : { ...message, providerReplay: undefined }), content, frozenConfig,
         requestConnection.protocol, activeTarget.model.modelId, undefined,
         [...frozenAttachments, ...existingAttachments].map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
       );
@@ -708,7 +726,7 @@ export function useChatSession({
       const rebuiltMessages: typeof planned.messages = [];
       for (const [index, message] of planned.messages.entries()) {
         requireActiveSend();
-        if (index === planned.messages.length - 1 && preparedAttachments.length) {
+        if (!resume && index === planned.messages.length - 1 && preparedAttachments.length) {
           rebuiltMessages.push({ ...message, attachments: preparedAttachments });
         } else if (message.attachments?.length) {
           const loaded: RequestAttachment[] = [];
@@ -727,6 +745,7 @@ export function useChatSession({
       buildProtocolBody(requestConnection.protocol, {
         baseUrl: requestConnection.baseUrl, apiKey: "", model: activeTarget.model.modelId,
         messages: requestMessages, config: frozenConfig,
+        replayScope,
       });
       if (controller.signal.aborted) {
         await discardUncommitted();
@@ -758,13 +777,20 @@ export function useChatSession({
       status: "complete",
       ...(sentAttachments.length ? { attachments: sentAttachments } : {}),
     };
-    const assistantId = newId();
+    const assistantId = resume?.id ?? newId();
     const assistantMessage: StoredChatMessage = {
+      ...resume,
       id: assistantId,
       role: "assistant",
       replyToId: userMessage.id,
-      content: "",
+      content: resume?.content ?? "",
       status: "streaming",
+      search: resume?.search ?? (frozenConfig.webSearch ? initialSearch(true) : undefined),
+      ...(requestConnection.protocol === "anthropic-native" ? { continuation: resume?.continuation ?? {
+        config: frozenConfig, model: activeTarget.model.modelId, baseUrl: requestConnection.baseUrl, scope: replayScope,
+        messages: planned.messages.map((message, index) => index === planned.messages.length - 1
+          ? { role: "user" as const, content, ...(userMessage.attachments?.length ? { attachments: userMessage.attachments } : {}) } : message),
+      } } : {}),
     };
     let workingMessages = [...history, userMessage, assistantMessage];
     try {
@@ -817,7 +843,8 @@ export function useChatSession({
     }
     queuePersist(workingMessages);
 
-    let assistantText = "";
+    let assistantText = resume?.content ?? "";
+    const resumeOffset = assistantText.length;
     let lastPaint = 0;
     let lastPersist = 0;
     let terminalSeen = false;
@@ -832,7 +859,20 @@ export function useChatSession({
         messages: requestMessages,
         config: frozenConfig,
         signal: controller.signal,
+        replayScope,
       })) {
+        if (event.type === "search-update") {
+          workingMessages = workingMessages.map((message) => message.id === assistantId
+            ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
+          setMessages(workingMessages); queuePersist(workingMessages); continue;
+        }
+        if (event.type === "provider-replay") {
+          const earlier = resume?.providerReplay;
+          const replay = earlier ? { ...event.replay, content: [...earlier.content, ...event.replay.content],
+            responses: [...(earlier.responses ?? [earlier.content]), event.replay.content] } : event.replay;
+          workingMessages = workingMessages.map((message) => message.id === assistantId ? { ...message, providerReplay: replay } : message);
+          continue;
+        }
         if (event.type === "text-delta" || event.type === "thinking-delta") {
           if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
           if (event.type === "text-delta") assistantText += event.text;
@@ -987,6 +1027,7 @@ export function useChatSession({
     deleteMessage,
     branchMessage,
     retryMessage: (id: string) => sendMessage(id),
+    continueMessage: (id: string) => sendMessage(undefined, id),
     connectionSettings: { ...connectionSettings, activeModelId: activeModel?.id ?? null },
     configErrors,
     contextPlan,
@@ -1013,6 +1054,7 @@ export function useChatSession({
     setDraft,
     sessionConfig,
     setThinking,
+    setWebSearch,
     setActiveModel,
     stopGeneration,
     updateConnection: updateConnectionProfile,

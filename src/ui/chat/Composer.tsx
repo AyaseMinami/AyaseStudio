@@ -4,6 +4,7 @@ import type { DraftAttachment } from "../../chat/attachments";
 
 export interface ComposerProps {
   thinkingControl?: ReactNode;
+  searchControl?: ReactNode;
   isGeneratingElsewhere?: boolean;
   draft: string;
   draftAttachments?: DraftAttachment[];
@@ -32,6 +33,7 @@ function DraftImageThumbnail({ item }: { item: DraftAttachment }) {
 
 export function Composer({
   thinkingControl,
+  searchControl,
   isGeneratingElsewhere,
   draft,
   draftAttachments = [],
@@ -101,6 +103,7 @@ export function Composer({
               disabled={!isHydrated || (isGenerating && !isGeneratingElsewhere)}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
             {thinkingControl}
+            {searchControl}
             </div>
             {isGenerating ? (
               <button
