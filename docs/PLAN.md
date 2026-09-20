@@ -4,6 +4,10 @@
 
 Build a fast, local-first desktop chat client with a deliberately small feature set. Ayase Studio is a new implementation, not a Cherry Studio fork.
 
+### Issue #19 chat content width
+
+聊天标题栏的展开/收窄按钮同步调整消息列与输入框。默认窄屏居中（最大 48rem），宽屏占满聊天工作区并保留左右留白；空间不足时均随可用宽度收缩。布局作为本机全局偏好保存，切换助手、对话或设置页及重启均保留；不改变侧栏状态、窗口尺寸或生成状态。
+
 ## v0.1 scope
 
 - Ordinary Tauri 2 desktop window using React, TypeScript, Vite, and Tailwind CSS.

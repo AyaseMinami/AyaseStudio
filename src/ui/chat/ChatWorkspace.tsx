@@ -10,8 +10,11 @@ import { MessageList, type MessageActions } from "./MessageList";
 import { ThinkingToolbarControl } from "./ThinkingControl";
 import type { ThinkingSettings } from "../../chat/thinking";
 import { Globe } from "lucide-react";
+import type { ChatLayout } from "./useChatLayout";
 
 export interface ChatWorkspaceProps {
+  layout?: ChatLayout;
+  onToggleLayout?(): void;
   webSearch?: boolean;
   onWebSearchChange?(enabled: boolean): void;
   thinking?: ThinkingSettings;
@@ -42,6 +45,8 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  layout = "narrow",
+  onToggleLayout,
   webSearch,
   onWebSearchChange,
   thinking,
@@ -85,6 +90,7 @@ export function ChatWorkspace({
   }, []);
   return (
     <div className={`chat-attachment-surface${dragging ? " chat-attachment-over" : ""}`}
+      data-chat-layout={layout}
       onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
       onDrop={(event) => {
@@ -93,6 +99,8 @@ export function ChatWorkspace({
         onFiles?.([...event.dataTransfer.files]);
       }}>
       <ChatHeader
+        layout={layout}
+        onToggleLayout={onToggleLayout}
         title={title}
         isHydrated={isHydrated}
         isGenerating={isGenerating}

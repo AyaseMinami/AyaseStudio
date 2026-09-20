@@ -1,5 +1,7 @@
 # Ayase Studio Architecture
 
+聊天内容宽度由 App 持有的 `useChatLayout` 管理，以独立 localStorage 键 `ayase-studio.chat-layout.v1` 保存本机全局偏好。默认窄屏，宽/窄模式只通过聊天容器 CSS 变量同步约束消息列与输入框，不进入助手配置、会话数据库或请求。存储不可用时当前运行仍可切换。
+
 ## Purpose
 
 Ayase Studio 是一个轻量、local-first 的桌面聊天客户端。架构目标不是复制 Cherry Studio 的规模，而是用少量稳定的模块接口承载四种协议、多个连接配置、助手与对话，以及后续附件和供应商原生搜索能力。

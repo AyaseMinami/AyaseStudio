@@ -8,6 +8,7 @@ import { getThinkingSettings } from "./chat/thinking";
 import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
+import { useChatLayout } from "./ui/chat/useChatLayout";
 import {
   SettingsWorkspace,
   type SettingsSection,
@@ -18,6 +19,7 @@ function App() {
   const [activeSettingsSection, setActiveSettingsSection] =
     useState<SettingsSection>("connections");
   const appearance = useAppearance();
+  const chatLayout = useChatLayout();
   const chat = useChatSession({
     onConfigurationRequired: () => {
       setActiveSettingsSection("connections");
@@ -30,6 +32,8 @@ function App() {
       {activePage === "chat" ? (
         <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingId={chat.generatingConversationId}>
         <ChatWorkspace
+          layout={chatLayout.layout}
+          onToggleLayout={chatLayout.toggleLayout}
           key={chat.workspace.conversation?.id ?? "loading"}
           title={chat.workspace.conversation?.title ?? "新对话"}
           isGeneratingElsewhere={chat.isGenerating && chat.generatingConversationId !== chat.workspace.conversation?.id}
