@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowDown, ArrowUp, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 interface AssistantActionsProps {
@@ -17,7 +18,7 @@ export function AssistantActions({ name, disabled, canMoveUp, canMoveDown, onEdi
   const menu = useRef<HTMLDivElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
   function close() { setOpen(false); }
-  function dismiss() { close(); trigger.current?.focus(); }
+  function dismiss() { close(); trigger.current?.focus({ preventScroll: true }); }
   function run(action: () => void) { dismiss(); action(); }
 
   useLayoutEffect(() => {
@@ -32,7 +33,7 @@ export function AssistantActions({ name, disabled, canMoveUp, canMoveDown, onEdi
   useEffect(() => {
     if (!open) return;
     function outside(event: PointerEvent) {
-      if (!wrapper.current?.contains(event.target as Node)) close();
+      if (!wrapper.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) close();
     }
     function scrolled(event: Event) {
       if (!menu.current?.contains(event.target as Node)) dismiss();
@@ -48,14 +49,14 @@ export function AssistantActions({ name, disabled, canMoveUp, canMoveDown, onEdi
   }, [open]);
 
   return <div ref={wrapper} className="assistant-actions" onBlur={(event) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close();
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !menu.current?.contains(event.relatedTarget as Node | null)) close();
   }}>
     <button ref={trigger} className="assistant-menu-trigger" type="button" disabled={disabled}
       aria-label={`管理助手 ${name}`} title="管理助手" aria-haspopup="menu" aria-expanded={open}
       onClick={() => setOpen(!open)} onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }
       }}><MoreHorizontal size={16} aria-hidden="true" /></button>
-    {open && <div ref={menu} className="assistant-menu" role="menu" aria-label={`${name}的管理菜单`} onKeyDown={(event) => {
+    {open && createPortal(<div ref={menu} className="assistant-menu" role="menu" aria-label={`${name}的管理菜单`} onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); dismiss(); return; }
       if (event.key === "Tab") { dismiss(); return; }
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
@@ -72,6 +73,6 @@ export function AssistantActions({ name, disabled, canMoveUp, canMoveDown, onEdi
         aria-description={!onDelete ? "默认助手不可删除" : undefined}
         onClick={() => { if (onDelete) run(onDelete); }}><Trash2 size={15} />删除</button>
       {!onDelete && <p className="assistant-menu-note" role="none">默认助手不可删除</p>}
-    </div>}
+    </div>, document.body)}
   </div>;
 }

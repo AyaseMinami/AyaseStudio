@@ -121,6 +121,7 @@ function App() {
             onDeleteProvider: chat.deleteProvider,
             onModelChange: chat.updateModel,
             onProviderRename: chat.renameProvider,
+            onProviderMove: chat.moveProvider,
             onRefreshModelCatalog: chat.refreshModelCatalog,
             onRunModelTest: chat.runModelTest,
             onSelectModel: chat.setActiveModel,

@@ -47,6 +47,17 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 860);
   const [conversationPanelOpen, setConversationPanelOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>();
+  const navigationRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  function closeNavigation() {
+    toggleRef.current?.focus({ preventScroll: true });
+    setNavigationOpen(false);
+  }
+  function closeConversations() {
+    const selected = navigationRef.current?.querySelector<HTMLButtonElement>('.assistant-branch-toggle[aria-pressed="true"]');
+    (selected && !selected.disabled ? selected : toggleRef.current)?.focus({ preventScroll: true });
+    setConversationPanelOpen(false);
+  }
   const { snapshot, conversation, busy, execute } = workspace;
   const selectedAssistant = snapshot?.assistants.find((item) => item.id === snapshot.selection.activeAssistantId);
   const conversations = snapshot?.conversations.filter((item) => item.assistantId === selectedAssistant?.id) ?? [];
@@ -78,9 +89,15 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
     await execute(command);
   }
 
-  return <div className="conversation-workspace">
+  return <div ref={navigationRef} className="conversation-workspace" onKeyDown={(event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || dialog || !navigationOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (conversationPanelOpen) closeConversations();
+    else closeNavigation();
+  }}>
     <div className="conversation-navigation-toolbar">
-      <button className="workspace-sidebar-toggle" type="button" aria-label="助手与对话" aria-expanded={navigationOpen} aria-controls="assistant-navigation" title={navigationOpen ? "收起助手与对话侧栏" : "展开助手与对话侧栏"} onClick={() => setNavigationOpen(!navigationOpen)}>
+      <button ref={toggleRef} className="workspace-sidebar-toggle" type="button" aria-label="助手与对话" aria-expanded={navigationOpen} aria-controls="assistant-navigation" title={navigationOpen ? "收起助手与对话侧栏" : "展开助手与对话侧栏"} onClick={() => navigationOpen ? closeNavigation() : setNavigationOpen(true)}>
         {navigationOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
       </button>
       <span className="workspace-breadcrumb" title={`${selectedAssistant?.name ?? ""} / ${conversation?.title ?? ""}`}>
@@ -98,13 +115,8 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
       “{running.title}”正在生成，完成或停止后可发送下一条消息。
       <button className="settings-button" type="button" disabled={busy} onClick={() => void execute({ type: "select", assistantId: running.assistantId, conversationId: running.id })}>返回生成中的对话</button>
     </div>}
-    <div className="conversation-workspace-body" onKeyDown={(event) => {
-      if (event.key === "Escape" && conversationPanelOpen) {
-        setConversationPanelOpen(false);
-        event.currentTarget.querySelector<HTMLElement>('.assistant-branch-toggle[aria-pressed="true"]')?.focus();
-      }
-    }}>
-      {navigationOpen && <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表">
+    <div className="conversation-workspace-body" data-navigation-open={navigationOpen} data-conversations-open={navigationOpen && conversationPanelOpen}>
+      <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表" data-open={navigationOpen} inert={!navigationOpen} aria-hidden={!navigationOpen}>
         <div className="chat-navigation-heading"><h2>助手</h2></div>
         <button type="button" className="settings-button" disabled={busy || !snapshot} onClick={() => editAssistant()}><Plus size={15} />新建助手</button>
         <ul className="chat-navigation-list">{snapshot?.assistants.map((assistant, index) => {
@@ -123,11 +135,11 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
             onDelete={assistant.id === DEFAULT_ASSISTANT_ID ? undefined : () => setDialog({ type: "delete-assistant", id: assistant.id, name: assistant.name, count, permanent: false })} />
           </li>;
         })}</ul>
-      </aside>}
-      {navigationOpen && conversationPanelOpen && selectedAssistant && <aside id={`assistant-conversations-${selectedAssistant.id}`} className="conversation-cascade-pane" aria-label={`${selectedAssistant.name}的对话`}>
+      </aside>
+      {selectedAssistant && <aside id={`assistant-conversations-${selectedAssistant.id}`} className="conversation-cascade-pane" aria-label={`${selectedAssistant.name}的对话`} data-open={navigationOpen && conversationPanelOpen} inert={!navigationOpen || !conversationPanelOpen} aria-hidden={!navigationOpen || !conversationPanelOpen}>
             <div className="chat-navigation-heading">
               <h2>{selectedAssistant.name}的对话</h2>
-              <button className="conversation-collapse-button" type="button" onClick={() => setConversationPanelOpen(false)} aria-label="收起对话栏" title="收起对话栏">
+              <button className="conversation-collapse-button" type="button" onClick={closeConversations} aria-label="收起对话栏" title="收起对话栏">
                 <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M8 2 3 6l5 4Z" fill="currentColor" /></svg>
               </button>
             </div>

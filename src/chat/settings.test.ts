@@ -13,6 +13,7 @@ import {
   loadConnectionSettings,
   previousConnectionSettingsStorageKey,
   renameProvider,
+  moveProvider,
   saveConnectionSettings,
   selectModel,
   updateConnection,
@@ -66,6 +67,24 @@ describe("connection settings", () => {
 
   beforeEach(() => {
     storage = new MemoryStorage();
+  });
+
+  it("persists provider order without changing connections or the selected target", () => {
+    let state = configuredState();
+    state = selectModel(state, "model-primary");
+    state = createProviderFromTemplate(state, "custom", { providerId: "b", name: "B" });
+    state = createProviderFromTemplate(state, "custom", { providerId: "c", name: "C" });
+    const active = getActiveTarget(state);
+    const moved = moveProvider(state, "c", "provider-relay", "before");
+    expect(moved.providers.map((item) => item.id)).toEqual(["c", "provider-relay", "b"]);
+    expect(getActiveTarget(moved)).toEqual(active);
+    expect(moved.providers[1]).toBe(state.providers[0]);
+    const movedDown = moveProvider(moved, "c", "b", "after");
+    saveConnectionSettings(movedDown, storage);
+    expect(loadConnectionSettings(storage)).toEqual(movedDown);
+    expect(movedDown.providers.map((item) => item.id)).toEqual(["provider-relay", "b", "c"]);
+    expect(moveProvider(state, "missing", "b", "before")).toBe(state);
+    expect(moveProvider(state, "b", "missing", "before")).toBe(state);
   });
 
   it("creates ordinary editable provider groups with named connection templates", () => {

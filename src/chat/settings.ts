@@ -89,7 +89,7 @@ export const providerTemplates: readonly ProviderTemplate[] = [
   },
   {
     id: "gemini",
-    label: "Google Gemini",
+    label: "Gemini",
     providerName: "Google Gemini",
     connections: [
       {
@@ -595,6 +595,20 @@ export function deleteProvider(
   return providers.length === state.providers.length
     ? state
     : repairActiveModel(providers, state.activeModelId);
+}
+
+export function moveProvider(
+  state: ConnectionSettingsState,
+  providerId: string,
+  targetId: string,
+  placement: "before" | "after",
+): ConnectionSettingsState {
+  const provider = state.providers.find((item) => item.id === providerId);
+  if (!provider || providerId === targetId || !state.providers.some((item) => item.id === targetId)) return state;
+  const providers = state.providers.filter((item) => item.id !== providerId);
+  const targetIndex = providers.findIndex((item) => item.id === targetId);
+  providers.splice(targetIndex + (placement === "after" ? 1 : 0), 0, provider);
+  return providers.every((item, index) => item === state.providers[index]) ? state : { ...state, providers };
 }
 
 export function addConnection(

@@ -72,6 +72,7 @@ const sharedProps = {
     onDeleteProvider: () => undefined,
     onModelChange: () => undefined,
     onProviderRename: () => undefined,
+    onProviderMove: () => undefined,
     onRefreshModelCatalog: async () => undefined,
     onRunModelTest: async () => undefined,
     onSelectModel: () => undefined,
@@ -99,7 +100,10 @@ describe("SettingsWorkspace", () => {
       /<button[^>]*aria-label="连接配置"[^>]*aria-current="page"/,
     );
     expect(html).toContain('aria-label="供应商列表"');
-    expect(html).toContain('aria-label="连接渠道列表"');
+    expect(html).toContain('aria-label="示例供应商的连接渠道列表"');
+    expect(html).toContain('aria-label="连接详情"');
+    expect(html).toContain("请求地址详情");
+    expect(html).not.toMatch(/第一栏|第二栏|第三栏/);
     expect(html).toContain('aria-label="模型列表"');
     expect(html).toContain("示例供应商");
     expect(html).toContain("高速线路");

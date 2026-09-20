@@ -111,18 +111,58 @@ describe("App navigation", () => {
     });
   }
 
+  async function openConnectionMenu(name: string): Promise<void> {
+    await act(async () => {
+      container.querySelector<HTMLElement>(`summary[aria-label="管理连接 ${name}"]`)!.click();
+    });
+  }
+
+  it("reorders only provider groups through drag and menu actions, retaining the selected connection", async () => {
+    saveConnectionSettings({
+      version: 3, activeModelId: "model-a",
+      providers: ["a", "b", "c"].map((id) => ({
+        id, name: id.toUpperCase(), connections: [{
+          id: `connection-${id}`, name: `线路 ${id}`, protocol: "openai-chat",
+          baseUrl: "https://example.com/v1", apiKey: "",
+          models: [{ id: `model-${id}`, modelId: `upstream-${id}` }],
+        }],
+      })),
+    });
+    await renderApp();
+    await clickButton("设置");
+    const handle = getButton("拖动排序 C");
+    const target = getButton("A").closest(".connection-tree-group")!;
+    const transfer = new DataTransfer();
+    Object.assign(transfer, { setDragImage: vi.fn() });
+    const dragStart = new Event("dragstart", { bubbles: true });
+    Object.assign(dragStart, { dataTransfer: transfer });
+    const drop = new Event("drop", { bubbles: true });
+    Object.assign(drop, { dataTransfer: transfer, clientY: -1 });
+    await act(async () => handle.dispatchEvent(dragStart));
+    await act(async () => target.dispatchEvent(drop));
+    expect(loadConnectionSettings().providers.map((item) => item.id)).toEqual(["c", "a", "b"]);
+    expect(getButton("查看连接 线路 a").getAttribute("aria-current")).toBe("true");
+    await act(async () => container.querySelector<HTMLElement>('summary[aria-label="管理供应商 C"]')!.click());
+    expect(getButton("上移供应商 C").disabled).toBe(true);
+    expect(container.querySelector('[role="menu"]')?.classList.contains("assistant-menu")).toBe(true);
+    await clickButton("下移供应商 C");
+    expect(loadConnectionSettings().providers.map((item) => item.id)).toEqual(["a", "c", "b"]);
+    expect(getButton("查看连接 线路 a").getAttribute("aria-current")).toBe("true");
+    expect(loadConnectionSettings().activeModelId).toBe("model-a");
+  });
+
   async function clickButtonWithText(text: string): Promise<void> {
     if (text === "编辑助手") {
-      if (!container.querySelector('#assistant-navigation')) await clickButtonWithText("助手与对话");
+      if (!container.querySelector('#assistant-navigation:not([inert])')) await clickButtonWithText("助手与对话");
       await clickButton("管理助手 默认助手");
-      const assistant = container.querySelector<HTMLButtonElement>('[aria-label="编辑助手 默认助手"]');
+      const assistant = document.querySelector<HTMLButtonElement>('[aria-label="编辑助手 默认助手"]');
       await act(async () => assistant!.click());
       return;
     }
     if (text === "编辑对话") {
-      if (!container.querySelector('#assistant-navigation')) await clickButtonWithText("助手与对话");
+      if (!container.querySelector('#assistant-navigation:not([inert])')) await clickButtonWithText("助手与对话");
       await waitFor(() => container.querySelector<HTMLButtonElement>('[aria-label="默认助手"]')?.disabled === false);
-      if (!container.querySelector('.conversation-cascade-pane')) await clickButton("默认助手");
+      if (!container.querySelector('.conversation-cascade-pane:not([inert])')) await clickButton("默认助手");
       const editor = container.querySelector<HTMLButtonElement>('.conversation-leaf:has([aria-pressed="true"]) [aria-label^="编辑对话 "]')!;
       await act(async () => editor.click());
       return;
@@ -192,6 +232,11 @@ describe("App navigation", () => {
     await clickButtonWithText("保存对话");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     await clickButtonWithText("清空");
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("清空当前对话？");
+    await clickButtonWithText("取消");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    await clickButtonWithText("清空");
+    await clickButtonWithText("确认清空");
     await waitFor(() => container.querySelector(".message-bubble") === null);
     await act(async () => root.unmount());
     root = createRoot(container);
@@ -517,7 +562,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
-    await clickButton("Gemini Test");
+    await clickButton("查看连接 Gemini 专线");
     await clickButton("设为助手默认模型 gemini-model");
     await clickButton("聊天");
     expect(container.querySelector('[aria-label="切换模型"]')?.getAttribute("title")).toBe("OpenAI Test · OpenAI 主线路 · openai-model");
@@ -598,8 +643,40 @@ describe("App navigation", () => {
     expect(container.textContent).toContain("model-d");
     expect(container.textContent).not.toContain("model-a");
 
+    const settingsBefore = loadConnectionSettings();
+    await clickButton("中转站 A");
+    expect(container.querySelector<HTMLElement>(".connection-tree-children")?.hidden).toBe(true);
+    expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe("https://two.example.com/v1");
+    const interfaceSection = container.querySelector<HTMLDetailsElement>(".connection-interface")!;
+    await act(async () => { interfaceSection.open = false; });
+    expect(container.querySelector('[aria-label="模型管理"]')?.closest(".connection-interface")).toBeNull();
+    expect(container.querySelector('[aria-label="模型列表"]')?.textContent).toContain("model-d");
+    expect(loadConnectionSettings()).toEqual(settingsBefore);
+    await clickButton("中转站 A");
+    await openConnectionMenu("连接 1");
+    await clickButtonWithText("重命名");
+    const rename = container.querySelector<HTMLInputElement>(".connection-entity-menu input")!;
+    expect(rename).toBeInstanceOf(HTMLInputElement);
+    expect(document.activeElement).toBe(rename);
+    await act(async () => {
+      rename.value = "备用线路";
+      rename.blur();
+    });
+    await clickButtonWithText("完成");
+    expect(loadConnectionSettings().providers[0]?.connections[0]?.name).toBe("备用线路");
+    expect(getButton("查看连接 连接 2").getAttribute("aria-current")).toBe("true");
+    await clickButton("编辑模型 model-d");
+    const draft = container.querySelector<HTMLInputElement>('.model-edit-form input[name="modelId"]')!;
+    draft.value = "unsaved-model";
+    const confirmSwitch = vi.fn(() => false);
+    Object.assign(window, { confirm: confirmSwitch });
+    await clickButton("查看连接 备用线路");
+    expect(confirmSwitch).toHaveBeenCalled();
+    expect(container.querySelector<HTMLInputElement>('.model-edit-form input[name="modelId"]')?.value).toBe("unsaved-model");
+    expect(getButton("查看连接 连接 2").getAttribute("aria-current")).toBe("true");
+
     await clickButton("聊天");
-    expect(container.textContent).toContain("中转站 A · 连接 1 · model-a");
+    expect(container.querySelector('[aria-label="切换模型"]')?.getAttribute("title")).toBe("中转站 A · 备用线路 · model-a");
   });
 
   it("fetches a per-connection model catalog and adds an explicit selection", async () => {
@@ -909,7 +986,8 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
-    await clickButtonWithText("删除连接");
+    await openConnectionMenu("连接 1");
+    await clickButton("删除连接 连接 1");
     await waitFor(
       () => document.activeElement?.getAttribute("aria-label") === "查看连接 连接 2",
     );
@@ -958,11 +1036,8 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
-    const deleteConnectionButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "删除连接");
-    expect(deleteConnectionButton).toBeInstanceOf(HTMLButtonElement);
-    await act(async () => deleteConnectionButton?.click());
+    await openConnectionMenu("OpenAI 主线路");
+    await clickButton("删除连接 OpenAI 主线路");
     await clickButton("聊天");
     expect(container.textContent).toContain("模型已失效");
     await setDraft("keep this draft");
@@ -1058,9 +1133,11 @@ describe("App navigation", () => {
     );
 
     await setBaseUrl("https://gemini.example.com/?guess=1");
-    expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
+    expect(container.querySelector("#base-url-hint")?.textContent).toContain(
       "Base URL 不能包含查询参数。",
     );
+    expect(container.querySelector("#base-url-hint")?.closest(".connection-request-details")).toBeNull();
+    expect(container.querySelector<HTMLDetailsElement>(".connection-request-details")?.open).toBe(false);
     expect(container.querySelector(".endpoint-preview")?.textContent).not.toContain(
       "/v1/messages",
     );

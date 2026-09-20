@@ -41,6 +41,7 @@ import {
   loadConnectionSettings,
   providerTemplates,
   renameProvider,
+  moveProvider,
   saveConnectionSettings,
   selectModel,
   updateConnection,
@@ -403,6 +404,11 @@ export function useChatSession({
     setConnectionSettings((current) =>
       renameProvider(current, providerId, name),
     );
+  }
+
+  function moveProviderGroup(providerId: string, targetId: string, placement: "before" | "after"): void {
+    if (isGenerating) return;
+    setConnectionSettings((current) => moveProvider(current, providerId, targetId, placement));
   }
 
   async function refreshModelCatalog(connectionId: string): Promise<void> {
@@ -1058,6 +1064,7 @@ export function useChatSession({
     protocolInfo,
     refreshModelCatalog,
     renameProvider: updateProviderName,
+    moveProvider: moveProviderGroup,
     runModelTest,
     sendMessage,
     setDraft,
