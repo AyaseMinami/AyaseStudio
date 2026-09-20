@@ -45,6 +45,7 @@ describe("assistant workspace public behavior", () => {
     expect(predicate()).toBe(true);
   }
   async function click(text: string) {
+    if (text.startsWith("编辑对话 ") && !container.querySelector(".conversation-cascade-pane")) await click("默认助手");
     const assistantAction = /^(?:编辑|删除|上移|下移)助手 (.+)$/.exec(text);
     if (assistantAction && !container.querySelector('[role="menu"]')) await click(`管理助手 ${assistantAction[1]}`);
     const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text);
@@ -65,6 +66,59 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector(".chat-header-copy")?.textContent?.includes(title) === true);
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
   }
+
+  it("edits conversation fields explicitly, discards cancelled drafts and restores inheritance", async () => {
+    expect(container.querySelector(".conversation-navigation-toolbar")?.textContent).not.toContain("会话设置");
+    await click("默认助手");
+    await click("编辑对话 对话 A");
+    await fill("#session-system", "Conversation only");
+    await act(async () => {
+      const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
+      field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click("保存对话");
+    await wait(() => !container.querySelector('[role="dialog"]'));
+    let saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    expect(selectedConversation(saved)?.settings).toMatchObject({ config: { systemInstruction: "Conversation only" }, modelId: "model-b" });
+    expect(saved.assistants.find((item) => item.id === "default")?.defaultConfig.systemInstruction).toBe("");
+    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("upstream-b");
+    await click("编辑对话 对话 A");
+    await fill("#session-system", "Discard me");
+    await fill("#conversation-title", "Discard title");
+    await click("取消");
+    await click("编辑对话 对话 A");
+    expect(container.querySelector<HTMLInputElement>("#conversation-title")?.value).toBe("对话 A");
+    expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Conversation only");
+    await click("恢复助手默认值");
+    expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("");
+    await click("保存对话");
+    await wait(() => !container.querySelector('[role="dialog"]'));
+    saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    expect(selectedConversation(saved)?.settings).toEqual({ modelId: "model-a", config: defaultSessionConfig() });
+    await click("编辑对话 对话 A");
+    await click("恢复助手默认值");
+    await click("保存对话");
+    await wait(() => !container.querySelector('[role="dialog"]'));
+    expect(selectedConversation(await repo.initializeWorkspace(null, ["model-a", "model-b"]))?.settings).toEqual({ modelId: "model-a", config: defaultSessionConfig() });
+  });
+
+  it("edits another conversation without switching the active chat", async () => {
+    await click("默认助手");
+    await click("新建对话");
+    await wait(() => container.querySelector(".chat-header-copy")?.textContent?.includes("新对话") === true);
+    await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="编辑对话 对话 A"]')?.disabled === false);
+    const activeId = selectedConversation(await repo.initializeWorkspace(null, ["model-a", "model-b"]))?.id;
+    await click("编辑对话 对话 A");
+    await fill("#conversation-title", "Renamed A");
+    await fill("#session-system", "Only A");
+    await click("保存对话");
+    await wait(() => !container.querySelector('[role="dialog"]'));
+    const saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    expect(selectedConversation(saved)?.id).toBe(activeId);
+    expect(selectedConversation(saved)?.overrides).toBeUndefined();
+    expect(saved.conversations.find((item) => item.id === "current")).toMatchObject({ title: "Renamed A", settings: { config: { systemInstruction: "Only A" } } });
+    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("新对话");
+  });
 
   it("couples both columns to the main toggle and allows collapsing only conversations", async () => {
     expect(container.querySelectorAll(".chat-navigation-pane")).toHaveLength(1);
@@ -121,11 +175,11 @@ describe("assistant workspace public behavior", () => {
     await thinkingReady();
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="minimal"]')!.click());
     await thinkingReady();
-    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).assistants.find((item) => item.id === "default")?.defaultConfig.geminiThinking?.choice).toBe("minimal");
-    await click("编辑助手 默认助手");
-    await choose("#assistant-model", "model-b");
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.find((item) => item.id === "current")?.settings?.config.geminiThinking?.choice).toBe("minimal");
+    await click("编辑对话 对话 A");
+    await choose("#conversation-model", "model-b");
     expect(container.textContent).not.toContain("原思考选项不适用于此模型");
-    await click("保存助手");
+    await click("保存对话");
     await thinkingReady();
     expect(container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value).toBe("minimal");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="high"]')!.click());
@@ -176,6 +230,12 @@ describe("assistant workspace public behavior", () => {
         "anthropic-native": { choice: "adaptive", budget: "1024", includeSummary: false, effort: "max" },
       },
     } } });
+    await repo.execute({ type: "configure-conversation", id: "current", settings: { modelId: "model-a", config: {
+      ...assistant.defaultConfig, thinking: {
+        "openai-responses": { choice: "high", budget: "1024", includeSummary: true },
+        "anthropic-native": { choice: "adaptive", budget: "1024", includeSummary: false, effort: "max" },
+      },
+    } } });
     root = createRoot(container); await act(async () => root.render(<App />));
     await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
     await click("思考设置");
@@ -204,13 +264,13 @@ describe("assistant workspace public behavior", () => {
     await click("思考设置");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="minimal"]')!.click());
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
-    await click("编辑助手 默认助手");
+    await click("编辑对话 对话 A");
     await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
+      const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
       field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(container.textContent).not.toContain("原思考选项不适用于此模型");
-    await click("保存助手");
+    await click("保存对话");
     await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     if (!container.querySelector(".thinking-popover")) await click("思考设置");
     await wait(() => container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value === "minimal");
@@ -255,13 +315,13 @@ describe("assistant workspace public behavior", () => {
     await click("思考设置");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="budget"]')!.click());
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
-    await click("编辑助手 默认助手");
+    await click("编辑对话 对话 A");
     await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
+      const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
       field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(container.textContent).not.toContain("原思考选项不适用于此模型");
-    await click("保存助手");
+    await click("保存对话");
     await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     if (!container.querySelector(".thinking-popover")) await click("思考设置");
     await wait(() => container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value === "budget");
@@ -269,21 +329,21 @@ describe("assistant workspace public behavior", () => {
     let savedChoice: string | undefined;
     for (let attempt = 0; attempt < 150 && savedChoice !== "adaptive"; attempt++) {
       await act(async () => {
-        savedChoice = (await repo.initializeWorkspace(null, ["model-a", "model-b"])).assistants.find((item) => item.id === "default")
-          ?.defaultConfig.thinking?.["anthropic-native"]?.choice;
+        savedChoice = (await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.find((item) => item.id === "current")
+          ?.settings?.config.thinking?.["anthropic-native"]?.choice;
       });
       if (savedChoice !== "adaptive") await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
     }
     expect(savedChoice).toBe("adaptive");
     await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前助手）"]')!;
+      const field = container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前会话）"]')!;
       field.value = "xhigh"; field.dispatchEvent(new Event("change", { bubbles: true }));
     });
     let savedEffort: string | undefined;
     for (let attempt = 0; attempt < 150 && savedEffort !== "xhigh"; attempt++) {
       await act(async () => {
-        savedEffort = (await repo.initializeWorkspace(null, ["model-a", "model-b"])).assistants.find((item) => item.id === "default")
-          ?.defaultConfig.thinking?.["anthropic-native"]?.effort;
+        savedEffort = (await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.find((item) => item.id === "current")
+          ?.settings?.config.thinking?.["anthropic-native"]?.effort;
       });
       if (savedEffort !== "xhigh") await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
     }
@@ -315,7 +375,7 @@ describe("assistant workspace public behavior", () => {
     await act(async () => root.render(<App />));
     await wait(() => !!container.querySelector(".thinking-summary"));
     await click("思考设置");
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前助手）"]')?.value).toBe("xhigh");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前会话）"]')?.value).toBe("xhigh");
   });
 
   it("preserves a standalone Anthropic effort during an editor model switch", async () => {
@@ -365,6 +425,8 @@ describe("assistant workspace public behavior", () => {
       yield { type: "completed" };
     } };
     runtime.createRuntimeChatTransport.mockResolvedValue(malicious);
+    const seeded = (await repo.initializeWorkspace(null, ["model-a"])).assistants.find((item) => item.id === "default")!;
+    await repo.execute({ type: "configure-conversation", id: "current", settings: { modelId: seeded.defaultModelId, config: seeded.defaultConfig } });
     root = createRoot(container); await act(async () => root.render(<App />));
     await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     await fill(".composer-input", "关闭摘要"); await click("发送");
@@ -500,7 +562,7 @@ describe("assistant workspace public behavior", () => {
     expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).assistants).toHaveLength(2);
   });
 
-  it("edits shared assistant settings and uses the destination assistant after moving conversations", async () => {
+  it("preserves conversation settings when editing or deleting its assistant", async () => {
     await chooseAssistant("写作助手", "对话 B");
     await click("编辑助手 写作助手");
     await fill("#session-system", "Revised default"); await click("保存助手");
@@ -514,7 +576,8 @@ describe("assistant workspace public behavior", () => {
     await wait(() => !container.querySelector('[role="dialog"]'));
     const state = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(selectedConversation(state)).toMatchObject({ id: "b", assistantId: "default" });
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("upstream-a");
+    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("upstream-b");
+    expect(selectedConversation(state)?.settings?.config.systemInstruction).toBe("Only B");
     expect((await repo.load("b"))?.messages).toEqual([]);
   });
 
@@ -525,8 +588,8 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector(".chat-header-copy")?.textContent?.startsWith("新对话") === true);
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="默认助手"]')?.disabled === false);
     expect(container.querySelector(".conversation-cascade-pane")).not.toBeNull();
-    await wait(() => !container.querySelector<HTMLButtonElement>('[aria-label="重命名对话 新对话"]')?.disabled);
-    await click("重命名对话 新对话"); await fill("#conversation-title", "新建验收"); await click("保存标题");
+    await wait(() => !container.querySelector<HTMLButtonElement>('[aria-label="编辑对话 新对话"]')?.disabled);
+    await click("编辑对话 新对话"); await fill("#conversation-title", "新建验收"); await click("保存对话");
     await wait(() => container.querySelector(".chat-header-copy")?.textContent?.startsWith("新建验收") === true);
     await click("删除对话 新建验收"); await click("取消");
     expect(container.querySelector(".chat-header-copy")?.textContent).toContain("新建验收");
@@ -534,7 +597,7 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector(".chat-header-copy")?.textContent?.startsWith("对话 A") === true);
   });
 
-  it("shares assistant changes across existing conversations with only rename and delete icons on each row", async () => {
+  it("keeps existing conversations independent of later assistant edits", async () => {
     const observed: ChatRequest[] = [];
     runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request: ChatRequest) {
       observed.push(request); yield { type: "completed" };
@@ -560,8 +623,8 @@ describe("assistant workspace public behavior", () => {
     }
     expect(observed).toHaveLength(2);
     for (const request of observed) {
-      expect(request.model).toBe("upstream-b");
-      expect(request.config?.systemInstruction).toBe("Shared instruction");
+      expect(request.model).toBe("upstream-a");
+      expect(request.config?.systemInstruction).toBe("");
     }
     expect((await repo.load("current"))?.generationConfig).toBeUndefined();
   });
@@ -580,7 +643,7 @@ describe("assistant workspace public behavior", () => {
     await chooseAssistant("默认助手", "对话 A"); expect(container.textContent).toContain("Only A failed");
   });
 
-  it("freezes the running assistant model and settings but uses edits on the next request", async () => {
+  it("freezes the running conversation model and settings but uses edits on the next request", async () => {
     const observed: ChatRequest[] = [];
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -590,13 +653,13 @@ describe("assistant workspace public behavior", () => {
     } } satisfies ChatTransport);
     await fill('.composer-input', 'First'); await click('发送');
     await wait(() => observed.length === 1);
-    await click('编辑助手 默认助手');
+    await click('编辑对话 对话 A');
     await fill('#session-system', 'New shared instruction');
     await act(async () => {
-      const model = container.querySelector<HTMLSelectElement>('#assistant-model')!;
+      const model = container.querySelector<HTMLSelectElement>('#conversation-model')!;
       model.value = 'model-b'; model.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    await click('保存助手'); await wait(() => !container.querySelector('[role="dialog"]'));
+    await click('保存对话'); await wait(() => !container.querySelector('[role="dialog"]'));
     expect(observed[0].model).toBe('upstream-a');
     expect(observed[0].config?.systemInstruction).toBe('');
     await act(async () => release()); await wait(() => container.querySelector('[aria-label="发送"]') !== null);

@@ -20,9 +20,8 @@ import {
   type StoredChatMessage,
   type StoredMessageStatus,
 } from "./repository";
-import { defaultSessionConfig } from "./sessionConfig";
-import { includeThinkingSummary,
-  withThinkingSettings, type ThinkingSettings } from "./thinking";
+import { includeThinkingSummary, withThinkingSettings,
+  type ThinkingSettings } from "./thinking";
 import { useConversationWorkspace } from "./useConversationWorkspace";
 import { validateRequestConfig } from "./requestMapping";
 import { buildProtocolBody } from "./requestMapping";
@@ -64,7 +63,6 @@ async function cleanupAttachments(): Promise<void> {
   if (!isTauri()) return;
   await attachmentLifecycle.cleanup();
 }
-const emptyConfig = defaultSessionConfig();
 
 function completionStatus(protocol: ChatProtocol, reason?: string): StoredMessageStatus {
   if (protocol === "anthropic-native" && reason === "pause_turn") return "paused";
@@ -126,7 +124,7 @@ export function useChatSession({
   const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
     connectionSettings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => model.id))), generatingId, cleanupAttachments);
   const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
-  const sessionConfig = workspace.assistant?.defaultConfig ?? emptyConfig;
+  const sessionConfig = workspace.effective.config;
   const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
   const imports = useRef(new Map<string, number>());
   // This per-render binding is captured by a request; navigation never retargets it.
@@ -158,8 +156,8 @@ export function useChatSession({
     controller?.abort();
   }
   const activeTarget = useMemo(
-    () => getActiveTarget({ ...connectionSettings, activeModelId: workspace.assistant?.defaultModelId ?? null }),
-    [connectionSettings, workspace.assistant?.defaultModelId],
+    () => getActiveTarget({ ...connectionSettings, activeModelId: workspace.effective.modelId }),
+    [connectionSettings, workspace.effective.modelId],
   );
   const activeProvider = activeTarget?.provider;
   const activeConnection = activeTarget?.connection;
@@ -171,16 +169,16 @@ export function useChatSession({
   );
 
   async function setThinking(settings: ThinkingSettings): Promise<boolean> {
-    if (!workspace.assistant || !workspace.canSend()) return false;
+    if (!workspace.conversation || !workspace.canSend()) return false;
     const protocol = activeConnection?.protocol;
     if (!protocol) return false;
-    const input = { ...workspace.assistant, defaultConfig: withThinkingSettings(sessionConfig, protocol, settings) };
-    return workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input });
+    return workspace.execute({ type: "configure-conversation", id: workspace.conversation.id,
+      settings: { modelId: workspace.effective.modelId, config: withThinkingSettings(sessionConfig, protocol, settings) } });
   }
   async function setWebSearch(enabled: boolean): Promise<boolean> {
-    if (!workspace.assistant || !workspace.canSend()) return false;
-    return workspace.execute({ type: "edit-assistant", id: workspace.assistant.id,
-      input: { ...workspace.assistant, defaultConfig: { ...sessionConfig, webSearch: enabled } } });
+    if (!workspace.conversation || !workspace.canSend()) return false;
+    return workspace.execute({ type: "configure-conversation", id: workspace.conversation.id,
+      settings: { modelId: workspace.effective.modelId, config: { ...sessionConfig, webSearch: enabled } } });
   }
   useEffect(() => {
     setConfigErrors(validateRequestConfig(
@@ -605,11 +603,11 @@ export function useChatSession({
     if (!content.trim() && !frozenAttachments.length && !existingAttachments.length) return;
     const history = withReplyLinks(targetUser ? messages.slice(0, messages.findIndex((message) => message.id === targetUser.id)) : messages);
     if (!activeTarget) {
-      onConfigurationRequired();
-      setError("请先添加并选择一个模型。");
+      if (!connectionSettings.providers.some((provider) => provider.connections.some((connection) => connection.models.length))) onConfigurationRequired();
+      setError("当前会话的模型未选择或已失效，请通过对话行的编辑按钮选择模型或恢复助手默认值。");
       return;
     }
-    const requestConnection = activeTarget.connection;
+    const requestConnection = structuredClone(activeTarget.connection);
     const replayScope = `${requestConnection.id}|${requestConnection.baseUrl}`;
     if (resume?.continuation && (resume.continuation.scope !== replayScope || resume.continuation.model !== activeTarget.model.modelId || requestConnection.protocol !== "anthropic-native")) {
       setError("请切回这条回复使用的连接和模型后继续生成。"); return;
@@ -977,7 +975,7 @@ export function useChatSession({
   async function branchMessage(id: string): Promise<boolean> {
     if (!workspace.canSend() || !sessionStore) return false;
     return workspace.execute({ type: "fork-conversation", id: newId(), conversationId: sessionStore.id, messageId: id,
-      creationConfig: { modelId: workspace.assistant?.defaultModelId ?? null, config: structuredClone(sessionConfig) } });
+      creationConfig: { modelId: workspace.effective.modelId, config: structuredClone(sessionConfig) } });
   }
 
   function clearConversation(): void {
@@ -1028,7 +1026,7 @@ export function useChatSession({
     branchMessage,
     retryMessage: (id: string) => sendMessage(id),
     continueMessage: (id: string) => sendMessage(undefined, id),
-    connectionSettings: { ...connectionSettings, activeModelId: activeModel?.id ?? null },
+    connectionSettings: { ...connectionSettings, activeModelId: workspace.assistant?.defaultModelId ?? null },
     configErrors,
     contextPlan,
     deleteConnection: removeConnection,

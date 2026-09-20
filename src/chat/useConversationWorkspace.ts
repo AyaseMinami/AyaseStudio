@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
+import { readConversationConfig } from "./conversationConfig";
 import type { ContextSummary } from "./contextBudget";
 import type { StoredChatMessage, WorkspaceRepository } from "./repository";
 import type { ConfigErrors } from "./sessionConfig";
@@ -155,6 +156,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
 
   const conversation = snapshot && selectedConversation(snapshot);
   const assistant = snapshot?.assistants.find((item) => item.id === snapshot.selection.activeAssistantId);
+  const effective = useMemo(() => readConversationConfig(conversation?.settings), [conversation?.settings]);
   const id = conversation?.id;
   const view = (id && views.current.get(id)) || fallback.current;
   function setField<K extends keyof ConversationView>(field: K, value: SetStateAction<ConversationView[K]>): void {
@@ -167,7 +169,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   }
 
   return {
-    snapshot, conversation, assistant, view, busy, loadError, operationError, execute, retry: initialize,
+    snapshot, conversation, assistant, effective, view, busy, loadError, operationError, execute, retry: initialize,
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
     canSend: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,

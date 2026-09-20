@@ -524,7 +524,7 @@ export function ConnectionSettings({
   function handleDeleteModel(model: ConfiguredModel): void {
     if (
       window.confirm(
-        `${model.id === connectionSettings.activeModelId ? "这是当前模型。" : ""}确定从“${selectedConnection?.name ?? "当前连接"}”删除 ${model.modelId}？`,
+        `${model.id === connectionSettings.activeModelId ? "这是助手默认模型。" : ""}确定从“${selectedConnection?.name ?? "当前连接"}”删除 ${model.modelId}？`,
       )
     ) {
       const displayedModels = groupedModels.flatMap((group) => group.models);
@@ -584,6 +584,7 @@ export function ConnectionSettings({
             供应商用于分组；每条连接独立保存协议、地址和密钥，模型归属于具体连接。
           </p>
           {!canSelectModel && <p role="status" className="muted-text">请先加载或选择助手，再设置助手使用的模型。</p>}
+          {canSelectModel && <p className="muted-text">此处选择新对话使用的助手默认模型；已有对话请通过对话行的编辑按钮修改。</p>}
         </div>
         <details className="provider-create-menu">
           <summary className="settings-button settings-button-primary">
@@ -1098,7 +1099,7 @@ export function ConnectionSettings({
                                   <div className="model-row-copy">
                                     <strong>{model.displayName || model.modelId}</strong>
                                     {model.displayName ? <small>{model.modelId}</small> : null}
-                                    {current ? <span className="active-badge">当前模型</span> : null}
+                                    {current ? <span className="active-badge">助手默认模型</span> : null}
                                     {testSummary ? (
                                       <small
                                         className={`model-test-summary model-test-${test?.status}`}
@@ -1111,8 +1112,8 @@ export function ConnectionSettings({
                                     <button
                                       type="button"
                                       className="icon-button"
-                                      aria-label={`设为当前模型 ${model.modelId}`}
-                                      title="设为当前模型"
+                                      aria-label={`设为助手默认模型 ${model.modelId}`}
+                                      title="设为助手默认模型（用于新建对话）"
                                       disabled={isStreaming || current || !canSelectModel}
                                       onClick={() => onSelectModel(model.id)}
                                     >

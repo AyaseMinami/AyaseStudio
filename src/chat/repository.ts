@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
+import { copyAssistantConfig, resolveConversationConfig } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
 
 import type { ChatMessage } from "./types";
@@ -161,10 +162,16 @@ class DexieChatRepository implements WorkspaceRepository {
         }
       }
       for (const conversation of await db.conversations.toArray()) {
-        await db.conversations.update(conversation.id, {
-          assistantId: assistantIds.has(conversation.assistantId) ? conversation.assistantId : DEFAULT_ASSISTANT_ID,
-          title: typeof conversation.title === "string" && conversation.title.trim() ? conversation.title : "新对话",
-        });
+        const assistantId = assistantIds.has(conversation.assistantId) ? conversation.assistantId : DEFAULT_ASSISTANT_ID;
+        // Freeze the formerly effective settings once, before repairing assistant model references.
+        // Existing snapshots are never refreshed from the assistant on later launches.
+        if (conversation.settings === undefined) {
+          const assistant = (await db.assistants.get(assistantId))!;
+          conversation.settings = resolveConversationConfig({ ...assistant, defaultConfig: restoreSessionConfig(assistant.defaultConfig) }, conversation.overrides);
+        }
+        delete conversation.overrides;
+        await db.conversations.put({ ...conversation, assistantId,
+          title: typeof conversation.title === "string" && conversation.title.trim() ? conversation.title : "新对话" });
       }
       for (const assistant of await db.assistants.toArray()) {
         await db.assistants.update(assistant.id, {
@@ -240,10 +247,19 @@ class DexieChatRepository implements WorkspaceRepository {
           const assistant = await requireAssistant(action.assistantId);
           const now = Date.now();
           await db.conversations.add({ id: action.id, assistantId: assistant.id, title: "新对话",
-            createdAt: now, updatedAt: now });
+            createdAt: now, updatedAt: now, settings: copyAssistantConfig(assistant) });
           await db.chats.add({ id: action.id, updatedAt: now, messages: [] });
           selection.activeAssistantId = assistant.id;
           selection.lastSelected[assistant.id] = action.id;
+          break;
+        }
+        case "configure-conversation": {
+          await requireConversation(action.id);
+          if (action.title !== undefined && !action.title.trim()) throw new Error("请输入对话标题。");
+          await db.conversations.update(action.id, {
+            settings: action.settings,
+            ...(action.title === undefined ? {} : { title: action.title.trim() }),
+          });
           break;
         }
         case "rename-conversation": {
@@ -268,7 +284,7 @@ class DexieChatRepository implements WorkspaceRepository {
             while (siblings.some((item) => item.title === `${base} (${suffix})`)) suffix++;
             await db.conversations.add({ id: action.id, assistantId: source.assistantId,
               title: `${base} (${suffix})`, createdAt: now, updatedAt: now,
-              creationConfig: action.creationConfig });
+              creationConfig: action.creationConfig, settings: structuredClone(source.settings) });
             await db.chats.add({ id: action.id, updatedAt: now,
               messages: copyBranchMessages(messages.slice(0, index + 1)) });
             selection.activeAssistantId = source.assistantId;

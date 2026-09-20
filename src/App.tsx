@@ -59,7 +59,7 @@ function App() {
               ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${
                   chat.activeModel.displayName || chat.activeModel.modelId
                 }`
-              : "未选择模型"
+              : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 请编辑对话选择模型`
           }
           onClear={chat.clearConversation}
           onDraftChange={chat.setDraft}
@@ -101,7 +101,7 @@ function App() {
             canSelectModel: !!chat.workspace.assistant && !chat.workspace.busy,
             connectionSettings: chat.connectionSettings,
             isStreaming: chat.isGenerating,
-            streamPreview: chat.sessionConfig.stream,
+            streamPreview: chat.workspace.assistant?.defaultConfig.stream ?? true,
             modelCatalogs: chat.modelCatalogs,
             modelTests: chat.modelTests,
             onAddConnection: chat.addConnection,

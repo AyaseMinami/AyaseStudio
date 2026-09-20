@@ -19,9 +19,9 @@ Issue #3 adds a frozen `SessionConfig` to the neutral request. It carries the sy
 
 ## Connection selection boundary
 
-供应商只用于设置界面的分组，不进入 transport，也不提供父级字段继承。每条连接完整持有名称、协议、Base URL 与 API Key，并拥有自己的已添加模型。当前聊天由所属助手持久化的 `defaultModelId` 指向一个已添加模型，设置页的 `activeModelId` 从它派生；运行时从模型的唯一父连接读取 transport 类型、地址和凭据，因此不会把一个连接的协议与另一个连接的 Key 或模型混合。助手统一保存模型引用和生成配置，对话不再复制或覆盖；请求的目标和配置在发送时冻结。
+供应商仅用于设置界面分组，不进入 transport，也不提供字段继承。每条连接独立保存协议、Base URL、API Key 和模型列表。发送只使用当前对话完整配置快照，并从模型唯一父连接取得协议及凭据。助手是新对话模板，设置页选模只更新该模板。请求开始时冻结对话配置和连接，运行中修改只影响下一次请求。
 
-同一供应商可以配置多条相同协议的连接，以表示一个中转站的不同 URL、账号或渠道。复制已有值只发生在新建连接时，只复制地址和密钥而不复制模型；后续编辑互不影响。相同实际模型 ID 可以分别存在于不同连接下。浏览某条连接不会改变当前聊天模型；显式选择模型更新当前助手的引用，同一助手所有对话的后续请求共用此模型。删除模型或其祖先会清空相关助手选择，不自动回退。供应商模板不产生 provider-specific transport 分支。API Key 不复制到模型目录、对话快照、消息或日志。
+同一供应商可有多条相同协议连接，同一实际模型 ID 可属于不同连接。浏览连接不改变聊天模型；助手默认模型变化不影响已有对话。删除模型或连接后清除相关助手选择，会话保留失效引用并阻止发送，不自动回退。API Key 不复制到模型目录、会话配置、消息或日志。
 
 ## Model catalog boundary
 
@@ -105,7 +105,7 @@ Gemini 思考首版（2026-09-16）曾按精确型号提供选项。2026-09-19 �
 
 本地只验证这些控件配置的结构及是否能映射到所选协议；预算为可精确表示的整数，不设型号上下限，不检查预算与输出上限、采样参数间的兼容关系。有限采样数值照用户配置发送，不再要求 Temperature/Top-P 二次确认。供应商返回的拒绝作为请求失败展示，不删字段、改档位或自动重发。自定义 JSON 的受保护字段、附件安全边界、本地历史预算不属于本次取消型号限制的范围。
 
-思考设置继续保存在当前助手的协议分区中，所有对话共用；切换模型/连接不重置或改写设置，切换协议使用对应分区，发送中使用冻结快照。未知型号不再显示“能力未识别”或禁用控件。
+思考配置按协议分区保存在每个对话的完整设置中，新建时从助手复制。输入区快捷修改只保存当前对话。切换模型或连接不重置参数，切换协议使用对应分区；发送使用冻结快照。未知型号不猜测支持能力或禁用控件。
 
 Responses 只解码 reasoning item 的 `summary_text`，协调 summary text delta/done、summary part done、output item done 与 terminal 完整快照；已显示部分不重复追加。相同文字但不同事件序号的合法增量保留。Anthropic 按 block index 路由 `thinking_delta`，处理初始 thinking block，忽略 signature、redacted 和不透明数据。非流式也使用独立中立摘要事件。关闭摘要时 adapter 与运行时都丢弃意外返回的片段；取消/失败保留此前已经显示并保存的可读部分。来源：[Responses 流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)、[Claude 流式 thinking](https://platform.claude.com/docs/en/build-with-claude/thinking#streaming-thinking)。
 
@@ -117,7 +117,7 @@ On 2026-09-14, explicit live probes completed successfully for all four adapters
 
 ## Error policy
 
-Issue #14 的“重新生成”是用户确认后发起的一次新请求，使用点击时的当前助手配置和连接。它以选中用户消息或助手回复所绑定的用户消息为末条输入，排除切点后的历史；助手正文不会转换成用户输入。预检通过后旧回复及后续消息被截断，失败/停止保留新请求终态，不回退或自动重发。正文编辑、删除和分支创建不调用 transport。单条删除留下的孤立消息继续在界面保留；上下文预算仍只收集归属匹配且完成的用户/助手轮次。
+Issue #14 的“重新生成”是用户确认后发起的一次新请求，使用点击时的当前会话有效配置和连接。它以对应用户消息为末条输入，排除切点后的历史；助手正文不会转换成用户输入。预检通过后旧回复及后续消息被截断，失败/停止保留新请求终态，不回退或自动重发。Anthropic 暂停后的“继续”仍使用原请求保存的配置快照。正文编辑、删除和分支创建不调用 transport。单条删除留下的孤立消息继续展示；上下文预算仍只收集归属匹配且完成的用户/助手轮次。
 
 - 429 is `rate-limit` and retryable.
 - 500-599 is `server` and retryable.

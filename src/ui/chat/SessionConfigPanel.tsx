@@ -25,11 +25,12 @@ export interface SessionConfigPanelProps {
   protocol?: ChatProtocol;
   model: string;
   onChange(config: SessionConfig): void;
+  resetLabel?: string;
   onClose(): void;
   onReset(): void;
 }
 
-export function SessionConfigPanel({ presentation = "drawer", disabled = false, title = "会话配置", description = "当前对话独立保存，修改立即写入本地。", children, footer, config, errors, protocol, model, onChange, onClose, onReset }: SessionConfigPanelProps) {
+export function SessionConfigPanel({ presentation = "drawer", disabled = false, title = "会话配置", description = "当前对话独立保存，修改立即写入本地。", children, footer, config, errors, protocol, model, onChange, onClose, onReset, resetLabel = "恢复默认配置" }: SessionConfigPanelProps) {
   const panel = useRef<HTMLElement>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const showAdvanced = advancedOpen || !!errors.customJson;
@@ -51,6 +52,7 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
     return (
       <div className="session-config-field" key={field}>
         <label htmlFor={`config-${field}`}>{label}</label>
+
         <div className="session-config-number-row">
           <select
             id={`config-${field}`}
@@ -97,6 +99,7 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
           {errors.stored && <p className="session-config-error" role="alert">{errors.stored}</p>}
           <section className="session-config-section">
             <h3><label htmlFor="session-system">系统提示词</label></h3>
+
             <textarea
               id="session-system"
               value={typeof config.systemInstruction === "string" ? config.systemInstruction : ""}
@@ -113,6 +116,7 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
               <input id="session-stream" type="checkbox" checked={config.stream === true} onChange={(event) => onChange({ ...config, stream: event.target.checked })} />
               流式输出
             </label>
+
             {errors.stream && <small className="session-config-error" role="alert">{errors.stream}</small>}
           </section>
           <section className="session-config-section">
@@ -129,6 +133,7 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
             {protocol ? (
               <>
                 <label htmlFor="session-custom-json">当前协议：{protocol}</label>
+
                 <textarea
                   id="session-custom-json"
                   spellCheck={false}
@@ -140,9 +145,9 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
             ) : <p className="muted-text">选择模型后显示当前协议的 JSON。</p>}
             </div>}
           </section>
-          {!footer && <button type="button" className="settings-button" onClick={onReset}>恢复默认配置</button>}
+          {!footer && <button type="button" className="settings-button" onClick={onReset}>{resetLabel}</button>}
         </fieldset>
-        {footer && <footer className="session-config-panel-footer"><button type="button" className="settings-button session-config-reset" disabled={disabled} onClick={onReset}>恢复默认配置</button>{footer}</footer>}
+        {footer && <footer className="session-config-panel-footer"><button type="button" className="settings-button session-config-reset" disabled={disabled} onClick={onReset}>{resetLabel}</button>{footer}</footer>}
       </aside>
     </div>
   );

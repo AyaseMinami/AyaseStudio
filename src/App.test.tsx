@@ -114,8 +114,17 @@ describe("App navigation", () => {
   async function clickButtonWithText(text: string): Promise<void> {
     if (text === "编辑助手") {
       if (!container.querySelector('#assistant-navigation')) await clickButtonWithText("助手与对话");
+      await clickButton("管理助手 默认助手");
       const assistant = container.querySelector<HTMLButtonElement>('[aria-label="编辑助手 默认助手"]');
       await act(async () => assistant!.click());
+      return;
+    }
+    if (text === "编辑对话") {
+      if (!container.querySelector('#assistant-navigation')) await clickButtonWithText("助手与对话");
+      await waitFor(() => container.querySelector<HTMLButtonElement>('[aria-label="默认助手"]')?.disabled === false);
+      if (!container.querySelector('.conversation-cascade-pane')) await clickButton("默认助手");
+      const editor = container.querySelector<HTMLButtonElement>('.conversation-leaf:has([aria-pressed="true"]) [aria-label^="编辑对话 "]')!;
+      await act(async () => editor.click());
       return;
     }
     const button = Array.from(
@@ -171,23 +180,25 @@ describe("App navigation", () => {
     });
   }
 
-  it("saves assistant configuration explicitly and retains it after clear and remount", async () => {
+  it("saves conversation configuration explicitly and retains it after clear and remount", async () => {
     configureChatTarget();
     await renderApp();
-    await clickButtonWithText("编辑助手");
+    await clickButtonWithText("编辑对话");
     await setPanelText("#session-system", "Stay concise.");
+    await clickButtonWithText("高级 JSON");
     await setPanelText("#session-custom-json", '{"seed":7}');
     await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
     await waitFor(() => container.querySelector<HTMLInputElement>("#session-stream")?.checked === false);
-    await clickButtonWithText("保存助手");
+    await clickButtonWithText("保存对话");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     await clickButtonWithText("清空");
     await waitFor(() => container.querySelector(".message-bubble") === null);
     await act(async () => root.unmount());
     root = createRoot(container);
     await renderApp();
-    await clickButtonWithText("编辑助手");
+    await clickButtonWithText("编辑对话");
     expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Stay concise.");
+    await clickButtonWithText("高级 JSON");
     expect(container.querySelector<HTMLTextAreaElement>("#session-custom-json")?.value).toBe('{"seed":7}');
     expect(container.querySelector<HTMLInputElement>("#session-stream")?.checked).toBe(false);
     const snapshot = await createChatRepository().load("current");
@@ -206,21 +217,25 @@ describe("App navigation", () => {
     } satisfies ChatTransport);
     await renderApp();
     await setDraft("Keep draft");
-    await clickButtonWithText("编辑助手");
+    await clickButtonWithText("编辑对话");
     await act(async () => {
       const select = container.querySelector<HTMLSelectElement>("#config-temperature");
       if (select) select.value = "custom";
       select?.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await setPanelText('input[aria-label="Temperature 自定义值"]', "bad");
-    const save = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "保存助手");
-    expect(save?.disabled).toBe(true);
+    const save = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "保存对话");
+    expect(save?.disabled).toBe(false);
+    await clickButtonWithText("保存对话");
+    await waitFor(() => !container.querySelector('[role="dialog"]'));
+    await clickButton("发送");
+    await clickButtonWithText("编辑对话");
     expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("Keep draft");
     expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Temperature");
     await setPanelText('input[aria-label="Temperature 自定义值"]', "0.7");
     await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
-    await clickButtonWithText("保存助手");
+    await clickButtonWithText("保存对话");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     await clickButton("发送");
     await waitFor(() => observed !== undefined);
@@ -250,17 +265,17 @@ describe("App navigation", () => {
     await setDraft("Freeze settings");
     await clickButton("发送");
     await waitFor(() => observed !== undefined);
-    await clickButtonWithText("编辑助手");
+    await clickButtonWithText("编辑对话");
     await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
     expect(observed?.config?.stream).toBe(true);
-    await clickButtonWithText("保存助手");
+    await clickButtonWithText("保存对话");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     release();
     await waitFor(() => container.textContent?.includes("partial") === true);
     await waitFor(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
     const snapshot = await waitForSaved((candidate) => candidate?.messages[1]?.status === "complete");
     const workspace = await createChatRepository().initializeWorkspace(null, ["configured-model"]);
-    expect(workspace.assistants[0].defaultConfig.stream).toBe(false);
+    expect(workspace.conversations.find((item) => item.id === "current")?.settings?.config.stream).toBe(false);
     expect(observed?.config?.stream).toBe(true);
     expect(snapshot?.messages[1]?.status).toBe("complete");
   });
@@ -372,7 +387,7 @@ describe("App navigation", () => {
 
     await clickButton("聊天");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "请先添加并选择一个模型。",
+      "当前会话的模型未选择或已失效，请通过对话行的编辑按钮选择模型或恢复助手默认值。",
     );
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       "需要配置",
@@ -503,8 +518,12 @@ describe("App navigation", () => {
     await renderApp();
     await clickButton("设置");
     await clickButton("Gemini Test");
-    await clickButton("设为当前模型 gemini-model");
+    await clickButton("设为助手默认模型 gemini-model");
     await clickButton("聊天");
+    expect(container.textContent).toContain("OpenAI Test · OpenAI 主线路 · openai-model");
+    await clickButtonWithText("编辑对话");
+    await clickButtonWithText("恢复助手默认值");
+    await clickButtonWithText("保存对话");
     await waitFor(() => container.textContent?.includes("Gemini Test · Gemini 专线 · gemini-model") === true);
 
     expect(container.textContent).toContain(
@@ -900,7 +919,7 @@ describe("App navigation", () => {
     );
   });
 
-  it("clears the active model instead of silently falling back after deleting its connection", async () => {
+  it("keeps an invalid conversation model reference instead of silently falling back after deleting its connection", async () => {
     saveConnectionSettings({
       version: 3,
       providers: [
@@ -945,7 +964,19 @@ describe("App navigation", () => {
     expect(deleteConnectionButton).toBeInstanceOf(HTMLButtonElement);
     await act(async () => deleteConnectionButton?.click());
     await clickButton("聊天");
-    expect(container.textContent).toContain("未选择模型");
+    expect(container.textContent).toContain("模型已失效");
+    await setDraft("keep this draft");
+    await waitFor(() => !getButton("发送").disabled);
+    await clickButton("发送");
+    expect(getButton("聊天").getAttribute("aria-current")).toBe("page");
+    expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("keep this draft");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "当前会话的模型未选择或已失效",
+    );
+    await clickButtonWithText("编辑对话");
+    expect(container.querySelector<HTMLSelectElement>("#conversation-model")?.value).toBe("model-openai");
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("原模型已失效，请重新选择");
   });
 
   it("previews the current route and blocks invalid URL actions before runtime requests", async () => {
@@ -1005,7 +1036,7 @@ describe("App navigation", () => {
       ":streamGenerateContent",
     );
 
-    await clickButton("设为当前模型 model/with space");
+    await clickButton("设为助手默认模型 model/with space");
     await waitFor(() => container.querySelector(".endpoint-preview")?.textContent?.includes("models/model%2Fwith%20space") === true);
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://gemini.example.com/v1beta/models/model%2Fwith%20space:streamGenerateContent?alt=sse",
@@ -1039,6 +1070,16 @@ describe("App navigation", () => {
     expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
 
     await clickButton("聊天");
+    // Assistant defaults no longer retarget an existing conversation.
+    // Select the invalid-URL connection in the conversation before testing send.
+    await clickButtonWithText("编辑对话");
+    await act(async () => {
+      const model = container.querySelector<HTMLSelectElement>("#conversation-model")!;
+      model.value = "model-gemini";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await clickButtonWithText("保存对话");
+    await waitFor(() => !container.querySelector('[role="dialog"]'));
     await setDraft("must not send");
     await clickButton("发送");
     expect(getButton("设置").getAttribute("aria-current")).toBe("page");

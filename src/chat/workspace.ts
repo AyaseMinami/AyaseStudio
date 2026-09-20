@@ -17,7 +17,10 @@ export interface Conversation {
   title: string;
   createdAt: number;
   updatedAt: number;
-  // Historical record only. Requests continue to use the owning assistant.
+  // Legacy input only; initialization converts it to settings and removes it.
+  overrides?: import("./conversationConfig").ConversationOverrides;
+  settings?: import("./conversationConfig").ConversationConfig;
+  // Historical record only, never used as the active override layer.
   creationConfig?: { modelId: string | null; config: SessionConfig };
 }
 
@@ -43,6 +46,7 @@ export type WorkspaceCommand =
   | { type: "delete-assistant"; id: string; mode: "move" | "delete" }
   | { type: "create-conversation"; id: string; assistantId: string }
   | { type: "rename-conversation"; id: string; title: string }
+  | { type: "configure-conversation"; id: string; settings: import("./conversationConfig").ConversationConfig; title?: string }
   | { type: "edit-message"; conversationId: string; messageId: string; content: string }
   | { type: "delete-message"; conversationId: string; messageId: string }
   | { type: "fork-conversation"; id: string; conversationId: string; messageId: string;

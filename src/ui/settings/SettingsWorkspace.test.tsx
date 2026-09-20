@@ -104,7 +104,8 @@ describe("SettingsWorkspace", () => {
     expect(html).toContain("示例供应商");
     expect(html).toContain("高速线路");
     expect(html).toContain("example-model");
-    expect(html).toContain("当前模型");
+    expect(html).toContain("助手默认模型");
+    expect(html).toContain('aria-label="设为助手默认模型 example-model"');
     expect(html).toContain("添加连接");
     expect(html).toContain("获取模型列表");
     expect(html).not.toContain("添加协议");

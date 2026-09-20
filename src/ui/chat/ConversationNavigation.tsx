@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2, UserRound } from "lucide-react";
 import { AssistantActions } from "./AssistantActions";
+import { ConversationSettings } from "./ConversationSettings";
 import type { useConversationWorkspace } from "../../chat/useConversationWorkspace";
 import { defaultSessionConfig, validateSessionConfig } from "../../chat/sessionConfig";
 import { validateRequestConfig } from "../../chat/requestMapping";
@@ -8,6 +9,7 @@ import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settin
 import { DEFAULT_ASSISTANT_ID, type AssistantInput, type AssistantPreset, type WorkspaceCommand } from "../../chat/workspace";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
+import { WebSearchControl } from "./WebSearchControl";
 import { getThinkingSettings, withThinkingSettings } from "../../chat/thinking";
 
 function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
@@ -30,8 +32,8 @@ function ManagementDialog({ title, children, onClose }: { title: string; childre
 }
 
 type Dialog =
+  | { type: "conversation"; id: string }
   | { type: "assistant"; existing?: AssistantPreset; input: AssistantInput }
-  | { type: "rename"; id: string; title: string }
   | { type: "delete-conversation"; id: string; title: string }
   | { type: "delete-assistant"; id: string; name: string; count: number; permanent: boolean };
 
@@ -61,6 +63,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
     ? editorTarget ? validateRequestConfig(dialog.input.defaultConfig, editorTarget.connection.protocol, editorTarget.model.modelId)
       : validateSessionConfig(dialog.input.defaultConfig) : {};
   const running = snapshot?.conversations.find((item) => item.id === generatingId);
+  const editingConversation = dialog?.type === "conversation" ? snapshot?.conversations.find((item) => item.id === dialog.id) : undefined;
 
   async function openAssistant(id: string) {
     if (id === selectedAssistant?.id) {
@@ -84,8 +87,8 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
     {workspace.loadError && <div role="alert" className="error-banner">{workspace.loadError}<button className="settings-button" type="button" disabled={busy} onClick={workspace.retry}>重试加载</button></div>}
     {workspace.operationError && <div role="alert" className="error-banner">{workspace.operationError}</div>}
     {Object.keys(workspace.view.configErrors).length > 0 && selectedAssistant && <div role="alert" className="error-banner">
-      助手配置需要调整：{Object.values(workspace.view.configErrors)[0]}
-      <button className="settings-button" type="button" disabled={busy} onClick={() => editAssistant(selectedAssistant)}>编辑助手设置</button>
+      当前配置需要调整：{Object.values(workspace.view.configErrors)[0]}
+      <button className="settings-button" type="button" disabled={busy} onClick={() => conversation ? setDialog({ type: "conversation", id: conversation.id }) : editAssistant(selectedAssistant)}>调整配置</button>
     </div>}
     {running && running.id !== conversation?.id && <div className="background-generation" role="status">
       “{running.title}”正在生成，完成或停止后可发送下一条消息。
@@ -130,13 +133,13 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
           <button className="chat-navigation-select conversation-leaf-select" type="button" aria-pressed={item.id === conversation?.id} disabled={busy}
             onClick={() => void openConversation({ type: "select", assistantId: item.assistantId, conversationId: item.id })}><MessageSquare size={14} /><span>{item.title}{item.id === generatingId ? " · 生成中" : ""}</span></button>
           <div className="chat-navigation-actions conversation-row-actions">
-            <button type="button" disabled={busy} title="重命名" aria-label={`重命名对话 ${item.title}`} onClick={() => setDialog({ type: "rename", id: item.id, title: item.title })}><Pencil size={15} aria-hidden="true" /></button>
+            <button type="button" disabled={busy} title="编辑对话" aria-label={`编辑对话 ${item.title}`} onClick={() => setDialog({ type: "conversation", id: item.id })}><Pencil size={15} aria-hidden="true" /></button>
             <button type="button" disabled={busy} title="删除" aria-label={`删除对话 ${item.title}`} onClick={() => setDialog({ type: "delete-conversation", id: item.id, title: item.title })}><Trash2 size={15} aria-hidden="true" /></button>
           </div>
             </li>)}</ul>
       </aside>}
       <section className="active-chat-workspace">
-        {snapshot && !conversation ? <div className="conversation-empty"><h2>{selectedAssistant?.name}</h2><p>此助手还没有对话。所有对话共用助手的模型和生成配置。</p>
+        {snapshot && !conversation ? <div className="conversation-empty"><h2>{selectedAssistant?.name}</h2><p>此助手还没有对话。新对话会复制助手当前的模型和生成配置。</p>
           <button className="settings-button" type="button" disabled={busy} onClick={() => selectedAssistant && void execute({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}>创建第一个对话</button>
           <button className="settings-button" type="button" disabled={busy} onClick={() => editAssistant(selectedAssistant)}>编辑助手设置</button>
         </div> : <>
@@ -144,7 +147,8 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
         </>}
       </section>
     </div>
-    {dialog?.type === "assistant" && <SessionConfigPanel presentation="modal" disabled={busy} title={dialog.existing ? "编辑助手" : "新建助手"} description="配置应用于此助手的所有对话，正在生成的回复不受影响。"
+    {editingConversation && <ConversationSettings key={editingConversation.id} workspace={workspace} conversation={editingConversation} settings={settings} onClose={close} />}
+    {dialog?.type === "assistant" && <SessionConfigPanel presentation="modal" disabled={busy} title={dialog.existing ? "编辑助手" : "新建助手"} description="作为新对话的默认设置，已有对话保持不变。"
       config={dialog.input.defaultConfig} errors={editorErrors} protocol={editorTarget?.connection.protocol} model={editorTarget?.model.modelId ?? ""}
       onChange={(config) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: config } })}
       onReset={() => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: defaultSessionConfig() } })} onClose={close}
@@ -171,22 +175,22 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
           {dialog.input.defaultModelId && !editorTarget && <option value={dialog.input.defaultModelId}>原模型已失效，请重新选择</option>}
           {settings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
         </select>
+        <div className="session-config-capabilities">
+        <WebSearchControl config={dialog.input.defaultConfig} disabled={busy}
+          onChange={(defaultConfig) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig } })} />
         {editorTarget && <ThinkingControl
           key={`${editorTarget.connection.protocol}-${editorTarget.model.modelId}-${getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)?.budget}`}
           protocol={editorTarget.connection.protocol} model={editorTarget.model.modelId} value={getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)}
           disabled={busy} hint=""
           onChange={(thinking) => setDialog({ ...dialog, input: { ...dialog.input,
             defaultConfig: withThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol, thinking) } })} />}
+        </div>
         {editorErrors.thinking && <p className="session-config-error" role="alert">{editorErrors.thinking}</p>}
       </section>
     </SessionConfigPanel>}
-    {dialog && dialog.type !== "assistant" && <ManagementDialog title={dialog.type === "rename" ? "重命名对话" : "删除确认"} onClose={close}>
-      {dialog.type === "rename" && <form onSubmit={(event) => { event.preventDefault(); void perform({ type: "rename-conversation", id: dialog.id, title: dialog.title }); }}>
-        <label htmlFor="conversation-title">对话标题</label><input id="conversation-title" value={dialog.title} maxLength={200} disabled={busy} onChange={(event) => setDialog({ ...dialog, title: event.target.value })} />
-        <button className="settings-button" type="submit" disabled={busy || !dialog.title.trim()}>保存标题</button>
-      </form>}
+    {dialog && dialog.type !== "assistant" && dialog.type !== "conversation" && <ManagementDialog title="删除确认" onClose={close}>
       {dialog.type === "delete-conversation" && <><p>永久删除“{dialog.title}”及全部消息，无法撤销。</p><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-conversation", id: dialog.id })}>确认永久删除对话</button></>}
-      {dialog.type === "delete-assistant" && <><p>助手“{dialog.name}”包含 {dialog.count} 个对话。迁移后，后续请求将使用默认助手的配置。</p>
+      {dialog.type === "delete-assistant" && <><p>助手“{dialog.name}”包含 {dialog.count} 个对话。迁移后保留各对话设置和消息，仅改变所属助手。</p>
         {dialog.permanent ? <><p>将永久删除该助手、全部对话和消息，无法撤销。</p><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "delete" })}>确认永久删除助手及对话</button></>
           : <><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "move" })}>迁移对话到默认助手并删除助手</button><button className="settings-button" type="button" disabled={busy} onClick={() => setDialog({ ...dialog, permanent: true })}>选择永久删除全部内容…</button></>}
       </>}

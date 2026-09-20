@@ -75,6 +75,45 @@ describe("message actions through the session", () => {
     expect(sent?.messages[sent.messages.length - 1]?.content).toBe(source);
   });
 
+  it("freezes overrides during generation and uses edited fields only for the next request", async () => {
+    const requests: ChatRequest[] = [];
+    let finish!: () => void;
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      requests.push(request);
+      yield { type: "text-delta", text: "answer" };
+      if (requests.length === 1) await new Promise<void>((resolve) => { finish = resolve; });
+      yield { type: "completed", finishReason: "stop" };
+    } } satisfies ChatTransport);
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.retryMessage("a2"); });
+    await wait(() => !!finish);
+    await act(async () => session.workspace.execute({ type: "configure-conversation", id: "current", settings: {
+      modelId: "m2", config: { ...session.sessionConfig, systemInstruction: "Next request" },
+    } }));
+    expect(requests[0].model).toBe("any-model");
+    expect(requests[0].config?.systemInstruction).toBe("");
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); await sending; });
+    await act(async () => session.retryMessage("u2"));
+    expect(requests[1].model).toBe("other-model");
+    expect(requests[1].config?.systemInstruction).toBe("Next request");
+    expect(session.workspace.assistant?.defaultModelId).toBe("m");
+    expect(session.workspace.assistant?.defaultConfig.systemInstruction).toBe("");
+  });
+
+  it("blocks an invalid conversation model without falling back or changing the transcript", async () => {
+    const original = session.messages;
+    respond();
+    await act(async () => session.workspace.execute({ type: "configure-conversation", id: "current", settings: { modelId: "deleted-model", config: session.sessionConfig } }));
+    await act(async () => session.retryMessage("a2"));
+    expect(session.activeModel).toBeUndefined();
+    expect(session.messages).toEqual(original);
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    await act(async () => session.workspace.execute({ type: "configure-conversation", id: "current", settings: { modelId: "m", config: session.sessionConfig } }));
+    await act(async () => session.retryMessage("a2"));
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+  });
+
   it("native search persists citations and clears them on edited text", async () => {
     await act(async () => session.setWebSearch(true));
     const search = { enabled: true, status: "completed" as const,
@@ -123,9 +162,8 @@ describe("message actions through the session", () => {
     let request: ChatRequest | undefined;
     respond((value) => { request = value; });
     await act(async () => {
-      const assistant = session.workspace.assistant!;
-      await session.workspace.execute({ type: "edit-assistant", id: assistant.id,
-        input: { ...assistant, defaultModelId: "m2", defaultConfig: { ...assistant.defaultConfig, systemInstruction: "Current instruction" } } });
+      await session.workspace.execute({ type: "configure-conversation", id: "current",
+        settings: { modelId: "m2", config: { ...session.sessionConfig, systemInstruction: "Current instruction" } } });
     });
     await act(async () => session.setDraft("keep draft"));
     await act(async () => session.retryMessage(id));
@@ -184,7 +222,7 @@ describe("message actions through the session", () => {
     expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
   });
 
-  it("creates an offline branch, uses shared settings for later requests, and retains shared attachments after edit", async () => {
+  it("creates an offline branch with its own settings and retains shared attachments after edit", async () => {
     await act(async () => { expect(await session.branchMessage("a2")).toBe(true); });
     const branchId = session.workspace.conversation!.id;
     expect(branchId).not.toBe("current");
@@ -192,7 +230,9 @@ describe("message actions through the session", () => {
     expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
     expect(session.workspace.conversation?.creationConfig?.modelId).toBe("m");
     await act(async () => session.setActiveModel("m2"));
-    await wait(() => session.isHydrated && session.activeModel?.id === "m2");
+    await wait(() => session.isHydrated);
+    expect(session.activeModel?.id).toBe("m");
+    await act(async () => session.workspace.execute({ type: "configure-conversation", id: branchId, settings: { modelId: "m2", config: session.sessionConfig } }));
     let request: ChatRequest | undefined;
     respond((value) => { request = value; });
     await act(async () => session.retryMessage(session.messages[3].id));

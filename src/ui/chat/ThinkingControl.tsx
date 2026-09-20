@@ -8,6 +8,7 @@ interface ThinkingControlProps {
   protocol?: ChatProtocol; model: string; value?: ThinkingSettings; disabled: boolean;
   hint?: string;
   optionList?: boolean;
+  scope?: string;
   onChange(value: ThinkingSettings): void;
 }
 
@@ -43,7 +44,7 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
   </div>;
 }
 
-export function ThinkingControl({ protocol = "gemini-native", value, disabled, hint = "当前助手 · 自动保存", optionList, onChange }: ThinkingControlProps) {
+export function ThinkingControl({ protocol = "gemini-native", value, disabled, hint = "当前助手 · 自动保存", optionList, onChange, scope = "当前助手" }: ThinkingControlProps) {
   const settings = isThinkingSettings(value) ? value : defaultThinking;
   const capability = thinkingOptions(protocol);
   const [budget, setBudget] = useState(settings.budget);
@@ -54,7 +55,8 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
     const next = { ...settings, choice, budget: settings.budget };
     setBudget(next.budget); setBudgetError(""); onChange(next);
   }
-  return <div className="thinking-control">
+  return <div className={`thinking-control${optionList ? "" : " thinking-control-inline"}`}>
+    <div className="thinking-field">
     {optionList ? <fieldset className="thinking-options" disabled={disabled}>
       <legend>思考强度</legend>
       {capability.choices.map((choice) => <label className="thinking-option" key={choice}>
@@ -64,19 +66,23 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
       </label>)}
     </fieldset> : <label className="thinking-select"><Lightbulb size={16} />
       <span>思考</span>
-      <select aria-label="思考强度（当前助手）" disabled={disabled}
+      <select aria-label={`思考强度（${scope}）`} disabled={disabled}
         value={settings.choice}
         onChange={(event) => choose(event.target.value as ThinkingChoice)}>
         {capability.choices.map((choice) => <option key={choice} value={choice}>{thinkingLabels[choice]}</option>)}
       </select>
     </label>}
-    {capability.summary && <label className="thinking-summary-toggle"><input type="checkbox" checked={settings.includeSummary}
-      disabled={disabled} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考摘要</label>}
-    {capability.efforts && <label className="thinking-select"><span>思考力度</span><select aria-label="思考力度（当前助手）"
+
+    </div>
+    {capability.summary && <div className="thinking-field"><label className="thinking-summary-toggle"><input type="checkbox" checked={settings.includeSummary}
+      disabled={disabled} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考摘要</label>
+    </div>}
+    {capability.efforts && <div className="thinking-field"><label className="thinking-select"><span>思考力度</span><select aria-label={`思考力度（${scope}）`}
       disabled={disabled} value={settings.effort ?? "default"} onChange={(event) => onChange({ ...settings, effort: event.target.value as ThinkingSettings["effort"] })}>
       {capability.efforts.map((effort) => <option key={effort} value={effort}>{thinkingLabels[effort]}</option>)}
-    </select></label>}
-    {settings.choice === "budget" && <label className="thinking-budget">
+    </select></label>
+    </div>}
+    {settings.choice === "budget" && <div className="thinking-field"><label className="thinking-budget">
       Token 预算<input type="number" aria-label="思考 Token 预算" step="1"
         value={budget} disabled={disabled} onChange={(event) => { setBudget(event.target.value); setBudgetError(""); }} />
       <button type="button" disabled={disabled || budget === settings.budget} onClick={() => {
@@ -85,7 +91,8 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
           setBudgetError(error ?? "");
           if (!error && budget !== settings.budget) onChange(next);
         }}>应用预算</button><span>已应用：{settings.budget}</span>
-    </label>}
+    </label>
+    </div>}
     <span className="thinking-hint">{disabled ? "暂不可修改" : capability.summaryHint ?? hint}</span>
     {invalid && <button type="button" disabled={disabled} onClick={() => onChange(defaultThinking)}>恢复思考默认配置</button>}
     {budgetError && <span className="thinking-notice" role="status">{budgetError}</span>}

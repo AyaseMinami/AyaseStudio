@@ -109,7 +109,7 @@ export function ChatWorkspace({
       />
       {contextPlan && (contextPlan.trimmedTurns > 0 || contextPlan.excludedIncompleteTurns > 0) && (
         <div className="context-budget-notice" role="status">
-          本次输入保留 {contextPlan.keptTurns} 轮，裁剪 {contextPlan.trimmedTurns} 轮，排除 {contextPlan.excludedIncompleteTurns} 个未完整轮次；
+          最近一次请求保留 {contextPlan.keptTurns} 轮，裁剪 {contextPlan.trimmedTurns} 轮，排除 {contextPlan.excludedIncompleteTurns} 个未完整轮次；
           {contextPlan.inputTokens} Token（估算，{contextPlan.countingLabel}）。原始记录未修改。
         </div>
       )}
@@ -124,11 +124,11 @@ export function ChatWorkspace({
         searchControl={onWebSearchChange ? <button type="button" className="composer-tool-button"
           aria-label="联网搜索" aria-pressed={webSearch ?? false}
           style={webSearch ? { color: "rgb(var(--color-accent))", background: "rgb(var(--color-accent) / 0.1)" } : undefined}
-          title={`${webSearch ? "已开启" : "已关闭"}：允许模型按需联网，可能产生额外费用。搜索专用模型可能始终联网。`}
-          disabled={!isHydrated || isGenerating} onClick={() => onWebSearchChange(!webSearch)}><Globe size={17} /></button> : undefined}
+          title={`${webSearch ? "已开启" : "已关闭"}：修改仅影响当前会话下次请求。允许模型按需联网，可能产生额外费用。搜索专用模型可能始终联网。`}
+          disabled={!isHydrated} onClick={() => onWebSearchChange(!webSearch)}><Globe size={17} /></button> : undefined}
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
-          disabled={!isHydrated || isGenerating} onChange={onThinkingChange} /> : undefined}
+          disabled={!isHydrated} scope="当前会话" hint="当前会话 · 自动保存，下次请求生效" onChange={onThinkingChange} /> : undefined}
         isGeneratingElsewhere={isGeneratingElsewhere}
         draft={draft}
         draftAttachments={draftAttachments}
