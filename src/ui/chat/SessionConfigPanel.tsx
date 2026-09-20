@@ -1,4 +1,5 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, X } from "lucide-react";
 
 import { changeNumericSetting, type ConfigErrors, type NumericField, type NumericSetting, type SessionConfig } from "../../chat/sessionConfig";
 import { parameterCapability } from "../../chat/requestMapping";
@@ -30,13 +31,15 @@ export interface SessionConfigPanelProps {
 
 export function SessionConfigPanel({ presentation = "drawer", disabled = false, title = "会话配置", description = "当前对话独立保存，修改立即写入本地。", children, footer, config, errors, protocol, model, onChange, onClose, onReset }: SessionConfigPanelProps) {
   const panel = useRef<HTMLElement>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const showAdvanced = advancedOpen || !!errors.customJson;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     panel.current?.querySelector<HTMLElement>("input:not(:disabled), textarea, button")?.focus();
     return () => previous?.focus();
   }, []);
   useEffect(() => {
-    function escape(event: KeyboardEvent) { if (event.key === "Escape") onClose(); }
+    function escape(event: KeyboardEvent) { if (event.key === "Escape" && !event.defaultPrevented) onClose(); }
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, [onClose]);
@@ -70,7 +73,7 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
             />
           )}
         </div>
-        {capability && <small className="muted-text">{capability.reason}</small>}
+        {capability && (unsupported || field === "contextBudget" || field === "maxOutput") && <small className="muted-text">{capability.reason}</small>}
         {errors[field] && <small className="session-config-error" role="alert">{errors[field]}</small>}
       </div>
     );
@@ -87,14 +90,13 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
       }}>
         <header className="session-config-panel-header">
           <div><h2>{title}</h2><p className="muted-text">{description}</p></div>
-          <button type="button" className="settings-button" onClick={onClose}>关闭</button>
+          <button type="button" className="settings-button session-config-close" aria-label="关闭" title="关闭" disabled={disabled} onClick={onClose}><X size={18} aria-hidden="true" /></button>
         </header>
         <fieldset disabled={disabled} className="session-config-panel-scroll">
           {children}
           {errors.stored && <p className="session-config-error" role="alert">{errors.stored}</p>}
           <section className="session-config-section">
-            <h3>系统指令</h3>
-            <label htmlFor="session-system">System Instruction</label>
+            <h3><label htmlFor="session-system">系统提示词</label></h3>
             <textarea
               id="session-system"
               value={typeof config.systemInstruction === "string" ? config.systemInstruction : ""}
@@ -105,22 +107,24 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
           </section>
           <section className="session-config-section">
             <h3>生成参数</h3>
-            {numericFields.filter((item) => item.group === "sampling").map((item) => settingRow(item.field, item.label))}
+            <div className="session-config-grid">{numericFields.filter((item) => item.group === "sampling").map((item) => settingRow(item.field, item.label))}</div>
+            <p className="muted-text">按当前协议发送，参数支持情况由供应商判断。</p>
             <label className="session-config-check">
               <input id="session-stream" type="checkbox" checked={config.stream === true} onChange={(event) => onChange({ ...config, stream: event.target.checked })} />
-              流式输出（Ayase 推荐，默认开启）
+              流式输出
             </label>
             {errors.stream && <small className="session-config-error" role="alert">{errors.stream}</small>}
           </section>
           <section className="session-config-section">
             <h3>上下文与输出</h3>
             <p className="muted-text">预算只裁剪本次请求副本；完整聊天记录会保留。Token 计数为估算。</p>
-            {numericFields.filter((item) => item.group === "context").map((item) => settingRow(item.field, item.label))}
+            <div className="session-config-grid session-config-context-grid">{numericFields.filter((item) => item.group === "context").map((item) => settingRow(item.field, item.label))}</div>
             {protocol === "anthropic-native" && config.maxOutput?.mode === "auto" &&
               <small className="muted-text">Anthropic 必填输出上限：Ayase 回退值 4096，非官方默认。</small>}
           </section>
           <section className="session-config-section">
-            <h3>高级 JSON</h3>
+            <button type="button" className="session-config-disclosure" disabled={disabled} aria-expanded={showAdvanced} aria-controls="session-advanced-json" onClick={() => { if (!errors.customJson) setAdvancedOpen(!showAdvanced); }}><ChevronRight size={16} aria-hidden="true" />高级 JSON</button>
+            {showAdvanced && <div id="session-advanced-json" className="session-config-advanced">
             <p className="muted-text">按四种协议分别保存；只允许安全补充字段，受保护字段和工具/远端状态会被拒绝。</p>
             {protocol ? (
               <>
@@ -134,10 +138,11 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
                 {errors.customJson && <small className="session-config-error" role="alert">{errors.customJson}</small>}
               </>
             ) : <p className="muted-text">选择模型后显示当前协议的 JSON。</p>}
+            </div>}
           </section>
-          <button type="button" className="settings-button" onClick={onReset}>恢复默认配置</button>
-          {footer}
+          {!footer && <button type="button" className="settings-button" onClick={onReset}>恢复默认配置</button>}
         </fieldset>
+        {footer && <footer className="session-config-panel-footer"><button type="button" className="settings-button session-config-reset" disabled={disabled} onClick={onReset}>恢复默认配置</button>{footer}</footer>}
       </aside>
     </div>
   );

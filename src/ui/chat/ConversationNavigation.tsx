@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2, UserRound } from "lucide-react";
+import { AssistantActions } from "./AssistantActions";
 import type { useConversationWorkspace } from "../../chat/useConversationWorkspace";
 import { defaultSessionConfig, validateSessionConfig } from "../../chat/sessionConfig";
 import { validateRequestConfig } from "../../chat/requestMapping";
@@ -106,15 +107,13 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
           return <li className="chat-navigation-item assistant-branch" key={assistant.id}>
           <button type="button" className="chat-navigation-select assistant-branch-toggle" aria-label={assistant.name} aria-expanded={expanded} aria-controls={`assistant-conversations-${assistant.id}`} aria-pressed={selected} disabled={busy}
             onClick={() => void openAssistant(assistant.id)}>
-            <span className="assistant-branch-name">{assistant.icon} {assistant.name}</span><span className="assistant-conversation-count" aria-hidden="true">{count}</span>
+            <span className="assistant-branch-icon" aria-hidden="true">{assistant.icon || <UserRound size={17} />}</span>
+            <span className="assistant-branch-name" title={assistant.name}>{assistant.name}</span><span className="assistant-conversation-count" aria-hidden="true">({count})</span>
             <ChevronRight size={16} />
           </button>
-          <div className="chat-navigation-actions">
-            <button type="button" disabled={busy} onClick={() => editAssistant(assistant)} aria-label={`编辑助手 ${assistant.name}`}>编辑</button>
-            <button type="button" disabled={busy || index === 0} onClick={() => void execute({ type: "move-assistant", id: assistant.id, direction: -1 })} aria-label={`上移助手 ${assistant.name}`}>↑</button>
-            <button type="button" disabled={busy || index === snapshot.assistants.length - 1} onClick={() => void execute({ type: "move-assistant", id: assistant.id, direction: 1 })} aria-label={`下移助手 ${assistant.name}`}>↓</button>
-            {assistant.id !== DEFAULT_ASSISTANT_ID && <button type="button" disabled={busy} aria-label={`删除助手 ${assistant.name}`} onClick={() => setDialog({ type: "delete-assistant", id: assistant.id, name: assistant.name, count: snapshot.conversations.filter((item) => item.assistantId === assistant.id).length, permanent: false })}>删除</button>}
-          </div>
+          <AssistantActions name={assistant.name} disabled={busy} canMoveUp={index > 0} canMoveDown={index < snapshot.assistants.length - 1}
+            onEdit={() => editAssistant(assistant)} onMove={(direction) => void execute({ type: "move-assistant", id: assistant.id, direction })}
+            onDelete={assistant.id === DEFAULT_ASSISTANT_ID ? undefined : () => setDialog({ type: "delete-assistant", id: assistant.id, name: assistant.name, count, permanent: false })} />
           </li>;
         })}</ul>
       </aside>}
@@ -145,18 +144,24 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
         </>}
       </section>
     </div>
-    {dialog?.type === "assistant" && <SessionConfigPanel disabled={busy} title={dialog.existing ? "编辑助手" : "新建助手"} description="保存后，所有对话的后续请求共用此配置；历史消息与正在生成的请求保持不变。"
+    {dialog?.type === "assistant" && <SessionConfigPanel presentation="modal" disabled={busy} title={dialog.existing ? "编辑助手" : "新建助手"} description="配置应用于此助手的所有对话，正在生成的回复不受影响。"
       config={dialog.input.defaultConfig} errors={editorErrors} protocol={editorTarget?.connection.protocol} model={editorTarget?.model.modelId ?? ""}
       onChange={(config) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: config } })}
       onReset={() => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: defaultSessionConfig() } })} onClose={close}
-      footer={<div className="management-dialog-actions"><button className="settings-button" type="button" disabled={busy || !dialog.input.name.trim() || Object.keys(editorErrors).length > 0}
-        onClick={() => void perform({ type: dialog.existing ? "edit-assistant" : "create-assistant", id: dialog.existing?.id ?? crypto.randomUUID(), input: dialog.input })}>保存助手</button></div>}>
+      footer={<><button className="settings-button" type="button" disabled={busy} onClick={close}>取消</button><button className="settings-button" type="button" disabled={busy || !dialog.input.name.trim() || Object.keys(editorErrors).length > 0}
+        onClick={() => void perform({ type: dialog.existing ? "edit-assistant" : "create-assistant", id: dialog.existing?.id ?? crypto.randomUUID(), input: dialog.input })}>保存助手</button></>}>
       <section className="session-config-section">
-        <label htmlFor="assistant-name">助手名称</label><input id="assistant-name" value={dialog.input.name} disabled={busy || dialog.existing?.id === DEFAULT_ASSISTANT_ID} maxLength={100}
+        <label htmlFor="assistant-name">助手名称</label>
+        <div className="assistant-identity-row">
+        <div className="assistant-icon-picker" title="选择助手图标">
+          <span aria-hidden="true">{dialog.input.icon || <UserRound size={21} />}<ChevronRight size={12} /></span>
+          <select id="assistant-icon" aria-label="图标" value={dialog.input.icon} disabled={busy} onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, icon: event.target.value } })}>
+            {["", "💬", "📝", "💻", "🌐", "📚", "🎨"].map((icon) => <option key={icon} value={icon}>{icon || "默认图标"}</option>)}
+          </select>
+        </div>
+        <input id="assistant-name" value={dialog.input.name} disabled={busy || dialog.existing?.id === DEFAULT_ASSISTANT_ID} maxLength={100}
           onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, name: event.target.value } })} />
-        <label htmlFor="assistant-icon">图标</label><select id="assistant-icon" value={dialog.input.icon} disabled={busy} onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, icon: event.target.value } })}>
-          {["", "💬", "📝", "💻", "🌐", "📚", "🎨"].map((icon) => <option key={icon} value={icon}>{icon || "无图标"}</option>)}
-        </select>
+        </div>
         <label htmlFor="assistant-model">助手模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
           onChange={(event) => {
             const defaultModelId = event.target.value || null;
@@ -169,7 +174,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
         {editorTarget && <ThinkingControl
           key={`${editorTarget.connection.protocol}-${editorTarget.model.modelId}-${getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)?.budget}`}
           protocol={editorTarget.connection.protocol} model={editorTarget.model.modelId} value={getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)}
-          disabled={busy} hint="保存助手后生效"
+          disabled={busy} hint=""
           onChange={(thinking) => setDialog({ ...dialog, input: { ...dialog.input,
             defaultConfig: withThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol, thinking) } })} />}
         {editorErrors.thinking && <p className="session-config-error" role="alert">{editorErrors.thinking}</p>}
