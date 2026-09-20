@@ -10,6 +10,7 @@ import { selectedConversation, type WorkspaceCommand, type WorkspaceSnapshot } f
 interface ConversationView {
   messages: StoredChatMessage[];
   draft: string;
+  draftRevision: number;
   draftAttachments: DraftAttachment[];
   attachmentBusy: boolean;
   error?: string;
@@ -18,7 +19,7 @@ interface ConversationView {
 }
 
 function emptyView(): ConversationView {
-  return { messages: [], draft: "", draftAttachments: [], attachmentBusy: false, configErrors: {} };
+  return { messages: [], draft: "", draftRevision: 0, draftAttachments: [], attachmentBusy: false, configErrors: {} };
 }
 
 export function useConversationWorkspace(repository: WorkspaceRepository, legacyModelId: string | null,
@@ -174,7 +175,17 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     canSend: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,
     setMessages: (value: SetStateAction<StoredChatMessage[]>) => setField("messages", value),
-    setDraft: (value: string) => setField("draft", value),
+    setDraft: (value: string) => {
+      if (!id) return;
+      const current = views.current.get(id);
+      if (!current) return;
+      views.current.set(id, { ...current, draft: value, draftRevision: current.draftRevision + 1 });
+      changed();
+    },
+    clearDraftIfUnchanged: (revision: number) => {
+      if (!id || views.current.get(id)?.draftRevision !== revision) return;
+      setField("draft", "");
+    },
     setDraftAttachments: (value: SetStateAction<DraftAttachment[]>) => setField("draftAttachments", value),
     setAttachmentBusy: (value: boolean) => setField("attachmentBusy", value),
     setError: (value: SetStateAction<string | undefined>) => setField("error", value),

@@ -4,7 +4,7 @@
 
 Every adapter receives a base URL, API key, model, ordered local message history, and optional abort signal. The base URL stops before the protocol resource path.
 
-Issue #5 的中立 `ChatMessage` 可以附带附件列表。已发送记录只持有应用私有目录的相对引用、文件名、MIME 与大小，不含原文件路径/二进制；发请求前将保留轮次的引用加载成只在内存存在的 Base64 字节，缺失/损坏立即停止，不能静默丢弃历史附件。新附件草稿只有点击发送时才入库；请求包含最新文本与附件，附件单独也能发送。历史预算以完整用户/助手轮次保留或裁剪，附件跟随所属用户消息，媒资计数只能按原始字节做本地估算，不声称供应商计费准确。
+Issue #5 的中立 `ChatMessage` 可以附带附件列表。已发送记录只持有应用私有目录的相对引用、文件名、MIME 与大小，不含原文件路径/二进制；发请求前将保留轮次的引用加载成只在内存存在的 Base64 字节，缺失/损坏立即停止，不能静默丢弃历史附件。新附件草稿只有点击发送时才入库；生成期间可编辑草稿，但须停止当前生成后才能发送。请求包含本次提交的文本与附件，附件单独也能发送。历史预算以完整用户/助手轮次保留或裁剪，附件跟随所属用户消息，媒资计数只能按原始字节做本地估算，不声称供应商计费准确。
 
 | Adapter | Image | PDF | TXT / Markdown |
 | --- | --- | --- | --- |

@@ -30,6 +30,11 @@ function sanitizedSuggestionHtml(html: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: https:">${styles}</head><body>${document.body.innerHTML}</body></html>`;
 }
 
+export function resizeSuggestionFrame(frame: HTMLIFrameElement, document: Document): void {
+  frame.style.height = "0px";
+  frame.style.height = `${Math.min(320, Math.max(48, document.body.scrollHeight, document.documentElement.scrollHeight))}px`;
+}
+
 function GeminiSuggestion({ html }: { html: string }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const cleanup = useRef<() => void>(() => {});
@@ -48,7 +53,7 @@ function GeminiSuggestion({ html }: { html: string }) {
       if (url) void openExternal(url);
     };
     const preventSubmit = (event: Event) => event.preventDefault();
-    const resize = () => { if (frame.current) frame.current.style.height = `${Math.min(320, Math.max(48, document.body.scrollHeight, document.documentElement.scrollHeight))}px`; };
+    const resize = () => { if (frame.current) resizeSuggestionFrame(frame.current, document); };
     document.addEventListener("click", open, true);
     document.addEventListener("auxclick", open, true);
     document.addEventListener("submit", preventSubmit, true);

@@ -613,6 +613,14 @@ export function useChatSession({
     const content = targetUser ? targetUser.content : draft.trim();
     const frozenAttachments = retryMessageId || resumeMessageId ? [] : [...draftAttachments];
     const existingAttachments = targetUser?.attachments ?? [];
+    const sentDraftRevision = workspace.view.draftRevision;
+    function consumeSentDraft(): void {
+      if (targetUser) return;
+      // Preparation may finish after the user has started editing the next draft.
+      workspace.clearDraftIfUnchanged(sentDraftRevision);
+      const sentIds = new Set(frozenAttachments.map((item) => item.id));
+      setDraftAttachments((current) => current.filter((item) => !sentIds.has(item.id)));
+    }
     if (isGenerating || sendLockRef.current || !isHydrated || !workspace.canSend() || !sessionStore || imports.current.has(sessionStore.id)) {
       return;
     }
@@ -837,13 +845,13 @@ export function useChatSession({
       workingMessages = [...history, userMessage, { ...assistantMessage, status: "aborted" }];
       await requestStore.updateMessages(workingMessages).catch(() => undefined);
       setMessages(workingMessages);
-      if (!targetUser) { setDraft(""); setDraftAttachments([]); }
+      consumeSentDraft();
       if (targetUser) await cleanupAttachments().catch(() => setError("消息已保存，但附件副本整理失败；下次启动将重试。"));
       releaseBeforeNetwork();
       return;
     }
     setMessages(workingMessages);
-    if (!targetUser) { setDraft(""); setDraftAttachments([]); }
+    consumeSentDraft();
 
     let persistChain = Promise.resolve();
     let persistenceFailed = false;
@@ -1009,7 +1017,7 @@ export function useChatSession({
   }
 
   async function addFiles(files: File[]): Promise<void> {
-    if (!workspace.isReady || (isGenerating && generatingId.current === workspace.conversation?.id) || !workspace.conversation) return;
+    if (!workspace.isReady || !workspace.conversation) return;
     const id = workspace.conversation.id;
     imports.current.set(id, (imports.current.get(id) ?? 0) + 1);
     setAttachmentBusy(true);

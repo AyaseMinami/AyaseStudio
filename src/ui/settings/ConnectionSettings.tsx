@@ -670,7 +670,11 @@ export function ConnectionSettings({
                 </div>
               </details>
             </div>
-            {connectionSettings.providers.length === 0 && <p className="muted-text">还没有供应商，点击右上角加号添加。</p>}
+            {connectionSettings.providers.length === 0 && (
+              <div className="pane-empty-state connection-tree-empty">
+                <span>还没有供应商，点击右上角加号添加。</span>
+              </div>
+            )}
             {connectionSettings.providers.map((provider, index) => {
               const expanded = !collapsedProviders.has(provider.id);
               return <section key={provider.id} className="connection-tree-group"

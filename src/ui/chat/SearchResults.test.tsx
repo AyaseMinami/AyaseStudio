@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
-import { SearchResults } from "./SearchResults";
+import { resizeSuggestionFrame, SearchResults } from "./SearchResults";
 
 const search = { enabled: true, status: "completed" as const, sources: [{ id: "one", title: "Example", url: "https://example.com/source" }], citations: [{ start: 0, end: 6, sourceIds: ["one"] }], queries: ["example query"] };
 
@@ -34,6 +34,23 @@ it("uses a scriptless sandboxed suggestion document", async () => {
     expect(frame.srcdoc).not.toContain("<script");
     expect(frame.srcdoc).not.toContain("<base");
   } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("sizes a suggestion iframe to its content instead of its current viewport", () => {
+  const frame = document.createElement("iframe");
+  frame.style.height = "150px";
+  const viewportHeight = () => {
+    const height = Number.parseFloat(frame.style.height);
+    return Number.isNaN(height) ? 150 : height;
+  };
+  const contentDocument = {
+    body: { get scrollHeight() { return Math.max(72, viewportHeight()); } },
+    documentElement: { get scrollHeight() { return Math.max(72, viewportHeight()); } },
+  } as Document;
+
+  resizeSuggestionFrame(frame, contentDocument);
+
+  expect(frame.style.height).toBe("72px");
 });
 
 it("keeps escaped and entity Markdown intact with unordered citation offsets", async () => {

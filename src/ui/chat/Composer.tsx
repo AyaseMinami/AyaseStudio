@@ -34,7 +34,6 @@ function DraftImageThumbnail({ item }: { item: DraftAttachment }) {
 export function Composer({
   thinkingControl,
   searchControl,
-  isGeneratingElsewhere,
   draft,
   draftAttachments = [],
   attachmentBusy,
@@ -49,10 +48,13 @@ export function Composer({
   onStop,
 }: ComposerProps) {
   const picker = useRef<HTMLInputElement>(null);
+  const canSend = !isGenerating && isHydrated && !attachmentBusy && !attachmentBlockReason &&
+    (!!draft.trim() || draftAttachments.length > 0);
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.nativeEvent.isComposing) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      onSend();
+      if (canSend) onSend();
     }
   }
 
@@ -84,7 +86,7 @@ export function Composer({
                 ? image.name : `粘贴图片-${index + 1}.${image.type === "image/jpeg" ? "jpg" : image.type === "image/webp" ? "webp" : "png"}`)));
             }}
             placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-            disabled={(isGenerating && !isGeneratingElsewhere) || !isHydrated}
+            disabled={!isHydrated}
           />
           {attachmentBusy && <p className="attachment-loading" role="status">正在读取附件，完成后才能发送…</p>}
           {!!draftAttachments.length && <div className="composer-attachments" aria-label="待发送附件">
@@ -92,7 +94,7 @@ export function Composer({
               {item.mimeType.startsWith("image/") && <DraftImageThumbnail item={item} />}
               <span title={item.name}>{item.name} · {item.mimeType} · {(item.size / 1_000_000).toFixed(2)} MB</span>
               <button className="attachment-remove" type="button" aria-label={`移除附件 ${item.name}`}
-                disabled={isGenerating && !isGeneratingElsewhere}
+                disabled={!isHydrated}
                 onClick={() => onRemoveAttachment?.(item.id)}><X size={14} /></button>
             </span>)}
           </div>}
@@ -100,7 +102,7 @@ export function Composer({
             <div className="composer-tools" role="group" aria-label="聊天功能">
             <button className="composer-tool-button" type="button" aria-label="添加附件"
               title="添加附件（选择文件、拖入对话或粘贴图片；点击发送后才请求）"
-              disabled={!isHydrated || (isGenerating && !isGeneratingElsewhere)}
+              disabled={!isHydrated}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
             {thinkingControl}
             {searchControl}
@@ -118,7 +120,7 @@ export function Composer({
               <button
                 className="send-button"
                 onClick={onSend}
-                disabled={(!draft.trim() && !draftAttachments.length) || !isHydrated || attachmentBusy || !!attachmentBlockReason}
+                disabled={!canSend}
                 aria-label="发送"
                 type="button"
               >
