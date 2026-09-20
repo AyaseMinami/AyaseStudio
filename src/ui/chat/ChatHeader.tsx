@@ -1,4 +1,4 @@
-import { Maximize2, Minimize2 } from "lucide-react";
+import { MoveHorizontal } from "lucide-react";
 import type { ChatLayout } from "./useChatLayout";
 
 export interface ChatHeaderProps {
@@ -31,7 +31,7 @@ export function ChatHeader({
           aria-label={layout === "narrow" ? "展开聊天内容" : "收窄聊天内容"}
           title={layout === "narrow" ? "展开聊天内容" : "收窄聊天内容"}
           aria-pressed={layout === "wide"} onClick={onToggleLayout}>
-          {layout === "narrow" ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+          <MoveHorizontal size={16} />
         </button>}
         <button className="clear-button" onClick={onClear} disabled={isGenerating || !isHydrated} type="button">清空</button>
       </div>
