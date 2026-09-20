@@ -53,6 +53,10 @@ function offsets(node: MarkdownNode): [number, number] | undefined {
   return typeof start === "number" && typeof end === "number" ? [start, end] : undefined;
 }
 
+function normalizedLineEndings(value: string) {
+  return value.replace(/\r\n?/g, "\n");
+}
+
 function addCitationBadges(tree: unknown, citations: CitationGroup[], source: string) {
   const transform = (parent: MarkdownNode, handled = new Set<CitationGroup>()) => {
     if (!parent.children) return handled;
@@ -61,16 +65,22 @@ function addCitationBadges(tree: unknown, citations: CitationGroup[], source: st
       const range = offsets(child);
       const endingHere = range ? citations.filter((citation) => !handled.has(citation)
         && citation.end >= range[0] && citation.end <= range[1]) : [];
-      // Ordinary text has identical source/value offsets. Decoded entities or
-      // escapes use the node boundary below instead of slicing altered text.
-      if (child.type === "text" && range && child.value === source.slice(range[0], range[1]) && endingHere.length) {
+      // Ordinary text has identical offsets except that Markdown normalizes
+      // CRLF. Decoded entities or escapes use the node boundary below instead
+      // of slicing altered text.
+      const sourceValue = range ? source.slice(range[0], range[1]) : undefined;
+      const normalizedSourceValue = sourceValue && normalizedLineEndings(sourceValue);
+      const text = child.value;
+      if (child.type === "text" && typeof text === "string" && range && (text === sourceValue || text === normalizedSourceValue) && endingHere.length) {
         let cursor = 0;
         for (const citation of endingHere) {
-          const end = citation.end - range[0];
-          if (end > cursor) next.push({ ...child, value: child.value.slice(cursor, end) });
+          const end = text === normalizedSourceValue
+            ? normalizedLineEndings(source.slice(range[0], citation.end)).length
+            : citation.end - range[0];
+          if (end > cursor) next.push({ ...child, value: text.slice(cursor, end) });
           next.push(citationNode(citation.sourceIds)); handled.add(citation); cursor = end;
         }
-        if (cursor < child.value.length) next.push({ ...child, value: child.value.slice(cursor) });
+        if (cursor < text.length) next.push({ ...child, value: text.slice(cursor) });
         continue;
       }
       if (child.type !== "text" && child.type !== "link") transform(child, handled);
@@ -83,6 +93,26 @@ function addCitationBadges(tree: unknown, citations: CitationGroup[], source: st
     }
     parent.children = next;
     return handled;
+  };
+  transform(tree as MarkdownNode);
+}
+
+function addSoftLineBreaks(tree: unknown) {
+  const transform = (parent: MarkdownNode) => {
+    if (!parent.children) return;
+    for (const child of parent.children) transform(child);
+    parent.children = parent.children.flatMap((child) => {
+      if (child.type !== "text" || typeof child.value !== "string") return child;
+      const value = normalizedLineEndings(child.value);
+      if (!value.includes("\n")) return child;
+      const lines = value.split("\n");
+      const next: MarkdownNode[] = [];
+      for (const [index, line] of lines.entries()) {
+        if (line) next.push({ ...child, value: line });
+        if (index < lines.length - 1) next.push({ type: "break" });
+      }
+      return next;
+    });
   };
   transform(tree as MarkdownNode);
 }
@@ -111,7 +141,8 @@ function ExternalLink({ node: _node, href, children, ...props }: ComponentPropsW
 export function SafeMarkdown({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
   const citations = validCitations(search, children);
   const remarkPlugins = [remarkGfm, remarkMath, remarkMathSyntax,
-    ...(citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : [])];
+    ...(citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : []),
+    () => (tree: unknown) => addSoftLineBreaks(tree)];
   return <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[[rehypeKatex, { trust: false, errorColor: "currentColor" }]]} components={{
     a: ExternalLink,
     span: ({ node: _node, ...props }) => search ? CitationSpan(props, search) : <span {...props} />,

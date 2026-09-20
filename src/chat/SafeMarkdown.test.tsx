@@ -79,6 +79,17 @@ $$`);
     expect(render(String.raw`\$$x$`).querySelectorAll(".katex")).toHaveLength(1);
   });
 
+  it("keeps ordinary single line breaks visible without changing Markdown blocks", () => {
+    const host = render("第一行\r\n第二行\n\n- 列表一\n- 列表二\n\n```text\n代码一\n代码二\n```\n\n$$\nx\n+ y\n$$");
+    expect(host.querySelectorAll("br")).toHaveLength(1);
+    expect(host.querySelectorAll("li")).toHaveLength(2);
+    expect(host.querySelector("pre")?.textContent).toContain("代码一\n代码二");
+    expect(host.querySelector(".katex-display")).not.toBeNull();
+
+    const hardBreak = render("第一行  \n第二行");
+    expect(hardBreak.querySelectorAll("br")).toHaveLength(1);
+  });
+
   it("handles every streamed prefix and renders correctly on closing", () => {
     for (const source of [String.raw`答案 $\frac{x_1}{2}$。`, String.raw`\[\begin{pmatrix}1 & 2 \\ 3 & 4\end{pmatrix}\]`, "$$\nx^2\n$$"]) {
       for (let end = 0; end <= source.length; end++) {
@@ -139,5 +150,19 @@ $\htmlClass{injected}{x}$
     expect(host.querySelectorAll(".katex .citation-badge")).toHaveLength(0);
     expect(host.textContent).toContain("[1]，再");
     expect(host.textContent).toContain("[1]。结束[1]");
+  });
+
+  it("keeps citation positions meaningful across soft CRLF line breaks", () => {
+    const content = "第一行\r\n第二行\n第三行";
+    const citationEnd = "第一行\r\n第二行".length;
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(<SafeMarkdown search={{ enabled: true, status: "completed", queries: [],
+      sources: [{ id: "one", title: "Source", url: "https://example.com" }],
+      citations: [{ start: 0, end: citationEnd, sourceIds: ["one"] }],
+    }}>{content}</SafeMarkdown>);
+    expect(host.querySelectorAll("br")).toHaveLength(2);
+    const badge = host.querySelector<HTMLButtonElement>(".citation-badge");
+    expect(badge?.previousSibling?.textContent?.trim()).toBe("第二行");
+    expect(badge?.nextSibling?.nodeName).toBe("BR");
   });
 });

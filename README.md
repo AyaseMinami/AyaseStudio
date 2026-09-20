@@ -16,12 +16,14 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Three-level supplier → connection → model configuration, including repeated protocols, per-connection model discovery/testing, persisted active-model selection, and deterministic legacy migration
 - Assistant templates with independent full conversation settings, compact settings dialogs, safe legacy migration, and Dexie persistence
 - User and assistant message copying, editing with confirmed history truncation, single-message deletion, explicit regeneration, and independent conversation branches
-- Assistant-managed system instruction, model, validated generation settings, local input-history budget, protocol-specific safe JSON supplements, and streaming/non-streaming generation
+- Conversation-owned system instruction, model, validated generation settings, local input-history budget, protocol-specific safe JSON supplements, and streaming/non-streaming generation, initialized from assistant defaults
 - Top-level chat/settings navigation with a dedicated, categorized settings center
 - Persistent light, dark, and system-following appearance modes with safe custom colors and private local backgrounds
 - PNG/JPEG/WebP/PDF/TXT/Markdown attachments from picker, chat drag/drop, or image paste: unsent drafts stay transient; sending stores private copies and history references without a post-send in-memory image cache, with read-only previews
 
 Raw HTML in model output is rendered as inert text. Alpha credentials are stored as plaintext in the local WebView profile; do not use untrusted relay credentials.
+
+Before running an existing development profile with the corrected application identifier, follow the [Windows data-directory migration notes](docs/DEVELOPMENT.md#application-identity-and-existing-development-data). Packaged installation and upgrade acceptance remain separate release gates.
 
 ## Development
 

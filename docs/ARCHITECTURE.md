@@ -205,19 +205,24 @@ ProviderGroup
       └─ optional display name
 
 Assistant
-├─ shared model reference
-├─ shared system instruction
-├─ shared generation settings
+├─ default model reference
+├─ default system instruction
+├─ default generation settings
 └─ Conversation
    ├─ title and timestamps
+   ├─ independent full configuration snapshot (including model reference)
    ├─ Message
    │  ├─ text
    │  ├─ sent attachment references (app-private copies)
-   │  └─ citations/search metadata (planned)
+   │  └─ citations/search metadata
    └─ text / attachment draft (in memory, per conversation)
 ```
 
-供应商只负责分组，不提供父级配置继承。助手通过已添加模型解析其所属连接，对话不复制连接配置或凭据。助手是预设与对话容器，不是 Agent；附件和供应商托管搜索不会自动引入 MCP 或通用工具执行循环。
+供应商只负责分组，不提供父级配置继承。助手提供新对话的默认配置；当前对话通过自身快照中的已添加模型引用解析所属连接，不复制连接配置或凭据。修改助手不更新已有对话，分支复制完整配置，恢复助手默认值须显式保存。助手是预设与对话容器，不是 Agent；附件和供应商托管搜索不会自动引入 MCP 或通用工具执行循环。
+
+### Application identity and Windows storage
+
+首次 Alpha 前将应用标识固定为 `io.github.ayaseminami.ayasestudio`。Windows 下 Tauri 的 `app_data_dir()` 位于 `%APPDATA%/<identifier>`，存放附件和背景；默认 WebView 数据目录位于 `%LOCALAPPDATA%/<identifier>`，其中的浏览器配置承载 localStorage 和 IndexedDB。旧开发版的 `ayaseminani` 拼写只作为迁移来源，不增加运行时双目录回退。更名须关闭旧版及其 WebView，并将两个完整目录成对迁移；目标已有数据时禁止覆盖或合并。变更标识不改变浏览器 origin，开发版与生产版的存储仍可能按 origin 隔离，开发版数据迁移不等于安装版升级验收。操作边界见 [开发指南](DEVELOPMENT.md#application-identity-and-existing-development-data)。
 
 ## State ownership
 
@@ -271,7 +276,7 @@ Assistant
 
 ## Issue #4 assistants and conversations
 
-`workspace.ts` 定义助手预设、对话元数据、导航记录及完整操作命令。Dexie v3 保留 `chats`、`assistants`、`conversations`、`workspace`，新增 `legacyConversationConfigs`。升级事务将旧对话配置和模型引用按对话 ID 备份，再移除活跃记录中的对应字段；消息与时间戳不变。v1 的 `current` 配置迁入默认助手；v2 保留原助手配置作为统一来源，原对话差异仅保存在本地备份，不再影响请求。备份没有 UI 恢复入口，不会被后续保存覆盖，永久删除对应对话时一同删除。初始化在单个事务内创建不可删除的默认助手，将旧 `current` 和孤立消息记录原地归属，修复失效助手/导航/模型引用。重复初始化不复制数据；加载错误显示重试入口，不按空数据库继续写入。
+`workspace.ts` 定义助手预设、对话元数据、导航记录及完整操作命令。Dexie v3 保留 `chats`、`assistants`、`conversations`、`workspace`，新增 `legacyConversationConfigs`。历史 v1/v2 升级事务将旧对话配置和模型引用按对话 ID 备份，再移除活跃记录中的对应字段；消息与时间戳不变。v1 的 `current` 配置迁入默认助手；v2 的助手配置保留为后续完整快照初始化的模板，原对话差异仅保存在本地备份，不重新参与请求。当前已有对话以自身 `settings` 为唯一配置来源，不随助手更新。备份没有 UI 恢复入口，不会被后续保存覆盖，永久删除对应对话时一同删除。初始化在单个事务内创建不可删除的默认助手，将旧 `current` 和孤立消息记录原地归属，修复失效助手/导航/模型引用。重复初始化不复制数据；加载错误显示重试入口，不按空数据库继续写入。
 
 初始化事务对没有 `settings` 的旧记录一次性合成助手配置与旧 `overrides`，保存完整快照并移除旧覆盖字段；没有覆盖的记录复制所属助手设置。转换在助手模型引用修复前完成，保留原有失效引用，不采用历史 `creationConfig` 或重新启用 v2 备份。已有快照在重启时不从助手刷新，转换失败会回滚整个事务。沿用 Dexie v3 元数据字段，无需新索引。分支深拷贝原对话快照；迁移到默认助手只改归属，保留配置和消息。永久删除对话同时移除快照。
 
@@ -306,6 +311,8 @@ Issue #5 附件草稿是同一按对话 ID 保留的会话内视图状态，只�
 SafeMarkdown 继续禁止原始 HTML。Gemini searchEntryPoint 只进入 scriptless sandbox iframe 的独立文档；主 DOM 不注入供应商 HTML，父组件绑定链接和高度。外链统一使用受限 HTTP(S) opener。新可选字段沿用 repository 持久化，无新增表/索引；编辑正文清除引用和 replay，删除使旧续接失效。详见 [#6 实施记录](ISSUE-6-NATIVE-SEARCH-PLAN.md)。
 
 ### Issue #15 math rendering
+
+普通文本的 LF/CRLF 单换行在搜索引用定位完成后转换为 Markdown break 节点，用户消息、助手正文和摘要统一生效；代码和数学节点不改写，不再使用用户消息段落的 `white-space: pre-wrap` 作为换行补丁，避免显式换行与空白样式叠加。CRLF 的源码引用偏移先映射到解析后的文本位置，转换仍只影响显示。
 
 用户消息、助手正文和思考摘要共享 SafeMarkdown，用户消息同时支持安全 Markdown，普通段落保留单换行。remark-math 提供数学节点，markdownMath.ts 在 Markdown 解析阶段识别 `$...$`、`$$...$$`、`\(...\)` 和 `\[...\]`；双美元及 `\[...\]` 使用独立公式排版。单美元内部首尾不能留空白，结束符后不能紧接数字，以避免常见货币误判；有歧义的美元文本使用 `\$`。不做全局替换，原文位置供搜索引用继续使用；公式内的引用角标放在公式后。
 

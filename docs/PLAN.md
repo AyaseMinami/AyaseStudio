@@ -12,7 +12,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 - Ordinary Tauri 2 desktop window using React, TypeScript, Vite, and Tailwind CSS.
 - Plain-text multi-turn chat with streamed Markdown rendering.
-- Assistant presets with shared model and generation settings, multiple saved conversations, and safe deletion.
+- Assistant presets used as templates for new conversations, independent full conversation settings, multiple saved conversations, and safe deletion.
 - User-configured base URL, API key, and model.
 - Protocol-aware base URL normalization with the resolved request endpoint shown to the user.
 - Four explicit protocol adapters:
@@ -73,6 +73,7 @@ Assistant
 - defaultConfig
 └─ Conversation[]
    - title
+   - settings (independent modelId + config snapshot)
    - messages
 ```
 
@@ -80,7 +81,7 @@ Assistant
 - One supplier may hold any number of connections. Protocol is a dropdown property of a connection, and repeated connections using the same protocol are valid.
 - Built-in OpenAI, Google Gemini, and Anthropic entries are read-only creation templates. Their created providers and connections use the same editable runtime model as custom providers.
 - Selecting a connection in settings only changes the model list being browsed. Selecting a configured model makes its model ID, parent connection, protocol, Base URL, and key the atomic chat target.
-- Each assistant's model ID and generation settings are persisted and restored on startup; settings derives the current-model marker from the selected assistant.
+- Each assistant's defaults and each conversation's independent model ID and generation settings are persisted and restored on startup. The settings page marks the selected assistant's default model; the chat selector uses the current conversation's model.
 - Missing, deleted, or corrupt active-model references become an explicit unselected state. Deletion never silently switches to another connection or model.
 - Each connection can fetch a protocol-aware remote model catalog on demand. Catalog entries are candidates only; users add them explicitly or add an arbitrary model ID manually.
 - A user may explicitly test one configured model. The test is cancellable, reports latency/failure, may consume tokens, and is never retried automatically.
@@ -89,7 +90,7 @@ Assistant
 
 ## Conversation roadmap
 
-Issue #4 extends the original `current` state into assistant-owned conversations. Each assistant owns one shared model reference and generation configuration for its conversations; conversations keep their own titles and messages without copying credentials. Issue #14 branches retain a creation-time configuration record, but requests still use the owning assistant's current settings. Search, folders, pinning, and automatic titles remain separate later decisions.
+Issue #4 extends the original `current` state into assistant-owned conversations. Under the revised Issue #28 contract, assistants provide defaults for new conversations; each conversation owns a full configuration snapshot without copying credentials. Requests freeze the current conversation's settings. Issue #14 branches copy that configuration and can then be edited independently. Editing an assistant does not change existing conversations; restoring assistant defaults is an explicit draft action that takes effect on save. Search, folders, pinning, and automatic titles remain separate later decisions.
 
 ## Delivery stages
 
@@ -111,9 +112,11 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 - For Gemini without an explicitly selected model on that connection, show the normalized base and a clear prompt instead of a fictitious final endpoint.
 - Cover root, trailing-slash, existing-version, custom-path, port, and invalid-URL cases with deterministic tests.
 
-## Known issues
+## Alpha release preparation
 
-- Markdown soft line breaks are currently collapsed by CommonMark rendering. Preserve model-provided single newlines without enabling raw HTML, and cover the rendered line-break behavior with a regression test.
+- Render ordinary Markdown single newlines as visible line breaks in messages and thinking summaries, preserving source text, code, mathematics and search citation offsets. Cover this behavior with regression tests; raw HTML remains inert.
+- Freeze the corrected application identifier `io.github.ayaseminami.ayasestudio` before the first installer. Existing development profiles under the previous spelling require both Windows data directories to be migrated while the app is closed; see [the development guide](DEVELOPMENT.md#application-identity-and-existing-development-data).
+- A production frontend build is not an installer acceptance result. Verify the packaged application, clean installation, upgrade and retained local data before publishing Alpha.
 
 ## Issue #3 generation configuration slice
 
@@ -135,7 +138,7 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 
 ### Issue #16 protocol thinking extension (2026-09-19)
 
-在 #10 Gemini 首版上扩展 OpenAI Chat 的强度、Responses 的强度与摘要，以及 Anthropic 的协议模式、预算、effort 与可读摘要。复用灯泡弹层、助手共享配置、冻结请求和本地摘要存储。按用户 2026-09-19 修订，移除型号白名单；任意模型 ID 均可设置所选协议的思考选项，服务端负责参数兼容性判断。切换型号保留设置，不再拦截预算/输出或思考/采样组合。默认不请求摘要，显式已保存的摘要偏好继续保留；错误展示完整响应正文及 HTTP 状态并脱敏。Chat 官方接口不承诺可读摘要，未确认的中转扩展不启用。参数与多轮历史合同见 [PROTOCOLS.md](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)。
+在 #10 Gemini 首版上扩展 OpenAI Chat 的强度、Responses 的强度与摘要，以及 Anthropic 的协议模式、预算、effort 与可读摘要。复用灯泡弹层、冻结请求和本地摘要存储；按 #28 的后续修订，配置由对话独立保存，新建时复制助手默认值。按用户 2026-09-19 修订，移除型号白名单；任意模型 ID 均可设置所选协议的思考选项，服务端负责参数兼容性判断。切换型号保留设置，不再拦截预算/输出或思考/采样组合。默认不请求摘要，显式已保存的摘要偏好继续保留；错误展示完整响应正文及 HTTP 状态并脱敏。Chat 官方接口不承诺可读摘要，未确认的中转扩展不启用。参数与多轮历史合同见 [PROTOCOLS.md](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)。
 
 Issue 原文的未知模型默认限制、切换型号重置与供应商预算/采样兼容性前置拦截，以及“仅记录后续需求，本次不开始实现”，均被用户 2026-09-19 的实施与修订指令取代；未修改远端 Issue。真实线路验收需要单独授权，确定性测试与桌面启动不代表中转站兼容性通过。
 
@@ -143,7 +146,7 @@ Issue 原文的未知模型默认限制、切换型号重置与供应商预算/�
 
 以下为 2026-09-16 首版历史记录，型号限制已由上述 #16 修订取代。本轮按用户要求将思考摘要展示纳入首版，仅实现 Gemini Native。输入区提供按明确型号能力变化的强度/预算菜单及独立的摘要开关，沿用当前助手共享配置（不同于原 Issue 的按对话保存）。Gemini 3 使用型号声明的档位，2.5 使用预算；未知型号省略思考参数。摘要独立于正文保存和折叠展示，不作为聊天历史回传。没有收到摘要时不显示空框，不推断模型思考用时。其他协议和中转站专属兼容规则留待后续；远端 Issue 未修改。
 
-Issue #4 adds create/switch/rename/delete, assistant ordering/shared configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. One generation may run across navigation or assistant edits; its request settings remain frozen and all deltas, errors and saves remain bound to its original conversation. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
+Issue #4 adds create/switch/rename/delete, assistant ordering/default configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. Issue #28 makes each conversation's configuration independent. One generation may run across navigation or assistant edits; its request settings remain frozen and all deltas, errors and saves remain bound to its original conversation. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
 
 - Streamed text is incremental and ordered.
 - A request produces exactly one terminal outcome: completed, failed, or aborted.

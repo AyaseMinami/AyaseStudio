@@ -57,10 +57,16 @@ it("uses Anthropic choices and its independent effort selector", async () => {
 it("keeps OpenAI Chat summary unavailable in the shared control", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div"); const root = createRoot(host);
+  let changes = 0;
   try {
-    await act(async () => root.render(<ThinkingControl protocol="openai-chat" model="gpt-5.6-sol" disabled={false} onChange={() => {}} />));
+    await act(async () => root.render(<ThinkingControl protocol="openai-chat" model="gpt-5.6-sol"
+      value={{ ...defaultGeminiThinking, includeSummary: true }} disabled={false} onChange={() => { changes++; }} />));
     expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-    expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+    const summary = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(summary?.disabled).toBe(true);
+    expect(summary?.checked).toBe(false);
+    await act(async () => summary?.click());
+    expect(changes).toBe(0);
     expect(host.textContent).toContain("尚未接入 Chat Completions 的思考摘要扩展");
   } finally { await act(async () => root.unmount()); }
 });

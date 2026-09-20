@@ -2254,7 +2254,6 @@ textarea:disabled {
 .markdown table:has(.katex) { table-layout: fixed; }
 .markdown .katex-error { white-space: pre-wrap; overflow-wrap: anywhere; }
 .user-message.markdown { min-width: 0; overflow-wrap: anywhere; }
-.user-message.markdown p { white-space: pre-wrap; }
 .user-message.markdown a { color: inherit; }
 
 .typing-dot {
