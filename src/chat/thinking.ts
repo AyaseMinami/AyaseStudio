@@ -46,6 +46,27 @@ export function withThinkingSettings(config: SessionConfig, protocol: ChatProtoc
   }
   return { ...config, thinking: { ...config.thinking, [protocol]: { ...value } } };
 }
+
+// Preserve protocol-local values only while their controls remain available across the switch.
+export function switchThinkingProtocol(config: SessionConfig, from: ChatProtocol | undefined, to: ChatProtocol): SessionConfig {
+  if (from === to) return config;
+  const source = from ? thinkingOptions(from) : undefined;
+  const target = thinkingOptions(to);
+  let next = config;
+  for (const protocol of from ? [from, to] : [to]) {
+    const saved = getThinkingSettings(next, protocol);
+    if (!saved) continue;
+    const choiceAvailable = source?.choices.includes(saved.choice) && target.choices.includes(saved.choice);
+    next = withThinkingSettings(next, protocol, {
+      ...saved,
+      choice: choiceAvailable ? saved.choice : "default",
+      budget: source?.choices.includes("budget") && target.choices.includes("budget") ? saved.budget : "",
+      includeSummary: !!source?.summary && target.summary && saved.includeSummary,
+      ...(protocol === "anthropic-native" ? { effort: source?.efforts && target.efforts ? saved.effort : "default" } : {}),
+    });
+  }
+  return next;
+}
 export function isThinkingSettings(raw: unknown): raw is ThinkingSettings {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
   const value = raw as Partial<ThinkingSettings>;

@@ -7,6 +7,7 @@ import { useChatSession } from "./chat/useChatSession";
 import { getThinkingSettings } from "./chat/thinking";
 import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
+import { ChatHeader } from "./ui/chat/ChatHeader";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
 import { useChatLayout } from "./ui/chat/useChatLayout";
 import {
@@ -26,12 +27,23 @@ function App() {
       setActivePage("settings");
     },
   });
+  const modelLabel = chat.activeProvider && chat.activeConnection && chat.activeModel
+    ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${chat.activeModel.displayName || chat.activeModel.modelId}`
+    : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 点击选择模型`;
 
   return (
     <AppShell activePage={activePage} onPageChange={setActivePage}>
       {activePage === "chat" ? (
-        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingId={chat.generatingConversationId}>
-        <ChatWorkspace
+        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingId={chat.generatingConversationId}
+          toolbar={<ChatHeader key={chat.workspace.conversation?.id ?? "loading"} title={chat.workspace.conversation?.title ?? "新对话"}
+            layout={chatLayout.layout} onToggleLayout={chatLayout.toggleLayout} isHydrated={chat.isHydrated}
+            isGenerating={chat.isGenerating} protocolLabel={modelLabel}
+            modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}
+            onClear={chat.clearConversation}
+          modelPicker={{ settings: chat.connectionSettings, selectedModelId: chat.workspace.effective.modelId,
+            disabled: !chat.isHydrated, error: chat.workspace.operationError ?? chat.workspace.loadError,
+            onSelect: chat.setConversationModel }} />}>
+        <ChatWorkspace hideHeader
           layout={chatLayout.layout}
           onToggleLayout={chatLayout.toggleLayout}
           key={chat.workspace.conversation?.id ?? "loading"}
@@ -54,13 +66,7 @@ function App() {
           webSearch={chat.sessionConfig.webSearch ?? false}
           onWebSearchChange={(enabled) => void chat.setWebSearch(enabled)}
           protocol={chat.activeConnection?.protocol}
-          protocolLabel={
-            chat.activeProvider && chat.activeConnection && chat.activeModel
-              ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${
-                  chat.activeModel.displayName || chat.activeModel.modelId
-                }`
-              : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 请编辑对话选择模型`
-          }
+          protocolLabel={modelLabel}
           onClear={chat.clearConversation}
           onDraftChange={chat.setDraft}
           onFiles={(files) => void chat.addFiles(files)}

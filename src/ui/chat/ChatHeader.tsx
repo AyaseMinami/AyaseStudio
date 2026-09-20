@@ -1,4 +1,6 @@
-import { MoveHorizontal } from "lucide-react";
+import { ChevronDown, MoveHorizontal } from "lucide-react";
+import { useState } from "react";
+import { ModelPicker, type ModelPickerProps } from "./ModelPicker";
 import type { ChatLayout } from "./useChatLayout";
 
 export interface ChatHeaderProps {
@@ -8,7 +10,9 @@ export interface ChatHeaderProps {
   isHydrated: boolean;
   isGenerating: boolean;
   protocolLabel: string;
+  modelLabel?: string;
   onClear(): void;
+  modelPicker?: Omit<ModelPickerProps, "onClose">;
 }
 
 export function ChatHeader({
@@ -18,13 +22,18 @@ export function ChatHeader({
   isHydrated,
   isGenerating,
   protocolLabel,
+  modelLabel = protocolLabel,
   onClear,
+  modelPicker,
 }: ChatHeaderProps) {
+  const [selectingModel, setSelectingModel] = useState(false);
   return (
-    <header className="chat-header">
+    <header className="chat-header" aria-label={title}>
       <div className="chat-header-copy">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="muted-text text-xs">{protocolLabel}</p>
+        {modelPicker ? <button className="chat-model-trigger" type="button" aria-label="切换模型"
+          aria-haspopup="dialog" aria-expanded={selectingModel} onClick={() => setSelectingModel(true)} disabled={!isHydrated} title={protocolLabel}>
+          <span>{modelLabel}</span><ChevronDown size={14} />
+        </button> : <p className="muted-text">{protocolLabel}</p>}
       </div>
       <div className="chat-header-actions">
         {onToggleLayout && <button className="chat-layout-button" type="button"
@@ -35,6 +44,7 @@ export function ChatHeader({
         </button>}
         <button className="clear-button" onClick={onClear} disabled={isGenerating || !isHydrated} type="button">清空</button>
       </div>
+      {selectingModel && modelPicker && <ModelPicker {...modelPicker} onClose={() => setSelectingModel(false)} />}
     </header>
   );
 }

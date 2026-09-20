@@ -520,13 +520,13 @@ describe("App navigation", () => {
     await clickButton("Gemini Test");
     await clickButton("设为助手默认模型 gemini-model");
     await clickButton("聊天");
-    expect(container.textContent).toContain("OpenAI Test · OpenAI 主线路 · openai-model");
+    expect(container.querySelector('[aria-label="切换模型"]')?.getAttribute("title")).toBe("OpenAI Test · OpenAI 主线路 · openai-model");
     await clickButtonWithText("编辑对话");
     await clickButtonWithText("恢复助手默认值");
     await clickButtonWithText("保存对话");
-    await waitFor(() => container.textContent?.includes("Gemini Test · Gemini 专线 · gemini-model") === true);
+    await waitFor(() => container.querySelector('[aria-label="切换模型"]')?.textContent === "gemini-model");
 
-    expect(container.textContent).toContain(
+    expect(container.querySelector('[aria-label="切换模型"]')?.getAttribute("title")).toBe(
       "Gemini Test · Gemini 专线 · gemini-model",
     );
     await setDraft("原子切换检查");
@@ -548,7 +548,7 @@ describe("App navigation", () => {
     });
     root = createRoot(container);
     await renderApp();
-    expect(container.textContent).toContain(
+    expect(container.querySelector('[aria-label="切换模型"]')?.getAttribute("title")).toBe(
       "Gemini Test · Gemini 专线 · gemini-model",
     );
   });

@@ -4,7 +4,7 @@ import type { useConversationWorkspace } from "../../chat/useConversationWorkspa
 import type { Conversation } from "../../chat/workspace";
 import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settings";
 import { validateRequestConfig } from "../../chat/requestMapping";
-import { getThinkingSettings, withThinkingSettings } from "../../chat/thinking";
+import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
 import { WebSearchControl } from "./WebSearchControl";
@@ -32,7 +32,11 @@ export function ConversationSettings({ workspace, conversation, settings, onClos
       <label htmlFor="conversation-title">对话标题</label>
       <input id="conversation-title" value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
       <label htmlFor="conversation-model">会话模型 / 连接</label>
-      <select id="conversation-model" value={draft.modelId ?? ""} onChange={(event) => setDraft({ ...draft, modelId: event.target.value || null })}>
+      <select id="conversation-model" value={draft.modelId ?? ""} onChange={(event) => {
+        const modelId = event.target.value || null;
+        const next = getActiveTarget({ ...settings, activeModelId: modelId });
+        setDraft({ modelId, config: next ? switchThinkingProtocol(draft.config, protocol, next.connection.protocol) : draft.config });
+      }}>
         <option value="">未选择模型</option>
         {draft.modelId && !target && <option value={draft.modelId}>原模型已失效，请重新选择</option>}
         {settings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) =>

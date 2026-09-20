@@ -45,8 +45,9 @@ describe("message actions through the session", () => {
     saveConnectionSettings({ version: 3, activeModelId: "m", providers: [{ id: "p", name: "Synthetic", connections: [{
       id: "c", name: "Test", baseUrl: "https://test.example", apiKey: "synthetic-key", protocol: "openai-chat",
       models: [{ id: "m", modelId: "any-model" }, { id: "m2", modelId: "other-model" }],
-    }] }] });
-    await repo.initializeWorkspace("m", ["m", "m2"]);
+    }, { id: "gemini", name: "Gemini", baseUrl: "https://gemini.example", apiKey: "synthetic-gemini", protocol: "gemini-native",
+      models: [{ id: "m3", modelId: "same-arbitrary-name" }] }] }] });
+    await repo.initializeWorkspace("m", ["m", "m2", "m3"]);
     await repo.save({ id: "current", updatedAt: 1, messages: history });
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
@@ -112,6 +113,33 @@ describe("message actions through the session", () => {
     await act(async () => session.workspace.execute({ type: "configure-conversation", id: "current", settings: { modelId: "m", config: session.sessionConfig } }));
     await act(async () => session.retryMessage("a2"));
     expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches the complete connection for the next request while preserving the running request and draft", async () => {
+    const requests: ChatRequest[] = [];
+    let finish!: () => void;
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      requests.push(request);
+      yield { type: "text-delta", text: "answer" };
+      if (requests.length === 1) await new Promise<void>((resolve) => { finish = resolve; });
+      yield { type: "completed", finishReason: "stop" };
+    } } satisfies ChatTransport);
+    await act(async () => session.setWebSearch(true));
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.retryMessage("a2"); });
+    await wait(() => !!finish);
+    await act(async () => session.setDraft("keep this draft"));
+    await act(async () => { expect(await session.setConversationModel("m3")).toBe(true); });
+    expect(session.activeConnection?.protocol).toBe("gemini-native");
+    expect(session.draft).toBe("keep this draft");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ model: "any-model", baseUrl: "https://test.example", apiKey: "synthetic-key" });
+    await act(async () => { finish(); await sending; });
+    await act(async () => session.retryMessage("u2"));
+    expect(runtime.createRuntimeChatTransport.mock.calls.map(([protocol]) => protocol)).toEqual(["openai-chat", "gemini-native"]);
+    expect(requests[1]).toMatchObject({ model: "same-arbitrary-name", baseUrl: "https://gemini.example", apiKey: "synthetic-gemini", config: { webSearch: true } });
+    expect(session.workspace.assistant?.defaultModelId).toBe("m");
+    expect((await repo.initializeWorkspace(null, ["m", "m2", "m3"])).conversations.find((c) => c.id === "current")?.settings?.modelId).toBe("m3");
   });
 
   it("native search persists citations and clears them on edited text", async () => {

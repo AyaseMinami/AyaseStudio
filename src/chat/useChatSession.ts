@@ -20,7 +20,7 @@ import {
   type StoredChatMessage,
   type StoredMessageStatus,
 } from "./repository";
-import { includeThinkingSummary, withThinkingSettings,
+import { includeThinkingSummary, withThinkingSettings, switchThinkingProtocol,
   type ThinkingSettings } from "./thinking";
 import { useConversationWorkspace } from "./useConversationWorkspace";
 import { validateRequestConfig } from "./requestMapping";
@@ -344,8 +344,19 @@ export function useChatSession({
   }
 
   function setActiveModel(modelId: string): void {
-    if (!workspace.assistant || !getActiveTarget(selectModel(connectionSettings, modelId))) return;
-    void workspace.execute({ type: "select-model", assistantId: workspace.assistant.id, modelId });
+    const target = getActiveTarget(selectModel(connectionSettings, modelId));
+    if (!workspace.assistant || !target) return;
+    const previous = getActiveTarget({ ...connectionSettings, activeModelId: workspace.assistant.defaultModelId });
+    void workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input: { ...workspace.assistant,
+      defaultModelId: modelId, defaultConfig: switchThinkingProtocol(workspace.assistant.defaultConfig, previous?.connection.protocol, target.connection.protocol) } });
+  }
+
+  async function setConversationModel(modelId: string): Promise<boolean> {
+    if (!workspace.conversation || !workspace.canSend()) return false;
+    const target = getActiveTarget({ ...connectionSettings, activeModelId: modelId });
+    if (!target) return false;
+    return workspace.execute({ type: "configure-conversation", id: workspace.conversation.id,
+      settings: { modelId, config: switchThinkingProtocol(sessionConfig, activeConnection?.protocol, target.connection.protocol) } });
   }
 
   function removeModel(modelId: string): void {
@@ -1054,6 +1065,7 @@ export function useChatSession({
     setThinking,
     setWebSearch,
     setActiveModel,
+    setConversationModel,
     stopGeneration,
     updateConnection: updateConnectionProfile,
     updateModel: updateConfiguredModel,

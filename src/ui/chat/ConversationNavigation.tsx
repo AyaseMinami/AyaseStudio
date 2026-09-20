@@ -10,7 +10,7 @@ import { DEFAULT_ASSISTANT_ID, type AssistantInput, type AssistantPreset, type W
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
 import { WebSearchControl } from "./WebSearchControl";
-import { getThinkingSettings, withThinkingSettings } from "../../chat/thinking";
+import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 
 function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -37,11 +37,12 @@ type Dialog =
   | { type: "delete-conversation"; id: string; title: string }
   | { type: "delete-assistant"; id: string; name: string; count: number; permanent: boolean };
 
-export function ConversationNavigation({ workspace, settings, generatingId, children }: {
+export function ConversationNavigation({ workspace, settings, generatingId, children, toolbar }: {
   workspace: ReturnType<typeof useConversationWorkspace>;
   settings: ConnectionSettingsState;
   generatingId: string | null;
   children: ReactNode;
+  toolbar?: ReactNode;
 }) {
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 860);
   const [conversationPanelOpen, setConversationPanelOpen] = useState(false);
@@ -79,10 +80,13 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
 
   return <div className="conversation-workspace">
     <div className="conversation-navigation-toolbar">
-      <button className="settings-button" type="button" aria-expanded={navigationOpen} aria-controls="assistant-navigation" title={navigationOpen ? "收起侧栏" : "展开侧栏"} onClick={() => setNavigationOpen(!navigationOpen)}>
-        {navigationOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}助手与对话
+      <button className="workspace-sidebar-toggle" type="button" aria-label="助手与对话" aria-expanded={navigationOpen} aria-controls="assistant-navigation" title={navigationOpen ? "收起助手与对话侧栏" : "展开助手与对话侧栏"} onClick={() => setNavigationOpen(!navigationOpen)}>
+        {navigationOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
       </button>
-      <span className="muted-text workspace-breadcrumb">{selectedAssistant?.name ?? "加载工作区"} / {conversation?.title ?? "尚无对话"}</span>
+      <span className="workspace-breadcrumb" title={`${selectedAssistant?.name ?? ""} / ${conversation?.title ?? ""}`}>
+        <span className="workspace-conversation-title">{conversation?.title ?? "尚无对话"}</span>
+      </span>
+      {toolbar}
     </div>
     {workspace.loadError && <div role="alert" className="error-banner">{workspace.loadError}<button className="settings-button" type="button" disabled={busy} onClick={workspace.retry}>重试加载</button></div>}
     {workspace.operationError && <div role="alert" className="error-banner">{workspace.operationError}</div>}
@@ -169,7 +173,9 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
         <label htmlFor="assistant-model">助手模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
           onChange={(event) => {
             const defaultModelId = event.target.value || null;
-            setDialog({ ...dialog, input: { ...dialog.input, defaultModelId } });
+            const next = getActiveTarget({ ...settings, activeModelId: defaultModelId });
+            setDialog({ ...dialog, input: { ...dialog.input, defaultModelId,
+              defaultConfig: next ? switchThinkingProtocol(dialog.input.defaultConfig, editorTarget?.connection.protocol, next.connection.protocol) : dialog.input.defaultConfig } });
           }}>
           <option value="">未选择模型</option>
           {dialog.input.defaultModelId && !editorTarget && <option value={dialog.input.defaultModelId}>原模型已失效，请重新选择</option>}

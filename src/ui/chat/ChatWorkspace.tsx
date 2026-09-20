@@ -13,6 +13,7 @@ import { Globe } from "lucide-react";
 import type { ChatLayout } from "./useChatLayout";
 
 export interface ChatWorkspaceProps {
+  hideHeader?: boolean;
   layout?: ChatLayout;
   onToggleLayout?(): void;
   webSearch?: boolean;
@@ -45,6 +46,7 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  hideHeader = false,
   layout = "narrow",
   onToggleLayout,
   webSearch,
@@ -98,7 +100,7 @@ export function ChatWorkspace({
         event.preventDefault(); setDragging(false);
         onFiles?.([...event.dataTransfer.files]);
       }}>
-      <ChatHeader
+      {!hideHeader && <ChatHeader
         layout={layout}
         onToggleLayout={onToggleLayout}
         title={title}
@@ -106,7 +108,7 @@ export function ChatWorkspace({
         isGenerating={isGenerating}
         protocolLabel={protocolLabel}
         onClear={onClear}
-      />
+      />}
       {contextPlan && (contextPlan.trimmedTurns > 0 || contextPlan.excludedIncompleteTurns > 0) && (
         <div className="context-budget-notice" role="status">
           最近一次请求保留 {contextPlan.keptTurns} 轮，裁剪 {contextPlan.trimmedTurns} 轮，排除 {contextPlan.excludedIncompleteTurns} 个未完整轮次；

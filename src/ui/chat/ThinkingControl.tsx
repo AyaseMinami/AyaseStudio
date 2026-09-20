@@ -36,6 +36,7 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
     <button ref={trigger} type="button" className={`composer-tool-button${active ? " is-active" : ""}`}
       aria-label="思考设置" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
       title={`思考：${thinkingLabels[settings.choice]}`}
+      disabled={props.disabled}
       onClick={() => setOpen((current) => !current)}><Lightbulb size={18} />
     </button>
     {open && <div id={panelId} className="thinking-popover" role="dialog" aria-label="思考设置">
@@ -74,9 +75,9 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
     </label>}
 
     </div>
-    {capability.summary && <div className="thinking-field"><label className="thinking-summary-toggle"><input type="checkbox" checked={settings.includeSummary}
-      disabled={disabled} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考摘要</label>
-    </div>}
+    <div className="thinking-field"><label className="thinking-summary-toggle"><input type="checkbox" checked={capability.summary && settings.includeSummary}
+      disabled={disabled || !capability.summary} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考摘要</label>
+    </div>
     {capability.efforts && <div className="thinking-field"><label className="thinking-select"><span>思考力度</span><select aria-label={`思考力度（${scope}）`}
       disabled={disabled} value={settings.effort ?? "default"} onChange={(event) => onChange({ ...settings, effort: event.target.value as ThinkingSettings["effort"] })}>
       {capability.efforts.map((effort) => <option key={effort} value={effort}>{thinkingLabels[effort]}</option>)}

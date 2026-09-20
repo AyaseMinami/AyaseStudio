@@ -63,9 +63,32 @@ describe("assistant workspace public behavior", () => {
   async function chooseAssistant(name: string, title: string) {
     if (!container.querySelector('[aria-label="助手列表"]')) await click("助手与对话");
     await click(name);
-    await wait(() => container.querySelector(".chat-header-copy")?.textContent?.includes(title) === true);
+    await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.includes(title) === true);
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
   }
+
+  it("selects a model from the header, scopes persistence to this conversation and restores focus on cancel", async () => {
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="切换模型"]')!;
+    trigger.focus();
+    await click("切换模型");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("搜索模型");
+    await fill('[aria-label="搜索模型"]', "nothing-matches");
+    expect(container.textContent).toContain("没有匹配的模型");
+    await fill('[aria-label="搜索模型"]', "upstream-b");
+    await click("upstream-b");
+    await wait(() => !container.querySelector(".model-picker"));
+    expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-b");
+    const saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    expect(saved.conversations.find((item) => item.id === "current")?.settings?.modelId).toBe("model-b");
+    expect(saved.assistants.find((item) => item.id === "default")?.defaultModelId).toBe("model-a");
+    expect(saved.conversations.find((item) => item.id === "b")?.settings?.modelId).toBe("model-b");
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(runtime.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+    await click("切换模型");
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector(".model-picker")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
 
   it("edits conversation fields explicitly, discards cancelled drafts and restores inheritance", async () => {
     expect(container.querySelector(".conversation-navigation-toolbar")?.textContent).not.toContain("会话设置");
@@ -105,7 +128,7 @@ describe("assistant workspace public behavior", () => {
   it("edits another conversation without switching the active chat", async () => {
     await click("默认助手");
     await click("新建对话");
-    await wait(() => container.querySelector(".chat-header-copy")?.textContent?.includes("新对话") === true);
+    await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.includes("新对话") === true);
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="编辑对话 对话 A"]')?.disabled === false);
     const activeId = selectedConversation(await repo.initializeWorkspace(null, ["model-a", "model-b"]))?.id;
     await click("编辑对话 对话 A");
@@ -117,7 +140,7 @@ describe("assistant workspace public behavior", () => {
     expect(selectedConversation(saved)?.id).toBe(activeId);
     expect(selectedConversation(saved)?.overrides).toBeUndefined();
     expect(saved.conversations.find((item) => item.id === "current")).toMatchObject({ title: "Renamed A", settings: { config: { systemInstruction: "Only A" } } });
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("新对话");
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toContain("新对话");
   });
 
   it("couples both columns to the main toggle and allows collapsing only conversations", async () => {
@@ -128,7 +151,7 @@ describe("assistant workspace public behavior", () => {
     const panel = container.querySelector('[aria-label="默认助手的对话"]');
     expect(panel).not.toBeNull();
     expect(panel?.parentElement).toBe(container.querySelector(".chat-navigation-pane")?.parentElement);
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("对话 A");
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toContain("对话 A");
     await chooseAssistant("写作助手", "对话 B");
     expect(container.querySelector('[aria-label="默认助手的对话"]')).toBeNull();
     expect(container.querySelector('[aria-label="写作助手的对话"]')).not.toBeNull();
@@ -245,11 +268,25 @@ describe("assistant workspace public behavior", () => {
       const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
       field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考强度（当前助手）"]')?.value).toBe("adaptive");
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前助手）"]')?.value).toBe("max");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考强度（当前助手）"]')?.value).toBe("default");
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前助手）"]')?.value).toBe("default");
     const restored = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(restored.assistants.find((item) => item.id === "default")?.defaultConfig.thinking).toMatchObject({
       "openai-responses": { choice: "high" }, "anthropic-native": { choice: "adaptive", effort: "max" },
+    });
+    await click("取消");
+    await click("编辑对话 对话 A");
+    for (const modelId of ["model-b", "model-a"]) {
+      await act(async () => {
+        const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
+        field.value = modelId; field.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="思考强度（当前会话）"]')?.value).toBe("default");
+    }
+    await click("保存对话");
+    const changed = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    expect(changed.conversations.find((item) => item.id === "current")?.settings?.config.thinking).toMatchObject({
+      "openai-responses": { choice: "default", budget: "" }, "anthropic-native": { choice: "default", effort: "default", budget: "" },
     });
   });
 
@@ -456,7 +493,7 @@ describe("assistant workspace public behavior", () => {
     await click("收起对话栏");
     expect(container.querySelector(".conversation-cascade-pane")).toBeNull();
     expect(container.querySelector(".chat-navigation-pane")).not.toBeNull();
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("对话 B");
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toContain("对话 B");
     expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled).toBe(false);
   });
 
@@ -474,7 +511,7 @@ describe("assistant workspace public behavior", () => {
     await chooseAssistant("写作助手", "对话 B");
     await act(async () => root.unmount()); root = createRoot(container);
     await act(async () => root.render(<App />));
-    await wait(() => container.querySelector(".chat-header-copy")?.textContent?.includes("对话 B") === true);
+    await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.includes("对话 B") === true);
   });
 
   it("keeps a stream bound to its origin while another assistant is selected, including its terminal save", async () => {
@@ -504,7 +541,7 @@ describe("assistant workspace public behavior", () => {
   it("opens assistant actions without navigating and supports keyboard dismissal and ordering", async () => {
     await click("默认助手");
     await click("管理助手 写作助手");
-    expect(container.querySelector('.chat-header-copy')?.textContent).toContain("对话 A");
+    expect(container.querySelector('.workspace-conversation-title')?.textContent).toContain("对话 A");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("编辑助手 写作助手");
     await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
     expect(document.activeElement?.getAttribute("aria-label")).toBe("上移助手 写作助手");
@@ -585,16 +622,16 @@ describe("assistant workspace public behavior", () => {
     if (!container.querySelector('[aria-label="助手列表"]')) await click("助手与对话");
     await click("默认助手");
     await click("新建对话");
-    await wait(() => container.querySelector(".chat-header-copy")?.textContent?.startsWith("新对话") === true);
+    await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.startsWith("新对话") === true);
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="默认助手"]')?.disabled === false);
     expect(container.querySelector(".conversation-cascade-pane")).not.toBeNull();
     await wait(() => !container.querySelector<HTMLButtonElement>('[aria-label="编辑对话 新对话"]')?.disabled);
     await click("编辑对话 新对话"); await fill("#conversation-title", "新建验收"); await click("保存对话");
-    await wait(() => container.querySelector(".chat-header-copy")?.textContent?.startsWith("新建验收") === true);
+    await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.startsWith("新建验收") === true);
     await click("删除对话 新建验收"); await click("取消");
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("新建验收");
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toContain("新建验收");
     await click("删除对话 新建验收"); await click("确认永久删除对话");
-    await wait(() => container.querySelector(".chat-header-copy")?.textContent?.startsWith("对话 A") === true);
+    await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.startsWith("对话 A") === true);
   });
 
   it("keeps existing conversations independent of later assistant edits", async () => {
