@@ -9,6 +9,9 @@ export type ChatRole = "system" | "user" | "assistant";
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  search?: import("./nativeSearch").SearchRecord;
+  providerReplay?: import("./nativeSearch").ProviderReplay;
+  attachments?: Array<import("./attachments").SentAttachment | import("./attachments").RequestAttachment>;
 }
 
 export interface ChatRequest {
@@ -18,6 +21,8 @@ export interface ChatRequest {
   messages: ChatMessage[];
   signal?: AbortSignal;
   maxOutputTokens?: number;
+  config?: import("./sessionConfig").SessionConfig;
+  replayScope?: string;
 }
 
 export interface TokenUsage {
@@ -42,6 +47,9 @@ export interface ChatFailure {
 
 export type ChatEvent =
   | { type: "text-delta"; text: string }
+  | { type: "thinking-delta"; text: string }
+  | { type: "search-update"; search: import("./nativeSearch").SearchRecord }
+  | { type: "provider-replay"; replay: import("./nativeSearch").ProviderReplay }
   | { type: "completed"; finishReason?: string; usage?: TokenUsage }
   | { type: "failed"; error: ChatFailure }
   | { type: "aborted" };
