@@ -31,8 +31,9 @@ export function thinkingOptions(protocol: ChatProtocol): ThinkingOptions {
   };
   return {
     choices: ["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"],
-    summary: protocol === "openai-responses",
-    ...(protocol === "openai-chat" ? { summaryHint: "此客户端尚未接入 Chat Completions 的思考摘要扩展。" } : {}),
+    summary: true,
+    ...(protocol === "openai-chat" ? { summaryHint: "显示兼容服务返回的思考内容；OpenAI 官方 Chat Completions 不保证返回此内容。" } : {}),
+    ...(protocol === "openai-responses" ? { summaryHint: "显示服务返回的思考摘要或思考文本；OpenAI 官方模型通常仅提供摘要。" } : {}),
   };
 }
 

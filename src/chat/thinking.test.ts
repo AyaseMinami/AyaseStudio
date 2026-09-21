@@ -194,9 +194,111 @@ describe("readable summary decoding", () => {
     const events = await decode("anthropic-native", streaming ? anthropicEvents : anthropicResponse, streaming, false);
     expect(text(events, "thinking-delta")).toBe(""); expect(text(events, "text-delta")).toBe("answer");
   });
-  it("does not infer Chat compatible reasoning_content or turn literal answer tags into reasoning", async () => {
+  it("reads explicit Chat reasoning_content without interpreting literal answer tags", async () => {
     const events = await decode("openai-chat", { choices: [{ message: { content: "<think>literal answer</think>", reasoning_content: "unconfirmed extension" }, finish_reason: "stop" }] }, false);
-    expect(text(events, "thinking-delta")).toBe(""); expect(text(events, "text-delta")).toBe("<think>literal answer</think>");
+    expect(text(events, "thinking-delta")).toBe("unconfirmed extension"); expect(text(events, "text-delta")).toBe("<think>literal answer</think>");
+  });
+  it.each([true, false])("Chat stream=%s reads reasoning separately and honors display preference", async (streaming) => {
+    const payload = streaming ? [
+      { choices: [{ delta: { reasoning_content: "thought" }, finish_reason: null }] },
+      { choices: [{ delta: { content: "answer" }, finish_reason: "stop" }] },
+    ] : { choices: [{ message: { reasoning_content: "thought", content: "answer" }, finish_reason: "stop" }] };
+    for (const enabled of [true, false]) {
+      const events = await decode("openai-chat", payload, streaming, enabled);
+      expect(text(events, "thinking-delta")).toBe(enabled ? "thought" : "");
+      expect(text(events, "text-delta")).toBe("answer");
+      expect(events[events.length - 1]?.type).toBe("completed");
+    }
+  });
+  it.each(["", null])("preserves reasoning-only Chat responses with content=%s stopped by the output limit", async (content) => {
+    const events = await decode("openai-chat", { choices: [{ message: { content, reasoning_content: "unfinished thought" }, finish_reason: "length" }] }, false);
+    expect(text(events, "thinking-delta")).toBe("unfinished thought");
+    expect(events[events.length - 1]).toMatchObject({ type: "completed", finishReason: "length" });
+  });
+  it("preserves Chat refusal text when content is empty", async () => {
+    const events = await decode("openai-chat", { choices: [{ message: { content: "", refusal: "cannot answer" }, finish_reason: "stop" }] }, false);
+    expect(text(events, "text-delta")).toBe("cannot answer");
+  });
+  it.each([true, false])("rejects malformed Chat reasoning when display is enabled, stream=%s", async (streaming) => {
+    const payload = streaming ? [{ choices: [{ delta: { reasoning_content: 42 }, finish_reason: "stop" }] }]
+      : { choices: [{ message: { content: "answer", reasoning_content: 42 }, finish_reason: "stop" }] };
+    const events = await decode("openai-chat", payload, streaming);
+    expect(events[events.length - 1]).toMatchObject({ type: "failed", error: { kind: "protocol" } });
+  });
+  it.each([true, false])("Responses stream=%s reads reasoning_text without duplicate final snapshots", async (streaming) => {
+    const item = { id: "r", type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "thought" }], encrypted_content: "opaque" };
+    const response = { ...fullResponse(), output: [item, fullResponse().output[1]] };
+    const payload = streaming ? [
+      { type: "response.reasoning_text.delta", item_id: "r", content_index: 0, delta: "tho", sequence_number: 1 },
+      { type: "response.reasoning_text.delta", item_id: "r", content_index: 0, delta: "tho", sequence_number: 1 },
+      { type: "response.reasoning_text.done", item_id: "r", content_index: 0, text: "thought", sequence_number: 2 },
+      { type: "response.output_item.done", item, sequence_number: 3 },
+      { type: "response.output_text.delta", delta: "answer", sequence_number: 4 },
+      { type: "response.completed", response, sequence_number: 5 },
+    ] : response;
+    for (const enabled of [true, false]) {
+      const events = await decode("openai-responses", payload, streaming, enabled);
+      expect(text(events, "thinking-delta")).toBe(enabled ? "thought" : "");
+      expect(text(events, "text-delta")).toBe("answer");
+      expect(JSON.stringify(events)).not.toContain("opaque");
+      expect(events[events.length - 1]?.type).toBe("completed");
+    }
+  });
+  it("keeps Responses summary and content indexes independent", async () => {
+    const response = fullResponse();
+    Object.assign(response.output[0], { content: [{ type: "reasoning_text", text: "thought" }] });
+    expect(text(await decode("openai-responses", response, false), "thinking-delta")).toBe("summary\n\nthought");
+  });
+  it("finishes streamed reasoning before appending a summary first seen in the terminal snapshot", async () => {
+    const response = fullResponse();
+    Object.assign(response.output[0], { content: [{ type: "reasoning_text", text: "thought" }] });
+    const events = await decode("openai-responses", [
+      { type: "response.reasoning_text.delta", item_id: "r", content_index: 0, delta: "tho", sequence_number: 1 },
+      { type: "response.completed", response, sequence_number: 2 },
+    ]);
+    expect(text(events, "thinking-delta")).toBe("thought\n\nsummary");
+  });
+  it("reconciles repeated genuine reasoning tokens with a terminal-only snapshot", async () => {
+    const response = fullResponse();
+    Object.assign(response.output[0], { summary: [], content: [{ type: "reasoning_text", text: "haha!" }] });
+    const events = await decode("openai-responses", [
+      { type: "response.reasoning_text.delta", item_id: "r", content_index: 0, delta: "ha", sequence_number: 1 },
+      { type: "response.reasoning_text.delta", item_id: "r", content_index: 0, delta: "ha", sequence_number: 2 },
+      { type: "response.completed", response, sequence_number: 3 },
+    ]);
+    expect(text(events, "thinking-delta")).toBe("haha!");
+  });
+  it("retains reasoning text before malformed final data and produces one failure", async () => {
+    const events = await decode("openai-responses", [
+      { type: "response.reasoning_text.delta", item_id: "r", content_index: 0, delta: "partial", sequence_number: 1 },
+      { type: "response.reasoning_text.done", item_id: "r", content_index: 0, text: 42, sequence_number: 2 },
+    ]);
+    expect(text(events, "thinking-delta")).toBe("partial");
+    expect(events.filter(event => event.type === "failed")).toHaveLength(1);
+    expect(events[events.length - 1]).toMatchObject({ type: "failed", error: { kind: "protocol" } });
+  });
+  it("stops Chat immediately when cancelled during thinking, including a buffered answer", async () => {
+    const controller = new AbortController();
+    const events: ChatEvent[] = [];
+    const fetch = async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "partial", content: "must not arrive" }, finish_reason: "stop" }] })}\n\n`, { headers: { "content-type": "text/event-stream" } });
+    for await (const event of createChatTransport("openai-chat", { fetch }).stream({ ...request("openai-chat", "arbitrary", { includeSummary: true }), signal: controller.signal })) {
+      events.push(event);
+      if (event.type === "thinking-delta") controller.abort();
+    }
+    expect(events).toEqual([{ type: "thinking-delta", text: "partial" }, { type: "aborted" }]);
+  });
+  it.each(["openai-chat", "openai-responses"] as const)("%s stops a buffered non-streaming response after cancellation during thinking", async (protocol) => {
+    const controller = new AbortController();
+    const events: ChatEvent[] = [];
+    const response = protocol === "openai-chat"
+      ? { choices: [{ message: { reasoning_content: "partial", content: "must not arrive" }, finish_reason: "stop" }] }
+      : { ...fullResponse(), output: [{ ...reasoning("partial"), content: [{ type: "reasoning_text", text: "must not arrive" }] }, fullResponse().output[1]] };
+    const fetch = async () => new Response(JSON.stringify(response), { headers: { "content-type": "application/json" } });
+    for await (const event of createChatTransport(protocol, { fetch }).stream({ ...request(protocol, "arbitrary", { includeSummary: true }, false), signal: controller.signal })) {
+      events.push(event);
+      if (event.type === "thinking-delta") controller.abort();
+    }
+    expect(events).toEqual([{ type: "thinking-delta", text: "partial" }, { type: "aborted" }]);
   });
   it("excludes persisted summaries from all ordinary protocol histories", async () => {
     const plan = await planContextBudget([

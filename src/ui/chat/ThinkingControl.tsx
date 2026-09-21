@@ -76,7 +76,7 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
 
     </div>
     <div className="thinking-field"><label className="thinking-summary-toggle"><input type="checkbox" checked={capability.summary && settings.includeSummary}
-      disabled={disabled || !capability.summary} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考摘要</label>
+      disabled={disabled || !capability.summary} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考内容</label>
     </div>
     {capability.efforts && <div className="thinking-field"><label className="thinking-select"><span>思考力度</span><select aria-label={`思考力度（${scope}）`}
       disabled={disabled} value={settings.effort ?? "default"} onChange={(event) => onChange({ ...settings, effort: event.target.value as ThinkingSettings["effort"] })}>

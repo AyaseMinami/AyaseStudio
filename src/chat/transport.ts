@@ -15,6 +15,15 @@ import type {
   ChatTransportDependencies,
 } from "./types";
 
+// Documented compatible-service extension; never infer reasoning from answer text.
+function* chatThinking(value: unknown, enabled: boolean): Iterable<ChatEvent> {
+  if (!enabled || !value || typeof value !== "object" || !("reasoning_content" in value)) return;
+  const text = value.reasoning_content;
+  if (text == null) return;
+  if (typeof text !== "string") throw new SyntaxError("Chat reasoning_content is malformed");
+  if (text) yield { type: "thinking-delta", text };
+}
+
 class HttpStatusError extends Error {
   constructor(
     readonly status: number,
@@ -197,11 +206,16 @@ class OpenAIChatTransport implements ChatTransport {
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         const choice = response.choices?.[0];
         search.openAI(choice?.message as unknown);
-        const text = choice?.message?.content || choice?.message?.refusal;
+        const message = choice?.message;
+        const content = message?.content;
+        const hasReasoning = message && "reasoning_content" in message && typeof message.reasoning_content === "string";
+        const text = content || message?.refusal || (content === null && hasReasoning ? "" : content);
         if (!choice || typeof text !== "string" || !choice.finish_reason) {
           yield { type: "failed", error: { kind: "protocol", message: "Chat Completions response is malformed", retryable: false } };
           return;
         }
+        yield* chatThinking(choice.message, includeThinkingSummary(request.config, "openai-chat"));
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         if (text) yield { type: "text-delta", text };
         const update = search.complete(); if (update) yield { type: "search-update", search: update };
         yield {
@@ -218,7 +232,10 @@ class OpenAIChatTransport implements ChatTransport {
       let finishReason: string | undefined;
 
       for await (const chunk of stream) {
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         for (const choice of chunk.choices) {
+          yield* chatThinking(choice.delta, includeThinkingSummary(request.config, "openai-chat"));
+          if (request.signal?.aborted) { yield { type: "aborted" }; return; }
           search.openAI(choice.delta as unknown);
           const searchUpdate = search.snapshot(); if (searchUpdate) yield { type: "search-update", search: searchUpdate };
           if (choice.delta.content) {
@@ -288,7 +305,10 @@ class OpenAIResponsesTransport implements ChatTransport {
           { signal: request.signal },
         );
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
-        yield* thinking.output(response.output);
+        for (const event of thinking.output(response.output)) {
+          yield event;
+          if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        }
         search.openAIOutput(response.output);
         if (response.status === "failed") {
           yield { type: "failed", error: providerFailure(response.error?.code ?? null, response.error?.message ?? "Provider failed to generate a response", response.error, request.apiKey) };
@@ -323,7 +343,10 @@ class OpenAIResponsesTransport implements ChatTransport {
           .sort(([a], [b]) => a - b).reduce((partTotal, [partIndex, text]) => partTotal + ((index < outputIndex || index === outputIndex && partIndex < contentIndex) ? text.length : 0), 0), 0);
       for await (const event of stream) {
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
-        yield* thinking.event(event);
+        for (const thought of thinking.event(event)) {
+          yield thought;
+          if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        }
         if (event.type === "response.output_text.delta") {
           const raw = event as unknown as { output_index?: unknown; content_index?: unknown };
           const outputIndex = Number(raw.output_index ?? 0); const contentIndex = Number(raw.content_index ?? 0);

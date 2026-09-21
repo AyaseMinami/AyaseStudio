@@ -1,5 +1,19 @@
 # Ayase Studio Development Guide
 
+## Issue #39 现有 OpenAI 兼容协议修复
+
+2026-09-21：按用户本轮要求复用现有 Chat/Responses adapter，补齐 Chat `reasoning_content` 与 Responses `reasoning_text` 的本地显示；保留 OpenAI 官方摘要、显示开关、正文隔离和本地历史规则。用户将 #39 范围修订为修复现有协议，不新增协议或供应商模板，并确认按此范围验收关闭。DeepSeek Chat 关闭思考参数差异另由低优先级 [#40](https://github.com/AyaseMinami/AyaseStudio/issues/40) 跟踪，暂缓处理。OpenAI/DeepSeek 官方合同及参数差异见 [协议说明](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)。
+
+全量 420 项测试、TypeScript/Vite build、Rust check 通过；定向回归覆盖两个协议的流式/非流式思考字段、关闭显示、错误类型、摘要与内容索引隔离、重复终态快照、合法重复增量、思考期间停止、null/空正文输出截断及拒绝文本。最终快照先补齐正在显示的片段，再追加未出现过的摘要或内容，避免将摘要插入半截思考文本。构建仍提示现有大 chunk，不影响构建完成。
+
+使用用户授权的本地 DeepSeek 配置，通过实际 `ChatTransport` 与 Node fetch 请求模型目录及四个短生成请求。`deepseek-flash` 的 Chat/Responses × 流式/非流式均 HTTP 200，正文均为 `42`，思考字段在传输前后字符数分别一致（55/61/62/59），每次一个正常终态。未重试或自动改协议。该证据仅证明 DeepSeek 线路兼容，不代表 OpenAI 官方端点或 Tauri WebView 联网/桌面交互验收。
+
+尝试 `npm.cmd run tauri dev` 时原生目标编译完成，但 Vite 报 1420 端口已被占用；本轮未完成新增桌面烟雾验收，未停止已有应用或服务。
+
+随后用户确认桌面手动测试已通过，并授权提交、推送及关闭 #39。这是用户提供的桌面验收结果，不扩大为 OpenAI 官方端点的真实调用验收。
+
+本机凭据在 Git 忽略的 `.env.deepseek.local`，脱敏统计在 `.deepseek-probe.local/results.json`；这些本地文件不随仓库分发。现有 `probe:live` 仍读取 `.env.probe.local`，不会自动读取 DeepSeek 专用文件。不要将真实 Key 或完整思考文本加入报告。
+
 Issue #36 定向验证：`npm.cmd test -- src/chat/CodeBlock.test.tsx src/chat/SafeMarkdown.test.tsx src/ui/chat/SearchResults.test.tsx`，配合 `npm.cmd run build` 和 `git diff --check`。覆盖代码高亮、未知语言、逐段流式更新、原文复制（缩进、空行、CRLF、末尾换行）、复制失败与既有公式/引用安全边界。浏览器检查浅深主题及窄窗口的代码局部滚动；桌面剪贴板实际交互仍需桌面验收。本项不改变原生权限、存储或供应商协议。
 
 本指南用于在办公室、家里或新的 Windows 开发环境中稳定地继续 Ayase Studio 的开发。仓库中的锁文件是依赖版本的权威来源；真实 API Key 与本地运行产物不进入 Git。

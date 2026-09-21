@@ -4,12 +4,12 @@ import { getThinkingSettings, switchThinkingProtocol, withThinkingSettings } fro
 import { buildProtocolBody } from "./requestMapping";
 
 describe("protocol changes during model selection", () => {
-  it("clears unavailable budget and summary without reviving them when switching back", () => {
+  it("clears unavailable budget while preserving the shared thinking display preference", () => {
     const config = withThinkingSettings(defaultSessionConfig(), "gemini-native", { choice: "budget", budget: "2048", includeSummary: true });
     const chat = switchThinkingProtocol(config, "gemini-native", "openai-chat");
-    expect(getThinkingSettings(chat, "gemini-native")).toEqual({ choice: "default", budget: "", includeSummary: false });
+    expect(getThinkingSettings(chat, "gemini-native")).toEqual({ choice: "default", budget: "", includeSummary: true });
     const back = switchThinkingProtocol(chat, "openai-chat", "gemini-native");
-    expect(getThinkingSettings(back, "gemini-native")).toEqual({ choice: "default", budget: "", includeSummary: false });
+    expect(getThinkingSettings(back, "gemini-native")).toEqual({ choice: "default", budget: "", includeSummary: true });
   });
 
   it("keeps common controls and maps search and thinking only through the target protocol", () => {

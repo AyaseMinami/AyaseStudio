@@ -141,7 +141,7 @@ Issue #16 的 `thinking.ts` 为四协议控件提供协议选项、结构校验�
 
 供应商 HTTP 错误保留状态码和完整响应正文，流式错误保留错误载荷；凭据在 transport 内脱敏后进入中立错误事件，界面以文本展示。错误不会触发自动降级、删除参数或重试。
 
-Responses 的 `responseThinking.ts` 是 adapter 内部的摘要拼接器，按 item/summary 索引和事件序号协调增量与完整结果，避免 done、output item、terminal 重复添加内容。Anthropic 只接收 thinking block 的可读字段；签名、密文和 redacted block 不保存。每次生成拥有独立解码状态；adapter 和会话运行时均按冻结配置丢弃被关闭的摘要。普通无工具多轮仅回传正文，不增加供应商托管状态或结构化思考历史。
+Responses 的 `responseThinking.ts` 是 adapter 内部的思考文本拼接器，按 item、summary/content 类型、各自索引和事件序号协调增量与完整结果，避免 done、output item、terminal 重复添加内容。除官方 summary_text 外，也读取明确返回的 reasoning_text。Chat 在现有 adapter 中读取兼容服务的 reasoning_content 扩展，不增加供应商协议或模型白名单。Anthropic 只接收 thinking block 的可读字段；签名、密文和 redacted block 不保存。每次生成拥有独立解码状态；adapter 和会话运行时均按冻结配置丢弃被关闭的思考内容。普通无工具多轮仅回传正文，不增加供应商托管状态或结构化思考历史。
 
 界面只提交中立的聊天请求并消费中立事件。每个协议适配器独占以下知识：
 
@@ -308,7 +308,7 @@ Issue #5 附件草稿是同一按对话 ID 保留的会话内视图状态，只�
 
 对话标题的模型按钮打开 `ModelPicker`：仅搜索本地已配置模型，按供应商和连接分组，显示协议及当前选择，不拉目录、不测试、不自动生成。选择通过现有 `configure-conversation` 保存当前对话完整快照中的模型引用，助手模板及其他对话不变；模型唯一父连接决定协议、地址和凭据。生成中的请求仍使用冻结目标，切换仅影响下一次请求。
 
-思考选项仅依据 `thinkingOptions` 的协议契约，不按模型名推断。跨协议切换清除两端不共通的已选思考档位、预算、力度和摘要设置，切回不会复活不可用参数；共通选项保留各协议自己的值。同协议换模型保留参数。四协议均已提供联网映射，保留会话联网开关并由目标 adapter 生成对应字段。Chat Completions 的摘要复选框置灰。此实现遵循 #28 完成说明中的独立会话快照，取代 #21 旧正文的持续跟随助手语义。
+思考选项仅依据 `thinkingOptions` 的协议契约，不按模型名推断。跨协议切换清除两端不共通的已选思考档位、预算和力度，切回不会复活不可用参数；共通选项保留各协议自己的值，包括四协议都支持的本地思考显示偏好。同协议换模型保留参数。四协议均已提供联网映射，保留会话联网开关并由目标 adapter 生成对应字段。Chat Completions 的思考显示复选框可用，并注明内容取决于兼容服务是否返回。此实现遵循 #28 完成说明中的独立会话快照，取代 #21 旧正文的持续跟随助手语义。
 
 搜索通过 ChatTransport 的 `search-update` 与 `provider-replay` 事件进入会话。SearchRecord 是展示快照；Anthropic ProviderReplay 保留完整原始块，按连接 ID/地址隔离，仅在原协议回传。paused 消息携带冻结配置与初始历史；用户显式继续，普通后续消息仍按完整轮次裁剪。记录不含凭据。
 

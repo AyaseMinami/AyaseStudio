@@ -11,7 +11,7 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Incremental Markdown rendering and cancellation
 - Safe Markdown and LaTeX math in user messages, assistant replies, and thinking summaries, with locally bundled fonts
 - Provider-native web search toggle, inline citations, source lists, Gemini search suggestions, and explicit Anthropic pause continuation
-- Protocol-based thinking controls for arbitrary model IDs for all four protocols, with separate local summaries for Gemini, OpenAI Responses, and Anthropic; official Chat Completions has no readable-summary contract
+- Protocol-based thinking controls for arbitrary model IDs for all four protocols, with separate local thinking display: official Responses summaries, compatible Responses reasoning text, Chat `reasoning_content` extensions, Gemini, and Anthropic. Official OpenAI Chat Completions does not promise readable reasoning.
 - Normalized HTTP, network, protocol, and abort outcomes
 - Three-level supplier → connection → model configuration, including repeated protocols, per-connection model discovery/testing, persisted active-model selection, and deterministic legacy migration
 - Assistant templates with independent full conversation settings, compact settings dialogs, safe legacy migration, and Dexie persistence

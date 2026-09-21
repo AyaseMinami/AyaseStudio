@@ -17,6 +17,7 @@ it("streams summaries, folds for the answer, respects manual expansion and shows
   const render = async (update: Partial<StoredChatMessage>) => act(async () => root.render(<ThinkingSummary message={{ ...message, ...update }} />));
   try {
     await render({});
+    expect(host.querySelector("section")?.getAttribute("aria-label")).toBe("思考内容");
     expect(host.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
     expect(host.querySelector("script")).toBeNull();
     await render({ content: "answer" });
@@ -50,11 +51,11 @@ it("uses Anthropic choices and its independent effort selector", async () => {
     expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual([
       "default", "off", "adaptive", "budget", "default", "low", "medium", "high", "xhigh", "max",
     ]);
-    expect(host.textContent).toContain("显示思考摘要");
+    expect(host.textContent).toContain("显示思考内容");
   } finally { await act(async () => root.unmount()); }
 });
 
-it("keeps OpenAI Chat summary unavailable in the shared control", async () => {
+it("allows OpenAI Chat compatible reasoning display in the shared control", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div"); const root = createRoot(host);
   let changes = 0;
@@ -63,11 +64,12 @@ it("keeps OpenAI Chat summary unavailable in the shared control", async () => {
       value={{ ...defaultGeminiThinking, includeSummary: true }} disabled={false} onChange={() => { changes++; }} />));
     expect([...host.querySelectorAll("option")].map((option) => option.value)).toEqual(["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"]);
     const summary = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(summary?.disabled).toBe(true);
-    expect(summary?.checked).toBe(false);
+    expect(summary?.disabled).toBe(false);
+    expect(summary?.checked).toBe(true);
     await act(async () => summary?.click());
-    expect(changes).toBe(0);
-    expect(host.textContent).toContain("尚未接入 Chat Completions 的思考摘要扩展");
+    expect(changes).toBe(1);
+    expect(host.textContent).toContain("显示思考内容");
+    expect(host.textContent).toContain("OpenAI 官方 Chat Completions 不保证返回此内容");
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -85,7 +87,7 @@ it("keeps tools on one row and hides thinking settings until opened; supports ch
     const trigger = host.querySelector<HTMLButtonElement>('[aria-label="思考设置"]')!;
     expect(trigger.closest(".composer-tools")).toBe(host.querySelector('[aria-label="添加附件"]')?.parentElement);
     expect(host.querySelector('[role="dialog"]')).toBeNull();
-    expect(host.textContent).not.toContain("显示思考摘要");
+    expect(host.textContent).not.toContain("显示思考内容");
     await act(async () => trigger.click());
     expect(host.querySelector('[role="dialog"]')).not.toBeNull();
     expect(host.querySelector("select")).toBeNull();

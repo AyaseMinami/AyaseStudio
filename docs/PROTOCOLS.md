@@ -54,7 +54,7 @@ The UI previews the resolved endpoint but stores the configured value. Gemini ha
 ## Neutral events
 
 - `text-delta`: append text to the active assistant message.
-- `thinking-delta`: append provider-readable thought summary to a separate local display field (Gemini, Responses, Anthropic); never append to answer text or input history.
+- `thinking-delta`: append provider-readable reasoning or summary to a separate local display field (all four protocols); never append to answer text or input history.
 - `completed`: one successful terminal event, optionally carrying finish reason and token usage.
 - `failed`: one terminal event with normalized kind, message, HTTP status, and retryability.
 - `aborted`: one terminal event when the caller cancels.
@@ -98,7 +98,7 @@ Gemini 思考首版（2026-09-16）曾按精确型号提供选项。2026-09-19 �
 
 | 协议 | 思考选项与请求映射 | 摘要 |
 | --- | --- | --- |
-| OpenAI Chat | 关闭→`reasoning_effort: "none"`；minimal / low / medium / high / xhigh / max 原值发送 | 未接入兼容线路摘要扩展 |
+| OpenAI Chat | 关闭→`reasoning_effort: "none"`；minimal / low / medium / high / xhigh / max 原值发送 | 按显示偏好读取兼容服务的 `reasoning_content`；不增加请求字段 |
 | OpenAI Responses | 同样的强度写入 `reasoning.effort` | 显式开启时 `reasoning.summary: "auto"` |
 | Gemini Native | minimal / low / medium / high→`thinkingLevel`；动态→`thinkingBudget: -1`；关闭→0；自定义→输入整数 | 显式开启时 `includeThoughts: true` |
 | Anthropic Native | off→disabled；adaptive→adaptive；budget→enabled + `budget_tokens`；独立 low / medium / high / xhigh / max→`output_config.effort` | 显式思考模式下按偏好写入 summarized / omitted |
@@ -109,9 +109,13 @@ Gemini 思考首版（2026-09-16）曾按精确型号提供选项。2026-09-19 �
 
 思考配置按协议分区保存在每个对话的完整设置中，新建时从助手复制。输入区快捷修改只保存当前对话。切换模型或连接不重置参数，切换协议使用对应分区；发送使用冻结快照。未知型号不猜测支持能力或禁用控件。
 
-Responses 只解码 reasoning item 的 `summary_text`，协调 summary text delta/done、summary part done、output item done 与 terminal 完整快照；已显示部分不重复追加。相同文字但不同事件序号的合法增量保留。Anthropic 按 block index 路由 `thinking_delta`，处理初始 thinking block，忽略 signature、redacted 和不透明数据。非流式也使用独立中立摘要事件。关闭摘要时 adapter 与运行时都丢弃意外返回的片段；取消/失败保留此前已经显示并保存的可读部分。来源：[Responses 流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)、[Claude 流式 thinking](https://platform.claude.com/docs/en/build-with-claude/thinking#streaming-thinking)。
+Responses 解码 reasoning item 的 `summary[].summary_text` 与 `content[].reasoning_text`，协调各自 text delta/done、summary part done、output item done 与 terminal 完整快照；summary/content 的索引独立，已显示部分不重复追加。相同文字但不同事件序号的合法增量保留。Chat 在流式 `choices[].delta.reasoning_content` 和非流式 `choices[0].message.reasoning_content` 读取字符串扩展；缺失/null 忽略，开启显示时错误类型作为协议错误，不从正文 `<think>` 标签推断思考。Anthropic 按 block index 路由 `thinking_delta`，处理初始 thinking block，忽略 signature、redacted 和不透明数据。非流式也使用独立中立思考事件。关闭显示时 adapter 与运行时都丢弃意外返回的片段；取消/失败保留此前已经显示并保存的可读部分。来源：[Responses 流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)、[Claude 流式 thinking](https://platform.claude.com/docs/en/build-with-claude/thinking#streaming-thinking)。
 
-纯聊天、无工具调用的 Claude 多轮允许省略旧 thinking blocks；Ayase 只回传普通正文，不保存/回传签名或把展示摘要伪装成模型原始思考。工具调用轮次的完整 block 回传要求不属于本 Issue。参见 [Preserving thinking blocks](https://platform.claude.com/docs/en/build-with-claude/thinking#preserving-thinking-blocks)。未执行真实线路探针；没有新增中转站覆盖规则、自动降级或重试。
+2026-09-21 对照官方文档：OpenAI Responses 规范定义 reasoning_text 事件，但 [OpenAI 推理指南](https://developers.openai.com/api/docs/guides/reasoning) 对其托管模型提供的是可选摘要，不承诺公开原始思考；[Chat 官方参考](https://developers.openai.com/api/reference/resources/chat/subresources/completions) 未定义 reasoning_content。该 Chat 字段依据 [DeepSeek 思考文档](https://api-docs.deepseek.com/guides/thinking_mode/) 作为兼容扩展支持。[DeepSeek Responses](https://api-docs.deepseek.com/api/create-response/) 返回 reasoning_text，接受 summary 参数但不生成摘要。加密字段继续忽略，不回传本地展示文本。DeepSeek 的 Chat 关闭思考要求 thinking.type=disabled；当前通用 Chat 的 off 映射不等同于该供应商开关，本次仅修复返回内容显示，不改变通用请求合同或自动重写供应商参数。
+
+DeepSeek 配置可直接使用现有 OpenAI Chat 或 OpenAI Responses 连接，Base URL 填 `https://api.deepseek.com`，Key 填官方密钥，模型通过连接的模型目录读取后选择。#39 本轮按用户要求收窄为修复现有协议，未增加供应商模板；用户已确认桌面手测通过并要求按修订范围关闭。Chat 关闭思考参数差异由低优先级 [#40](https://github.com/AyaseMinami/AyaseStudio/issues/40) 跟踪，暂缓实施。
+
+纯聊天、无工具调用的 Claude 多轮允许省略旧 thinking blocks；Ayase 只回传普通正文，不保存/回传签名或把展示摘要伪装成模型原始思考。工具调用轮次的完整 block 回传要求不属于本 Issue。参见 [Preserving thinking blocks](https://platform.claude.com/docs/en/build-with-claude/thinking#preserving-thinking-blocks)。Issue #16 当时未执行真实线路探针；本轮 DeepSeek 实测见 DEVELOPMENT.md。没有新增中转站覆盖规则、自动降级或重试。
 
 The initial relay returned HTTP 200 and `text/event-stream` for all four streaming routes. OpenAI Responses also emitted non-standard `codex.rate_limits` and `codex.response.metadata` events. These are treated as optional unknown events; Ayase Studio depends only on standard terminal and text events.
 
