@@ -55,8 +55,11 @@ Tauri 打包使用 `src-tauri/icons` 中的 PNG、Windows `icon.ico` 和 macOS `
 已有 EXE 不会随资源文件自动更新，需重新构建；Windows 图标缓存可能延迟显示变化。
 正式安装包和任务栏外观需另行实机验收。
 
-Windows 完整打包统一运行 `npm.cmd run build:windows`，生成 EXE 安装程序和 MSI，
-输出位于 `src-tauri/target/release/bundle/nsis` 与 `bundle/msi`。
+当前 Alpha 阶段只发布 NSIS 安装程序（setup EXE），暂不发布 MSI。统一运行
+`npm.cmd run build:windows` 构建 NSIS 包，输出位于
+`src-tauri/target/release/bundle/nsis`。应用及安装包版本使用 `0.1.0-alpha.N`；
+若内部临时测试 MSI，Tauri 要求 MSI 预发布标识为数字，因此 alpha 字符串版本不能用于 MSI。
+仓库默认 bundle target 与打包脚本均限制为 NSIS。
 `bundle.windows.nsis.installerIcon` 和 `uninstallerIcon` 显式指向 `icons/icon.ico`；
 它们控制 NSIS 安装/卸载程序自身图标，区别于 `bundle.icon` 控制的应用图标。
 MSI 文件在资源管理器中通常显示 Windows Installer 的文件类型图标。

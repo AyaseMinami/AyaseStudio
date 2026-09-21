@@ -1,12 +1,12 @@
 {
   "name": "ayase-studio",
   "private": true,
-  "version": "0.1.0-1",
+  "version": "0.1.0-alpha.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:windows": "tauri build --bundles nsis,msi",
+    "build:windows": "tauri build --bundles nsis",
     "test": "vitest run --testTimeout 20000",
     "test:watch": "vitest",
     "probe:live": "vitest run --config vitest.live.config.ts",
