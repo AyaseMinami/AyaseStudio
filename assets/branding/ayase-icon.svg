@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Ayase Studio — folded ribbon A</title>
+  <defs>
+    <linearGradient id="background" x1="64" y1="64" x2="960" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38C7EF"/>
+      <stop offset="0.5" stop-color="#4779F0"/>
+      <stop offset="1" stop-color="#793CD6"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="160" fill="url(#background)"/>
+  <g transform="translate(64 64) scale(.896)" fill="#fff">
+    <path fill-rule="evenodd" d="M500 165 C535 165 558 191 578 231 L795 640 C744 605 705 589 659 601 C629 609 608 624 581 637 L296 786 C235 820 195 809 159 777 C121 746 114 699 138 657 L422 221 C443 185 466 165 500 165 Z M489 343 L325 602 C317 616 321 625 338 620 L599 535 L514 345 C508 331 498 330 489 343 Z"/>
+    <path d="M630 634 C686 610 720 620 812 676 L861 777 C876 801 864 812 844 812 L737 812 C720 812 710 807 704 794 Z"/>
+  </g>
+</svg>

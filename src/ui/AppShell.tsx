@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Bot, MessageSquare, Settings } from "lucide-react";
+import { MessageSquare, Settings } from "lucide-react";
+import appIcon from "../../assets/branding/ayase-icon.svg";
 
 export type AppPage = "chat" | "settings";
 
@@ -16,7 +17,7 @@ export function AppShell({
     <main className="app-shell">
       <aside className="app-navigation" aria-label="主要功能">
         <div className="app-navigation-brand" aria-label="Ayase Studio">
-          <Bot size={20} />
+          <img src={appIcon} width={40} height={40} alt="" />
         </div>
         <nav className="app-navigation-pages">
           <button

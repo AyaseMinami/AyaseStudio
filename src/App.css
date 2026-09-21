@@ -242,10 +242,6 @@ textarea:disabled {
   height: 2.5rem;
   flex-shrink: 0;
   place-items: center;
-  border-radius: 0.85rem;
-  background: rgb(var(--color-accent));
-  color: rgb(var(--color-on-accent));
-  box-shadow: 0 8px 20px rgb(var(--color-accent) / 0.22);
 }
 
 .app-navigation-pages {

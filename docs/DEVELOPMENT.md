@@ -29,6 +29,16 @@ Windows 旧开发数据需要同时处理以下两个目录：
 
 应用保存的是附件/背景稳定引用，原生层通过新的 `app_data_dir()` 重新解析路径；WebView 配置随整目录迁移。目录清单一致只证明文件未遗漏，启动成功也不能替代聊天恢复、配置、附件和背景的实际交互验收。开发 origin 与生产 origin 可能隔离存储，不能承诺开发聊天自动成为安装版聊天；安装版升级保留须使用同一发布标识与生产 origin 单独验证。未发布的旧开发版不能在迁移后继续使用，以免重新创建旧目录并形成两份数据。
 
+## Application icon
+
+图标母版为 `assets/branding/ayase-icon.svg`。应用导航与网页 favicon 直接引用该 SVG；
+Tauri 打包使用 `src-tauri/icons` 中的 PNG、Windows `icon.ico` 和 macOS `icon.icns`，
+路径已由 `src-tauri/tauri.conf.json` 的 `bundle.icon` 配置。
+修改母版后运行 `python assets/branding/export.py`（需要 Pillow 及已安装的项目 npm 依赖），
+统一重建预览、ICO 和现有桌面打包资源。不要只修改生成的某一张 PNG。
+已有 EXE 不会随资源文件自动更新，需重新构建；Windows 图标缓存可能延迟显示变化。
+正式安装包和任务栏外观需另行实机验收。
+
 ## Supported development environment
 
 Ayase Studio 当前以 Windows 桌面端为首要目标。按照 [Tauri 2 官方先决条件](https://v2.tauri.app/start/prerequisites/)，Windows 开发环境需要：
