@@ -1,5 +1,7 @@
 import { ImagePlus, Monitor, Moon, RotateCcw, Sun, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { BackgroundFocus } from "../../appearance/backgroundFocus";
+import { BackgroundImage, useViewportAspectRatio } from "./BackgroundImage";
 
 import type {
   BackgroundFit,
@@ -38,9 +40,13 @@ export interface AppearanceSettingsProps {
   resolvedTheme: ResolvedTheme;
   accentColor: string | null;
   canvasColor: string | null;
+  assistantBubbleColor: string | null;
+  assistantBubbleTransparency: number;
   effectiveAccentColor: string;
   effectiveCanvasColor: string;
   backgroundReference: string | null;
+  backgroundUrl: string | null;
+  backgroundFocus: BackgroundFocus | null;
   backgroundFit: BackgroundFit;
   backgroundMask: number;
   backgroundBlur: number;
@@ -50,6 +56,9 @@ export interface AppearanceSettingsProps {
   onThemeModeChange(themeMode: ThemeMode): void;
   onAccentColorChange(color: string | null): void;
   onCanvasColorChange(color: string | null): void;
+  onAssistantBubbleColorChange(color: string | null): void;
+  onAssistantBubbleTransparencyChange(value: number): void;
+  onEditBackgroundFocus(): void;
   onBackgroundFitChange(fit: BackgroundFit): void;
   onBackgroundMaskChange(mask: number): void;
   onBackgroundBlurChange(blur: number): void;
@@ -63,9 +72,13 @@ export function AppearanceSettings({
   resolvedTheme,
   accentColor,
   canvasColor,
+  assistantBubbleColor,
+  assistantBubbleTransparency,
   effectiveAccentColor,
   effectiveCanvasColor,
   backgroundReference,
+  backgroundUrl,
+  backgroundFocus,
   backgroundFit,
   backgroundMask,
   backgroundBlur,
@@ -75,6 +88,9 @@ export function AppearanceSettings({
   onThemeModeChange,
   onAccentColorChange,
   onCanvasColorChange,
+  onAssistantBubbleColorChange,
+  onAssistantBubbleTransparencyChange,
+  onEditBackgroundFocus,
   onBackgroundFitChange,
   onBackgroundMaskChange,
   onBackgroundBlurChange,
@@ -82,6 +98,7 @@ export function AppearanceSettings({
   onRemoveBackground,
   onResetCustomAppearance,
 }: AppearanceSettingsProps) {
+  const viewportAspectRatio = useViewportAspectRatio();
   return (
     <section className="settings-page" aria-labelledby="appearance-title">
       <div className="settings-page-heading">
@@ -156,20 +173,50 @@ export function AppearanceSettings({
       </fieldset>
 
       <fieldset className="settings-card appearance-section-card">
-        <legend>本地背景图片</legend>
+        <legend>助手回复气泡</legend>
+        <div className="appearance-color-grid">
+          <label className="appearance-color-field">
+            <span><strong>气泡背景色</strong><small>{assistantBubbleColor ? "自定义" : "主题默认"}</small></span>
+            <input aria-label="助手回复气泡颜色" type="color"
+              value={assistantBubbleColor ?? (resolvedTheme === "dark" ? "#292524" : "#f5f5f4")}
+              onChange={(event) => onAssistantBubbleColorChange(event.currentTarget.value)} />
+          </label>
+          <label className="appearance-range-field">
+            <span className="field-label">背景透明度 <output>{assistantBubbleTransparency}%</output></span>
+            <input aria-label="助手回复气泡透明度" type="range" min="0" max="100" step="1"
+              value={assistantBubbleTransparency}
+              onChange={(event) => onAssistantBubbleTransparencyChange(Number(event.currentTarget.value))} />
+          </label>
+        </div>
+        <p className="field-hint appearance-card-hint">0% 不透明，100% 完全透明。只改变助手气泡底色，文字与按钮保持原样；用户气泡仍跟随强调色。</p>
+        <button className="settings-button" type="button" disabled={!assistantBubbleColor}
+          onClick={() => onAssistantBubbleColorChange(null)}>气泡颜色跟随主题</button>
+      </fieldset>
+
+      <fieldset className="settings-card appearance-section-card">
+        <legend>聊天外观预览</legend>
         <div
           aria-label="背景图片预览"
           className="appearance-background-preview"
+          style={{ aspectRatio: viewportAspectRatio }}
           data-has-image={backgroundReference ? "true" : undefined}
         >
-          <div className="appearance-background-preview-mask" />
+          <div className="appearance-background-art"><BackgroundImage url={backgroundUrl} focus={backgroundFocus} fit={backgroundFit} /></div>
+          {backgroundUrl && <div className="appearance-background-preview-mask" />}
           <div className="appearance-background-preview-content">
             <span className="appearance-preview-badge">聊天画布预览</span>
-            <strong>{backgroundReference ? "本地背景已应用" : "当前使用纯色画布"}</strong>
-            <small>导航、消息和输入控件保持在可读表面之上。</small>
+            <small>{backgroundReference ? "本地背景已应用" : "当前使用纯色画布"}</small>
+            <div className="assistant-message assistant-bubble-preview">
+              <strong>这是一条助手回复</strong>
+              <p>气泡背景会随颜色和透明度设置即时变化。</p>
+              <small>文字和操作按钮不随背景变透明。</small>
+            </div>
           </div>
         </div>
+      </fieldset>
 
+      <fieldset className="settings-card appearance-section-card">
+        <legend>本地背景图片</legend>
         <div className="appearance-background-actions">
           <button
             className="settings-button settings-button-primary"
@@ -180,6 +227,10 @@ export function AppearanceSettings({
             <ImagePlus size={16} />
             {backgroundReference ? "替换本地图片" : "选择本地图片"}
           </button>
+          {backgroundReference && (
+            <button className="settings-button" disabled={backgroundBusy || !backgroundUrl}
+              onClick={onEditBackgroundFocus} type="button">调整取景中心</button>
+          )}
           {backgroundReference && (
             <button
               className="settings-button settings-button-danger"

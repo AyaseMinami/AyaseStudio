@@ -74,6 +74,7 @@
   --appearance-background-fit: cover;
   --appearance-background-mask: 0.65;
   --appearance-background-blur: 0px;
+  --appearance-background-scale: 1;
   color-scheme: dark;
   --font-caption: 0.75rem;
   --font-small: 0.8125rem;
@@ -186,23 +187,21 @@ textarea:disabled {
   color: rgb(var(--color-text));
 }
 
-.app-shell::before,
-.appearance-background-preview::before {
+.appearance-background-art {
   position: absolute;
-  inset: calc(var(--appearance-background-blur) * -2);
-  background-image: var(--appearance-background-image);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: var(--appearance-background-fit);
-  content: "";
+  inset: 0;
   filter: blur(var(--appearance-background-blur));
-  transform: scale(1.01);
+  transform: scale(var(--appearance-background-scale));
   pointer-events: none;
 }
 
-.app-shell::before {
+.app-shell > .app-background {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   z-index: 0;
   background-color: rgb(var(--color-canvas));
+  pointer-events: none;
 }
 
 .app-shell::after {
@@ -214,7 +213,6 @@ textarea:disabled {
   pointer-events: none;
 }
 
-:root:not([data-has-background="true"]) .app-shell::before,
 :root:not([data-has-background="true"]) .app-shell::after {
   display: none;
 }
@@ -1573,15 +1571,11 @@ textarea:disabled {
 .appearance-background-preview {
   position: relative;
   display: flex;
-  min-height: 9rem;
+  width: 100%;
   overflow: hidden;
   align-items: flex-end;
   border: 1px solid rgb(var(--color-border));
   border-radius: 0.85rem;
-  background-color: rgb(var(--color-canvas));
-}
-
-.appearance-background-preview::before {
   background-color: rgb(var(--color-canvas));
 }
 
@@ -1595,15 +1589,14 @@ textarea:disabled {
 .appearance-background-preview-content {
   position: relative;
   display: flex;
-  width: min(82%, 22rem);
+  width: min(90%, 28rem);
   flex-direction: column;
   gap: 0.25rem;
   margin: 0.8rem;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: 0.7rem;
-  background: rgb(var(--color-panel) / 0.94);
-  padding: 0.75rem;
-  box-shadow: 0 12px 28px rgb(var(--color-shadow) / 0.16);
+}
+
+:root[data-has-background="true"] .assistant-message:not(:has(.message-editor)) {
+  background: rgb(var(--color-assistant-bubble, var(--color-panel)) / var(--assistant-bubble-opacity, 0.94));
 }
 
 :root[data-has-background="true"] .assistant-message,
@@ -2019,7 +2012,7 @@ textarea:disabled {
 
 :root:not([data-has-background="true"]) .assistant-message:not(:has(.message-editor)) {
   border-radius: 0.9rem;
-  background: rgb(var(--color-elevated));
+  background: rgb(var(--color-assistant-bubble, var(--color-elevated)) / var(--assistant-bubble-opacity, 0.94));
   padding: 0.85rem 1rem;
 }
 

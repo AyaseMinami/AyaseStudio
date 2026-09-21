@@ -3,6 +3,8 @@ import "./App.css";
 import { useState } from "react";
 
 import { useAppearance } from "./appearance/useAppearance";
+import { BackgroundFocusDialog } from "./ui/settings/BackgroundFocusDialog";
+import { BackgroundImage } from "./ui/settings/BackgroundImage";
 import { useChatSession } from "./chat/useChatSession";
 import { getThinkingSettings } from "./chat/thinking";
 import { AppShell, type AppPage } from "./ui/AppShell";
@@ -32,7 +34,12 @@ function App() {
     : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 点击选择模型`;
 
   return (
-    <AppShell activePage={activePage} onPageChange={setActivePage}>
+    <AppShell activePage={activePage} onPageChange={setActivePage}
+      background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} /></div>}>
+      {appearance.backgroundDraft && <BackgroundFocusDialog
+        url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit}
+        onConfirm={(focus) => void appearance.confirmBackgroundFocus(focus)}
+        onCancel={() => void appearance.cancelBackgroundFocus()} />}
       {activePage === "chat" ? (
         <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingId={chat.generatingConversationId}
           toolbar={<ChatHeader key={chat.workspace.conversation?.id ?? "loading"} title={chat.workspace.conversation?.title ?? "新对话"}
@@ -84,9 +91,13 @@ function App() {
             resolvedTheme: appearance.resolvedTheme,
             accentColor: appearance.accentColor,
             canvasColor: appearance.canvasColor,
+            assistantBubbleColor: appearance.assistantBubbleColor,
+            assistantBubbleTransparency: appearance.assistantBubbleTransparency,
             effectiveAccentColor: appearance.effectiveAccentColor,
             effectiveCanvasColor: appearance.effectiveCanvasColor,
             backgroundReference: appearance.backgroundReference,
+            backgroundUrl: appearance.backgroundUrl,
+            backgroundFocus: appearance.backgroundFocus,
             backgroundFit: appearance.backgroundFit,
             backgroundMask: appearance.backgroundMask,
             backgroundBlur: appearance.backgroundBlur,
@@ -96,6 +107,9 @@ function App() {
             onThemeModeChange: appearance.setThemeMode,
             onAccentColorChange: appearance.setAccentColor,
             onCanvasColorChange: appearance.setCanvasColor,
+            onAssistantBubbleColorChange: appearance.setAssistantBubbleColor,
+            onAssistantBubbleTransparencyChange: appearance.setAssistantBubbleTransparency,
+            onEditBackgroundFocus: appearance.editBackgroundFocus,
             onBackgroundFitChange: appearance.setBackgroundFit,
             onBackgroundMaskChange: appearance.setBackgroundMask,
             onBackgroundBlurChange: appearance.setBackgroundBlur,

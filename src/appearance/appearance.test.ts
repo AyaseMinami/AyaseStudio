@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { centerBackgroundFocus } from "./backgroundFocus";
 
 import {
   APPEARANCE_STORAGE_KEY,
@@ -16,13 +17,17 @@ const expectedDefaultPreferences = {
   themeMode: "system" as const,
   accentColor: null,
   canvasColor: null,
+  assistantBubbleColor: null,
+  assistantBubbleTransparency: 6,
   backgroundReference: null,
+  backgroundFocus: null,
   backgroundFit: "cover" as const,
   backgroundMask: 65,
   backgroundBlur: 0,
 };
 
 const expectedDefaultRuntime = {
+  backgroundDraft: null,
   backgroundUrl: null,
   backgroundStatus: "none" as const,
   backgroundBusy: false,
@@ -74,6 +79,51 @@ function createThemeHarness(initiallyDark = false) {
 }
 
 describe("appearance preferences", () => {
+  it("persists independent bubble color and transparency including both endpoints, and resets them", async () => {
+    let saved: string | null = null;
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    const harness = createThemeHarness();
+    const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    controller.setAssistantBubbleColor("#123456");
+    controller.setAssistantBubbleTransparency(100);
+    expect(harness.styleProperties.get("--assistant-bubble-opacity")).toBe("0");
+    expect(harness.styleProperties.get("--color-assistant-bubble")).toBe("18 52 86");
+    expect(harness.styleProperties.has("--color-user-message")).toBe(false);
+    controller.setThemeMode("dark");
+    const restored = applyInitialAppearance({ storage, systemPrefersDark: false, target: harness.target });
+    expect(restored).toMatchObject({ assistantBubbleColor: "#123456", assistantBubbleTransparency: 100, backgroundMask: 65 });
+    controller.setAssistantBubbleTransparency(0);
+    expect(harness.styleProperties.get("--assistant-bubble-opacity")).toBe("1");
+    await controller.resetCustomAppearance();
+    expect(loadAppearancePreferences(storage)).toMatchObject({ assistantBubbleColor: null, assistantBubbleTransparency: 6, themeMode: "dark" });
+    expect(harness.styleProperties.has("--color-assistant-bubble")).toBe(false);
+  });
+
+  it("cancels imported drafts, restores saved crops, and recrops the original without changing other preferences", async () => {
+    const original = "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png";
+    const replacement = "backgrounds/abcdefab-cdef-4abc-8def-abcdefabcdef.jpg";
+    const focus = { x: 0.1, y: 0.2 };
+    let saved = JSON.stringify({ ...expectedDefaultPreferences, backgroundReference: original, backgroundFocus: focus, backgroundMask: 48, backgroundBlur: 9, backgroundFit: "contain", assistantBubbleColor: "#123456" });
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    const harness = createThemeHarness();
+    const cleanup = vi.fn(async (_references: readonly string[]) => undefined);
+    const selectAndImport = vi.fn(async () => ({ reference: replacement, url: "asset://replacement" }));
+    const resources = { cleanup, selectAndImport, resolve: async (reference: string) => ({ reference, url: "asset://original" }) };
+    const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target, backgroundResources: resources });
+    await controller.ready;
+    await controller.selectBackground();
+    await controller.cancelBackgroundFocus();
+    expect(controller.getSnapshot()).toMatchObject({ backgroundReference: original, backgroundFocus: focus, backgroundDraft: null });
+    expect(cleanup).toHaveBeenLastCalledWith([original]);
+    controller.editBackgroundFocus();
+    expect(controller.getSnapshot().backgroundDraft).toMatchObject({ reference: original, focus });
+    await controller.confirmBackgroundFocus(centerBackgroundFocus);
+    expect(selectAndImport).toHaveBeenCalledTimes(1);
+    const restarted = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target, backgroundResources: resources });
+    await restarted.ready;
+    expect(restarted.getSnapshot()).toMatchObject({ backgroundReference: original, backgroundFocus: centerBackgroundFocus, backgroundFit: "contain", backgroundMask: 48, backgroundBlur: 9, assistantBubbleColor: "#123456" });
+  });
+
   it("falls back to system theme when storage is empty", () => {
     const storage = {
       getItem: () => null,
@@ -95,6 +145,7 @@ describe("appearance preferences", () => {
     };
 
     expect(loadAppearancePreferences(storage)).toEqual({
+      ...expectedDefaultPreferences,
       themeMode: "dark",
       accentColor: null,
       canvasColor: null,
@@ -177,6 +228,7 @@ describe("appearance preferences", () => {
     };
 
     expect(loadAppearancePreferences(validStorage)).toEqual({
+      ...expectedDefaultPreferences,
       themeMode: "system",
       accentColor: "#a855f7",
       canvasColor: "#112233",
@@ -394,6 +446,12 @@ describe("appearance controller", () => {
     await controller.ready;
 
     await controller.selectBackground();
+
+    expect(controller.getSnapshot().backgroundReference).toBe(previousReference);
+    expect(controller.getSnapshot().backgroundDraft?.reference).toBe(nextReference);
+    expect(saved).toBe("");
+    expect(cleanupCalls).toEqual([[previousReference]]);
+    await controller.confirmBackgroundFocus(centerBackgroundFocus);
 
     expect(controller.getSnapshot()).toMatchObject({
       backgroundReference: nextReference,
@@ -701,6 +759,7 @@ describe("appearance controller", () => {
 
     await controller.selectBackground();
 
+    await controller.confirmBackgroundFocus(centerBackgroundFocus);
     expect(controller.getSnapshot().backgroundError).toBe(
       "背景已预览，但本机偏好暂时无法保存。",
     );
@@ -755,7 +814,8 @@ describe("appearance controller", () => {
     });
     await controller.ready;
 
-    const firstSelection = controller.selectBackground();
+    await controller.selectBackground();
+    const firstSelection = controller.confirmBackgroundFocus(centerBackgroundFocus);
     for (let attempt = 0; attempt < 10 && cleanupCalls.length < 2; attempt += 1) {
       await Promise.resolve();
     }
@@ -890,7 +950,9 @@ describe("appearance controller", () => {
     await controller.ready;
 
     await controller.selectBackground();
+    await controller.confirmBackgroundFocus(centerBackgroundFocus);
     await controller.selectBackground();
+    await controller.confirmBackgroundFocus(centerBackgroundFocus);
     await controller.removeBackground();
 
     expect(cleanupCalls).toEqual([

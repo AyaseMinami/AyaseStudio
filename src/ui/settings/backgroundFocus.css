@@ -1,0 +1,27 @@
+.background-image { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.background-crop-dialog { width: min(46rem, calc(100vw - 1.5rem)); height: min(44rem, calc(100dvh - 1.5rem)); max-height: none; margin: auto; padding: 0; overflow: hidden; border: 1px solid rgb(var(--color-border)); border-radius: .9rem; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); box-shadow: 0 1rem 3rem #0007; }
+.background-crop-dialog::backdrop { background: #0008; }
+.background-crop-scroll { min-height: 0; height: calc(100% - 4.25rem); overflow: auto; display: grid; grid-auto-rows: max-content; align-content: start; gap: 1rem; padding: 1.25rem; }
+.background-crop-dialog header { display: flex; gap: 1rem; align-items: start; justify-content: space-between; }
+.background-crop-dialog h2 { margin: 0; font-size: 1.15rem; }
+.background-crop-dialog p { margin: .35rem 0 0; color: rgb(var(--color-muted)); font-size: var(--font-small); }
+.background-crop-stage-wrap { overflow: hidden; display: grid; place-items: center; padding: .5rem; background: repeating-conic-gradient(#777 0 25%, #555 0 50%) 50% / 1rem 1rem; border-radius: .6rem; }
+.background-focus-editor { width: 100%; height: 20rem; touch-action: none; cursor: crosshair; }
+.background-focus-frame { fill: #ffffff10; stroke: white; stroke-width: 2px; cursor: move; }
+.background-crop-zoom, .background-crop-fields label { display: flex; align-items: center; gap: .6rem; }
+.background-crop-zoom input, .background-crop-fields input { flex: 1; min-width: 0; }
+.background-crop-zoom output { width: 3rem; text-align: right; color: rgb(var(--color-muted)); }
+.background-crop-fields input[type="number"] { width: 5rem; padding: .35rem; border: 1px solid rgb(var(--color-border)); border-radius: .4rem; background: rgb(var(--color-input)); }
+.background-crop-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1rem; min-width: 0; border: 1px solid rgb(var(--color-border)); border-radius: .6rem; padding: .6rem; }
+.background-crop-fields legend { padding: 0 .25rem; color: rgb(var(--color-muted)); font-size: var(--font-small); }
+.background-crop-preview { position: relative; isolation: isolate; overflow: hidden; display: grid; place-items: center; border-radius: .6rem; background: rgb(var(--color-canvas)); }
+.background-crop-preview-mask { position: absolute; inset: 0; z-index: 1; background: rgb(var(--color-canvas) / var(--appearance-background-mask)); pointer-events: none; }
+.background-crop-preview strong { position: relative; z-index: 2; padding: .35rem .55rem; border-radius: .4rem; background: rgb(var(--color-panel) / .82); }
+.background-crop-dialog footer { height: 4.25rem; display: flex; align-items: center; gap: .6rem; padding: .75rem 1.25rem; border-top: 1px solid rgb(var(--color-border)); }
+.background-crop-dialog footer span { flex: 1; }
+@media (max-width: 45rem), (max-height: 36rem) {
+  .background-crop-dialog { width: calc(100vw - .75rem); height: calc(100dvh - .75rem); }
+  .background-crop-scroll { padding: .85rem; }
+  .background-focus-editor { height: 15rem; }
+  .background-crop-dialog footer { padding: .6rem .85rem; }
+}

@@ -7,14 +7,17 @@ export type AppPage = "chat" | "settings";
 export function AppShell({
   activePage,
   children,
+  background,
   onPageChange,
 }: {
   activePage: AppPage;
   children: ReactNode;
+  background?: ReactNode;
   onPageChange(page: AppPage): void;
 }) {
   return (
     <main className="app-shell">
+      <div className="app-background" aria-hidden="true">{background}</div>
       <aside className="app-navigation" aria-label="主要功能">
         <div className="app-navigation-brand" aria-label="Ayase Studio">
           <img src={appIcon} width={40} height={40} alt="" />
