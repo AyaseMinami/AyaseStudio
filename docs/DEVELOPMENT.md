@@ -39,6 +39,15 @@ Tauri 打包使用 `src-tauri/icons` 中的 PNG、Windows `icon.ico` 和 macOS `
 已有 EXE 不会随资源文件自动更新，需重新构建；Windows 图标缓存可能延迟显示变化。
 正式安装包和任务栏外观需另行实机验收。
 
+Windows 完整打包统一运行 `npm.cmd run build:windows`，生成 EXE 安装程序和 MSI，
+输出位于 `src-tauri/target/release/bundle/nsis` 与 `bundle/msi`。
+`bundle.windows.nsis.installerIcon` 和 `uninstallerIcon` 显式指向 `icons/icon.ico`；
+它们控制 NSIS 安装/卸载程序自身图标，区别于 `bundle.icon` 控制的应用图标。
+MSI 文件在资源管理器中通常显示 Windows Installer 的文件类型图标。
+仅修改安装器配置且已有当前源码对应的 release 程序时，可运行
+`npm.cmd run tauri -- bundle --bundles nsis` 重新封装；此命令不编译源码，
+不能代替代码或应用资源变更后的完整打包。
+
 ## Supported development environment
 
 Ayase Studio 当前以 Windows 桌面端为首要目标。按照 [Tauri 2 官方先决条件](https://v2.tauri.app/start/prerequisites/)，Windows 开发环境需要：
