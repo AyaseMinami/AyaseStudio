@@ -10,6 +10,12 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## v0.1 scope
 
+### Issue #38 about and feedback
+
+后续样式确认：将问题与建议合并为一个“反馈与建议”入口，使用紧凑列表替代双卡片，移除宣传文案和装饰图标；此要求替代 Issue 原先区分两个入口的验收。邮箱保留展示与复制。
+
+按用户确认，设置中的“关于”页面承载应用信息及反馈，替代 Issue #38 原先的独立反馈页面。复用应用图标，版本读取 Tauri 配置，作者为 AyaseMinami；提供预填问题/建议的 GitHub 链接、可复制邮箱 ayasechikage@gmail.com、版本复制及项目主页。仅用户主动点击时打开链接或复制公开信息，不自动附带本地数据。许可证待确定后补充；当前邮箱入口仅支持复制，不启动邮件客户端。远端 Issue 未修改。
+
 - Ordinary Tauri 2 desktop window using React, TypeScript, Vite, and Tailwind CSS.
 - Plain-text multi-turn chat with streamed Markdown rendering.
 - Assistant presets used as templates for new conversations, independent full conversation settings, multiple saved conversations, and safe deletion.

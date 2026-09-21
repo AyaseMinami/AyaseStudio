@@ -81,6 +81,13 @@ const sharedProps = {
 };
 
 describe("SettingsWorkspace", () => {
+  it("shows about and feedback as a separate settings destination", () => {
+    const html = renderToStaticMarkup(<SettingsWorkspace {...sharedProps} activeSection="about" />);
+    expect(html).toMatch(/<button[^>]*aria-label="关于"[^>]*aria-current="page"/);
+    expect(html).toContain("反馈与建议");
+    expect(html).toContain("ayasechikage@gmail.com");
+    expect(html).not.toContain("API Key<input");
+  });
   it("shows the HTTP status and provider detail in a failed model test", () => {
     const html = renderToStaticMarkup(<SettingsWorkspace {...sharedProps} activeSection="connections"
       connection={{ ...sharedProps.connection, modelTests: { "model-example": {

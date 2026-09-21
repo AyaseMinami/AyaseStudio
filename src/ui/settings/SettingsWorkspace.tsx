@@ -1,4 +1,5 @@
-import { Palette, Server } from "lucide-react";
+import { Info, Palette, Server } from "lucide-react";
+import { AboutSettings } from "./AboutSettings";
 
 import {
   AppearanceSettings,
@@ -9,7 +10,7 @@ import {
   type ConnectionSettingsProps,
 } from "./ConnectionSettings";
 
-export type SettingsSection = "connections" | "appearance";
+export type SettingsSection = "connections" | "appearance" | "about";
 
 export interface SettingsWorkspaceProps {
   activeSection: SettingsSection;
@@ -29,7 +30,7 @@ export function SettingsWorkspace({
       <header className="settings-header">
         <div>
           <h1>设置</h1>
-          <p className="muted-text">管理连接与本机外观</p>
+          <p className="muted-text">管理连接、外观与应用信息</p>
         </div>
       </header>
 
@@ -61,6 +62,12 @@ export function SettingsWorkspace({
               <small>主题与显示偏好</small>
             </span>
           </button>
+          <button className="settings-navigation-button" aria-label="关于"
+            aria-current={activeSection === "about" ? "page" : undefined}
+            onClick={() => onSectionChange("about")} type="button">
+            <Info size={18} />
+            <span><strong>关于</strong><small>应用信息与反馈</small></span>
+          </button>
         </nav>
 
         <div
@@ -72,8 +79,10 @@ export function SettingsWorkspace({
         >
           {activeSection === "connections" ? (
             <ConnectionSettings {...connection} />
-          ) : (
+          ) : activeSection === "appearance" ? (
             <AppearanceSettings {...appearance} />
+          ) : (
+            <AboutSettings />
           )}
         </div>
       </div>

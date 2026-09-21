@@ -1,0 +1,38 @@
+.about-page { max-width: 680px; margin: 0 auto; font-size: var(--font-ui); line-height: 1.6; }
+.about-brand { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 20px 0 40px; }
+.about-brand h2 { font-size: 26px; font-weight: 600; line-height: 1.25; letter-spacing: -.6px; margin: 20px 0 10px; }
+.about-brand > p { color: rgb(var(--color-muted)); font-size: inherit; margin: 0; }
+.about-version { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: rgb(var(--color-muted)); font-size: var(--font-small); }
+.about-alpha { color: rgb(var(--color-accent-hover)); background: rgb(var(--color-accent) / .09); padding: 2px 8px; border-radius: 5px; }
+.about-version button, .about-email button { display: inline-flex; padding: 6px; cursor: pointer; border-radius: 5px; color: rgb(var(--color-muted)); }
+.about-version button:hover, .about-email button:hover { background: rgb(var(--color-hover)); color: rgb(var(--color-text)); }
+.about-feedback { border-block: 1px solid rgb(var(--color-border)); }
+.about-feedback-link, .about-email, .about-info-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 4px; font-size: inherit; }
+.about-feedback-link > span:first-child, .about-email > span:first-child, .about-info-row > span:first-child { font-weight: 500; }
+.about-feedback-row { padding-bottom: 20px; }
+.about-feedback-row .about-feedback-link { padding-bottom: 4px; }
+.about-feedback-note { margin: 0; padding: 0 4px; font-size: var(--font-caption); line-height: 1.6; color: rgb(var(--color-muted)); }
+.about-feedback-link { color: rgb(var(--color-text)); text-decoration: none; }
+.about-feedback-link:hover { color: rgb(var(--color-accent-hover)); }
+.about-link-detail, .about-email > div { display: flex; align-items: center; gap: 8px; font-size: inherit; color: rgb(var(--color-muted)); }
+.about-email { border-top: 1px solid rgb(var(--color-border) / .6); flex-wrap: wrap; }
+.about-email > div { position: relative; min-width: 0; }
+.about-email > div > span { overflow-wrap: anywhere; user-select: text; }
+.about-email button { flex-shrink: 0; }
+.about-footer { font-size: inherit; }
+.about-info-row { flex-wrap: wrap; border-bottom: 1px solid rgb(var(--color-border) / .6); }
+.about-footer-link { display: inline-flex; align-items: center; gap: 8px; }
+.about-footer a { color: rgb(var(--color-muted)); text-decoration: none; }
+.about-footer a:hover { color: rgb(var(--color-accent-hover)); }
+.about-notice { font-size: var(--font-caption); color: rgb(var(--color-muted)); margin-top: 10px; }
+.about-copy-anchor { position: relative; display: inline-flex; }
+.about-copy-notice, .about-email-notice { position: absolute; font-size: var(--font-caption); font-weight: 400; line-height: 20px; white-space: nowrap; color: rgb(var(--color-muted)); }
+.about-copy-notice { left: calc(100% + 6px); top: 50%; transform: translateY(-50%); }
+.about-email > div > .about-email-notice { right: 0; top: 100%; user-select: auto; }
+.about-page a:focus-visible, .about-page button:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .about-brand { padding: 8px 0 28px; }
+}
+@media (max-width: 480px) {
+  .about-copy-notice { left: auto; right: 0; top: 100%; transform: none; }
+}
