@@ -2225,6 +2225,21 @@ textarea:disabled {
   color: rgb(var(--color-code-block-text));
 }
 
+.code-block { min-width: 0; max-width: 100%; margin: 1em 0; overflow: hidden; border: 1px solid rgb(var(--color-border)); border-radius: 0.8rem; background: rgb(var(--color-code-block)); color: rgb(var(--color-code-block-text)); }
+.code-block-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid rgb(var(--color-border)); font-size: 12px; }
+.code-block-language { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-block-toolbar button { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; cursor: pointer; padding: 3px 5px; border-radius: 4px; }
+.code-block-toolbar button:hover { background: #ffffff18; }
+.code-block-toolbar button:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+.markdown .code-block pre { margin: 0; border: 0; border-radius: 0; max-width: 100%; white-space: pre; overflow-wrap: normal; }
+.code-block .hljs-comment, .code-block .hljs-quote { color: #a8a29e; }
+.code-block .hljs-keyword, .code-block .hljs-selector-tag, .code-block .hljs-literal { color: #c4b5fd; }
+.code-block .hljs-string, .code-block .hljs-regexp, .code-block .hljs-addition { color: #86efac; }
+.code-block .hljs-number, .code-block .hljs-attr, .code-block .hljs-variable, .code-block .hljs-template-variable { color: #fdba74; }
+.code-block .hljs-title, .code-block .hljs-built_in, .code-block .hljs-type { color: #7dd3fc; }
+.code-block .hljs-meta, .code-block .hljs-symbol, .code-block .hljs-bullet { color: #fde68a; }
+.code-block .hljs-deletion { color: #fca5a5; }
+
 .markdown blockquote {
   border-left: 3px solid rgb(var(--color-accent));
   padding-left: 0.9rem;

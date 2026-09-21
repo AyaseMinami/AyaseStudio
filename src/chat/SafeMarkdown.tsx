@@ -5,6 +5,9 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { remarkMathSyntax } from "./markdownMath";
+import { remarkCodeBlocks } from "./markdownCode";
+import { CodeBlock } from "./CodeBlock";
+import type { ExtraProps } from "react-markdown";
 
 import type { SearchRecord } from "./nativeSearch";
 import { openExternal, safeExternalUrl } from "./externalLinks";
@@ -138,13 +141,22 @@ function ExternalLink({ node: _node, href, children, ...props }: ComponentPropsW
   return <a {...props} href={url} onClick={open} onAuxClick={open}>{children}</a>;
 }
 
+function CodePre({ node, children, ...props }: ComponentPropsWithoutRef<"pre"> & ExtraProps) {
+  const code = node?.children.find((child) => child.type === "element" && child.tagName === "code");
+  if (code?.type === "element" && typeof code.properties["data-code-text"] === "string") {
+    return <CodeBlock code={code.properties["data-code-text"]} language={String(code.properties["data-code-language"] ?? "")} />;
+  }
+  return <pre {...props}>{children}</pre>;
+}
+
 export function SafeMarkdown({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
   const citations = validCitations(search, children);
-  const remarkPlugins = [remarkGfm, remarkMath, remarkMathSyntax,
+  const remarkPlugins = [remarkGfm, remarkMath, remarkMathSyntax, remarkCodeBlocks,
     ...(citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : []),
     () => (tree: unknown) => addSoftLineBreaks(tree)];
   return <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[[rehypeKatex, { trust: false, errorColor: "currentColor" }]]} components={{
     a: ExternalLink,
+    pre: CodePre,
     span: ({ node: _node, ...props }) => search ? CitationSpan(props, search) : <span {...props} />,
   }}>{children}</ReactMarkdown>;
 }

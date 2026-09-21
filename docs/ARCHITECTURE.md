@@ -1,5 +1,7 @@
 # Ayase Studio Architecture
 
+Issue #36：SafeMarkdown 通过 remarkCodeBlocks 保留代码节点的语言和复制文本，CodeBlock 负责语言标签、复制反馈与 lowlight 语法树的 React 渲染。常用语言和 PowerShell 本地打包，未知语言不自动检测，按纯文本显示；不注入 HTML、不执行代码。围栏内文本保留换行形式和末尾换行，列表/引用容器的缩进仍由 Markdown 解析器处理。高亮按代码与语言缓存，组件类型保持稳定，流式更新不重建代码块。代码区沿用两种主题下的深色底板，只有代码正文横向滚动；消息存储、整条消息复制和请求内容不变。
+
 聊天内容宽度由 App 持有的 `useChatLayout` 管理，以独立 localStorage 键 `ayase-studio.chat-layout.v1` 保存本机全局偏好。默认窄屏，宽/窄模式只通过聊天容器 CSS 变量同步约束消息列与输入框，不进入助手配置、会话数据库或请求。存储不可用时当前运行仍可切换。
 
 ## Purpose
