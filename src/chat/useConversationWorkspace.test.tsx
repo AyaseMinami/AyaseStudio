@@ -69,9 +69,9 @@ describe("workspace failure recovery", () => {
     expect(current.canSend()).toBe(false);
     expect(current.loadError).toContain("操作已保存");
     await act(async () => current.retry()); await wait(() => current.isReady);
-    expect(current.view.messages.map((item) => item.content)).toEqual(["edited"]);
+    expect(current.view.messages.map((item) => item.content)).toEqual(["edited", "discard"]);
     expect(current.view.draft).toBe("unsent");
-    expect((await repo.load("current"))?.messages).toHaveLength(1);
+    expect((await repo.load("current"))?.messages).toHaveLength(2);
   });
 
   it("never retains a deleted selection when loading its replacement fails", async () => {

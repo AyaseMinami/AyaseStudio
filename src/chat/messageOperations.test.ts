@@ -21,12 +21,13 @@ async function setup() {
 }
 
 describe("message operations and persisted branches", () => {
-  it.each(["u1", "a1"])("edits %s and truncates following messages, surviving restart", async (messageId) => {
+  it.each(["u1", "a1"])("edits only %s and preserves following messages, surviving restart", async (messageId) => {
     const { repo, name } = await setup();
     await repo.execute({ type: "edit-message", conversationId: "current", messageId, content: "**edited**" });
     const messages = (await createChatRepository(name).load("current"))!.messages;
-    expect(messages).toHaveLength(messageId === "u1" ? 1 : 2);
-    expect(messages[messages.length - 1]).toMatchObject({ id: messageId, content: "**edited**", editedAt: expect.any(Number) });
+    expect(messages.map((item) => item.id)).toEqual(history.map((item) => item.id));
+    expect(messages.find((item) => item.id === messageId)).toMatchObject({ id: messageId, content: "**edited**", editedAt: expect.any(Number) });
+    expect(messages.filter((item) => item.id !== messageId)).toEqual(history.filter((item) => item.id !== messageId));
     expect(messages[0].attachments).toEqual([attachment]);
   });
 

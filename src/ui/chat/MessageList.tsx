@@ -11,6 +11,7 @@ import { SearchResults } from "./SearchResults";
 
 export interface MessageActions {
   edit(id: string, content: string): Promise<boolean>;
+  editAndSend(id: string, content: string): Promise<boolean>;
   delete(id: string): Promise<boolean>;
   retry(id: string): Promise<void>;
   branch(id: string): Promise<boolean>;
@@ -38,9 +39,9 @@ function ConfirmationDialog({ confirmation, busy, disabled, error, onClose, onCo
     ? <>永久删除这条消息，无法撤销。</>
     : confirmation.kind === "retry"
       ? <>将移除这条提问之后的 {confirmation.removed} 条消息，并重新生成回复。旧回复不会保留。</>
-      : <>保存编辑将永久丢弃这条消息之后的 {confirmation.removed} 条消息，无法撤销。</>;
+      : <>保存并发送将永久移除这条提问之后的 {confirmation.removed} 条消息，并根据修改后的提问生成新回复，无法撤销。</>;
   const confirmLabel = confirmation.kind === "delete" ? "确认删除消息"
-    : confirmation.kind === "retry" ? "确认重新生成" : "确认保存编辑";
+    : confirmation.kind === "retry" ? "确认重新生成" : "确认保存并发送";
   const dialog = useRef<HTMLElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -111,8 +112,9 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
       void run(actionKey(value.kind, value.message.id), () => actions.retry(value.target.id));
       return;
     }
+    if (value.kind === "edit") setConfirmation(undefined);
     void run(actionKey(value.kind, value.message.id), async () => {
-      const changed = value.kind === "delete" ? await actions.delete(value.message.id) : await actions.edit(value.message.id, value.content);
+      const changed = value.kind === "delete" ? await actions.delete(value.message.id) : await actions.editAndSend(value.message.id, value.content);
       if (changed) { setConfirmation(undefined); setEditing(undefined); }
     });
   };
@@ -131,9 +133,14 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
           {isEditing ? <div className="message-editor"><label htmlFor={`message-edit-${message.id}`}>编辑消息</label>
             <textarea id={`message-edit-${message.id}`} value={editing.content} disabled={actionsDisabled || !!pending}
               onChange={(event) => setEditing({ ...editing, content: event.target.value })} />
+            <p className="message-editor-hint">保存仅修改这条消息，保留后续历史。{message.role === "user" && "保存并发送会移除后续历史并生成新回复。"}</p>
             <div><button type="button" disabled={!!pending} onClick={() => setEditing(undefined)}>取消</button>
               <button type="button" className="settings-button" disabled={actionsDisabled || !!pending}
-                onClick={() => setConfirmation({ kind: "edit", message, content: editing.content, removed: editRemoved })}>保存编辑</button></div>
+                onClick={() => void run(actionKey("edit", message.id), async () => {
+                  if (await actions!.edit(message.id, editing.content)) setEditing(undefined);
+                })}>保存</button>
+              {message.role === "user" && <button type="button" className="settings-button message-editor-send" disabled={actionsDisabled || !!pending}
+                onClick={() => setConfirmation({ kind: "edit", message, content: editing.content, removed: editRemoved })}>保存并发送</button>}</div>
           </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
               : <span className="subtle-text">（无文本输出）</span>) : message.content ? <SafeMarkdown>{message.content}</SafeMarkdown> : null}</>}

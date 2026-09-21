@@ -112,7 +112,7 @@ npm.cmd ci
 
 ## Local credentials and live probes
 
-Issue #14 的定向回归可运行 `npm.cmd test -- src/chat/messageOperations.test.ts src/chat/useChatSession.messages.test.tsx src/ui/chat/MessageList.test.tsx`。其中使用合成模型、附件存储与 transport，覆盖编辑/删除、截断重发、分支、配置与生成归属；不消费供应商 Token。配合 `npm.cmd run build` 做类型与打包检查。界面验收关注确认框、键盘访问、窄窗口、复制原文及分支后附件预览。
+Issue #14 / #37 的定向回归可运行 `npm.cmd test -- src/chat/messageOperations.test.ts src/chat/useChatSession.messages.test.tsx src/chat/useConversationWorkspace.test.tsx src/ui/chat/MessageList.test.tsx`。其中使用合成模型、附件存储与 transport，覆盖保存保留历史且不清理附件、编辑并发送、取消确认、截断重发、停止/失败、分支附件引用、配置与生成归属；不消费供应商 Token。配合 `npm.cmd run build` 做类型与打包检查。界面验收关注确认框、键盘访问、窄窗口、复制原文及分支后附件预览；消息编辑区还需检查黑色/深色、自定义背景和浅色主题下的文字、边框与按钮可读性。
 
 应用内连接的 API Key 保存在本机 WebView 的版本化 localStorage 配置中。供应商只是分组；每条连接独立保存名称、协议、Base URL 与 Key，并拥有自己的已添加模型列表。助手默认模型与当前对话模型引用分别保存在 Dexie 助手记录和对话完整快照中；发送通过对话模型所属连接原子地解析请求协议和凭据。旧全局模型 ID 仅作为首次助手迁移的输入。旧版单模型连接与 `ProviderProfiles` 会由应用确定性迁移，开发和测试不应手工复制其中的真实值。
 

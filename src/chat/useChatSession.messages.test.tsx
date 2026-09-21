@@ -76,6 +76,35 @@ describe("message actions through the session", () => {
     expect(sent?.messages[sent.messages.length - 1]?.content).toBe(source);
   });
 
+  it("saves an edit without generating or cleaning attachments and preserves later messages", async () => {
+    const original = session.messages;
+    runtime.cleanup.mockClear();
+    await act(async () => { expect(await session.editMessage("u2", "edited")).toBe(true); });
+    expect(session.messages.slice(3)).toEqual(original.slice(3));
+    expect(session.messages[2]).toMatchObject({ content: "edited", editedAt: expect.any(Number), attachments: [attachment] });
+    expect(runtime.cleanup).not.toHaveBeenCalled();
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    const persisted = (await repo.load("current"))!.messages;
+    expect(persisted.slice(3)).toEqual(history.slice(3));
+    expect(persisted[2]).toMatchObject({ content: "edited", editedAt: expect.any(Number), attachments: [attachment] });
+  });
+
+  it("edits and sends once, preserving shared attachments and the composer draft", async () => {
+    await repo.execute({ type: "fork-conversation", id: "shared", conversationId: "current", messageId: "a3",
+      creationConfig: { modelId: "m", config: session.sessionConfig } });
+    let request: ChatRequest | undefined;
+    respond((value) => { request = value; });
+    await act(async () => session.setDraft("unsent"));
+    await act(async () => { expect(await session.editAndSendMessage("u2", "changed")).toBe(true); });
+    expect(request?.messages.map((item) => item.content)).toEqual(["one", "old one", "changed"]);
+    expect(session.messages.map((item) => item.content)).toEqual(["one", "old one", "changed", "new answer"]);
+    expect(session.messages[2]).toMatchObject({ id: "u2", editedAt: expect.any(Number), attachments: [attachment] });
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+    expect(session.draft).toBe("unsent");
+    expect(runtime.cleanup).toHaveBeenLastCalledWith(expect.arrayContaining([attachment.reference, "attachments/truncated.txt"]), []);
+    expect((await repo.load("current"))?.messages).toEqual(session.messages);
+  });
+
   it("freezes overrides during generation and uses edited fields only for the next request", async () => {
     const requests: ChatRequest[] = [];
     let finish!: () => void;
@@ -211,14 +240,15 @@ describe("message actions through the session", () => {
   it("preserves the original transcript on failed preflight, then persists a provider failure without retry", async () => {
     const original = session.messages;
     runtime.read.mockRejectedValueOnce(new Error("missing attachment"));
-    await act(async () => session.retryMessage("a2"));
+    await act(async () => session.editAndSendMessage("u2", "changed"));
     expect(session.messages).toEqual(original);
     expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
     runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
       yield { type: "failed", error: { kind: "network", message: "ambiguous failure", retryable: true } };
     } } satisfies ChatTransport);
-    await act(async () => session.retryMessage("a2"));
+    await act(async () => session.editAndSendMessage("u2", "changed"));
     expect(session.messages).toHaveLength(4);
+    expect(session.messages[2]).toMatchObject({ content: "changed", editedAt: expect.any(Number) });
     expect(session.messages.slice(-1)[0]?.status).toBe("failed");
     expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
     expect((await repo.load("current"))?.messages.slice(-1)[0]?.status).toBe("failed");
@@ -233,13 +263,14 @@ describe("message actions through the session", () => {
       yield { type: "aborted" };
     } } satisfies ChatTransport);
     let sending!: Promise<void>;
-    await act(async () => { sending = session.retryMessage("u2"); });
+    await act(async () => { sending = session.editAndSendMessage("u2", "changed").then(() => {}); });
     await wait(() => !!request);
     await act(async () => {
       expect(await session.deleteMessage("u1")).toBe(false);
       expect(await session.editMessage("u1", "changed")).toBe(false);
       expect(await session.branchMessage("u1")).toBe(false);
       await session.retryMessage("u2");
+      expect(await session.editAndSendMessage("u2", "duplicate")).toBe(false);
     });
     await act(async () => session.workspace.execute({ type: "create-conversation", id: "elsewhere", assistantId: "default" }));
     await act(async () => session.setActiveModel("m2"));
@@ -247,6 +278,7 @@ describe("message actions through the session", () => {
     await act(async () => { session.stopGeneration(); await sending; });
     expect(session.messages).toEqual([]);
     expect((await repo.load("current"))?.messages.slice(-1)[0]).toMatchObject({ content: "partial", status: "aborted" });
+    expect((await repo.load("current"))?.messages[2]).toMatchObject({ content: "changed", editedAt: expect.any(Number) });
     expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
   });
 
@@ -267,13 +299,13 @@ describe("message actions through the session", () => {
     expect(request?.model).toBe("other-model");
     expect(session.workspace.conversation?.creationConfig?.modelId).toBe("m");
     await act(async () => { expect(await session.editMessage(session.messages[0].id, "changed")).toBe(true); });
-    expect(session.messages).toHaveLength(1);
+    expect(session.messages).toHaveLength(4);
     expect((await repo.load("current"))?.messages).toHaveLength(6);
     expect(await repo.attachmentReferences()).toContain(attachment.reference);
     expect(runtime.cleanup.mock.calls.slice(-1)[0]?.[0]).toContain(attachment.reference);
     await act(async () => session.workspace.execute({ type: "select", assistantId: "default", conversationId: "current" }));
     expect(session.messages).toHaveLength(6);
     await act(async () => session.workspace.execute({ type: "select", assistantId: "default", conversationId: branchId }));
-    expect(session.messages.map((item) => item.content)).toEqual(["changed"]);
+    expect(session.messages.map((item) => item.content)).toEqual(["changed", "old one", "two", "new answer"]);
   });
 });

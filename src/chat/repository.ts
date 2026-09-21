@@ -273,7 +273,7 @@ class DexieChatRepository implements WorkspaceRepository {
         case "fork-conversation": {
           const source = await requireConversation(action.conversationId);
           const chat = await db.chats.get(source.id);
-          const messages = withReplyLinks(chat?.messages ?? []);
+          const messages = action.type === "edit-message" ? chat?.messages ?? [] : withReplyLinks(chat?.messages ?? []);
           const index = messages.findIndex((message) => message.id === action.messageId);
           if (index < 0) throw new Error("消息不存在。");
           const now = Date.now();
@@ -296,7 +296,7 @@ class DexieChatRepository implements WorkspaceRepository {
               if (!action.content.trim() && !message.attachments?.length) throw new Error("消息正文不能为空。");
               next = [...messages.slice(0, index), { ...message, content: action.content, editedAt: now,
                 search: undefined, providerReplay: undefined, continuation: undefined,
-                status: message.status === "paused" ? "incomplete" : message.status }];
+                status: message.status === "paused" ? "incomplete" : message.status }, ...messages.slice(index + 1)];
             } else next = messages.filter((message) => message.id !== action.messageId).map((message) =>
               message.status === "paused" ? { ...message, status: "incomplete" as const, continuation: undefined } : message);
             await db.chats.put({ id: source.id, updatedAt: now, messages: next });

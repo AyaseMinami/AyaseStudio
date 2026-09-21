@@ -57,7 +57,7 @@ function App() {
           isHydrated={chat.isHydrated}
           isGenerating={chat.isGenerating}
           messages={chat.messages}
-          messageActions={{ edit: chat.editMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage, continue: chat.continueMessage }}
+          messageActions={{ edit: chat.editMessage, editAndSend: chat.editAndSendMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage, continue: chat.continueMessage }}
           messageActionsDisabled={!chat.isHydrated || chat.isGenerating}
           messageActionError={chat.workspace.operationError}
           modelId={chat.activeModel?.modelId}

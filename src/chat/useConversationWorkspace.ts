@@ -126,7 +126,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
           await loadView(id);
         }
         await publish(updated);
-        if (action.type === "edit-message" || action.type === "delete-message" ||
+        if (action.type === "delete-message" ||
           (affected.length && affected.some((affectedId) => !remaining.has(affectedId)))) {
           try { await cleanupAttachments?.(); }
           catch { if (alive.current) setOperationError("操作已保存，但附件副本整理失败；下次启动可重试。"); }

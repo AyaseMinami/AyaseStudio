@@ -606,10 +606,13 @@ export function useChatSession({
     testAbortControllers.current.get(modelId)?.abort();
   }
 
-  async function sendMessage(retryMessageId?: string, resumeMessageId?: string): Promise<void> {
+  async function sendMessage(retryMessageId?: string, resumeMessageId?: string, editedContent?: string): Promise<true | undefined> {
     const resume = resumeMessageId ? messages.find((message) => message.id === resumeMessageId && message.status === "paused") : undefined;
     if (resumeMessageId && (!resume?.continuation || !resume.providerReplay || messages[messages.length - 1]?.id !== resume.id)) return;
-    const targetUser = retryMessageId || resumeMessageId ? retryUser(messages, (retryMessageId ?? resumeMessageId)!) : undefined;
+    const originalUser = retryMessageId || resumeMessageId ? retryUser(messages, (retryMessageId ?? resumeMessageId)!) : undefined;
+    if (editedContent !== undefined && originalUser?.id !== retryMessageId) return;
+    const targetUser = originalUser && editedContent !== undefined
+      ? { ...originalUser, content: editedContent, editedAt: Date.now() } : originalUser;
     const content = targetUser ? targetUser.content : draft.trim();
     const frozenAttachments = retryMessageId || resumeMessageId ? [] : [...draftAttachments];
     const existingAttachments = targetUser?.attachments ?? [];
@@ -848,7 +851,7 @@ export function useChatSession({
       consumeSentDraft();
       if (targetUser) await cleanupAttachments().catch(() => setError("消息已保存，但附件副本整理失败；下次启动将重试。"));
       releaseBeforeNetwork();
-      return;
+      return true;
     }
     setMessages(workingMessages);
     consumeSentDraft();
@@ -981,6 +984,7 @@ export function useChatSession({
       abortRef.current = null;
       sendLockRef.current = false;
     }
+    return true;
   }
 
   function stopGeneration(): void {
@@ -1049,8 +1053,9 @@ export function useChatSession({
     editMessage,
     deleteMessage,
     branchMessage,
-    retryMessage: (id: string) => sendMessage(id),
-    continueMessage: (id: string) => sendMessage(undefined, id),
+    retryMessage: async (id: string): Promise<void> => { await sendMessage(id); },
+    editAndSendMessage: async (id: string, content: string): Promise<boolean> => !!(await sendMessage(id, undefined, content)),
+    continueMessage: async (id: string): Promise<void> => { await sendMessage(undefined, id); },
     connectionSettings: { ...connectionSettings, activeModelId: workspace.assistant?.defaultModelId ?? null },
     configErrors,
     contextPlan,
@@ -1074,7 +1079,7 @@ export function useChatSession({
     renameProvider: updateProviderName,
     moveProvider: moveProviderGroup,
     runModelTest,
-    sendMessage,
+    sendMessage: async (): Promise<void> => { await sendMessage(); },
     setDraft,
     sessionConfig,
     setThinking,

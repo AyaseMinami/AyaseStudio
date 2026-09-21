@@ -48,7 +48,7 @@ function setup(actions: Partial<MessageActions> = {}, actionsDisabled = false, o
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   const handlers: MessageActions = {
-    edit: vi.fn(async () => true), delete: vi.fn(async () => true), retry: vi.fn(async () => {}), branch: vi.fn(async () => true), ...actions,
+    edit: vi.fn(async () => true), editAndSend: vi.fn(async () => true), delete: vi.fn(async () => true), retry: vi.fn(async () => {}), branch: vi.fn(async () => true), ...actions,
   };
   const render = () => root.render(<div onKeyDown={onKeyDown}><MessageList messages={messages} actions={handlers} actionsDisabled={actionsDisabled} /></div>);
   return { host, root, handlers, render };
@@ -66,7 +66,7 @@ it("copies raw Markdown without rendering it first", async () => {
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it("cancels an edit, then requires confirmation before saving it", async () => {
+it("cancels an edit, then saves without a destructive confirmation", async () => {
   const { host, root, handlers, render } = setup();
   try {
     await act(async () => render());
@@ -82,9 +82,9 @@ it("cancels an edit, then requires confirmation before saving it", async () => {
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => host.querySelector<HTMLButtonElement>(".message-editor .settings-button")!.click());
-    expect(host.querySelector('[role="dialog"]')?.textContent).toContain("1 条消息");
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
     expect(handlers.edit).toHaveBeenCalledWith("user", "changed");
+    expect(handlers.editAndSend).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
@@ -128,10 +128,28 @@ it("keeps the edit draft open when saving reports no change", async () => {
     await act(async () => render());
     await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
     await act(async () => host.querySelector<HTMLButtonElement>(".message-editor .settings-button")!.click());
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
     expect(edit).toHaveBeenCalledWith("user", "**raw markdown**");
     expect(host.querySelector("textarea")?.value).toBe("**raw markdown**");
-    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("confirms edit and send only for user messages and supports cancelling the confirmation", async () => {
+  const { host, root, handlers, render } = setup();
+  try {
+    await act(async () => render());
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-send")!.click());
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain("1 条消息");
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-actions button")!.click());
+    expect(handlers.editAndSend).not.toHaveBeenCalled();
+    expect(host.querySelector("textarea")).not.toBeNull();
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-send")!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
+    expect(handlers.editAndSend).toHaveBeenCalledWith("user", "**raw markdown**");
+    expect(handlers.edit).not.toHaveBeenCalled();
+    await act(async () => host.querySelector<HTMLButtonElement>("article:nth-child(2) [aria-label='编辑']")!.click());
+    expect(host.querySelector(".message-editor-send")).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
