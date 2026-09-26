@@ -75,8 +75,9 @@ export function SentAttachmentPreview({ item, read, onClose }: {
         <button type="button" aria-label="关闭预览" onClick={onClose}><X size={18} /></button></div>
       {error && <p role="alert">{error}</p>}
       {!loaded && !error && <p role="status">正在读取附件…</p>}
-      {loaded?.mimeType.startsWith("image/") &&
+      {!error && loaded?.mimeType.startsWith("image/") &&
         <img className="attachment-preview-image" alt={loaded.name}
+          onError={() => setError("图片加载失败，无法预览。附件记录仍保持不变。")}
           src={`data:${loaded.mimeType};base64,${loaded.data}`} />}
       {loaded?.mimeType === "application/pdf" && <PdfPreview data={loaded.data} />}
       {loaded?.mimeType === "text/plain" && <pre className="attachment-preview-text">{safeTextAttachment(loaded.data)}</pre>}

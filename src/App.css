@@ -2362,11 +2362,14 @@ textarea:disabled {
 .chat-attachment-surface { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .chat-attachment-over { outline: 2px dashed rgb(var(--color-accent)); outline-offset: -0.4rem; }
 .chat-attachment-overlay { position: absolute; inset: 4rem 1rem 8rem; z-index: 15; display: grid; place-items: center; pointer-events: none; border: 2px dashed rgb(var(--color-accent)); border-radius: 1rem; background: rgb(var(--color-panel) / 0.92); color: rgb(var(--color-accent)); text-align: center; padding: 1rem; }
-.composer-attachments, .sent-attachment-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.35rem 0.6rem 0.6rem; }
-.composer-attachment, .sent-attachment-list button { display: inline-flex; align-items: center; max-width: 100%; gap: 0.35rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.5rem; background: rgb(var(--color-elevated)); color: rgb(var(--color-text)); font-size: var(--font-small); padding: 0.25rem 0.5rem; }
-.composer-attachment > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-thumbnail { width: 2.25rem; height: 2.25rem; flex-shrink: 0; object-fit: cover; border-radius: 0.3rem; }
+.sent-attachment-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.35rem 0.6rem 0.6rem; }
+.sent-attachment-list button { display: inline-flex; align-items: center; max-width: 100%; gap: 0.35rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.5rem; background: rgb(var(--color-elevated)); color: rgb(var(--color-text)); font-size: var(--font-small); padding: 0.25rem 0.5rem; }
+.composer-attachments { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.55rem 0.75rem 0; }
+.composer-attachment { display: inline-flex; align-items: center; min-width: 0; max-width: min(100%, 18rem); gap: 0.3rem; padding: 0 0.25rem 0 0.5rem; border-radius: 999px; background: rgb(var(--color-accent) / 0.12); color: rgb(var(--color-accent)); font-size: var(--font-small); line-height: 1.4; }
+.composer-attachment > svg { flex-shrink: 0; }
+.composer-attachment-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-add, .attachment-remove { display: inline-flex; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; color: rgb(var(--color-text-soft)); border-radius: 0.4rem; }
+.composer-attachment .attachment-remove { min-width: 1.5rem; min-height: 1.5rem; flex-shrink: 0; color: inherit; border-radius: 50%; }
 .attachment-add:hover, .attachment-remove:hover, .sent-attachment-list button:hover { color: rgb(var(--color-accent)); background: rgb(var(--color-accent) / 0.1); }
 .attachment-loading, .attachment-capability-notice { padding: 0.25rem 1.5rem; color: rgb(var(--color-warning-text)); font-size: var(--font-small); }
 .attachment-add:focus-visible, .attachment-remove:focus-visible, .sent-attachment-list button:focus-visible { outline: 2px solid rgb(var(--color-accent)); outline-offset: 2px; }

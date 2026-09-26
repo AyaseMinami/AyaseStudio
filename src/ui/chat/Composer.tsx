@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Paperclip, Send, Square, X } from "lucide-react";
+import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { FileImage, FileText, Paperclip, Send, Square, X } from "lucide-react";
 import type { DraftAttachment } from "../../chat/attachments";
 
 export interface ComposerProps {
@@ -18,17 +18,6 @@ export interface ComposerProps {
   onRemoveAttachment?(id: string): void;
   onSend(): void;
   onStop(): void;
-}
-
-function DraftImageThumbnail({ item }: { item: DraftAttachment }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    if (typeof URL.createObjectURL !== "function") return;
-    const next = URL.createObjectURL(item.file);
-    setUrl(next);
-    return () => URL.revokeObjectURL(next);
-  }, [item.file]);
-  return url ? <img className="composer-thumbnail" alt="" src={url} /> : null;
 }
 
 export function Composer({
@@ -73,6 +62,17 @@ export function Composer({
               onFiles?.([...(event.target.files ?? [])]);
               event.target.value = "";
             }} />
+          {!!draftAttachments.length && <div className="composer-attachments" aria-label="待发送附件">
+            {draftAttachments.map((item) => <span className="composer-attachment" key={item.id}
+              title={`${item.name} · ${item.mimeType} · ${(item.size / 1_000_000).toFixed(2)} MB`}>
+              {item.mimeType.startsWith("image/")
+                ? <FileImage size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
+              <span className="composer-attachment-name">{item.name}</span>
+              <button className="attachment-remove" type="button" aria-label={`移除附件 ${item.name}`}
+                disabled={!isHydrated}
+                onClick={() => onRemoveAttachment?.(item.id)}><X size={13} /></button>
+            </span>)}
+          </div>}
           <textarea
             className="composer-input"
             value={draft}
@@ -89,15 +89,6 @@ export function Composer({
             disabled={!isHydrated}
           />
           {attachmentBusy && <p className="attachment-loading" role="status">正在读取附件，完成后才能发送…</p>}
-          {!!draftAttachments.length && <div className="composer-attachments" aria-label="待发送附件">
-            {draftAttachments.map((item) => <span className="composer-attachment" key={item.id}>
-              {item.mimeType.startsWith("image/") && <DraftImageThumbnail item={item} />}
-              <span title={item.name}>{item.name} · {item.mimeType} · {(item.size / 1_000_000).toFixed(2)} MB</span>
-              <button className="attachment-remove" type="button" aria-label={`移除附件 ${item.name}`}
-                disabled={!isHydrated}
-                onClick={() => onRemoveAttachment?.(item.id)}><X size={14} /></button>
-            </span>)}
-          </div>}
           <div className="composer-toolbar">
             <div className="composer-tools" role="group" aria-label="聊天功能">
             <button className="composer-tool-button" type="button" aria-label="添加附件"
