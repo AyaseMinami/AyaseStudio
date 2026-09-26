@@ -216,13 +216,13 @@ const basePalette: Record<
   { accent: Rgb; canvas: Rgb; panel: Rgb; text: Rgb }
 > = {
   light: {
-    accent: [109, 40, 217],
+    accent: [96, 165, 250],
     canvas: [250, 250, 249],
     panel: [255, 255, 255],
     text: [28, 25, 23],
   },
   dark: {
-    accent: [124, 58, 237],
+    accent: [147, 197, 253],
     canvas: [12, 10, 9],
     panel: [28, 25, 23],
     text: [245, 245, 244],
@@ -239,6 +239,7 @@ const customizableProperties = [
   "--color-border-strong",
   "--color-shadow",
   "--color-accent",
+  "--color-accent-text",
   "--color-accent-hover",
   "--color-on-accent",
   "--color-user-message",
@@ -381,6 +382,7 @@ function deriveAppearanceVariables(
         ? darkText
         : lightText;
     variables.set("--color-accent", rgbValue(accent));
+    variables.set("--color-accent-text", rgbValue(accent));
     variables.set("--color-accent-hover", rgbValue(accentHover));
     variables.set("--color-on-accent", rgbValue(onAccent));
     variables.set("--color-user-message", rgbValue(accent));

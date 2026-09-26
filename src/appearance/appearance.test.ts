@@ -284,7 +284,7 @@ describe("appearance controller", () => {
       ...expectedDefaultPreferences,
       ...expectedDefaultRuntime,
       resolvedTheme: "light",
-      effectiveAccentColor: "#6d28d9",
+      effectiveAccentColor: "#60a5fa",
       effectiveCanvasColor: "#fafaf9",
       readabilityWarnings: [],
     });
@@ -323,7 +323,7 @@ describe("appearance controller", () => {
       ...expectedDefaultRuntime,
       themeMode: "light",
       resolvedTheme: "light",
-      effectiveAccentColor: "#6d28d9",
+      effectiveAccentColor: "#60a5fa",
       effectiveCanvasColor: "#fafaf9",
       readabilityWarnings: [],
     });

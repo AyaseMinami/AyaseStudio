@@ -39,6 +39,7 @@ import {
   resolveGenerationEndpoint,
   UrlResolutionError,
 } from "../../chat/urlResolution";
+import "./ConnectionSettings.css";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -251,7 +252,7 @@ function EntityActions({ kind, name, disabled, onRename, onDelete, onMove, canMo
           <input ref={input} className="compact-field" defaultValue={name} autoFocus required
             disabled={disabled} onBlur={saveName} />
         </label>
-        <button type="submit" className="settings-button" disabled={disabled}>完成</button>
+        <div className="connection-rename-footer"><button type="submit" className="settings-button" disabled={disabled}>完成</button></div>
       </form> : <button type="button" role="menuitem" disabled={disabled} onClick={() => setRenaming(true)}><Pencil size={15} />重命名</button>}
       {!renaming && onMove && <>
         <button type="button" role="menuitem" disabled={disabled || !canMoveUp} aria-label={`上移供应商 ${name}`}
@@ -338,11 +339,7 @@ export function ConnectionSettings({
         (candidate) => candidate.id === activeTarget?.provider.id,
       ) ?? connectionSettings.providers[0];
     setSelectedProviderId(provider?.id ?? null);
-    setSelectedConnectionId(
-      provider?.connections.find(
-        (connection) => connection.id === activeTarget?.connection.id,
-      )?.id ?? provider?.connections[0]?.id ?? null,
-    );
+    setSelectedConnectionId(null);
   }, [
     activeTarget?.connection.id,
     activeTarget?.provider.id,
@@ -351,22 +348,18 @@ export function ConnectionSettings({
   ]);
 
   useEffect(() => {
-    if (
-      selectedConnectionId &&
-      selectedProvider?.connections.some(
-        (connection) => connection.id === selectedConnectionId,
-      )
-    ) {
-      return;
-    }
-    setSelectedConnectionId(selectedProvider?.connections[0]?.id ?? null);
+    if (!selectedConnectionId) return;
+    if (selectedProvider?.connections.some((connection) => connection.id === selectedConnectionId)) return;
+    setSelectedConnectionId(null);
   }, [selectedConnectionId, selectedProvider]);
+
 
   useEffect(() => {
     setModelSearch("");
     setCatalogSearch("");
     setCatalogOpen(false);
     setEditingModelId(null);
+    setIsAddingModel(false);
     setFormError(undefined);
   }, [selectedConnectionId]);
 
@@ -456,17 +449,9 @@ export function ConnectionSettings({
   );
 
   function selectProvider(providerId: string): boolean {
-    if (providerId === selectedProviderId) return true;
-    if (providerId !== selectedProviderId && !confirmDiscardModelEdit()) return false;
-    const provider = connectionSettings.providers.find(
-      (candidate) => candidate.id === providerId,
-    );
+    if (!confirmDiscardModelEdit()) return false;
     setSelectedProviderId(providerId);
-    setSelectedConnectionId(
-      provider?.connections.find(
-        (connection) => connection.id === activeTarget?.connection.id,
-      )?.id ?? provider?.connections[0]?.id ?? null,
-    );
+    setSelectedConnectionId(null);
     setIsAddingConnection(false);
     return true;
   }
@@ -612,6 +597,8 @@ export function ConnectionSettings({
       onDeleteModel(model.id);
       if (adjacentModel) {
         setPendingFocus({ kind: "model", id: adjacentModel.id });
+      } else if (selectedConnection) {
+        setPendingFocus({ kind: "connection", id: selectedConnection.id });
       }
     }
   }
@@ -645,16 +632,52 @@ export function ConnectionSettings({
     await onRefreshModelCatalog(selectedConnection.id);
   }
 
+  function renderModelRow(model: ConfiguredModel) {
+    const current = model.id === connectionSettings.activeModelId;
+    const test = modelTests[model.id];
+    const testSummary = modelTestSummary(test);
+    return (
+      <div key={model.id} ref={(element) => {
+        if (element) modelRowRefs.current.set(model.id, element);
+        else modelRowRefs.current.delete(model.id);
+      }} className="model-row" data-active={current} tabIndex={-1}>
+        {editingModelId === model.id ? (
+          <form className="model-edit-form" onSubmit={(event) => handleEditModel(event, model)}>
+            <input className="compact-field" name="modelId" defaultValue={model.modelId} disabled={isStreaming} required />
+            <input className="compact-field" name="displayName" defaultValue={model.displayName ?? ""} placeholder="显示名称（可选）" disabled={isStreaming} />
+            <button type="submit" className="icon-button" aria-label={`保存模型 ${model.modelId}`} disabled={isStreaming}><Check size={15} /></button>
+            <button type="button" className="icon-button" aria-label={`取消编辑模型 ${model.modelId}`} onClick={() => setEditingModelId(null)}><X size={15} /></button>
+          </form>
+        ) : <>
+          <div className="model-row-copy">
+            <strong>{model.displayName || model.modelId}</strong>
+            {model.displayName ? <small>{model.modelId}</small> : null}
+            {current ? <span className="active-badge">助手默认模型</span> : null}
+            {testSummary ? <small className={`model-test-summary model-test-${test?.status}`}>{testSummary}</small> : null}
+          </div>
+          <div className="model-row-actions">
+            <button type="button" className="icon-button" aria-label={`设为助手默认模型 ${model.modelId}`} title="设为助手默认模型（用于新建对话）" disabled={isStreaming || current || !canSelectModel} onClick={() => onSelectModel(model.id)}>
+              {current ? <Check size={15} /> : <Square size={14} />}
+            </button>
+            <button type="button" className="icon-button" aria-label={`${test?.status === "running" ? "取消测试" : "测试模型"} ${model.modelId}`} title={test?.status === "running" ? "取消测试" : "测试模型"} disabled={isStreaming} onClick={() => test?.status === "running" ? onCancelModelTest(model.id) : void handleRunModelTest(model)}>
+              {test?.status === "running" ? <X size={15} /> : <Gauge size={15} />}
+            </button>
+            <button type="button" className="icon-button" aria-label={`编辑模型 ${model.modelId}`} title="编辑模型" disabled={isStreaming} onClick={() => beginModelEdit(model.id)}><Pencil size={14} /></button>
+            <button type="button" className="icon-button danger-icon-button" aria-label={`删除模型 ${model.modelId}`} title="删除模型" disabled={isStreaming} onClick={() => handleDeleteModel(model)}><Trash2 size={14} /></button>
+          </div>
+        </>}
+      </div>
+    );
+  }
+
   return (
     <section
-      className="settings-page connection-settings-page"
+      className="settings-page settings-workspace-page connection-settings-page"
       aria-labelledby="connection-title"
     >
       <div className="settings-page-heading connection-settings-heading">
-        <div>
           <h2 id="connection-title">连接配置</h2>
           <p className="muted-text">管理连接与模型，设置助手的新对话默认模型。</p>
-        </div>
       </div>
         <div className="connection-settings-workbench">
           <nav className="connection-tree" aria-label="供应商列表">
@@ -712,15 +735,20 @@ export function ConnectionSettings({
                     onDragEnd={() => { setDraggedProviderId(null); setProviderDrop(null); }}>
                     <GripVertical size={14} />
                   </button>
-                  <button type="button" className="connection-tree-provider" aria-label={provider.name}
+                  <button type="button" className="connection-tree-disclosure" aria-label={`${expanded ? "收起" : "展开"}供应商 ${provider.name}`}
                     aria-expanded={expanded} aria-controls={`provider-connections-${provider.id}`}
-                    ref={(element) => { if (element) providerRowRefs.current.set(provider.id, element); else providerRowRefs.current.delete(provider.id); }}
                     onClick={() => setCollapsedProviders((current) => {
                       const updated = new Set(current);
                       if (expanded) updated.add(provider.id); else updated.delete(provider.id);
                       return updated;
                     })}>
-                    <ChevronDown size={15} /><span title={provider.name}>{provider.name}</span><small>{provider.connections.length}</small>
+                    <ChevronDown size={15} />
+                  </button>
+                  <button type="button" className="connection-tree-provider" aria-label={provider.name}
+                    ref={(element) => { if (element) providerRowRefs.current.set(provider.id, element); else providerRowRefs.current.delete(provider.id); }}
+                    aria-current={selectedProviderId === provider.id && !selectedConnectionId ? "true" : undefined}
+                    onClick={() => { void selectProvider(provider.id); }}>
+                    <span title={provider.name}>{provider.name}</span><small>{provider.connections.length}</small>
                   </button>
                   <EntityActions kind="供应商" name={provider.name} disabled={isStreaming}
                     canMoveUp={index > 0} canMoveDown={index < connectionSettings.providers.length - 1}
@@ -732,17 +760,21 @@ export function ConnectionSettings({
                 </div>
                 <div id={`provider-connections-${provider.id}`} className="connection-tree-children" hidden={!expanded}
                   role="group" aria-label={`${provider.name}的连接渠道列表`}>
-                  {provider.connections.map((connection) => <div className="connection-tree-row" key={connection.id}>
-                    <button type="button" className="connection-tree-link" aria-label={`查看连接 ${connection.name}`}
-                      aria-current={selectedConnectionId === connection.id ? "true" : undefined}
-                      ref={(element) => { if (element) connectionRowRefs.current.set(connection.id, element); else connectionRowRefs.current.delete(connection.id); }}
-                      onClick={() => selectConnection(provider.id, connection.id)}>
-                      <span title={connection.name}>{connection.name}</span><small title={getProtocolOption(connection.protocol).label}>{getProtocolOption(connection.protocol).label}</small>
-                    </button>
-                    <EntityActions kind="连接" name={connection.name} disabled={isStreaming}
-                      onRename={(name) => onConnectionChange(connection.id, "name", name)}
-                      onDelete={() => handleDeleteConnection(provider, connection)} />
-                  </div>)}
+                  {provider.connections.map((connection) => {
+                    return <div className="connection-tree-connection" key={connection.id}>
+                      <div className="connection-tree-row">
+                        <button type="button" className="connection-tree-link" aria-label={`查看连接 ${connection.name}`}
+                          aria-current={selectedConnectionId === connection.id ? "true" : undefined}
+                          ref={(element) => { if (element) connectionRowRefs.current.set(connection.id, element); else connectionRowRefs.current.delete(connection.id); }}
+                          onClick={() => selectConnection(provider.id, connection.id)}>
+                          <span title={connection.name}>{connection.name}</span><small title={getProtocolOption(connection.protocol).label}>{getProtocolOption(connection.protocol).label}</small>
+                        </button>
+                        <EntityActions kind="连接" name={connection.name} disabled={isStreaming}
+                          onRename={(name) => onConnectionChange(connection.id, "name", name)}
+                          onDelete={() => handleDeleteConnection(provider, connection)} />
+                      </div>
+                    </div>;
+                  })}
                   <button className="connection-tree-add" type="button" disabled={isStreaming}
                     aria-label={`为 ${provider.name} 添加连接`} onClick={() => {
                       if (selectProvider(provider.id)) setIsAddingConnection(true);
@@ -823,7 +855,7 @@ export function ConnectionSettings({
               const protocol = getProtocolOption(connection.protocol);
               const preview = generationPreview(connection,
                 activeTarget?.connection.id === connection.id ? activeTarget.model.modelId : undefined, streamPreview);
-              return <div key={connection.id}>
+              return <div key={connection.id} >
                 <header className="connection-detail-heading">
                   <p className="muted-text">{selectedProvider?.name}</p>
                   <h3>{connection.name}</h3>
@@ -954,126 +986,7 @@ export function ConnectionSettings({
                           <strong>{group.label}</strong>
                           <span>{group.models.length}</span>
                         </header>
-                        {group.models.map((model) => {
-                          const current = model.id === connectionSettings.activeModelId;
-                          const test = modelTests[model.id];
-                          const testSummary = modelTestSummary(test);
-                          return (
-                            <div
-                              key={model.id}
-                              ref={(element) => {
-                                if (element) modelRowRefs.current.set(model.id, element);
-                                else modelRowRefs.current.delete(model.id);
-                              }}
-                              className="model-row"
-                              data-active={current}
-                              tabIndex={-1}
-                            >
-                              {editingModelId === model.id ? (
-                                <form
-                                  className="model-edit-form"
-                                  onSubmit={(event) => handleEditModel(event, model)}
-                                >
-                                  <input
-                                    className="compact-field"
-                                    name="modelId"
-                                    defaultValue={model.modelId}
-                                    disabled={isStreaming}
-                                    required
-                                  />
-                                  <input
-                                    className="compact-field"
-                                    name="displayName"
-                                    defaultValue={model.displayName ?? ""}
-                                    placeholder="显示名称（可选）"
-                                    disabled={isStreaming}
-                                  />
-                                  <button
-                                    type="submit"
-                                    className="icon-button"
-                                    aria-label={`保存模型 ${model.modelId}`}
-                                    disabled={isStreaming}
-                                  >
-                                    <Check size={15} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="icon-button"
-                                    aria-label={`取消编辑模型 ${model.modelId}`}
-                                    onClick={() => setEditingModelId(null)}
-                                  >
-                                    <X size={15} />
-                                  </button>
-                                </form>
-                              ) : (
-                                <>
-                                  <div className="model-row-copy">
-                                    <strong>{model.displayName || model.modelId}</strong>
-                                    {model.displayName ? <small>{model.modelId}</small> : null}
-                                    {current ? <span className="active-badge">助手默认模型</span> : null}
-                                    {testSummary ? (
-                                      <small
-                                        className={`model-test-summary model-test-${test?.status}`}
-                                      >
-                                        {testSummary}
-                                      </small>
-                                    ) : null}
-                                  </div>
-                                  <div className="model-row-actions">
-                                    <button
-                                      type="button"
-                                      className="icon-button"
-                                      aria-label={`设为助手默认模型 ${model.modelId}`}
-                                      title="设为助手默认模型（用于新建对话）"
-                                      disabled={isStreaming || current || !canSelectModel}
-                                      onClick={() => onSelectModel(model.id)}
-                                    >
-                                      {current ? <Check size={15} /> : <Square size={14} />}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="icon-button"
-                                      aria-label={`${test?.status === "running" ? "取消测试" : "测试模型"} ${model.modelId}`}
-                                      title={test?.status === "running" ? "取消测试" : "测试模型"}
-                                      disabled={isStreaming}
-                                      onClick={() =>
-                                        test?.status === "running"
-                                          ? onCancelModelTest(model.id)
-                                          : void handleRunModelTest(model)
-                                      }
-                                    >
-                                      {test?.status === "running" ? (
-                                        <X size={15} />
-                                      ) : (
-                                        <Gauge size={15} />
-                                      )}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="icon-button"
-                                      aria-label={`编辑模型 ${model.modelId}`}
-                                      title="编辑模型"
-                                      disabled={isStreaming}
-                                      onClick={() => beginModelEdit(model.id)}
-                                    >
-                                      <Pencil size={14} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="icon-button danger-icon-button"
-                                      aria-label={`删除模型 ${model.modelId}`}
-                                      title="删除模型"
-                                      disabled={isStreaming}
-                                      onClick={() => handleDeleteModel(model)}
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })}
+                        {group.models.map(renderModelRow)}
                       </section>
                     ))
                   ) : (
@@ -1085,8 +998,16 @@ export function ConnectionSettings({
                 </div>
                 </section>
               </div>;
-            })() : !isAddingConnection && (
-              <div className="pane-empty-state pane-empty-fill"><strong>{connectionSettings.providers.length ? "还没有连接" : "先添加供应商"}</strong><span>在供应商下添加连接，配置地址、密钥和模型。</span></div>
+            })() : selectedProvider && !isAddingConnection ? (
+              <div className="connection-provider-detail">
+                <p className="muted-text">供应商</p>
+                <h3>{selectedProvider.name}</h3>
+                <p className="muted-text">管理此供应商下的连接渠道。连接独立拥有协议、地址、密钥和模型。</p>
+                <button className="settings-button settings-button-primary" type="button" disabled={isStreaming}
+                  onClick={() => setIsAddingConnection(true)}><Plus size={15} />添加连接</button>
+              </div>
+            ) : !isAddingConnection && (
+              <div className="pane-empty-state pane-empty-fill"><strong>{connectionSettings.providers.length ? "选择供应商" : "先添加供应商"}</strong><span>在供应商下添加连接，配置地址、密钥和模型。</span></div>
             )}
           </section>
         </div>

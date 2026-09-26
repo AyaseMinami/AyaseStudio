@@ -123,7 +123,7 @@ export function ChatWorkspace({
       <Composer
         searchControl={onWebSearchChange ? <button type="button" className="composer-tool-button"
           aria-label="联网搜索" aria-pressed={webSearch ?? false}
-          style={webSearch ? { color: "rgb(var(--color-accent))", background: "rgb(var(--color-accent) / 0.1)" } : undefined}
+          style={webSearch ? { color: "rgb(var(--color-accent-text))", background: "rgb(var(--color-accent) / 0.1)" } : undefined}
           title={`${webSearch ? "已开启" : "已关闭"}：修改仅影响当前会话下次请求。允许模型按需联网，可能产生额外费用。搜索专用模型可能始终联网。`}
           disabled={!isHydrated} onClick={() => onWebSearchChange(!webSearch)}><Globe size={17} /></button> : undefined}
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl

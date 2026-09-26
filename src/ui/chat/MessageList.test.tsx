@@ -60,6 +60,10 @@ it("copies raw Markdown without rendering it first", async () => {
   const { host, root, render } = setup();
   try {
     await act(async () => render());
+    const copyButton = host.querySelector<HTMLButtonElement>("article:first-child [aria-label='复制']")!;
+    expect(copyButton.title).toBe("复制");
+    expect(copyButton.textContent).toBe("");
+    expect(copyButton.querySelector("svg")).not.toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='复制']")!.click());
     expect(writeText).toHaveBeenCalledWith("**raw markdown**");
     expect(host.textContent).toContain("已复制原始消息");

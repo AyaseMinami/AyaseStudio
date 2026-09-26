@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Copy, GitBranch, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Bot, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2 } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
 import { retryUser } from "../../chat/messageOperations";
@@ -28,8 +28,8 @@ function actionKey(kind: string, id: string) { return `${kind}:${id}`; }
 function MessageActionButton({ label, title, disabled, busy, onClick, children }: {
   label: string; title?: string; disabled?: boolean; busy?: boolean; onClick(): void; children: React.ReactNode;
 }) {
-  return <button type="button" className="message-action" aria-label={label} title={title ?? label}
-    disabled={disabled || busy} onClick={onClick}>{children}<span>{busy ? "处理中…" : label}</span></button>;
+  return <button type="button" className="message-action" aria-label={label} aria-busy={busy || undefined} title={busy ? `${label}：处理中…` : title ?? label}
+    disabled={disabled || busy} onClick={onClick}>{busy ? <LoaderCircle size={15} className="spin" aria-hidden="true" /> : children}</button>;
 }
 
 function ConfirmationDialog({ confirmation, busy, disabled, error, onClose, onConfirm }: {
