@@ -4,6 +4,7 @@ import type { BackgroundFocus } from "../../appearance/backgroundFocus";
 import type { BackgroundFit, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
 import { BackgroundImage, useViewportAspectRatio } from "./BackgroundImage";
 import "./AppearanceSettings.css";
+import { SettingsHelp } from "./SettingsHelp";
 
 const themeOptions: readonly { value: ThemeMode; label: string; description: string; icon: ReactNode }[] = [
   { value: "system", label: "跟随系统", description: "自动匹配 Windows 当前的浅色或深色设置。", icon: <Monitor size={16} /> },
@@ -58,8 +59,8 @@ export function AppearanceSettings({
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-colors-title">
       <GroupHeading id="appearance-colors-title" title="自定义配色">用于主要按钮、选中提示和聊天画布。</GroupHeading>
       <div className="appearance-rows">
-        <label className="appearance-row"><RowCopy title="强调色">{accentColor ? "自定义颜色" : "跟随主题默认颜色"}</RowCopy><input aria-label="自定义强调色" type="color" value={accentColor ?? effectiveAccentColor} onChange={(event) => onAccentColorChange(event.currentTarget.value)} /></label>
-        <label className="appearance-row"><RowCopy title="画布背景色">{canvasColor ? "自定义颜色" : "跟随主题默认颜色"}</RowCopy><input aria-label="自定义画布背景色" type="color" value={canvasColor ?? effectiveCanvasColor} onChange={(event) => onCanvasColorChange(event.currentTarget.value)} /></label>
+        <label className="appearance-row"><RowCopy title="强调色" /><input aria-label="自定义强调色" type="color" value={accentColor ?? effectiveAccentColor} onChange={(event) => onAccentColorChange(event.currentTarget.value)} /></label>
+        <label className="appearance-row"><RowCopy title="画布背景色" /><input aria-label="自定义画布背景色" type="color" value={canvasColor ?? effectiveCanvasColor} onChange={(event) => onCanvasColorChange(event.currentTarget.value)} /></label>
       </div>
       {readabilityWarnings.map((warning) => <p className="notice notice-warning appearance-inline-notice" key={warning}>{warning}</p>)}
     </section>
@@ -67,8 +68,8 @@ export function AppearanceSettings({
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-bubble-title">
       <GroupHeading id="appearance-bubble-title" title="助手回复">只改变助手气泡底色；用户气泡仍跟随强调色。</GroupHeading>
       <div className="appearance-rows">
-        <label className="appearance-row"><RowCopy title="气泡背景色">{assistantBubbleColor ? "自定义颜色" : "跟随主题默认颜色"}</RowCopy><input aria-label="助手回复气泡颜色" type="color" value={assistantBubbleColor ?? (resolvedTheme === "dark" ? "#292524" : "#f5f5f4")} onChange={(event) => onAssistantBubbleColorChange(event.currentTarget.value)} /></label>
-        <label className="appearance-row appearance-range-row"><RowCopy title="背景透明度">0% 不透明，100% 完全透明。</RowCopy><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="助手回复气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} max="100" min="0" /></label>
+        <label className="appearance-row"><RowCopy title="气泡背景色" /><input aria-label="助手回复气泡颜色" type="color" value={assistantBubbleColor ?? (resolvedTheme === "dark" ? "#292524" : "#f5f5f4")} onChange={(event) => onAssistantBubbleColorChange(event.currentTarget.value)} /></label>
+        <label className="appearance-row appearance-range-row"><RowCopy title="背景透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="助手回复气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} max="100" min="0" /></label>
       </div>
       <button className="settings-button appearance-secondary-action" type="button" disabled={!assistantBubbleColor} onClick={() => onAssistantBubbleColorChange(null)}>气泡颜色跟随主题</button>
     </section>
@@ -81,9 +82,9 @@ export function AppearanceSettings({
         {backgroundReference && <button className="settings-button settings-button-danger" disabled={backgroundBusy} onClick={() => void onRemoveBackground()} type="button"><Trash2 size={15} />移除背景</button>}
       </div>
       <div className="appearance-rows appearance-background-rows">
-        <label className="appearance-row"><RowCopy title="图片适配方式">{backgroundReference ? "选择图片在聊天画布中的显示方式。" : "选择图片后可调整。"}</RowCopy><select className="field" disabled={!backgroundReference || backgroundBusy} value={backgroundFit} onChange={(event) => onBackgroundFitChange(event.currentTarget.value as BackgroundFit)}><option value="cover">填充</option><option value="contain">适应</option></select></label>
-        <label className="appearance-row appearance-range-row"><RowCopy title="遮罩强度">{backgroundReference ? "提高遮罩可让文字更容易阅读。" : "选择图片后可调整。"}</RowCopy><RangeControl value={`${backgroundMask}%`} ariaLabel="背景遮罩强度" valueNumber={backgroundMask} onChange={onBackgroundMaskChange} disabled={!backgroundReference || backgroundBusy} max="90" min="35" /></label>
-        <label className="appearance-row appearance-range-row"><RowCopy title="模糊程度">{backgroundReference ? "模糊背景图片，不影响聊天内容。" : "选择图片后可调整。"}</RowCopy><RangeControl value={`${backgroundBlur}px`} ariaLabel="背景模糊程度" valueNumber={backgroundBlur} onChange={onBackgroundBlurChange} disabled={!backgroundReference || backgroundBusy} max="32" min="0" /></label>
+        <label className="appearance-row"><RowCopy title="图片适配方式" /><select className="field" disabled={!backgroundReference || backgroundBusy} value={backgroundFit} onChange={(event) => onBackgroundFitChange(event.currentTarget.value as BackgroundFit)}><option value="cover">填充</option><option value="contain">适应</option></select></label>
+        <label className="appearance-row appearance-range-row"><RowCopy title="遮罩强度" /><RangeControl value={`${backgroundMask}%`} ariaLabel="背景遮罩强度" valueNumber={backgroundMask} onChange={onBackgroundMaskChange} disabled={!backgroundReference || backgroundBusy} max="90" min="35" /></label>
+        <label className="appearance-row appearance-range-row"><RowCopy title="模糊程度" /><RangeControl value={`${backgroundBlur}px`} ariaLabel="背景模糊程度" valueNumber={backgroundBlur} onChange={onBackgroundBlurChange} disabled={!backgroundReference || backgroundBusy} max="32" min="0" /></label>
       </div>
       {backgroundError && <p className="notice notice-warning appearance-inline-notice" role="alert">{backgroundError}</p>}
     </section>
@@ -97,12 +98,12 @@ export function AppearanceSettings({
   </section>;
 }
 
-function GroupHeading({ children, id, title }: { children: ReactNode; id: string; title: string }) {
-  return <div className="appearance-group-heading"><h3 id={id}>{title}</h3><p>{children}</p></div>;
+function GroupHeading({ children, id, title }: { children: string; id: string; title: string }) {
+  return <div className="appearance-group-heading"><h3 id={id}>{title}</h3><SettingsHelp label={title}>{children}</SettingsHelp></div>;
 }
 
-function RowCopy({ children, title }: { children: ReactNode; title: string }) {
-  return <span className="appearance-row-copy"><strong>{title}</strong><small>{children}</small></span>;
+function RowCopy({ title }: { title: string }) {
+  return <span className="appearance-row-copy"><strong>{title}</strong></span>;
 }
 
 function RangeControl({ ariaLabel, disabled, max, min, onChange, value, valueNumber }: { ariaLabel: string; disabled?: boolean; max: string; min: string; onChange(value: number): void; value: string; valueNumber: number }) {

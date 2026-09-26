@@ -40,6 +40,7 @@ import {
   UrlResolutionError,
 } from "../../chat/urlResolution";
 import "./ConnectionSettings.css";
+import { SettingsHelp } from "./SettingsHelp";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -214,10 +215,12 @@ function EntityActions({ kind, name, disabled, onRename, onDelete, onMove, canMo
     document.addEventListener("pointerdown", outside);
     document.addEventListener("scroll", scrolled, true);
     window.addEventListener("resize", dismiss);
+    window.addEventListener("blur", close);
     return () => {
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("scroll", scrolled, true);
       window.removeEventListener("resize", dismiss);
+      window.removeEventListener("blur", close);
     };
   }, [open]);
   return <details ref={container} className="connection-entity-actions" open={open}
@@ -250,9 +253,12 @@ function EntityActions({ kind, name, disabled, onRename, onDelete, onMove, canMo
       }}>
         <label className="field-label">重命名{kind}
           <input ref={input} className="compact-field" defaultValue={name} autoFocus required
-            disabled={disabled} onBlur={saveName} />
+            disabled={disabled} />
         </label>
-        <div className="connection-rename-footer"><button type="submit" className="settings-button" disabled={disabled}>完成</button></div>
+        <div className="connection-rename-footer">
+          <button type="button" className="settings-button" onClick={dismiss}>取消</button>
+          <button type="submit" className="settings-button" disabled={disabled}>完成</button>
+        </div>
       </form> : <button type="button" role="menuitem" disabled={disabled} onClick={() => setRenaming(true)}><Pencil size={15} />重命名</button>}
       {!renaming && onMove && <>
         <button type="button" role="menuitem" disabled={disabled || !canMoveUp} aria-label={`上移供应商 ${name}`}
@@ -260,10 +266,37 @@ function EntityActions({ kind, name, disabled, onRename, onDelete, onMove, canMo
         <button type="button" role="menuitem" disabled={disabled || !canMoveDown} aria-label={`下移供应商 ${name}`}
           onClick={() => { dismiss(); onMove(1); }}><ArrowDown size={15} />下移</button>
       </>}
-      <button type="button" role={renaming ? undefined : "menuitem"} className="danger-icon-button" disabled={disabled}
-        aria-label={`删除${kind} ${name}`} onClick={() => { close(); onDelete(); }}><Trash2 size={14} />删除</button>
+      {!renaming && <button type="button" role="menuitem" className="danger-icon-button" disabled={disabled}
+        aria-label={`删除${kind} ${name}`} onClick={() => { close(); onDelete(); }}><Trash2 size={14} />删除</button>}
     </div>}
   </details>;
+}
+
+function AddModelDialog({ disabled, error, onSubmit, onClose }: {
+  disabled: boolean;
+  error?: string;
+  onSubmit(event: FormEvent<HTMLFormElement>): void;
+  onClose(): void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current!;
+    element.showModal();
+    return () => element.close();
+  }, []);
+  return <dialog ref={dialog} className="model-create-dialog" aria-labelledby="add-model-title"
+    onCancel={(event) => { event.preventDefault(); onClose(); }}>
+    <form onSubmit={onSubmit}>
+      <h3 id="add-model-title">添加模型</h3>
+      <label>实际模型 ID<input className="compact-field" name="modelId" placeholder="例如：gpt-4.1" disabled={disabled} required autoFocus /></label>
+      <label>显示名称（可选）<input className="compact-field" name="displayName" disabled={disabled} /></label>
+      {error && <p className="inline-error" role="alert">{error}</p>}
+      <div className="model-create-dialog-actions">
+        <button type="button" className="settings-button" onClick={onClose}>取消</button>
+        <button type="submit" className="settings-button settings-button-primary" disabled={disabled}>添加</button>
+      </div>
+    </form>
+  </dialog>;
 }
 
 export function ConnectionSettings({
@@ -767,7 +800,7 @@ export function ConnectionSettings({
                           aria-current={selectedConnectionId === connection.id ? "true" : undefined}
                           ref={(element) => { if (element) connectionRowRefs.current.set(connection.id, element); else connectionRowRefs.current.delete(connection.id); }}
                           onClick={() => selectConnection(provider.id, connection.id)}>
-                          <span title={connection.name}>{connection.name}</span><small title={getProtocolOption(connection.protocol).label}>{getProtocolOption(connection.protocol).label}</small>
+                          <span title={connection.name}>{connection.name}</span>
                         </button>
                         <EntityActions kind="连接" name={connection.name} disabled={isStreaming}
                           onRename={(name) => onConnectionChange(connection.id, "name", name)}
@@ -880,14 +913,12 @@ export function ConnectionSettings({
                       </label>
                     </div>
                     <div className="connection-field-group">
-                    <label className="field-label" htmlFor="base-url">Base URL</label>
+                    <div className="settings-label-help"><label className="field-label" htmlFor="base-url">Base URL</label><SettingsHelp label="Base URL">{protocol.hint}</SettingsHelp></div>
                     <input id="base-url" className="field" value={connection.baseUrl} disabled={isStreaming}
-                      aria-invalid={preview.error ? true : undefined} aria-describedby="base-url-hint"
+                      aria-invalid={preview.error ? true : undefined} aria-describedby={preview.error ? "base-url-hint" : undefined}
                       onChange={(event) => onConnectionChange(connection.id, "baseUrl", event.target.value)}
                       placeholder="https://relay.example.com/v1" spellCheck={false} />
-                    <p id="base-url-hint" className={preview.error ? "endpoint-preview-error" : "field-hint"} aria-live="polite">
-                      {preview.error ?? protocol.hint}
-                    </p>
+                    {preview.error && <p id="base-url-hint" className="endpoint-preview-error" role="alert">{preview.error}</p>}
                     <details className="connection-request-details">
                       <summary><ChevronDown size={14} />请求地址详情</summary>
                       <div className="endpoint-preview">
@@ -898,19 +929,17 @@ export function ConnectionSettings({
                     </details>
                     </div>
                     <div className="connection-field-group">
-                    <label className="field-label" htmlFor="api-key">API Key</label>
+                    <div className="settings-label-help"><label className="field-label" htmlFor="api-key">API Key</label><SettingsHelp label="API Key">密钥以明文保存在本机，请仅使用可信服务的密钥。</SettingsHelp></div>
                     <input id="api-key" className="field" type="password" value={connection.apiKey} disabled={isStreaming}
                       onChange={(event) => onConnectionChange(connection.id, "apiKey", event.target.value)}
                       placeholder="输入密钥" autoComplete="off" spellCheck={false} />
-                    <p className="muted-text connection-secret-notice">密钥以明文保存在本机，请仅使用可信服务的密钥。</p>
                     </div>
                   </div>
                 </details>
                 <section className="connection-models" aria-label="模型管理">
-                  <header className="connection-model-heading"><h3>模型管理</h3><span className="count-badge">{connection.models.length}</span></header>
-                  <p className="muted-text">{canSelectModel
+                  <header className="connection-model-heading"><h3>模型管理</h3><span className="count-badge">{connection.models.length}</span><SettingsHelp label="模型管理">{canSelectModel
                     ? "选择模型用于助手的新对话。已有对话可在聊天顶部或对话设置中更换。"
-                    : "请先加载或选择助手，再设置默认模型。"}</p>
+                    : "请先加载或选择助手，再设置默认模型。"}</SettingsHelp></header>
 
                 <div className="model-toolbar">
                   <label className="search-field">
@@ -943,39 +972,6 @@ export function ConnectionSettings({
                   </button>
                 </div>
 
-                {isAddingModel ? (
-                  <form className="model-create-form" onSubmit={handleAddModel}>
-                    <input
-                      className="compact-field"
-                      name="modelId"
-                      placeholder="实际模型 ID"
-                      disabled={isStreaming}
-                      required
-                      autoFocus
-                    />
-                    <input
-                      className="compact-field"
-                      name="displayName"
-                      placeholder="显示名称（可选）"
-                      disabled={isStreaming}
-                    />
-                    <button
-                      type="submit"
-                      className="settings-button settings-button-primary"
-                      disabled={isStreaming}
-                    >
-                      添加
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label="取消添加模型"
-                      onClick={() => setIsAddingModel(false)}
-                    >
-                      <X size={15} />
-                    </button>
-                  </form>
-                ) : null}
 
 
                 <div className="model-list" aria-label="模型列表">
@@ -1011,6 +1007,8 @@ export function ConnectionSettings({
             )}
           </section>
         </div>
+      {isAddingModel && selectedConnection && <AddModelDialog disabled={isStreaming} error={formError} onSubmit={handleAddModel}
+        onClose={() => { setIsAddingModel(false); setFormError(undefined); }} />}
       {catalogOpen && selectedConnection ? (
         <div
           className="model-catalog-backdrop"

@@ -126,6 +126,71 @@ describe("ConnectionSettings", () => {
     expect(container.querySelector('[aria-label="保存模型 beta-model"]')).toBeNull();
   });
 
+  it.each(["供应商", "连接"])("only saves %s renames on explicit submit", async (kind) => {
+    const props = makeProps();
+    await render(props);
+    const name = kind === "供应商" ? "示例供应商" : "主线路";
+    const callback = kind === "供应商" ? props.onProviderRename : props.onConnectionChange;
+    async function openRename() {
+      await act(async () => container.querySelector<HTMLElement>(`summary[aria-label="管理${kind} ${name}"]`)!.click());
+      await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === "重命名")!.click());
+      const input = container.querySelector<HTMLInputElement>('.connection-entity-menu input')!;
+      input.value = "新名称";
+      expect(container.querySelector('.connection-entity-menu .danger-icon-button')).toBeNull();
+      return input;
+    }
+    await openRename();
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.connection-rename-footer button')].find((item) => item.textContent === "取消")!.click());
+    expect(callback).not.toHaveBeenCalled();
+    await openRename();
+    await act(async () => button("查看连接 主线路").focus());
+    expect(container.querySelector('.connection-entity-menu')).toBeNull();
+    expect(callback).not.toHaveBeenCalled();
+    await openRename();
+    await act(async () => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(callback).not.toHaveBeenCalled();
+    const input = await openRename();
+    await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(callback).not.toHaveBeenCalled();
+    await openRename();
+    await act(async () => container.querySelector(' .connection-entity-menu form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(callback).toHaveBeenCalledTimes(1);
+    if (kind === "供应商") expect(callback).toHaveBeenCalledWith("provider-a", "新名称");
+    else expect(callback).toHaveBeenCalledWith("connection-a", "name", "新名称");
+  });
+
+  it("shows field help on focus and dismisses it with Escape", async () => {
+    await render(makeProps());
+    expect(container.textContent).not.toContain("密钥以明文保存在本机");
+    await act(async () => button("API Key说明").focus());
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("密钥以明文保存在本机");
+    await act(async () => button("API Key说明").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
+  it("adds models in a dialog, retains duplicate validation, and cancels drafts", async () => {
+    const props = makeProps();
+    await render(props);
+    await act(async () => button("手动添加模型").click());
+    const dialog = container.querySelector<HTMLDialogElement>('dialog[aria-labelledby="add-model-title"]')!;
+    expect(dialog.open).toBe(true);
+    const input = dialog.querySelector<HTMLInputElement>('[name="modelId"]')!;
+    input.value = "alpha-model";
+    await act(async () => dialog.querySelector('form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(dialog.textContent).toContain("该连接已经添加了这个模型 ID");
+    expect(props.onAddModel).not.toHaveBeenCalled();
+    await act(async () => dialog.dispatchEvent(new Event("cancel", { cancelable: true })));
+    expect(container.querySelector('dialog')).toBeNull();
+    await act(async () => button("手动添加模型").click());
+    const reopened = container.querySelector('dialog')!;
+    expect(reopened.querySelector<HTMLInputElement>('[name="modelId"]')!.value).toBe("");
+    reopened.querySelector<HTMLInputElement>('[name="modelId"]')!.value = "new-model";
+    reopened.querySelector<HTMLInputElement>('[name="displayName"]')!.value = "新模型";
+    await act(async () => reopened.querySelector('form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(props.onAddModel).toHaveBeenCalledWith("connection-a", "new-model", "新模型");
+    expect(container.querySelector('dialog')).toBeNull();
+  });
+
   it("returns keyboard focus to the connection after deleting its last model", async () => {
     const props = makeProps();
     props.connectionSettings = structuredClone(connectionSettings);
