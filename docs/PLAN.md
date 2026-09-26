@@ -152,7 +152,7 @@ Issue 原文的未知模型默认限制、切换型号重置与供应商预算/�
 
 以下为 2026-09-16 首版历史记录，型号限制已由上述 #16 修订取代。本轮按用户要求将思考摘要展示纳入首版，仅实现 Gemini Native。输入区提供按明确型号能力变化的强度/预算菜单及独立的摘要开关，沿用当前助手共享配置（不同于原 Issue 的按对话保存）。Gemini 3 使用型号声明的档位，2.5 使用预算；未知型号省略思考参数。摘要独立于正文保存和折叠展示，不作为聊天历史回传。没有收到摘要时不显示空框，不推断模型思考用时。其他协议和中转站专属兼容规则留待后续；远端 Issue 未修改。
 
-Issue #4 adds create/switch/rename/delete, assistant ordering/default configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. Issue #28 makes each conversation's configuration independent. One generation may run across navigation or assistant edits; its request settings remain frozen and all deltas, errors and saves remain bound to its original conversation. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
+Issue #4 adds create/switch/rename/delete, assistant ordering/default configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. Issue #28 makes each conversation's configuration independent. Issue #53 allows concurrent generation across conversations, with at most one task per conversation from preparation through terminal persistence. Request settings remain frozen and all deltas, errors, cancellation and saves remain bound to their original conversation. Other conversations remain editable and sendable; finishing or stopping one task does not unlock another. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
 
 - Streamed text is incremental and ordered.
 - A request produces exactly one terminal outcome: completed, failed, or aborted.

@@ -41,7 +41,7 @@ function App() {
         onConfirm={(focus) => void appearance.confirmBackgroundFocus(focus)}
         onCancel={() => void appearance.cancelBackgroundFocus()} />}
       {activePage === "chat" ? (
-        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingId={chat.generatingConversationId}
+        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingIds={chat.generatingConversationIds}
           toolbar={<ChatHeader key={chat.workspace.conversation?.id ?? "loading"} title={chat.workspace.conversation?.title ?? "新对话"}
             layout={chatLayout.layout} onToggleLayout={chatLayout.toggleLayout} isHydrated={chat.isHydrated}
             isGenerating={chat.isGenerating} protocolLabel={modelLabel}
@@ -55,7 +55,6 @@ function App() {
           onToggleLayout={chatLayout.toggleLayout}
           key={chat.workspace.conversation?.id ?? "loading"}
           title={chat.workspace.conversation?.title ?? "新对话"}
-          isGeneratingElsewhere={chat.isGenerating && chat.generatingConversationId !== chat.workspace.conversation?.id}
           draft={chat.draft}
           draftAttachments={chat.draftAttachments}
           attachmentBusy={chat.attachmentBusy}
@@ -120,7 +119,7 @@ function App() {
           connection={{
             canSelectModel: !!chat.workspace.assistant && !chat.workspace.busy,
             connectionSettings: chat.connectionSettings,
-            isStreaming: chat.isGenerating,
+            isStreaming: chat.isAnyGenerating,
             streamPreview: chat.workspace.assistant?.defaultConfig.stream ?? true,
             modelCatalogs: chat.modelCatalogs,
             modelTests: chat.modelTests,

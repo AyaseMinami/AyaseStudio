@@ -21,7 +21,6 @@ export interface ChatWorkspaceProps {
   thinking?: ThinkingSettings;
   onThinkingChange?(value: ThinkingSettings): void;
   title: string;
-  isGeneratingElsewhere?: boolean;
   draft: string;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;
@@ -54,7 +53,6 @@ export function ChatWorkspace({
   thinking,
   onThinkingChange,
   title,
-  isGeneratingElsewhere,
   draft,
   draftAttachments,
   attachmentBusy,
@@ -131,7 +129,6 @@ export function ChatWorkspace({
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
           disabled={!isHydrated} scope="当前会话" hint="当前会话 · 自动保存，下次请求生效" onChange={onThinkingChange} /> : undefined}
-        isGeneratingElsewhere={isGeneratingElsewhere}
         draft={draft}
         draftAttachments={draftAttachments}
         attachmentBusy={attachmentBusy}

@@ -275,8 +275,11 @@ describe("message actions through the session", () => {
     await act(async () => session.workspace.execute({ type: "create-conversation", id: "elsewhere", assistantId: "default" }));
     await act(async () => session.setActiveModel("m2"));
     expect(request?.model).toBe("any-model");
+    await act(async () => session.stopGeneration());
+    expect(request?.signal?.aborted).toBe(false);
+    await act(async () => session.workspace.execute({ type: "select", assistantId: "default", conversationId: "current" }));
     await act(async () => { session.stopGeneration(); await sending; });
-    expect(session.messages).toEqual([]);
+    expect(session.messages.slice(-1)[0]?.status).toBe("aborted");
     expect((await repo.load("current"))?.messages.slice(-1)[0]).toMatchObject({ content: "partial", status: "aborted" });
     expect((await repo.load("current"))?.messages[2]).toMatchObject({ content: "changed", editedAt: expect.any(Number) });
     expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);

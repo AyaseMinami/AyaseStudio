@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { GenerationTasks } from "./generationTasks";
 import { isTauri } from "@tauri-apps/api/core";
 
 import type { DiscoveredModel } from "./modelCatalog";
@@ -121,19 +122,18 @@ export function useChatSession({
   const [connectionSettings, setConnectionSettings] = useState(
     loadConnectionSettings,
   );
-  const generatingId = useRef<string | null>(null);
+  const [generationTasks] = useState(() => new GenerationTasks());
+  const generatingConversationIds = useSyncExternalStore(generationTasks.subscribe, generationTasks.getSnapshot);
   const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
-    connectionSettings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => model.id))), generatingId, cleanupAttachments);
+    connectionSettings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments);
   const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
   const sessionConfig = workspace.effective.config;
   const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
   const imports = useRef(new Map<string, number>());
   // This per-render binding is captured by a request; navigation never retargets it.
   const sessionStore = workspace.store;
-  const [isGenerating, setIsGenerating] = useState(false);
+  const isGenerating = !!sessionStore && generatingConversationIds.has(sessionStore.id);
   const isHydrated = workspace.isReady;
-  const abortRef = useRef<AbortController>(null);
-  const sendLockRef = useRef(false);
   const catalogAbortControllers = useRef(
     new Map<string, AbortController>(),
   );
@@ -225,14 +225,17 @@ export function useChatSession({
   }, [connectionSettings]);
 
   useEffect(
-    () => () => {
-      abortRef.current?.abort();
-      for (const controller of catalogAbortControllers.current.values()) {
-        controller.abort();
-      }
-      for (const controller of testAbortControllers.current.values()) {
-        controller.abort();
-      }
+    () => {
+      generationTasks.activate();
+      return () => {
+        generationTasks.dispose();
+        for (const controller of catalogAbortControllers.current.values()) {
+          controller.abort();
+        }
+        for (const controller of testAbortControllers.current.values()) {
+          controller.abort();
+        }
+      };
     },
     [],
   );
@@ -407,7 +410,7 @@ export function useChatSession({
   }
 
   function moveProviderGroup(providerId: string, targetId: string, placement: "before" | "after"): void {
-    if (isGenerating) return;
+    if (generationTasks.getSnapshot().size) return;
     setConnectionSettings((current) => moveProvider(current, providerId, targetId, placement));
   }
 
@@ -624,7 +627,7 @@ export function useChatSession({
       const sentIds = new Set(frozenAttachments.map((item) => item.id));
       setDraftAttachments((current) => current.filter((item) => !sentIds.has(item.id)));
     }
-    if (isGenerating || sendLockRef.current || !isHydrated || !workspace.canSend() || !sessionStore || imports.current.has(sessionStore.id)) {
+    if (!isHydrated || !workspace.canSend() || !sessionStore || generationTasks.has(sessionStore.id) || imports.current.has(sessionStore.id)) {
       return;
     }
     if ((retryMessageId || resumeMessageId) && !targetUser) { setError("原用户消息已删除，无法重新请求此回复。"); return; }
@@ -661,7 +664,6 @@ export function useChatSession({
       return;
     }
 
-    sendLockRef.current = true;
     const requestStore = sessionStore;
 
     const frozenConfig = structuredClone(resume?.continuation?.config ?? sessionConfig);
@@ -673,322 +675,296 @@ export function useChatSession({
     setConfigErrors(errors);
     if (Object.keys(errors).length) {
       setError(Object.values(errors)[0]);
-      sendLockRef.current = false;
       return;
     }
-    setIsGenerating(true);
-    generatingId.current = sessionStore.id;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    function releaseBeforeNetwork(): void {
-      setIsGenerating(false);
-      generatingId.current = null;
-      abortRef.current = null;
-      sendLockRef.current = false;
-    }
-    let planned: ContextPlan;
+    const task = generationTasks.begin(requestStore.id);
+    if (!task) return;
+    const { controller } = task;
     try {
-      planned = resume?.continuation ? { messages: [...resume.continuation.messages,
-        { role: "assistant", content: resume.content, providerReplay: resume.providerReplay }],
-        keptTurns: 0, trimmedTurns: 0, excludedIncompleteTurns: 0, inputTokens: 0, countingLabel: "继续原请求", estimated: true } : await planContextBudget(
-        history.map((message) => message.providerReplay?.scope === replayScope ? message : { ...message, providerReplay: undefined }), content, frozenConfig,
-        requestConnection.protocol, activeTarget.model.modelId, undefined,
-        [...frozenAttachments, ...existingAttachments].map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
-      );
-      if (controller.signal.aborted) {
-        setIsGenerating(false);
-        generatingId.current = null;
-        abortRef.current = null;
-        sendLockRef.current = false;
-        return;
-      }
-    } catch (caught) {
-      if (controller.signal.aborted) {
-        setIsGenerating(false);
-        generatingId.current = null;
-        abortRef.current = null;
-        sendLockRef.current = false;
-        return;
-      }
-      if (caught instanceof ContextBudgetError) {
-        setConfigErrors({ contextBudget: caught.message });
-        setError(caught.message);
-      } else {
-        setError(caught instanceof Error ? caught.message : "无法计算上下文预算。");
-      }
-      setIsGenerating(false);
-      generatingId.current = null;
-      abortRef.current = null;
-      sendLockRef.current = false;
-      return;
-    }
-
-    let requestMessages = planned.messages;
-    let sentAttachments: SentAttachment[] = [];
-    async function discardUncommitted(): Promise<boolean> {
+      let planned: ContextPlan;
       try {
-        await attachmentLifecycle.discard(sentAttachments);
-        return true;
-      } catch {
-        setError("未发送附件的临时副本清理失败；下次启动将重试。");
-        return false;
-      }
-    }
-    function requireActiveSend(): void {
-      if (controller.signal.aborted) throw new Error("附件读取已停止。");
-    }
-    try {
-      const preparedAttachments: RequestAttachment[] = [];
-      for (const draft of frozenAttachments) {
-        requireActiveSend();
-        preparedAttachments.push(await materializeDraftAttachment(draft));
-        requireActiveSend();
-      }
-      for (const item of existingAttachments) {
-        requireActiveSend();
-        preparedAttachments.push(await attachmentStore.read(item));
-        requireActiveSend();
-      }
-      const rebuiltMessages: typeof planned.messages = [];
-      for (const [index, message] of planned.messages.entries()) {
-        requireActiveSend();
-        if (!resume && index === planned.messages.length - 1 && preparedAttachments.length) {
-          rebuiltMessages.push({ ...message, attachments: preparedAttachments });
-        } else if (message.attachments?.length) {
-          const loaded: RequestAttachment[] = [];
-          for (const item of message.attachments) {
-            loaded.push("data" in item ? item : await attachmentStore.read(item));
-            requireActiveSend();
-          }
-          rebuiltMessages.push({ ...message, attachments: loaded });
+        planned = resume?.continuation ? { messages: [...resume.continuation.messages,
+          { role: "assistant", content: resume.content, providerReplay: resume.providerReplay }],
+          keptTurns: 0, trimmedTurns: 0, excludedIncompleteTurns: 0, inputTokens: 0, countingLabel: "继续原请求", estimated: true } : await planContextBudget(
+          history.map((message) => message.providerReplay?.scope === replayScope ? message : { ...message, providerReplay: undefined }), content, frozenConfig,
+          requestConnection.protocol, activeTarget.model.modelId, undefined,
+          [...frozenAttachments, ...existingAttachments].map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
+        );
+        if (controller.signal.aborted) {
+          return;
+        }
+      } catch (caught) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (caught instanceof ContextBudgetError) {
+          setConfigErrors({ contextBudget: caught.message });
+          setError(caught.message);
         } else {
-          rebuiltMessages.push(message);
+          setError(caught instanceof Error ? caught.message : "无法计算上下文预算。");
+        }
+        return;
+      }
+
+      let requestMessages = planned.messages;
+      let sentAttachments: SentAttachment[] = [];
+      async function discardUncommitted(): Promise<boolean> {
+        try {
+          await attachmentLifecycle.discard(sentAttachments);
+          return true;
+        } catch {
+          setError("未发送附件的临时副本清理失败；下次启动将重试。");
+          return false;
         }
       }
-      requestMessages = rebuiltMessages;
-      // Validate the frozen *final* body (including accumulated history) before
-      // any new private copy or message write, independently from transport.
-      buildProtocolBody(requestConnection.protocol, {
-        baseUrl: requestConnection.baseUrl, apiKey: "", model: activeTarget.model.modelId,
-        messages: requestMessages, config: frozenConfig,
-        replayScope,
-      });
-      if (controller.signal.aborted) {
-        await discardUncommitted();
-        releaseBeforeNetwork();
-        return;
+      function requireActiveSend(): void {
+        if (controller.signal.aborted) throw new Error("附件读取已停止。");
       }
-      for (const item of targetUser ? [] : preparedAttachments) {
-        requireActiveSend();
-        sentAttachments.push(await attachmentLifecycle.save(item));
-        requireActiveSend();
-      }
-      if (controller.signal.aborted) {
-        await discardUncommitted();
-        releaseBeforeNetwork();
-        return;
-      }
-    } catch (caught) {
-      const discarded = await discardUncommitted();
-      if (discarded && !controller.signal.aborted) setError(caught instanceof Error ? caught.message : "无法读取或保存附件；未发送请求。");
-      releaseBeforeNetwork();
-      return;
-    }
-    setContextPlan(summarizeContextPlan(planned));
-    setError(undefined);
-    const userMessage: StoredChatMessage = targetUser ?? {
-      id: newId(),
-      role: "user",
-      content,
-      status: "complete",
-      ...(sentAttachments.length ? { attachments: sentAttachments } : {}),
-    };
-    const assistantId = resume?.id ?? newId();
-    const assistantMessage: StoredChatMessage = {
-      ...resume,
-      id: assistantId,
-      role: "assistant",
-      replyToId: userMessage.id,
-      content: resume?.content ?? "",
-      status: "streaming",
-      search: resume?.search ?? (frozenConfig.webSearch ? initialSearch(true) : undefined),
-      ...(requestConnection.protocol === "anthropic-native" ? { continuation: resume?.continuation ?? {
-        config: frozenConfig, model: activeTarget.model.modelId, baseUrl: requestConnection.baseUrl, scope: replayScope,
-        messages: planned.messages.map((message, index) => index === planned.messages.length - 1
-          ? { role: "user" as const, content, ...(userMessage.attachments?.length ? { attachments: userMessage.attachments } : {}) } : message),
-      } } : {}),
-    };
-    let workingMessages = [...history, userMessage, assistantMessage];
-    try {
-      await requestStore.updateMessages(workingMessages);
-    } catch {
-      await requestStore.updateMessages(messages).catch(() => undefined);
-      const discarded = await discardUncommitted();
-      if (discarded) setError("附件或消息保存失败；未发送请求，草稿已保留。");
-      releaseBeforeNetwork();
-      return;
-    }
-    try {
-      await attachmentLifecycle.commit(sentAttachments);
-    } catch {
-      // No provider call may proceed with an unreadable history reference.
-      // Restore the old transcript before deleting copies that lack an owner.
-      const rolledBack = await requestStore.updateMessages(messages).then(() => true, () => false);
-      if (rolledBack) {
+      try {
+        const preparedAttachments: RequestAttachment[] = [];
+        for (const draft of frozenAttachments) {
+          requireActiveSend();
+          preparedAttachments.push(await materializeDraftAttachment(draft));
+          requireActiveSend();
+        }
+        for (const item of existingAttachments) {
+          requireActiveSend();
+          preparedAttachments.push(await attachmentStore.read(item));
+          requireActiveSend();
+        }
+        const rebuiltMessages: typeof planned.messages = [];
+        for (const [index, message] of planned.messages.entries()) {
+          requireActiveSend();
+          if (!resume && index === planned.messages.length - 1 && preparedAttachments.length) {
+            rebuiltMessages.push({ ...message, attachments: preparedAttachments });
+          } else if (message.attachments?.length) {
+            const loaded: RequestAttachment[] = [];
+            for (const item of message.attachments) {
+              loaded.push("data" in item ? item : await attachmentStore.read(item));
+              requireActiveSend();
+            }
+            rebuiltMessages.push({ ...message, attachments: loaded });
+          } else {
+            rebuiltMessages.push(message);
+          }
+        }
+        requestMessages = rebuiltMessages;
+        // Validate the frozen *final* body (including accumulated history) before
+        // any new private copy or message write, independently from transport.
+        buildProtocolBody(requestConnection.protocol, {
+          baseUrl: requestConnection.baseUrl, apiKey: "", model: activeTarget.model.modelId,
+          messages: requestMessages, config: frozenConfig,
+          replayScope,
+        });
+        if (controller.signal.aborted) {
+          await discardUncommitted();
+          return;
+        }
+        for (const item of targetUser ? [] : preparedAttachments) {
+          requireActiveSend();
+          sentAttachments.push(await attachmentLifecycle.save(item));
+          requireActiveSend();
+        }
+        if (controller.signal.aborted) {
+          await discardUncommitted();
+          return;
+        }
+      } catch (caught) {
         const discarded = await discardUncommitted();
-        if (discarded) setError("已保存的附件无法读取；请求未发送，草稿已保留。");
-      } else {
-        setMessages(workingMessages);
-        setError("附件无法读取且消息记录回滚失败；请求未发送，请检查当前对话。");
+        if (discarded && !controller.signal.aborted) setError(caught instanceof Error ? caught.message : "无法读取或保存附件；未发送请求。");
+        return;
       }
-      releaseBeforeNetwork();
-      return;
-    }
-    if (controller.signal.aborted) {
-      workingMessages = [...history, userMessage, { ...assistantMessage, status: "aborted" }];
-      await requestStore.updateMessages(workingMessages).catch(() => undefined);
+      setContextPlan(summarizeContextPlan(planned));
+      setError(undefined);
+      const userMessage: StoredChatMessage = targetUser ?? {
+        id: newId(),
+        role: "user",
+        content,
+        status: "complete",
+        ...(sentAttachments.length ? { attachments: sentAttachments } : {}),
+      };
+      const assistantId = resume?.id ?? newId();
+      const assistantMessage: StoredChatMessage = {
+        ...resume,
+        id: assistantId,
+        role: "assistant",
+        replyToId: userMessage.id,
+        content: resume?.content ?? "",
+        status: "streaming",
+        search: resume?.search ?? (frozenConfig.webSearch ? initialSearch(true) : undefined),
+        ...(requestConnection.protocol === "anthropic-native" ? { continuation: resume?.continuation ?? {
+          config: frozenConfig, model: activeTarget.model.modelId, baseUrl: requestConnection.baseUrl, scope: replayScope,
+          messages: planned.messages.map((message, index) => index === planned.messages.length - 1
+            ? { role: "user" as const, content, ...(userMessage.attachments?.length ? { attachments: userMessage.attachments } : {}) } : message),
+        } } : {}),
+      };
+      let workingMessages = [...history, userMessage, assistantMessage];
+      try {
+        await requestStore.updateMessages(workingMessages);
+      } catch {
+        await requestStore.updateMessages(messages).catch(() => undefined);
+        const discarded = await discardUncommitted();
+        if (discarded) setError("附件或消息保存失败；未发送请求，草稿已保留。");
+        return;
+      }
+      try {
+        await attachmentLifecycle.commit(sentAttachments);
+      } catch {
+        // No provider call may proceed with an unreadable history reference.
+        // Restore the old transcript before deleting copies that lack an owner.
+        const rolledBack = await requestStore.updateMessages(messages).then(() => true, () => false);
+        if (rolledBack) {
+          const discarded = await discardUncommitted();
+          if (discarded) setError("已保存的附件无法读取；请求未发送，草稿已保留。");
+        } else {
+          setMessages(workingMessages);
+          setError("附件无法读取且消息记录回滚失败；请求未发送，请检查当前对话。");
+        }
+        return;
+      }
+      if (controller.signal.aborted) {
+        workingMessages = [...history, userMessage, { ...assistantMessage, status: "aborted" }];
+        await requestStore.updateMessages(workingMessages).catch(() => undefined);
+        setMessages(workingMessages);
+        consumeSentDraft();
+        if (targetUser) await cleanupAttachments().catch(() => setError("消息已保存，但附件副本整理失败；下次启动将重试。"));
+        return true;
+      }
       setMessages(workingMessages);
       consumeSentDraft();
-      if (targetUser) await cleanupAttachments().catch(() => setError("消息已保存，但附件副本整理失败；下次启动将重试。"));
-      releaseBeforeNetwork();
-      return true;
-    }
-    setMessages(workingMessages);
-    consumeSentDraft();
 
-    let persistChain = Promise.resolve();
-    let persistenceFailed = false;
-    function queuePersist(snapshotMessages: StoredChatMessage[]) {
-      persistChain = persistChain
-        .then(() =>
-          requestStore.updateMessages(snapshotMessages),
-        )
-        .catch(() => {
-          persistenceFailed = true;
-        });
-    }
-    queuePersist(workingMessages);
-
-    let assistantText = resume?.content ?? "";
-    const resumeOffset = assistantText.length;
-    let lastPaint = 0;
-    let lastPersist = 0;
-    let terminalSeen = false;
-    try {
-      const transport = await createRuntimeChatTransport(
-        requestConnection.protocol,
-      );
-      for await (const event of transport.stream({
-        baseUrl: requestConnection.baseUrl,
-        apiKey: requestConnection.apiKey,
-        model: activeTarget.model.modelId,
-        messages: requestMessages,
-        config: frozenConfig,
-        signal: controller.signal,
-        replayScope,
-      })) {
-        if (event.type === "search-update") {
-          workingMessages = workingMessages.map((message) => message.id === assistantId
-            ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
-          setMessages(workingMessages); queuePersist(workingMessages); continue;
-        }
-        if (event.type === "provider-replay") {
-          const earlier = resume?.providerReplay;
-          const replay = earlier ? { ...event.replay, content: [...earlier.content, ...event.replay.content],
-            responses: [...(earlier.responses ?? [earlier.content]), event.replay.content] } : event.replay;
-          workingMessages = workingMessages.map((message) => message.id === assistantId ? { ...message, providerReplay: replay } : message);
-          continue;
-        }
-        if (event.type === "text-delta" || event.type === "thinking-delta") {
-          if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
-          if (event.type === "text-delta") assistantText += event.text;
-          else workingMessages = workingMessages.map((message) => message.id === assistantId
-            ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
-          workingMessages = replaceAssistant(
-            workingMessages,
-            assistantId,
-            assistantText,
-            "streaming",
-          );
-          const now = performance.now();
-          if (now - lastPaint >= 32) {
-            setMessages(workingMessages);
-            lastPaint = now;
-          }
-          if (now - lastPersist >= 500) {
-            queuePersist(workingMessages);
-            lastPersist = now;
-          }
-          continue;
-        }
-
-        if (event.type === "completed") {
-          terminalSeen = true;
-          workingMessages = replaceAssistant(
-            workingMessages,
-            assistantId,
-            assistantText,
-            completionStatus(requestConnection.protocol, event.finishReason),
-          );
-        } else if (event.type === "aborted") {
-          terminalSeen = true;
-          workingMessages = replaceAssistant(
-            workingMessages,
-            assistantId,
-            assistantText,
-            "aborted",
-          );
-        } else {
-          terminalSeen = true;
-          workingMessages = replaceAssistant(
-            workingMessages,
-            assistantId,
-            assistantText,
-            "failed",
-          );
-          const status = event.error.status ? ` (${event.error.status})` : "";
-          setError(`${event.error.message}${status}`);
-        }
-        setMessages(workingMessages);
-        queuePersist(workingMessages);
+      let persistChain = Promise.resolve();
+      let persistenceFailed = false;
+      function queuePersist(snapshotMessages: StoredChatMessage[]) {
+        persistChain = persistChain
+          .then(() =>
+            requestStore.updateMessages(snapshotMessages),
+          )
+          .catch(() => {
+            persistenceFailed = true;
+          });
       }
-      if (!terminalSeen) {
+      queuePersist(workingMessages);
+
+      let assistantText = resume?.content ?? "";
+      const resumeOffset = assistantText.length;
+      let lastPaint = 0;
+      let lastPersist = 0;
+      let terminalSeen = false;
+      try {
+        const transport = await createRuntimeChatTransport(
+          requestConnection.protocol,
+        );
+        for await (const event of transport.stream({
+          baseUrl: requestConnection.baseUrl,
+          apiKey: requestConnection.apiKey,
+          model: activeTarget.model.modelId,
+          messages: requestMessages,
+          config: frozenConfig,
+          signal: controller.signal,
+          replayScope,
+        })) {
+          if (event.type === "search-update") {
+            workingMessages = workingMessages.map((message) => message.id === assistantId
+              ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
+            setMessages(workingMessages); queuePersist(workingMessages); continue;
+          }
+          if (event.type === "provider-replay") {
+            const earlier = resume?.providerReplay;
+            const replay = earlier ? { ...event.replay, content: [...earlier.content, ...event.replay.content],
+              responses: [...(earlier.responses ?? [earlier.content]), event.replay.content] } : event.replay;
+            workingMessages = workingMessages.map((message) => message.id === assistantId ? { ...message, providerReplay: replay } : message);
+            continue;
+          }
+          if (event.type === "text-delta" || event.type === "thinking-delta") {
+            if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
+            if (event.type === "text-delta") assistantText += event.text;
+            else workingMessages = workingMessages.map((message) => message.id === assistantId
+              ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
+            workingMessages = replaceAssistant(
+              workingMessages,
+              assistantId,
+              assistantText,
+              "streaming",
+            );
+            const now = performance.now();
+            if (now - lastPaint >= 32) {
+              setMessages(workingMessages);
+              lastPaint = now;
+            }
+            if (now - lastPersist >= 500) {
+              queuePersist(workingMessages);
+              lastPersist = now;
+            }
+            continue;
+          }
+
+          if (event.type === "completed") {
+            terminalSeen = true;
+            workingMessages = replaceAssistant(
+              workingMessages,
+              assistantId,
+              assistantText,
+              completionStatus(requestConnection.protocol, event.finishReason),
+            );
+          } else if (event.type === "aborted") {
+            terminalSeen = true;
+            workingMessages = replaceAssistant(
+              workingMessages,
+              assistantId,
+              assistantText,
+              "aborted",
+            );
+          } else {
+            terminalSeen = true;
+            workingMessages = replaceAssistant(
+              workingMessages,
+              assistantId,
+              assistantText,
+              "failed",
+            );
+            const status = event.error.status ? ` (${event.error.status})` : "";
+            setError(`${event.error.message}${status}`);
+          }
+          setMessages(workingMessages);
+          queuePersist(workingMessages);
+        }
+        if (!terminalSeen) {
+          workingMessages = replaceAssistant(
+            workingMessages, assistantId, assistantText,
+            controller.signal.aborted ? "aborted" : "failed",
+          );
+          setMessages(workingMessages);
+          queuePersist(workingMessages);
+          if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
+        }
+      } catch (caught) {
         workingMessages = replaceAssistant(
-          workingMessages, assistantId, assistantText,
+          workingMessages,
+          assistantId,
+          assistantText,
           controller.signal.aborted ? "aborted" : "failed",
         );
         setMessages(workingMessages);
         queuePersist(workingMessages);
-        if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
+        if (!controller.signal.aborted) {
+          setError(caught instanceof Error ? caught.message : "无法启动请求");
+        }
+      } finally {
+        await persistChain;
+        if (persistenceFailed) {
+          setError((current) => current ?? "回复已生成，但保存本地记录失败。");
+        }
+        if (targetUser) await cleanupAttachments().catch(() => setError((current) => current ?? "消息已保存，但附件副本整理失败；下次启动将重试。"));
       }
-    } catch (caught) {
-      workingMessages = replaceAssistant(
-        workingMessages,
-        assistantId,
-        assistantText,
-        controller.signal.aborted ? "aborted" : "failed",
-      );
-      setMessages(workingMessages);
-      queuePersist(workingMessages);
-      if (!controller.signal.aborted) {
-        setError(caught instanceof Error ? caught.message : "无法启动请求");
-      }
+      return true;
     } finally {
-      await persistChain;
-      if (persistenceFailed) {
-        setError((current) => current ?? "回复已生成，但保存本地记录失败。");
-      }
-      if (targetUser) await cleanupAttachments().catch(() => setError((current) => current ?? "消息已保存，但附件副本整理失败；下次启动将重试。"));
-      setIsGenerating(false);
-      generatingId.current = null;
-      abortRef.current = null;
-      sendLockRef.current = false;
+      generationTasks.finish(task);
     }
-    return true;
   }
 
   function stopGeneration(): void {
-    abortRef.current?.abort();
+    if (sessionStore) generationTasks.stop(sessionStore.id);
   }
 
   async function editMessage(id: string, content: string): Promise<boolean> {
@@ -1008,8 +984,7 @@ export function useChatSession({
   }
 
   function clearConversation(): void {
-    if (sendLockRef.current || isGenerating || !workspace.canSend() || !sessionStore) return;
-    abortRef.current?.abort();
+    if (!workspace.canSend() || !sessionStore || generationTasks.has(sessionStore.id)) return;
     setMessages([]);
     setContextPlan(undefined);
     setError(undefined);
@@ -1040,7 +1015,8 @@ export function useChatSession({
 
   return {
     workspace,
-    generatingConversationId: generatingId.current,
+    generatingConversationIds,
+    isAnyGenerating: generatingConversationIds.size > 0,
     activeConnection,
     activeModel,
     activeProvider,

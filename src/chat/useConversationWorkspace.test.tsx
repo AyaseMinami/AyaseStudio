@@ -19,7 +19,7 @@ describe("workspace failure recovery", () => {
   }
   async function mount(repo: ReturnType<typeof createChatRepository>, cleanup?: () => Promise<void>) {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-    function Probe() { current = useConversationWorkspace(repo, null, modelIds, generatingId, cleanup); return null; }
+    function Probe() { current = useConversationWorkspace(repo, null, modelIds, (id) => generatingId.current === id, cleanup); return null; }
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     await act(async () => root.render(<Probe />)); await wait(() => current.isReady);
   }

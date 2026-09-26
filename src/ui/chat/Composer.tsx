@@ -5,7 +5,6 @@ import type { DraftAttachment } from "../../chat/attachments";
 export interface ComposerProps {
   thinkingControl?: ReactNode;
   searchControl?: ReactNode;
-  isGeneratingElsewhere?: boolean;
   draft: string;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;

@@ -276,6 +276,12 @@ Issue #28 完整快照调整的定向检查包括 `src/chat/conversationConfig.t
 
 本地输入预算是 Token **估算**，不是供应商公布的模型上下文上限。已知 OpenAI 模型按对应本地 BPE 分词，未知或非 OpenAI 模型按 UTF-8 字节保守估算；消息封装开销仍可能与供应商计费值不同。真实中转站若出现传输差异，应先核对官方协议，再把中转站观测单独记录。桌面烟雾测试需要实际操作配置面板、非流式停止、协议切换与恢复，单纯启动 `tauri dev` 不构成交互验收。
 
+## Concurrent conversation checks (Issue #53)
+
+Run `npm.cmd test -- src/chat/generationTasks.test.ts src/chat/useChatSession.concurrency.test.tsx src/chat/useChatSession.messages.test.tsx src/chat/useChatSession.attachments.test.tsx src/chat/useConversationWorkspace.test.tsx src/Workspace.test.tsx`, then the default code gate. Deterministic transports control A/B event ordering without real credentials or provider tokens. Verify simultaneous sends, isolated text and terminal persistence, current-conversation Stop, same-conversation duplicate rejection, preparation failure, final-save ownership, deletion protection and unmount cancellation. App tests also exercise sending from B while A is still generating. These checks do not establish live-provider throughput or native desktop interaction acceptance.
+
+2026-09-26 内置浏览器行为验收通过：在独立本地 origin 上使用合成配置和可控 SSE，保留真实 App、任务管理、IndexedDB 和 OpenAI Chat 协议解析，仅替换 Tauri 网络入口。通过页面结构读取及键盘操作确认 A 生成时 B 可编辑历史并发送、双任务同时生成、停止 B 不影响 A、A 失败或完成不解除 B 的生成保护，以及刷新后独立恢复消息与终态。未使用截图；浏览器点击接口报错，因此本轮不声称验证了鼠标点击路径或视觉布局。未读取真实密钥、调用供应商或验证原生窗口；临时验收文件和服务已清理。
+
 ## Attachment checks (Issue #5)
 
 Windows 窗口禁用 Tauri 原生路径拖拽截获，使用 HTML5 `DataTransfer.files` 获取实际拖入的 `File`，不向原生命令传送任意来源路径。

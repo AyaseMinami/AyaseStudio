@@ -23,7 +23,7 @@ function emptyView(): ConversationView {
 }
 
 export function useConversationWorkspace(repository: WorkspaceRepository, legacyModelId: string | null,
-  validModelIds: string[], generatingId: { current: string | null }, cleanupAttachments?: () => Promise<void>) {
+  validModelIds: string[], isGenerating: (id: string) => boolean, cleanupAttachments?: () => Promise<void>) {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot>();
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string>();
@@ -97,13 +97,12 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     const next = queue.current.catch(() => undefined).then(async () => {
       try {
         const current = snapshotRef.current!;
-        const running = generatingId.current;
         const messageAction = action.type === "edit-message" || action.type === "delete-message" || action.type === "fork-conversation";
-        if (running && (
-          (messageAction && action.conversationId === running) ||
-          (action.type === "delete-conversation" && action.id === running) ||
-          (action.type === "delete-assistant" && current.conversations.some((item) => item.id === running && item.assistantId === action.id))
-        )) throw new Error("请先停止该对话的生成并等待保存完成，再执行此操作。");
+        if (
+          (messageAction && isGenerating(action.conversationId)) ||
+          (action.type === "delete-conversation" && isGenerating(action.id)) ||
+          (action.type === "delete-assistant" && current.conversations.some((item) => isGenerating(item.id) && item.assistantId === action.id))
+        ) throw new Error("请先停止该对话的生成并等待保存完成，再执行此操作。");
         const affected = action.type === "delete-assistant"
           ? current.conversations.filter((item) => item.assistantId === action.id).map((item) => item.id)
           : action.type === "delete-conversation" ? [action.id] : messageAction ? [action.conversationId] : [];

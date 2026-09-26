@@ -549,11 +549,17 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.includes("对话 B") === true);
   });
 
-  it("keeps a stream bound to its origin while another assistant is selected, including its terminal save", async () => {
+  it("sends in another assistant while the original stream continues and saves both conversations", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     let observed: ChatRequest | undefined;
-    const transport: ChatTransport = { async *stream(request) { observed = request; yield { type: "text-delta", text: "A partial" }; await gate; yield { type: "text-delta", text: " finished" }; yield { type: "completed" }; } };
+    const transport: ChatTransport = { async *stream(request) {
+      if (request.model === "upstream-b") {
+        yield { type: "text-delta", text: "B answer" }; yield { type: "completed" }; return;
+      }
+      observed = request; yield { type: "text-delta", text: "A partial" }; await gate;
+      yield { type: "text-delta", text: " finished" }; yield { type: "completed" };
+    } };
     runtime.createRuntimeChatTransport.mockResolvedValue(transport);
     await fill(".composer-input", "Question A"); await click("发送");
     await wait(() => container.textContent?.includes("A partial") === true);
@@ -561,11 +567,13 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector(".message-list")?.textContent ?? "").not.toContain("A partial");
     await fill(".composer-input", "B during A");
     await act(async () => { container.querySelector(".composer-input")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
-    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+    await wait(() => container.textContent?.includes("B answer") === true);
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(2);
+    expect(observed?.signal?.aborted).toBe(false);
     await act(async () => release());
     await wait(() => container.querySelector('[aria-label="发送"]') !== null);
-    expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("B during A");
-    expect((await repo.load("b"))?.messages).toEqual([]);
+    expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("");
+    expect((await repo.load("b"))?.messages.map((item) => item.content)).toEqual(["B during A", "B answer"]);
     const saved = (await repo.load("current"))!.messages;
     expect(saved[saved.length - 1]).toMatchObject({ content: "A partial finished", status: "complete" });
     expect(observed?.model).toBe("upstream-a");

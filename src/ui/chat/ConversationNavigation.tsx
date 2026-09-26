@@ -37,10 +37,10 @@ type Dialog =
   | { type: "delete-conversation"; id: string; title: string }
   | { type: "delete-assistant"; id: string; name: string; count: number; permanent: boolean };
 
-export function ConversationNavigation({ workspace, settings, generatingId, children, toolbar }: {
+export function ConversationNavigation({ workspace, settings, generatingIds, children, toolbar }: {
   workspace: ReturnType<typeof useConversationWorkspace>;
   settings: ConnectionSettingsState;
-  generatingId: string | null;
+  generatingIds: ReadonlySet<string>;
   children: ReactNode;
   toolbar?: ReactNode;
 }) {
@@ -74,7 +74,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
   const editorErrors = dialog?.type === "assistant"
     ? editorTarget ? validateRequestConfig(dialog.input.defaultConfig, editorTarget.connection.protocol, editorTarget.model.modelId)
       : validateSessionConfig(dialog.input.defaultConfig) : {};
-  const running = snapshot?.conversations.find((item) => item.id === generatingId);
+  const backgroundRuns = snapshot?.conversations.filter((item) => generatingIds.has(item.id) && item.id !== conversation?.id) ?? [];
   const editingConversation = dialog?.type === "conversation" ? snapshot?.conversations.find((item) => item.id === dialog.id) : undefined;
 
   async function openAssistant(id: string) {
@@ -111,9 +111,9 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
       当前配置需要调整：{Object.values(workspace.view.configErrors)[0]}
       <button className="settings-button" type="button" disabled={busy} onClick={() => conversation ? setDialog({ type: "conversation", id: conversation.id }) : editAssistant(selectedAssistant)}>调整配置</button>
     </div>}
-    {running && running.id !== conversation?.id && <div className="background-generation" role="status">
-      “{running.title}”正在生成，完成或停止后可发送下一条消息。
-      <button className="settings-button" type="button" disabled={busy} onClick={() => void execute({ type: "select", assistantId: running.assistantId, conversationId: running.id })}>返回生成中的对话</button>
+    {backgroundRuns.length > 0 && <div className="background-generation" role="status">
+      {backgroundRuns.length} 个其他对话正在生成。
+      {backgroundRuns.map((running) => <button key={running.id} className="settings-button" type="button" disabled={busy} onClick={() => void execute({ type: "select", assistantId: running.assistantId, conversationId: running.id })}>查看 {running.title}</button>)}
     </div>}
     <div className="conversation-workspace-body" data-navigation-open={navigationOpen} data-conversations-open={navigationOpen && conversationPanelOpen}>
       <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表" data-open={navigationOpen} inert={!navigationOpen} aria-hidden={!navigationOpen}>
@@ -147,7 +147,7 @@ export function ConversationNavigation({ workspace, settings, generatingId, chil
             {conversations.length === 0 && <p className="muted-text assistant-conversations-empty">还没有对话</p>}
             <ul className="chat-navigation-list">{conversations.map((item) => <li key={item.id} className="chat-navigation-item conversation-leaf">
           <button className="chat-navigation-select conversation-leaf-select" type="button" aria-pressed={item.id === conversation?.id} disabled={busy}
-            onClick={() => void openConversation({ type: "select", assistantId: item.assistantId, conversationId: item.id })}><MessageSquare size={14} /><span>{item.title}{item.id === generatingId ? " · 生成中" : ""}</span></button>
+            onClick={() => void openConversation({ type: "select", assistantId: item.assistantId, conversationId: item.id })}><MessageSquare size={14} /><span>{item.title}{generatingIds.has(item.id) ? " · 生成中" : ""}</span></button>
           <div className="chat-navigation-actions conversation-row-actions">
             <button type="button" disabled={busy} title="编辑对话" aria-label={`编辑对话 ${item.title}`} onClick={() => setDialog({ type: "conversation", id: item.id })}><Pencil size={15} aria-hidden="true" /></button>
             <button type="button" disabled={busy} title="删除" aria-label={`删除对话 ${item.title}`} onClick={() => setDialog({ type: "delete-conversation", id: item.id, title: item.title })}><Trash2 size={15} aria-hidden="true" /></button>
