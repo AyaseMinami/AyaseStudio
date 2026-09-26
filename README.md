@@ -56,6 +56,7 @@ The live probe uses short prompts, caps output where the protocol supports it, d
 
 - [Development guide](docs/DEVELOPMENT.md): Windows prerequisites, setup, cross-machine workflow, commands, credentials, and checks.
 - [Architecture and project structure](docs/ARCHITECTURE.md): technology stack, runtime topology, module seams, state ownership, and security invariants.
+- [UI design guidance](docs/UI-DESIGN.md): compact lists, detail navigation, dropdown styling, and visual confirmation status.
 - [v0.1 plan](docs/PLAN.md): current product scope, roadmap, known issues, and acceptance gates.
 - [Protocol compatibility contract](docs/PROTOCOLS.md): URL resolution, provider event mapping, and error policy.
 - [Codex instruction audit](docs/CODEX-INSTRUCTIONS.md): GPT-6 Astra official sources, local instruction cleanup, and verification boundaries.

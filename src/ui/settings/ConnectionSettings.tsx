@@ -3,6 +3,7 @@ import {
   Check,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
   GripVertical,
   ChevronDown,
   Eye,
@@ -365,6 +366,7 @@ export function ConnectionSettings({
   const [pendingFocus, setPendingFocus] = useState<PendingFocus | null>(null);
   const catalogDialogRef = useRef<HTMLElement>(null);
   const catalogTriggerRef = useRef<HTMLButtonElement>(null);
+  const providerAddConnectionRef = useRef<HTMLButtonElement>(null);
   const providerRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const connectionRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const modelRowRefs = useRef(new Map<string, HTMLDivElement>());
@@ -570,9 +572,14 @@ export function ConnectionSettings({
   }
 
   function handleDeleteConnection(provider: ProviderGroup, connection: ConnectionProfile): void {
-    if (!window.confirm(`删除连接“${connection.name}”以及其中 ${connection.models.length} 个模型？`)) return;
+    if (!window.confirm(`删除连接“${connection.name}”以及其中 ${connection.models.length} 个模型？\n${getProtocolOption(connection.protocol).label} · ${connection.baseUrl || "未设置 Base URL"}`)) return;
     onDeleteConnection(connection.id);
-    if (connection.id !== selectedConnectionId) return;
+    if (connection.id !== selectedConnectionId) {
+      if (provider.id === selectedProviderId && !selectedConnectionId) {
+        providerAddConnectionRef.current?.focus();
+      }
+      return;
+    }
     const index = provider.connections.findIndex((candidate) => candidate.id === connection.id);
     const adjacent = provider.connections[index + 1] ?? provider.connections[index - 1];
     setSelectedConnectionId(adjacent?.id ?? null);
@@ -904,13 +911,17 @@ export function ConnectionSettings({
                 </form>
 
             ) : null}
-            {selectedConnection ? (() => {
+            {selectedConnection && selectedProvider ? (() => {
               const connection = selectedConnection;
               const protocol = getProtocolOption(connection.protocol);
               const preview = generationPreview(connection,
                 activeTarget?.connection.id === connection.id ? activeTarget.model.modelId : undefined, streamPreview);
               return <div key={connection.id} >
                 <header className="connection-detail-heading">
+                  <button className="connection-back-button" type="button"
+                    onClick={() => selectProvider(selectedProvider.id)}>
+                    <ArrowLeft size={15} aria-hidden="true" />返回供应商连接列表
+                  </button>
                   <p className="muted-text">{selectedProvider?.name}</p>
                   <h3>{connection.name}</h3>
                 </header>
@@ -1019,8 +1030,46 @@ export function ConnectionSettings({
                 <p className="muted-text">供应商</p>
                 <h3>{selectedProvider.name}</h3>
                 <p className="muted-text">管理此供应商下的连接渠道。连接独立拥有协议、地址、密钥和模型。</p>
-                <button className="settings-button settings-button-primary" type="button" disabled={isStreaming}
+                <button ref={providerAddConnectionRef} className="settings-button settings-button-primary" type="button" disabled={isStreaming}
                   onClick={() => setIsAddingConnection(true)}><Plus size={15} />添加连接</button>
+                {selectedProvider.connections.length > 0 ? (
+                  <div className="provider-connection-list">
+                    <div className="provider-connection-header" aria-hidden="true">
+                      <div className="provider-connection-info">
+                        <strong>连接名称</strong>
+                        <strong>协议类型</strong>
+                        <strong className="provider-connection-url">Base URL</strong>
+                      </div>
+                      <strong className="provider-connection-actions-label">操作</strong>
+                    </div>
+                    <ul className="provider-connection-rows" aria-label={`${selectedProvider.name}的连接渠道`}>
+                    {selectedProvider.connections.map((connection) => (
+                      <li key={connection.id} className="provider-connection-row">
+                        <button className="provider-connection-link" type="button"
+                          title={`编辑连接 ${connection.name}`}
+                          onClick={() => selectConnection(selectedProvider.id, connection.id)}>
+                          <span className="provider-connection-info">
+                            <strong className="provider-connection-name" title={connection.name}>{connection.name}</strong>
+                            <span className="provider-connection-protocol">{getProtocolOption(connection.protocol).label}</span>
+                            <span className="provider-connection-url" title={connection.baseUrl}>{connection.baseUrl || "未设置 Base URL"}</span>
+                          </span>
+                          <Pencil size={15} aria-hidden="true" />
+                        </button>
+                        <button className="icon-button danger-icon-button" type="button"
+                          aria-label={`删除连接 ${connection.name}`} title={`删除连接 ${connection.name}`}
+                          disabled={isStreaming} onClick={() => handleDeleteConnection(selectedProvider, connection)}>
+                          <Trash2 size={15} />
+                        </button>
+                      </li>
+                    ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="pane-empty-state provider-connections-empty">
+                    <strong>还没有连接</strong>
+                    <span>添加连接后，在这里查看和管理协议与地址。</span>
+                  </div>
+                )}
               </div>
             ) : !isAddingConnection && (
               <div className="pane-empty-state pane-empty-fill"><strong>{connectionSettings.providers.length ? "选择供应商" : "先添加供应商"}</strong><span>在供应商下添加连接，配置地址、密钥和模型。</span></div>

@@ -99,6 +99,64 @@ describe("ConnectionSettings", () => {
     expect(container.querySelector("#connection-models-connection-a")).toBeNull();
   });
 
+  it("lists connections and returns to the supplier without changing the selected model", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    props.connectionSettings.providers[0].connections.push({
+      id: "connection-secondary", name: "备用线路", protocol: "anthropic-native",
+      baseUrl: "https://secondary.example.com", apiKey: "", models: [],
+    });
+    const confirm = vi.fn(() => false);
+    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
+    await render(props);
+    await act(async () => button("示例供应商").click());
+    const rows = container.querySelectorAll(".provider-connection-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("https://relay.example.com/v1");
+    expect(rows[1].textContent).toContain("Anthropic Native");
+    expect(rows[1].textContent).toContain("https://secondary.example.com");
+    await act(async () => rows[1].querySelector<HTMLButtonElement>(".provider-connection-link")!.click());
+    expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe("https://secondary.example.com");
+    await act(async () => container.querySelector<HTMLButtonElement>(".connection-back-button")!.click());
+    expect(container.querySelectorAll(".provider-connection-row")).toHaveLength(2);
+    await act(async () => container.querySelector<HTMLButtonElement>(".provider-connection-link")!.click());
+    await act(async () => button("编辑模型 beta-model").click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".connection-back-button")!.click());
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[aria-label="保存模型 beta-model"]')).not.toBeNull();
+    confirm.mockReturnValue(true);
+    await act(async () => container.querySelector<HTMLButtonElement>(".connection-back-button")!.click());
+    expect(container.querySelectorAll(".provider-connection-row")).toHaveLength(2);
+    expect(props.onSelectModel).not.toHaveBeenCalled();
+  });
+
+  it("confirms list deletion, respects generation protection, and shows the empty state", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    const confirm = vi.fn(() => false);
+    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
+    await render(props);
+    await act(async () => button("示例供应商").click());
+    await act(async () => button("删除连接 主线路").click());
+    expect(props.onDeleteConnection).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("https://relay.example.com/v1"));
+    props.isStreaming = true;
+    await render(props);
+    expect(button("删除连接 主线路").disabled).toBe(true);
+    props.isStreaming = false;
+    await render(props);
+    confirm.mockReturnValue(true);
+    await act(async () => button("删除连接 主线路").click());
+    expect(props.onDeleteConnection).toHaveBeenCalledExactlyOnceWith("connection-a");
+    expect(document.activeElement?.textContent).toContain("添加连接");
+    props.connectionSettings = { version: 3, activeModelId: null,
+      providers: [{ id: "provider-a", name: "示例供应商", connections: [] }] };
+    await render(props);
+    expect(container.textContent).toContain("还没有连接");
+    expect(container.querySelector(".provider-connection-list")).toBeNull();
+    expect(document.activeElement?.textContent).toContain("添加连接");
+  });
+
   it("keeps models in connection details and retains model actions", async () => {
     const props = makeProps();
     Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });

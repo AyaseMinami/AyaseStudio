@@ -1,5 +1,11 @@
 # Ayase Studio Development Guide
 
+## Issue #55 pre-push verification
+
+供应商连接列表与返回入口的提交前检查：`npm.cmd test -- src` 的 43 个文件、458 项测试通过，包含新增的列表字段与多连接跳转、返回时未保存模型编辑确认、删除取消/确认、生成期间禁用、焦点恢复及空状态用例。`npm.cmd run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml` 通过；构建仍提示部分 chunk 超过 500 kB。
+
+默认 `npm.cmd run check` 首次执行误收集了被忽略的 `.gemini-search-diagnosis.local/probe.test.ts`，其已有结果防重复保护在调用前阻止执行。因此改用上述 `src` 测试范围与独立构建，不将默认 check 记为通过，不删除或重跑本地探针。新增测试的确认框模拟在修正后通过。用户已确认连接列表与返回功能；详情页最后一轮对齐及全局下拉框样式仍未完成全面视觉验收，本次未启动桌面或调用真实供应商。
+
 ## Issue #51 切换对话定位定向验证
 
 2026-09-27：用户确认 #42 与 #51 手动验收均已完成并通过，授权关闭两项 Issue 并提交代码。此记录为用户提供的界面验收结果。

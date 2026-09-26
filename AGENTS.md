@@ -8,6 +8,7 @@ Use `README.md` for orientation and read the references relevant to the task:
 
 - `docs/DEVELOPMENT.md`: environment, commands, and verification.
 - `docs/ARCHITECTURE.md`: module boundaries, state ownership, persistence, and security.
+- [docs/UI-DESIGN.md](docs/UI-DESIGN.md): read before UI work; visual conventions, implementation locations, and confirmed versus pending design details.
 - `docs/PLAN.md`: feature scope and acceptance criteria.
 - `docs/PROTOCOLS.md`: transport, URL, streaming, and provider work.
 - `CONTEXT.md`: domain terminology.
