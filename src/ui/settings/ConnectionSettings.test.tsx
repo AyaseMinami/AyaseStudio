@@ -159,6 +159,57 @@ describe("ConnectionSettings", () => {
     else expect(callback).toHaveBeenCalledWith("connection-a", "name", "新名称");
   });
 
+  it("reveals and hides the key without saving, and allows selecting visible text", async () => {
+    const props = makeProps();
+    await render(props);
+    const input = container.querySelector<HTMLInputElement>("#api-key")!;
+    expect(input.type).toBe("password");
+    const toggle = button("显示 API Key");
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+    expect(toggle.type).toBe("button");
+    expect(toggle.getAttribute("aria-controls")).toBe(input.id);
+    await act(async () => toggle.click());
+    expect(input.type).toBe("text");
+    expect(input.value).toBe("synthetic-test-key");
+    input.select();
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+    await act(async () => button("隐藏 API Key").click());
+    expect(input.type).toBe("password");
+    expect(input.value).toBe("synthetic-test-key");
+    expect(props.onConnectionChange).not.toHaveBeenCalled();
+  });
+
+  it("resets key visibility when switching connections or leaving their details", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    props.connectionSettings.providers[0].connections.push({
+      ...structuredClone(connectionSettings.providers[0].connections[0]),
+      id: "connection-b", name: "备用线路", apiKey: "synthetic-other-key", models: [],
+    });
+    await render(props);
+    await act(async () => button("显示 API Key").click());
+    await act(async () => button("查看连接 备用线路").click());
+    expect(container.querySelector<HTMLInputElement>("#api-key")!.type).toBe("password");
+    await act(async () => button("查看连接 主线路").click());
+    expect(container.querySelector<HTMLInputElement>("#api-key")!.type).toBe("password");
+    await act(async () => button("显示 API Key").click());
+    await act(async () => button("示例供应商").click());
+    await act(async () => button("查看连接 主线路").click());
+    expect(container.querySelector<HTMLInputElement>("#api-key")!.type).toBe("password");
+  });
+
+  it("keeps the key selectable but read-only during generation", async () => {
+    await render({ ...makeProps(), isStreaming: true });
+    await act(async () => button("显示 API Key").click());
+    const input = container.querySelector<HTMLInputElement>("#api-key")!;
+    expect(input.readOnly).toBe(true);
+    expect(input.disabled).toBe(false);
+    input.select();
+    expect(input.selectionEnd).toBe(input.value.length);
+  });
+
   it("shows field help on focus and dismisses it with Escape", async () => {
     await render(makeProps());
     expect(container.textContent).not.toContain("密钥以明文保存在本机");

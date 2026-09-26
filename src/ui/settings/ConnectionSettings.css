@@ -1,3 +1,18 @@
+.api-key-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.api-key-input .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.api-key-input .icon-button {
+  flex-shrink: 0;
+}
+
 .connection-settings-page .connection-settings-workbench {
   gap: 4px;
   border: 0;

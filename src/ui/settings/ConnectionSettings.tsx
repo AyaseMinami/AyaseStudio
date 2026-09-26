@@ -5,6 +5,8 @@ import {
   ArrowDown,
   GripVertical,
   ChevronDown,
+  Eye,
+  EyeOff,
   Gauge,
   MoreHorizontal,
   Pencil,
@@ -80,6 +82,25 @@ export interface ConnectionSettingsProps {
 }
 
 const idleCatalog: ModelCatalogViewState = { status: "idle", models: [] };
+
+function ApiKeyInput({ value, disabled, onChange }: {
+  value: string;
+  disabled: boolean;
+  onChange(value: string): void;
+}) {
+  const [visible, setVisible] = useState(false);
+  const label = visible ? "隐藏 API Key" : "显示 API Key";
+
+  return <div className="api-key-input">
+    <input id="api-key" className="field" type={visible ? "text" : "password"}
+      value={value} readOnly={disabled} onChange={(event) => onChange(event.target.value)}
+      placeholder="输入密钥" autoComplete="off" spellCheck={false} />
+    <button type="button" className="icon-button" aria-label={label} title={label}
+      aria-controls="api-key" onClick={() => setVisible((current) => !current)}>
+      {visible ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+    </button>
+  </div>;
+}
 
 type PendingFocus =
   | { kind: "provider"; id: string }
@@ -930,9 +951,8 @@ export function ConnectionSettings({
                     </div>
                     <div className="connection-field-group">
                     <div className="settings-label-help"><label className="field-label" htmlFor="api-key">API Key</label><SettingsHelp label="API Key">密钥以明文保存在本机，请仅使用可信服务的密钥。</SettingsHelp></div>
-                    <input id="api-key" className="field" type="password" value={connection.apiKey} disabled={isStreaming}
-                      onChange={(event) => onConnectionChange(connection.id, "apiKey", event.target.value)}
-                      placeholder="输入密钥" autoComplete="off" spellCheck={false} />
+                    <ApiKeyInput value={connection.apiKey} disabled={isStreaming}
+                      onChange={(value) => onConnectionChange(connection.id, "apiKey", value)} />
                     </div>
                   </div>
                 </details>
