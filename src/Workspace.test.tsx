@@ -673,8 +673,42 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.startsWith("新建验收") === true);
     await click("删除对话 新建验收"); await click("取消");
     expect(container.querySelector(".workspace-conversation-title")?.textContent).toContain("新建验收");
-    await click("删除对话 新建验收"); await click("确认永久删除对话");
+    await click("删除对话 新建验收");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    await click("确认删除对话 新建验收");
     await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.startsWith("对话 A") === true);
+  });
+
+  it("cancels inline deletion on Escape, outside click, focus departure and panel closure without deleting", async () => {
+    await click("默认助手");
+    const pending = () => container.querySelector('[aria-label="确认删除对话 对话 A"]');
+    await click("删除对话 对话 A");
+    await act(async () => pending()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(pending()).toBeNull();
+    expect(container.querySelector('.conversation-cascade-pane:not([inert])')).not.toBeNull();
+    await click("删除对话 对话 A");
+    await act(async () => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(pending()).toBeNull();
+    await click("删除对话 对话 A");
+    await act(async () => { (pending() as HTMLButtonElement).focus(); container.querySelector<HTMLTextAreaElement>('.composer-input')!.focus(); });
+    expect(pending()).toBeNull();
+    await click("删除对话 对话 A");
+    await click("收起对话栏");
+    await click("默认助手");
+    expect(pending()).toBeNull();
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.some((item) => item.id === "current")).toBe(true);
+  });
+
+  it("requires two clicks even with Ctrl and keeps the same button for rapid confirmation", async () => {
+    await click("默认助手");
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="删除对话 对话 A"]')!;
+    await act(async () => button.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+    expect(button.getAttribute("aria-label")).toBe("确认删除对话 对话 A");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.some((item) => item.id === "current")).toBe(true);
+    await act(async () => button.click());
+    await wait(() => !container.querySelector('[aria-label="删除对话 对话 A"]') && !container.querySelector('[aria-label="确认删除对话 对话 A"]'));
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.some((item) => item.id === "current")).toBe(false);
   });
 
   it("keeps existing conversations independent of later assistant edits", async () => {

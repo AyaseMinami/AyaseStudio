@@ -2686,6 +2686,11 @@ textarea:disabled {
 .conversation-leaf-select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-row-actions { flex-shrink: 0; flex-wrap: nowrap; gap: 0; padding: 0; color: rgb(var(--color-muted)); }
 .conversation-row-actions button { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; }
+.conversation-row-actions .conversation-delete-button { flex-shrink: 0; white-space: nowrap; transition: width 120ms ease-out; }
+.conversation-row-actions .conversation-delete-button[data-pending="true"] { width: 5rem; color: rgb(var(--color-error-text)); background: rgb(var(--color-error-surface)); }
+.conversation-row-actions .conversation-delete-button[data-pending="true"]:hover { background: rgb(var(--color-error-border) / 0.4); }
+.conversation-row-actions .conversation-delete-cancel { width: 2.5rem; flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) { .conversation-row-actions .conversation-delete-button { transition: none; } }
 @media (max-width: 860px) {
   .conversation-workspace-body { --assistant-pane-width: min(11.5rem, calc(42% - 1.5 * var(--navigation-gap))); --conversation-pane-width: min(13rem, calc(58% - 1.5 * var(--navigation-gap))); }
 }

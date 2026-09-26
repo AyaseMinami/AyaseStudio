@@ -34,7 +34,6 @@ function ManagementDialog({ title, children, onClose }: { title: string; childre
 type Dialog =
   | { type: "conversation"; id: string }
   | { type: "assistant"; existing?: AssistantPreset; input: AssistantInput }
-  | { type: "delete-conversation"; id: string; title: string }
   | { type: "delete-assistant"; id: string; name: string; count: number; permanent: boolean };
 
 export function ConversationNavigation({ workspace, settings, generatingIds, children, toolbar }: {
@@ -47,6 +46,8 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 860);
   const [conversationPanelOpen, setConversationPanelOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>();
+  const [pendingDelete, setPendingDelete] = useState<string>();
+  const pendingDeleteRef = useRef<HTMLLIElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   function closeNavigation() {
@@ -59,6 +60,22 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     setConversationPanelOpen(false);
   }
   const { snapshot, conversation, busy, execute } = workspace;
+  useEffect(() => {
+    setPendingDelete(undefined);
+  }, [snapshot?.selection.activeAssistantId, conversation?.id, navigationOpen, conversationPanelOpen, dialog, busy]);
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const cancel = () => setPendingDelete(undefined);
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !pendingDeleteRef.current?.contains(event.target)) cancel();
+    };
+    document.addEventListener("pointerdown", outside);
+    window.addEventListener("blur", cancel);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      window.removeEventListener("blur", cancel);
+    };
+  }, [pendingDelete]);
   const selectedAssistant = snapshot?.assistants.find((item) => item.id === snapshot.selection.activeAssistantId);
   const conversations = snapshot?.conversations.filter((item) => item.assistantId === selectedAssistant?.id) ?? [];
   const close = () => { if (!busy) setDialog(undefined); };
@@ -93,6 +110,11 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     if (event.key !== "Escape" || event.defaultPrevented || dialog || !navigationOpen) return;
     event.preventDefault();
     event.stopPropagation();
+    if (pendingDelete) {
+      pendingDeleteRef.current?.querySelector<HTMLButtonElement>(".conversation-delete-button")?.focus();
+      setPendingDelete(undefined);
+      return;
+    }
     if (conversationPanelOpen) closeConversations();
     else closeNavigation();
   }}>
@@ -145,12 +167,24 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
             </div>
             <button className="settings-button new-conversation-button" type="button" disabled={busy} onClick={() => void openConversation({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}><Plus size={14} />新建对话</button>
             {conversations.length === 0 && <p className="muted-text assistant-conversations-empty">还没有对话</p>}
-            <ul className="chat-navigation-list">{conversations.map((item) => <li key={item.id} className="chat-navigation-item conversation-leaf">
+            <ul className="chat-navigation-list">{conversations.map((item) => <li key={item.id} className="chat-navigation-item conversation-leaf"
+              ref={pendingDelete === item.id ? pendingDeleteRef : undefined}
+              onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPendingDelete(undefined); }}>
           <button className="chat-navigation-select conversation-leaf-select" type="button" aria-pressed={item.id === conversation?.id} disabled={busy} title={`${item.title}${generatingIds.has(item.id) ? " · 生成中" : ""}`}
-            onClick={() => void openConversation({ type: "select", assistantId: item.assistantId, conversationId: item.id })}><MessageSquare size={14} /><span>{item.title}{generatingIds.has(item.id) ? " · 生成中" : ""}</span></button>
+            onClick={() => { setPendingDelete(undefined); void openConversation({ type: "select", assistantId: item.assistantId, conversationId: item.id }); }}><MessageSquare size={14} /><span>{item.title}{generatingIds.has(item.id) ? " · 生成中" : ""}</span></button>
           <div className="chat-navigation-actions conversation-row-actions">
-            <button type="button" disabled={busy} title="编辑对话" aria-label={`编辑对话 ${item.title}`} onClick={() => setDialog({ type: "conversation", id: item.id })}><Pencil size={15} aria-hidden="true" /></button>
-            <button type="button" disabled={busy} title="删除" aria-label={`删除对话 ${item.title}`} onClick={() => setDialog({ type: "delete-conversation", id: item.id, title: item.title })}><Trash2 size={15} aria-hidden="true" /></button>
+            {pendingDelete === item.id
+              ? <button className="conversation-delete-cancel" type="button" aria-label={`取消删除对话 ${item.title}`} onClick={() => {
+                pendingDeleteRef.current?.querySelector<HTMLButtonElement>(".conversation-delete-button")?.focus();
+                setPendingDelete(undefined);
+              }}>取消</button>
+              : <button type="button" disabled={busy} title="编辑对话" aria-label={`编辑对话 ${item.title}`} onClick={() => setDialog({ type: "conversation", id: item.id })}><Pencil size={15} aria-hidden="true" /></button>}
+            <button className="conversation-delete-button" data-pending={pendingDelete === item.id} type="button" disabled={busy}
+              title={pendingDelete === item.id ? "永久删除对话及全部消息，无法撤销" : "删除"}
+              aria-label={`${pendingDelete === item.id ? "确认删除对话" : "删除对话"} ${item.title}`} onClick={() => {
+                if (pendingDelete !== item.id) setPendingDelete(item.id);
+                else { setPendingDelete(undefined); void execute({ type: "delete-conversation", id: item.id }); }
+              }}>{pendingDelete === item.id ? "确认删除" : <Trash2 size={15} aria-hidden="true" />}</button>
           </div>
             </li>)}</ul>
       </aside>}
@@ -207,7 +241,6 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       </section>
     </SessionConfigPanel>}
     {dialog && dialog.type !== "assistant" && dialog.type !== "conversation" && <ManagementDialog title="删除确认" onClose={close}>
-      {dialog.type === "delete-conversation" && <><p>永久删除“{dialog.title}”及全部消息，无法撤销。</p><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-conversation", id: dialog.id })}>确认永久删除对话</button></>}
       {dialog.type === "delete-assistant" && <><p>助手“{dialog.name}”包含 {dialog.count} 个对话。迁移后保留各对话设置和消息，仅改变所属助手。</p>
         {dialog.permanent ? <><p>将永久删除该助手、全部对话和消息，无法撤销。</p><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "delete" })}>确认永久删除助手及对话</button></>
           : <><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "move" })}>迁移对话到默认助手并删除助手</button><button className="settings-button" type="button" disabled={busy} onClick={() => setDialog({ ...dialog, permanent: true })}>选择永久删除全部内容…</button></>}
