@@ -1,5 +1,17 @@
 # Ayase Studio Development Guide
 
+## Issue #51 切换对话定位定向验证
+
+2026-09-27：用户确认 #42 与 #51 手动验收均已完成并通过，授权关闭两项 Issue 并提交代码。此记录为用户提供的界面验收结果。
+
+复用 #42 已有的绘制前定位实现，新增两组组件回归覆盖缓存历史直接挂载、异步历史加载、从上滚暂停的对话切走并切回，以及新建空对话。通过父组件 layout effect 读取子组件位置，验证在 passive effect 前已经到底，避免只检查最终位置而漏掉首屏跳动。happy-dom 的容器尺寸由测试模拟，不能替代实际绘制验收。
+
+验证命令：`npm.cmd test -- src/ui/chat/MessageList.test.tsx`（16 项）、`npx.cmd tsc --noEmit` 和 `git diff --check`。按用户要求不运行全量测试或 Computer Use，切换时无可见滚动过程及空对话显示由用户手动验收。
+
+## Issue #42 流式滚动定向验证
+
+`npm.cmd test -- src/ui/chat/MessageList.test.tsx` 的 14 项测试通过；新增用例模拟滚动容器尺寸，覆盖流式跟随、上滚滚轮先于 scroll 事件时暂停、底部附近继续上滚仍暂停、滚动条回到底部 48px 内恢复、附件预览滚轮不误暂停聊天，以及清空消息和切换会话重置。`npx.cmd tsc --noEmit` 通过。按用户要求不运行全量测试和 Computer Use；实际滚轮与滚动条交互由用户验收，组件模拟不代表实机验证。
+
 ## UI #44–#47 定向验证（2026-09-26）
 
 按用户要求使用内置浏览器，避免全量测试和原生桌面自动化。定向回归范围为 `src/App.test.tsx`、`src/Workspace.test.tsx`、`src/ui/chat/MessageList.test.tsx`、`src/ui/settings/SettingsWorkspace.test.tsx`、`src/ui/settings/AppearanceSettings.test.tsx`、`src/ui/settings/ConnectionSettings.test.tsx`。覆盖页面/会话切换、生成状态保护、消息入口、主题/滑块回调、树展开与节点选择分离、模型浏览不改默认、放弃编辑后不残留草稿。前端构建和 Git diff 检查补充验证；未修改 Rust、权限、协议或持久化。

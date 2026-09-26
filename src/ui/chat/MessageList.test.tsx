@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
@@ -53,6 +53,167 @@ function setup(actions: Partial<MessageActions> = {}, actionsDisabled = false, o
   const render = () => root.render(<div onKeyDown={onKeyDown}><MessageList messages={messages} actions={handlers} actionsDisabled={actionsDisabled} /></div>);
   return { host, root, handlers, render };
 }
+
+// happy-dom has no layout; model the scroll container's measured geometry and
+// browser clamping while exercising the real component events and updates.
+async function setupScrolling(withAttachment = false) {
+  const { host, root } = setup();
+  let chunk = 0;
+  const attachment = { reference: "attachments/notes.txt", name: "notes.txt", mimeType: "text/plain" as const, size: 5 };
+  const readAttachment = async () => ({ ...attachment, data: "SGVsbG8=" });
+  const render = (key = "conversation", empty = false) => root.render(<MessageList key={key}
+    onReadAttachment={readAttachment}
+    messages={empty ? [] : [{ ...messages[1], content: `chunk ${++chunk}`, status: "streaming",
+      attachments: withAttachment ? [attachment] : undefined }]} />);
+  await act(async () => render());
+  const region = host.querySelector<HTMLDivElement>(".message-scroll-region")!;
+  let height = 1000;
+  let top = 0;
+  Object.defineProperties(region, {
+    clientHeight: { configurable: true, get: () => 400 },
+    scrollHeight: { configurable: true, get: () => height },
+    scrollTop: { configurable: true, get: () => top, set: (value: number) => { top = Math.max(0, Math.min(value, height - 400)); } },
+  });
+  const scroll = async (value: number) => act(async () => {
+    region.scrollTop = value;
+    region.dispatchEvent(new Event("scroll"));
+  });
+  const wheelUp = async () => act(async () => {
+    region.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -20 }));
+  });
+  const grow = async () => { height += 100; await act(async () => render()); };
+  await act(async () => render());
+  return { host, root, region, scroll, wheelUp, grow, render };
+}
+
+it("keeps following stream growth without user scrolling", async () => {
+  const { host, root, region, grow } = await setupScrolling();
+  try {
+    expect(region.scrollTop).toBe(600);
+    await grow();
+    expect(region.scrollTop).toBe(700);
+    await grow();
+    expect(region.scrollTop).toBe(800);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("pauses on upward wheel input before the scroll event and stays paused even near the bottom", async () => {
+  const { host, root, region, grow, scroll, wheelUp } = await setupScrolling();
+  try {
+    await wheelUp();
+    await grow();
+    expect(region.scrollTop).toBe(600);
+    await scroll(580);
+    await grow();
+    expect(region.scrollTop).toBe(580);
+    await scroll(760); // Within 48px of the current bottom: resume.
+    await grow();
+    expect(region.scrollTop).toBe(900);
+    await wheelUp();
+    await scroll(880); // Still near the bottom, but moving upward must pause.
+    await grow();
+    expect(region.scrollTop).toBe(880);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("supports scrollbar scrolling and resumes only after returning near the bottom", async () => {
+  const { host, root, region, grow, scroll } = await setupScrolling();
+  try {
+    await scroll(200);
+    await grow();
+    expect(region.scrollTop).toBe(200);
+    await scroll(400);
+    await grow();
+    expect(region.scrollTop).toBe(400);
+    await scroll(752); // Exactly 48px from the bottom.
+    await grow();
+    expect(region.scrollTop).toBe(900);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("does not pause transcript following when scrolling upward inside attachment preview", async () => {
+  const { host, root, region, grow } = await setupScrolling(true);
+  try {
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="预览附件 notes.txt"]')!.click());
+    await act(async () => host.querySelector(".attachment-preview-text")!.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, deltaY: -20 }),
+    ));
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="关闭预览"]')!.click());
+    await grow();
+    expect(region.scrollTop).toBe(700);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("resets following when messages are cleared or a different conversation is mounted", async () => {
+  const { host, root, region, grow, scroll, render } = await setupScrolling();
+  try {
+    await scroll(200);
+    await act(async () => render("conversation", true));
+    await grow();
+    expect(region.scrollTop).toBe(700);
+    await scroll(200);
+    await act(async () => render("other-conversation"));
+    const other = host.querySelector<HTMLDivElement>(".message-scroll-region")!;
+    expect(other).not.toBe(region);
+    Object.defineProperties(other, {
+      scrollHeight: { configurable: true, value: 1200 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    await act(async () => render("other-conversation"));
+    expect(other.scrollTop).toBeGreaterThan(0);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it.each([false, true])("positions conversation history before paint (delayed load: %s)", async (delayed) => {
+  const { host, root } = setup();
+  const positions = new WeakMap<HTMLElement, number>();
+  const height = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.querySelectorAll("article").length * 500;
+  });
+  const viewport = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+  const readTop = vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(function (this: HTMLElement) {
+    return positions.get(this) ?? 0;
+  });
+  const writeTop = vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(function (this: HTMLElement, value: number) {
+    positions.set(this, Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)));
+  });
+  const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+  let beforePaint = -1;
+  function Screen({ id, history }: { id: string; history: StoredChatMessage[] }) {
+    // Parent layout effects observe the child after its layout effects but before
+    // passive effects. An after-paint useEffect scroll cannot satisfy this check.
+    useLayoutEffect(() => {
+      beforePaint = host.querySelector<HTMLDivElement>(".message-scroll-region")!.scrollTop;
+    });
+    return <MessageList key={id} messages={history} />;
+  }
+  try {
+    await act(async () => root.render(<Screen id="first" history={messages} />));
+    expect(beforePaint).toBe(600);
+    const first = host.querySelector<HTMLDivElement>(".message-scroll-region")!;
+    await act(async () => {
+      first.scrollTop = 100;
+      first.dispatchEvent(new Event("scroll"));
+    });
+    if (delayed) {
+      await act(async () => root.render(<Screen id="second" history={[]} />));
+      expect(beforePaint).toBe(0);
+    }
+    const history = [...messages, { ...messages[1], id: "latest", content: "Latest saved reply" }];
+    await act(async () => root.render(<Screen id="second" history={history} />));
+    expect(beforePaint).toBe(1100);
+    expect(host.textContent).toContain("Latest saved reply");
+    await act(async () => root.render(<Screen id="first" history={messages} />));
+    expect(beforePaint).toBe(600);
+    await act(async () => root.render(<Screen id="new" history={[]} />));
+    expect(beforePaint).toBe(0);
+    expect(host.querySelector(".empty-state")).not.toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    height.mockRestore(); viewport.mockRestore(); readTop.mockRestore(); writeTop.mockRestore(); scrollIntoView.mockRestore();
+  }
+});
 
 it("copies raw Markdown without rendering it first", async () => {
   const writeText = vi.fn(async () => {});

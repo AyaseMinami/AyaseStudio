@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bot, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2 } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
@@ -24,6 +24,8 @@ type Confirmation =
   | { kind: "edit"; message: StoredChatMessage; content: string; removed: number };
 
 function actionKey(kind: string, id: string) { return `${kind}:${id}`; }
+
+const FOLLOW_BOTTOM_DISTANCE = 48;
 
 function MessageActionButton({ label, title, disabled, busy, onClick, children }: {
   label: string; title?: string; disabled?: boolean; busy?: boolean; onClick(): void; children: React.ReactNode;
@@ -75,7 +77,9 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
   actionsDisabled?: boolean;
   actionError?: string;
 }) {
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const scrollRegionRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
+  const previousScrollTopRef = useRef(0);
   const [preview, setPreview] = useState<SentAttachment>();
   const [editing, setEditing] = useState<{ id: string; content: string }>();
   const [confirmation, setConfirmation] = useState<Confirmation>();
@@ -84,7 +88,16 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
   const [copyFeedback, setCopyFeedback] = useState<Record<string, string>>({});
   const [copyingId, setCopyingId] = useState<string>();
 
-  useEffect(() => { transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useLayoutEffect(() => {
+    const region = scrollRegionRef.current!;
+    if (messages.length === 0) followingRef.current = true;
+    if (followingRef.current) {
+      // Position restored history before paint, including after asynchronous loading.
+      // Immediate movement also avoids smooth scrolling fighting user input.
+      region.scrollTop = region.scrollHeight;
+      previousScrollTopRef.current = region.scrollTop;
+    }
+  }, [messages]);
   useEffect(() => {
     if (preview && !messages.some((message) => message.attachments?.some((item) => item.reference === preview.reference))) setPreview(undefined);
     if (editing && !messages.some((message) => message.id === editing.id)) setEditing(undefined);
@@ -119,7 +132,20 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
     });
   };
 
-  return <div className="message-scroll-region"><div className="message-list">
+  return <div className="message-scroll-region" ref={scrollRegionRef}
+    onWheel={(event) => {
+      if (!preview && !confirmation && event.deltaY < 0 && !event.ctrlKey) followingRef.current = false;
+    }}
+    onScroll={(event) => {
+      const region = event.currentTarget;
+      const previousTop = previousScrollTopRef.current;
+      previousScrollTopRef.current = region.scrollTop;
+      if (region.scrollTop < previousTop) followingRef.current = false;
+      else if (region.scrollTop > previousTop &&
+        region.scrollHeight - region.clientHeight - region.scrollTop <= FOLLOW_BOTTOM_DISTANCE) {
+        followingRef.current = true;
+      }
+    }}><div className="message-list">
     {messages.length === 0 ? <div className="empty-state"><div className="empty-state-mark"><Bot size={24} /></div>
       <h2 className="text-lg font-medium">只保留聊天本身</h2><p className="muted-text mt-2 text-sm leading-6">配置一个协议后开始对话。没有 Agent、知识库或插件系统。</p>
     </div> : <div className="space-y-7">{messages.map((message, index) => {
@@ -174,7 +200,6 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
         </div> : <div className="assistant-message markdown">{body}{controls}</div>}
       </article>;
     })}</div>}
-    <div ref={transcriptEndRef} />
   </div>
   {preview && onReadAttachment && <SentAttachmentPreview key={preview.reference} item={preview} read={onReadAttachment} onClose={() => setPreview(undefined)} />}
   {confirmation && <ConfirmationDialog confirmation={confirmation} busy={!!pending} disabled={actionsDisabled} error={actionError} onClose={() => setConfirmation(undefined)} onConfirm={confirm} />}
