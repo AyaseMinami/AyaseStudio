@@ -197,7 +197,10 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
         {message.role === "user" ? <div className="user-message-group">
           <div className="user-message markdown">{body}</div>
           {controls}
-        </div> : <div className="assistant-message markdown">{body}{controls}</div>}
+        </div> : <div className="assistant-message-group">
+          <div className="assistant-message markdown">{body}</div>
+          {controls}
+        </div>}
       </article>;
     })}</div>}
   </div>

@@ -54,6 +54,21 @@ function setup(actions: Partial<MessageActions> = {}, actionsDisabled = false, o
   return { host, root, handlers, render };
 }
 
+it("keeps both action bars and copy feedback outside message bodies", async () => {
+  const { host, root, render } = setup();
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(async () => {}) } });
+  try {
+    await act(async () => render());
+    for (const group of host.querySelectorAll(".user-message-group, .assistant-message-group")) {
+      const body = group.querySelector(".markdown")!;
+      expect(body.querySelector(".message-actions")).toBeNull();
+      expect(body.nextElementSibling?.className).toBe("message-actions");
+      await act(async () => group.querySelector<HTMLButtonElement>("[aria-label='复制']")!.click());
+      expect(group.querySelector(".message-copy-feedback")?.parentElement).toBe(group);
+    }
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 // happy-dom has no layout; model the scroll container's measured geometry and
 // browser clamping while exercising the real component events and updates.
 async function setupScrolling(withAttachment = false) {

@@ -2024,11 +2024,18 @@ textarea:disabled {
   justify-content: flex-end;
 }
 
-.user-message-group {
+.user-message-group, .assistant-message-group {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
   min-width: 0;
+  max-width: 100%;
+}
+
+.assistant-message-group { align-items: flex-start; }
+.assistant-message-group:has(.message-editor) { width: 100%; }
+
+.user-message-group {
+  align-items: flex-end;
   max-width: 85%;
 }
 
@@ -2060,11 +2067,13 @@ textarea:disabled {
   padding: 0.85rem 1rem;
 }
 
-.message-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
-.message-action { display: inline-flex; align-items: center; justify-content: center; width: 1.875rem; height: 1.875rem; border-radius: 0.375rem; color: rgb(var(--color-muted)); }
+.message-actions { display: flex; flex-wrap: wrap; max-width: 100%; gap: 0.35rem; margin-top: 0.55rem; }
+.message-action { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 1.875rem; height: 1.875rem; border-radius: 0.375rem; color: rgb(var(--color-muted)); }
 .message-action[aria-busy="true"] { background: rgb(var(--color-hover)); }
 .message-action:hover:not(:disabled), .message-action:focus-visible { color: rgb(var(--color-text)); background: rgb(var(--color-elevated)); }
 .message-action:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+.message-action:active:not(:disabled) { color: rgb(var(--color-text)); background: rgb(var(--color-hover)); }
+.message-action:disabled { opacity: 0.5; cursor: default; }
 .user-message:has(.message-editor), .assistant-message:has(.message-editor) { width: 100%; min-width: 0; padding: 0; background: transparent; color: rgb(var(--color-text)); }
 .message-editor { display: grid; min-width: 0; gap: 0.5rem; padding: 0.75rem; border: 1px solid rgb(var(--color-border-strong)); border-radius: 0.65rem; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); }
 .message-editor label, .message-edited, .message-copy-feedback { font-size: var(--font-small); color: rgb(var(--color-muted)); }
