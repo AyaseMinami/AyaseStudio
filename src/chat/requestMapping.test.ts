@@ -23,6 +23,26 @@ function configured(): SessionConfig {
 }
 
 describe("protocol request mapping", () => {
+  it("sends Office unchanged through Responses and blocks incompatible history or oversized files", () => {
+    const attachment = { name: "report.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const,
+      size: 5, data: "UEsDBAE=" };
+    const attached: ChatRequest = { ...request, messages: [
+      { role: "user", content: "previous", attachments: [attachment] },
+      { role: "assistant", content: "ok" }, { role: "user", content: "continue" },
+    ] };
+    const body = buildProtocolBody("openai-responses", attached);
+    expect(body.store).toBe(false);
+    expect(body.input).toMatchObject([{ content: [
+      { type: "input_text" }, { type: "input_file", filename: attachment.name,
+        file_data: `data:${attachment.mimeType};base64,${attachment.data}` },
+    ] }, {}, {}]);
+    for (const protocol of ["openai-chat", "gemini-native", "anthropic-native"] as const) {
+      expect(() => buildProtocolBody(protocol, attached)).toThrow("Office 附件仅支持 Responses");
+    }
+    expect(() => buildProtocolBody("openai-responses", { ...request, messages: [
+      { role: "user", content: "", attachments: [{ ...attachment, size: 50_000_000 }] },
+    ] })).toThrow("50 MB");
+  });
   it("maps images, PDFs and UTF-8 documents inline for each protocol without provider uploads", () => {
     const image = { name: "view.png", mimeType: "image/png" as const, size: 3, data: "AQID" };
     const pdf = { name: "report.pdf", mimeType: "application/pdf" as const, size: 5, data: "JVBERi0=" };

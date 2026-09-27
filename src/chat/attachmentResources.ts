@@ -3,7 +3,7 @@ import { AttachmentError, base64ToBytes,
   type RequestAttachment, type SentAttachment } from "./attachments";
 
 const errors: Record<string, string> = {
-  "attachment-unsupported": "仅支持 PNG/JPEG/WebP/PDF/TXT/Markdown 文件。",
+  "attachment-unsupported": "不支持此附件类型。请选择图片、PDF、常用文本或 DOCX/XLSX/PPTX。",
   "attachment-corrupt": "附件内容无法读取或编码无效。",
   "attachment-invalid-reference": "附件引用无效。",
   "attachment-unavailable": "附件已不可读取。",

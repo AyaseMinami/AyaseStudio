@@ -1,4 +1,18 @@
-export type AttachmentMime = "image/png" | "image/jpeg" | "image/webp" | "application/pdf" | "text/plain" | "text/markdown";
+const officeMimeTypes = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+} as const;
+export type AttachmentMime = "image/png" | "image/jpeg" | "image/webp" | "application/pdf" | "text/plain" | "text/markdown"
+  | typeof officeMimeTypes[keyof typeof officeMimeTypes];
+const textExtensions = "txt,csv,tsv,json,xml,yaml,yml,log,html,htm,css,js,jsx,ts,tsx,py,rs,java,c,cpp,h,hpp,cs,go,sh,sql,toml,ini,tex".split(",");
+export function isOfficeAttachment(item: AttachmentMetadata): boolean {
+  return Object.values(officeMimeTypes).some((mime) => mime === item.mimeType);
+}
+export function attachmentAccept(): string {
+  return ["png", "jpg", "jpeg", "webp", "pdf", "md", "markdown", ...textExtensions,
+    ...Object.keys(officeMimeTypes)].map((ext) => `.${ext}`).join(",");
+}
 
 export interface AttachmentMetadata {
   name: string;
@@ -23,6 +37,8 @@ export class AttachmentError extends Error {}
 
 function mimeFromName(name: string): AttachmentMime {
   const extension = name.split(".").pop()?.toLowerCase();
+  if (extension && textExtensions.includes(extension)) return "text/plain";
+  if (extension === "docx" || extension === "xlsx" || extension === "pptx") return officeMimeTypes[extension];
   switch (extension) {
     case "png": return "image/png";
     case "jpg": case "jpeg": return "image/jpeg";
@@ -30,7 +46,7 @@ function mimeFromName(name: string): AttachmentMime {
     case "pdf": return "application/pdf";
     case "txt": return "text/plain";
     case "md": case "markdown": return "text/markdown";
-    default: throw new AttachmentError("仅支持 PNG/JPEG/WebP/PDF/TXT/Markdown 文件。");
+    default: throw new AttachmentError("不支持此文件类型。可添加图片、PDF、常用文本或 DOCX/XLSX/PPTX（仅 Responses）。");
   }
 }
 
@@ -38,6 +54,9 @@ function mimeFromHeader(name: string, bytes: Uint8Array): AttachmentMime {
   if (!name || /[\\/\p{Cc}]/u.test(name)) throw new AttachmentError("附件文件名无效。");
   const declaredMimeType = mimeFromName(name);
   const starts = (...signature: number[]) => signature.every((byte, index) => bytes[index] === byte);
+  if (isOfficeAttachment({ name, mimeType: declaredMimeType, size: bytes.length }) && !starts(80, 75, 3, 4)) {
+    throw new AttachmentError("Office 文件容器格式无效，请选择 DOCX/XLSX/PPTX 原文件。");
+  }
   if (declaredMimeType.startsWith("image/")) {
     const actualMimeType: AttachmentMime | undefined = starts(137, 80, 78, 71, 13, 10, 26, 10)
       ? "image/png" : starts(255, 216, 255)
@@ -91,6 +110,7 @@ export function safeTextAttachment(data: string): string {
 }
 
 export function attachmentCapabilityNotice(model: string, attachments: AttachmentMetadata[]): string | undefined {
+  if (attachments.some(isOfficeAttachment)) return "Office 原文件由 Responses 服务端处理，本地不解析；文档内图片/图表不保证读取，表格可能只处理部分行。中转站兼容性尚未核实。";
   if (!attachments.some((item) => !item.mimeType.startsWith("text/"))) return undefined;
   return model.trim()
     ? "当前模型的图片/PDF 输入能力尚未核实；若上游不支持会报告错误，不会自动改用其他模型或重试。"
@@ -99,6 +119,9 @@ export function attachmentCapabilityNotice(model: string, attachments: Attachmen
 
 export function attachmentCapabilityFailure(protocol: ChatProtocol, model: string,
   attachments: AttachmentMetadata[]): string | undefined {
+  if (protocol !== "openai-responses" && attachments.some(isOfficeAttachment)) {
+    return "Office 附件仅支持 Responses 连接。请切换连接或移除附件；不会自动转换文件。";
+  }
   if (!attachments.some((item) => item.mimeType.startsWith("image/") || item.mimeType === "application/pdf")) return undefined;
   if ((protocol === "openai-chat" || protocol === "openai-responses") &&
     (/^gpt-3\.5-turbo(?:$|-)/i.test(model) || /^gpt-4(?:$|-(?:0314|0613)(?:$|-))/i.test(model) ||

@@ -23,6 +23,36 @@ afterEach(async () => {
 });
 
 describe("attachment UI", () => {
+  it("keeps Office selectable and blocks sending after switching protocol without losing the draft", async () => {
+    const item = { id: "office", name: "report.docx", size: 5,
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const,
+      file: new File(["PK"], "report.docx") };
+    const props = { title: "test", protocolLabel: "test", draft: "", draftAttachments: [item],
+      isHydrated: true, isGenerating: false, messages: [], onClear: vi.fn(), onDraftChange: vi.fn(), onSend: vi.fn(), onStop: vi.fn() };
+    await mount(<ChatWorkspace {...props} protocol="openai-responses" />);
+    expect(container.querySelector<HTMLInputElement>('input[type="file"]')!.accept).toContain(".docx");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(false);
+    await act(async () => root!.render(<ChatWorkspace {...props} protocol="anthropic-native" />));
+    expect(container.querySelector<HTMLInputElement>('input[type="file"]')!.accept).toContain(".docx");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(true);
+    expect(container.textContent).toContain("report.docx");
+    expect(container.textContent).toContain("Office 附件仅支持 Responses");
+    await act(async () => root!.render(<ChatWorkspace {...props} protocol={undefined} />));
+    const accept = container.querySelector<HTMLInputElement>('input[type="file"]')!.accept;
+    expect(accept).toContain(".docx");
+    expect(accept).toContain(".xlsx");
+    expect(accept).toContain(".pptx");
+  });
+
+  it("shows Office metadata without reading its binary content for preview", async () => {
+    const read = vi.fn();
+    await mount(<MessageList messages={[{ id: "u", role: "user", content: "", status: "complete",
+      attachments: [{ reference: "attachments/id.xlsx", name: "budget.xlsx", size: 5,
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] }]} onReadAttachment={read} />);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="预览附件 budget.xlsx"]')!.click());
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("不解析或预览 Office 正文");
+    expect(read).not.toHaveBeenCalled();
+  });
   it("shows a compact filename chip before the input without decoding the draft image", async () => {
     const createUrl = vi.spyOn(URL, "createObjectURL");
     const item = { id: "a", name: "broken.png", mimeType: "image/png" as const, size: 3,

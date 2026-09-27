@@ -1,5 +1,11 @@
 # Ayase Studio Architecture
 
+## Lightweight attachment expansion (#63)
+
+按 2026-09-27 用户确认，新增常用 UTF-8 文本/代码和 Responses 的 DOCX/XLSX/PPTX 原文件输入。文本复用 `text/plain` 与受管 `.txt` 副本，保留原文件名；Office 使用对应 MIME 与原字节，受管引用保留 Office 后缀。`attachments.ts` 统一前端格式识别、选择器列表及协议提示，Rust 校验与副本读写保持一致。Office 仅检查 ZIP 文件头，不解压或验证完整 OOXML，不能将此检查视为完整真实性或损坏检测。
+
+不新增解析器、OCR、转码或 Files API。Office 预览只显示已有元数据，不读取完整二进制；文本作为纯文本预览，Markdown 沿用 SafeMarkdown。切换协议保留草稿，Office 在非 Responses 下阻止发送；最终请求映射也检查保留的历史附件。原有持久化、取消、引用整理和请求临时内存生命周期保持不变。
+
 ## Issue #31 对话自动命名
 
 首条新用户消息及附件提交成功后，后台命名先将原文合并空白并截断到最多 40 个 Unicode 码点（含省略号）；无正文时用附件文件名。随后使用发送时冻结的连接和模型，发起一次独立标题请求。成功则替换原文标题，失败、超时或不完整输出保留原文标题。这一用户修订替代远端 #31 的“失败保留新对话”验收；远端未修改。

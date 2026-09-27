@@ -20,7 +20,7 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Conversation-owned system instruction, model, validated generation settings, local input-history budget, protocol-specific safe JSON supplements, and streaming/non-streaming generation, initialized from assistant defaults
 - Top-level chat/settings navigation with a dedicated, categorized settings center
 - Persistent light, dark, and system-following appearance modes with safe custom colors and private local backgrounds
-- PNG/JPEG/WebP/PDF/TXT/Markdown attachments from picker, chat drag/drop, or image paste: unsent drafts stay transient; sending stores private copies and history references without a post-send in-memory image cache, with read-only previews
+- PNG/JPEG/WebP/PDF and UTF-8 text/code attachments; DOCX/XLSX/PPTX original-file input on Responses connections. Picker/drop drafts stay transient; sending stores private copies and history references. Office shows file information only, without local extraction or conversion; existing image/PDF/text previews remain available.
 
 Raw HTML in model output is rendered as inert text. Alpha credentials are stored as plaintext in the local WebView profile; do not use untrusted relay credentials.
 

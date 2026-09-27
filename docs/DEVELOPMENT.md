@@ -1,5 +1,19 @@
 # Ayase Studio Development Guide
 
+## Issue #63 轻量附件扩展（2026-09-27）
+
+后续按用户反馈取消选择器的协议过滤：所有连接（包括尚未选择模型）都列出 DOCX/XLSX/PPTX，加入草稿后再提示 Responses 发送要求。切换连接保留草稿，非 Responses 的发送限制不变。
+
+该修复通过 9 项附件 UI 测试、TypeScript 与 diff 检查；内置浏览器确认 Anthropic 下文件输入 accept 包含三个 Office 后缀，添加后显示限制原因并禁用发送。此轮未操作 Windows 原生选择对话框。
+
+新增 UTF-8 结构化文本/代码，以及仅 Responses 可发送的 DOCX/XLSX/PPTX 原文件。Office 仅验证 ZIP 文件头，不做完整 OOXML 解析；预览只读元数据，无新增依赖。验收范围及远端需求差异见 [计划](PLAN.md#issue-63-lightweight-attachments)。
+
+定向前端 5 个文件、54 项测试通过（格式识别、请求映射、私有存储接口、会话附件生命周期及 UI），生产构建通过，保留既有大 chunk 提示。Rust 附件 14 项测试和 cargo check 通过。独立只读审查未发现确认缺陷。未运行无关全量测试，也未读取凭据或请求真实供应商。
+
+内置浏览器使用独立 `127.0.0.1:1453` 与 `ui-review.local/attachments63.html`，真实组件和请求映射配合合成附件、本地模拟存储。通过键盘验证添加草稿、切换协议保留附件且阻止发送、切回 Responses 后产生原 Office Base64 与 CSV 正文、Office 信息预览及 CSV 中文预览、Escape 关闭；浏览器刷新恢复仅验证模拟存储，正式持久化由既有会话测试及本轮 Rust 副本测试覆盖。720×520 浅深主题均无横向溢出；截图为 `ui-review.local/attachments63-light.png` 与 `attachments63-preview.png`。鼠标点击工具未改变页面，未将其计为通过。
+
+`tauri dev --no-watch` 启动检查因用户正在运行的 `target/debug/ayase-studio.exe` 被占用，链接替换报 Windows 拒绝访问而未完成；保留该实例，不强制关闭。原生文件对话框与真实供应商兼容性未验收，浏览器检查不替代它们。
+
 ## Issue #59 区域透明度（2026-09-27）
 
 后续按用户要求将预览改为固定 1920×1080 的完整模拟画布并整体缩放，背景取景明确为 16:9。10 项相关测试、TypeScript、生产构建和 diff 检查通过；测试覆盖容器宽度变化、observer 清理、固定预览取景及真实窗口默认取景。内置浏览器实测内部尺寸始终 1920×1080，在 1280px 宽窗口显示为 948×533.25，在 1440px 双列设置页显示为 597×335.8125；720×520 下无横向溢出，浅深主题和透明度实时更新正常。截图为 `ui-review.local/preview-1080p.png`，独立只读复审无确认缺陷。本轮仅改预览与可选背景比例参数，未重复全量测试、Rust 或原生启动。

@@ -1,8 +1,10 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { FileImage, FileText, Paperclip, Send, Square, X } from "lucide-react";
-import type { DraftAttachment } from "../../chat/attachments";
+import { attachmentAccept, type DraftAttachment } from "../../chat/attachments";
+import type { ChatProtocol } from "../../chat/types";
 
 export interface ComposerProps {
+  protocol?: ChatProtocol;
   thinkingControl?: ReactNode;
   searchControl?: ReactNode;
   modelControl?: ReactNode;
@@ -21,6 +23,7 @@ export interface ComposerProps {
 }
 
 export function Composer({
+  protocol,
   thinkingControl,
   searchControl,
   modelControl,
@@ -58,7 +61,7 @@ export function Composer({
         )}
         <div className="composer-frame">
           <input ref={picker} type="file" multiple hidden
-            accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.markdown" aria-label="选择附件"
+            accept={attachmentAccept()} aria-label="选择附件"
             onChange={(event) => {
               onFiles?.([...(event.target.files ?? [])]);
               event.target.value = "";
@@ -93,7 +96,7 @@ export function Composer({
           <div className="composer-toolbar">
             <div className="composer-tools" role="group" aria-label="聊天功能">
             <button className="composer-tool-button" type="button" aria-label="添加附件"
-              title="添加附件（选择文件、拖入对话或粘贴图片；点击发送后才请求）"
+              title={`添加图片、PDF、文本/代码${protocol === "openai-responses" ? "、Office 原文件" : "（Office 需 Responses）"}；点击发送后才请求`}
               disabled={!isHydrated}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
             {thinkingControl}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { base64ToBytes, safeTextAttachment, type RequestAttachment, type SentAttachment } from "../../chat/attachments";
+import { base64ToBytes, isOfficeAttachment, safeTextAttachment, type RequestAttachment, type SentAttachment } from "../../chat/attachments";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 
 function PdfPreview({ data }: { data: string }) {
@@ -59,13 +59,14 @@ export function SentAttachmentPreview({ item, read, onClose }: {
   const [loaded, setLoaded] = useState<RequestAttachment>();
   const [error, setError] = useState("");
   const dialog = useRef<HTMLDivElement>(null);
+  const infoOnly = isOfficeAttachment(item);
   useEffect(() => {
     let alive = true;
-    void read(item).then((value) => { if (alive) setLoaded(value); })
+    if (!infoOnly) void read(item).then((value) => { if (alive) setLoaded(value); })
       .catch((caught) => { if (alive) setError(caught instanceof Error ? caught.message : "附件读取失败。"); });
     dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => { alive = false; };
-  }, [item, read]);
+  }, [item, read, infoOnly]);
   return <div className="attachment-preview-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose();
   }}>
@@ -74,7 +75,9 @@ export function SentAttachmentPreview({ item, read, onClose }: {
       <div className="attachment-preview-heading"><h2>{item.name}</h2>
         <button type="button" aria-label="关闭预览" onClick={onClose}><X size={18} /></button></div>
       {error && <p role="alert">{error}</p>}
-      {!loaded && !error && <p role="status">正在读取附件…</p>}
+      {infoOnly && <div className="attachment-preview-text"><p>{item.name} · {(item.size / 1_000_000).toFixed(2)} MB</p>
+        <p>{item.mimeType}</p><p>原文件已保存在本地。本应用不解析或预览 Office 正文，发送时由 Responses 服务端处理。</p></div>}
+      {!infoOnly && !loaded && !error && <p role="status">正在读取附件…</p>}
       {!error && loaded?.mimeType.startsWith("image/") &&
         <img className="attachment-preview-image" alt={loaded.name}
           onError={() => setError("图片加载失败，无法预览。附件记录仍保持不变。")}

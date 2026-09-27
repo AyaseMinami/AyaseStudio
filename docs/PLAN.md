@@ -10,6 +10,10 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## v0.1 scope
 
+### Issue #63 lightweight attachments
+
+2026-09-27 用户确认首批范围：CSV/TSV/JSON/XML/YAML/日志及常见代码、配置文本按 UTF-8 正文发送；DOCX/XLSX/PPTX 仅经 Responses 原文件内联发送，Office 本地仅展示信息。无本地 OCR、内容提取、格式转换、Office 正文预览或新增依赖；音视频留待后续。Office 只检查 ZIP 文件头，完整可解析性由上游判断，这取代远端 Issue 对全部损坏/伪造文件预先拒绝的宽泛要求。未知模型和中转站能力不臆断，失败不自动重试。远端 Issue 未修改。
+
 ### Issue #31 automatic conversation titles
 
 按 2026-09-27 用户修订采用两步命名：首条消息提交后立即以原文命名（合并空白，最多 40 个 Unicode 码点；仅附件用文件名），后台使用同一模型概括后替换。失败保留原文标题，替代远端 Issue 的默认标题回退要求。每个对话只尝试一次；手动改名优先，后续消息及重试不反复命名。后台命名不阻塞主聊天与导航，不读取附件正文，不引入专用模型设置页。远端 Issue 未修改。
@@ -44,7 +48,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 ## Explicitly out of scope
 
 - Agents, MCP, RAG, knowledge bases, and client-executed tools/search.
-- Provider Files API uploads, audio/video/Office attachments, and unsent attachment persistence.
+- Provider Files API uploads, audio/video attachments, local Office parsing/conversion, and unsent attachment persistence.
 - Saved edit/regeneration versions and arrow navigation (separate Issue #17).
 - Accounts, cloud sync, telemetry, auto-update, plugins, and marketplace features.
 - Global shortcuts, tray behavior, frameless-window tricks, and multi-window behavior.

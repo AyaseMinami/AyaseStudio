@@ -126,6 +126,7 @@ export function ChatWorkspace({
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
           attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
+        protocol={protocol}
         modelControl={modelPicker
           ? <ModelSelector label={modelLabel ?? "选择模型"} fullLabel={protocolLabel} {...modelPicker} />
           : <span className="composer-model-label">{protocolLabel}</span>}
