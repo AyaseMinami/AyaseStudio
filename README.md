@@ -17,7 +17,11 @@
 
 ## 开始使用
 
-Windows 安装包以 NSIS 安装程序（`*-setup.exe`）形式提供，请以 [Releases](https://github.com/AyaseMinami/AyaseStudio/releases) 中实际发布的版本为准。尚无可用安装包时，可按下方说明从源码运行。
+当前预发布版本：**[Alpha 3](https://github.com/AyaseMinami/AyaseStudio/releases/tag/v0.1.0-alpha.3)**。
+
+**[下载 Windows x64 安装包](https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-alpha.3/Ayase.Studio_0.1.0-alpha.3_x64-setup.exe)** · [所有版本与更新说明](https://github.com/AyaseMinami/AyaseStudio/releases)
+
+运行下载的 `*-setup.exe` 安装；已有 NSIS 安装可覆盖升级，升级前请备份重要数据。安装包尚未进行代码签名，Windows 可能显示 SmartScreen 提示。GitHub 的 Source code ZIP/TAR.GZ 是源码，不是安装包。
 
 1. 打开设置中的模型服务配置，创建供应商和连接。
 2. 选择协议，填写 Base URL 与自己的 API Key，获取或手动添加模型。
