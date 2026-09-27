@@ -146,6 +146,21 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   }
 
   const modelKey = JSON.stringify([...validModelIds].sort());
+  // Share the write ordering with navigation, but never hold global busy for a background title.
+  async function updateAutomaticTitle(command: Extract<WorkspaceCommand,
+    { type: "start-conversation-title" | "finish-conversation-title" }>) {
+    let conversation: WorkspaceSnapshot["conversations"][number] | undefined;
+    const next = queue.current.catch(() => undefined).then(async () => {
+      if (!alive.current) return;
+      const updated = await repository.execute(command);
+      snapshotRef.current = updated;
+      if (alive.current) setSnapshot(updated);
+      conversation = updated.conversations.find((item) => item.id === command.id);
+    });
+    queue.current = next.catch(() => undefined);
+    await next;
+    return conversation;
+  }
   useEffect(() => {
     if (!snapshot) return;
     const valid = new Set(validModelIds);
@@ -169,7 +184,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   }
 
   return {
-    snapshot, conversation, assistant, effective, view, busy, loadError, operationError, execute, retry: initialize,
+    snapshot, conversation, assistant, effective, view, busy, loadError, operationError, execute, updateAutomaticTitle, retry: initialize,
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
     canSend: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,

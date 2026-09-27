@@ -711,10 +711,26 @@ describe("assistant workspace public behavior", () => {
     expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.some((item) => item.id === "current")).toBe(false);
   });
 
+  it("only marks a conversation title manual when its field was edited", async () => {
+    await click("默认助手"); await click("新建对话");
+    await wait(() => !!container.querySelector('[aria-label="编辑对话 新对话"]'));
+    await click("编辑对话 新对话");
+    await fill("#session-system", "Only change the persona");
+    await click("保存对话"); await wait(() => !container.querySelector('[role="dialog"]'));
+    const state = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    const id = state.selection.lastSelected.default!;
+    expect(state.conversations.find((item) => item.id === id)?.titleNaming).toBeUndefined();
+    await click("编辑对话 新对话");
+    await fill("#conversation-title", "自定"); await fill("#conversation-title", "新对话");
+    await click("保存对话"); await wait(() => !container.querySelector('[role="dialog"]'));
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.find((item) => item.id === id)?.titleNaming).toBe("manual");
+  });
+
   it("keeps existing conversations independent of later assistant edits", async () => {
     const observed: ChatRequest[] = [];
     runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request: ChatRequest) {
-      observed.push(request); yield { type: "completed" };
+      if (request.config?.stream !== false) observed.push(request);
+      yield { type: "completed" };
     } } satisfies ChatTransport);
     await click("默认助手");
     await click("新建对话");

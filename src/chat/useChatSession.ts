@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { GenerationTasks } from "./generationTasks";
+import { summarizeConversationTitle } from "./conversationTitle";
 import { isTauri } from "@tauri-apps/api/core";
 
 import type { DiscoveredModel } from "./modelCatalog";
@@ -138,6 +139,7 @@ export function useChatSession({
     new Map<string, AbortController>(),
   );
   const testAbortControllers = useRef(new Map<string, AbortController>());
+  const titleAbortControllers = useRef(new Set<AbortController>());
   const [modelCatalogs, setModelCatalogs] = useState<
     Record<string, ModelCatalogViewState>
   >({});
@@ -229,6 +231,7 @@ export function useChatSession({
       generationTasks.activate();
       return () => {
         generationTasks.dispose();
+        for (const controller of titleAbortControllers.current) controller.abort();
         for (const controller of catalogAbortControllers.current.values()) {
           controller.abort();
         }
@@ -639,6 +642,7 @@ export function useChatSession({
       return;
     }
     const requestConnection = structuredClone(activeTarget.connection);
+    const requestModelId = activeTarget.model.modelId;
     const replayScope = `${requestConnection.id}|${requestConnection.baseUrl}`;
     if (resume?.continuation && (resume.continuation.scope !== replayScope || resume.continuation.model !== activeTarget.model.modelId || requestConnection.protocol !== "anthropic-native")) {
       setError("请切回这条回复使用的连接和模型后继续生成。"); return;
@@ -822,6 +826,7 @@ export function useChatSession({
         }
         return;
       }
+      startTitleNaming();
       if (controller.signal.aborted) {
         workingMessages = [...history, userMessage, { ...assistantMessage, status: "aborted" }];
         await requestStore.updateMessages(workingMessages).catch(() => undefined);
@@ -832,6 +837,36 @@ export function useChatSession({
       }
       setMessages(workingMessages);
       consumeSentDraft();
+
+      function startTitleNaming(): void {
+        if (targetUser || messages.some((message) => message.role === "user")) return;
+        const titleController = new AbortController();
+        titleAbortControllers.current.add(titleController);
+        const timeout = setTimeout(() => titleController.abort(), 60_000);
+        void (async () => {
+          try {
+            const conversation = await workspace.updateAutomaticTitle({ type: "start-conversation-title",
+              id: requestStore.id, messageId: userMessage.id });
+            const naming = conversation?.titleNaming;
+            if (!naming || naming === "manual" || naming.status !== "pending" ||
+              naming.sourceMessageId !== userMessage.id || titleController.signal.aborted) return;
+            let title: string | undefined;
+            try {
+              const transport = await createRuntimeChatTransport(requestConnection.protocol);
+              if (!titleController.signal.aborted) title = await summarizeConversationTitle(transport, {
+                baseUrl: requestConnection.baseUrl, apiKey: requestConnection.apiKey,
+                model: requestModelId, signal: titleController.signal,
+              }, naming.source);
+            } catch { /* Naming failure keeps the first-message title. */ }
+            await workspace.updateAutomaticTitle({ type: "finish-conversation-title", id: requestStore.id,
+              messageId: userMessage.id, title: titleController.signal.aborted ? undefined : title });
+          } catch { /* Optional metadata must not affect message sending. */ }
+          finally {
+            clearTimeout(timeout);
+            titleAbortControllers.current.delete(titleController);
+          }
+        })();
+      }
 
       let persistChain = Promise.resolve();
       let persistenceFailed = false;

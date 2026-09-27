@@ -1,5 +1,11 @@
 # Protocol Compatibility Contract
 
+## Conversation title requests (#31)
+
+After the first sent message commits, automatic naming makes one additional request through the existing `ChatTransport`, using the connection and model frozen for that send. The request has its own title instruction, non-streaming configuration, a 256-token output cap, and at most 2,000 Unicode code points of the first user text (attachment filenames if text is absent). It does not inherit the chat persona, search, thinking overrides, custom JSON, history, or attachment contents. Provider-default reasoning may still apply. Existing URL resolution, adapter behavior, and Responses `store: false` remain unchanged.
+
+Naming has an independent abort signal and a 60-second timeout, with no automatic retry, fallback model, or secondary provider. Only normal completed output is accepted; failures, empty output, cancellation, and incomplete terminal reasons keep the locally generated first-message title. This extra request is separate from the main reply and does not alter its messages or errors.
+
 ## Neutral request
 
 Every adapter receives a base URL, API key, model, ordered local message history, and optional abort signal. The base URL stops before the protocol resource path.

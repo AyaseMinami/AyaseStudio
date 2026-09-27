@@ -29,6 +29,11 @@ interface ControlledRequest {
 function controlledTransport(requests: ControlledRequest[]): ChatTransport {
   return {
     async *stream(request) {
+      // This fixture controls chat lifetimes; title requests finish independently.
+      if (request.config?.stream === false) {
+        yield { type: "completed", finishReason: "stop" };
+        return;
+      }
       const events: ChatEvent[] = [];
       let wake!: () => void;
       let done = false;

@@ -15,6 +15,7 @@ export interface Conversation {
   id: string;
   assistantId: string;
   title: string;
+  titleNaming?: { sourceMessageId: string; source: string; status: "pending" | "finished" } | "manual";
   createdAt: number;
   updatedAt: number;
   // Legacy input only; initialization converts it to settings and removes it.
@@ -46,6 +47,8 @@ export type WorkspaceCommand =
   | { type: "delete-assistant"; id: string; mode: "move" | "delete" }
   | { type: "create-conversation"; id: string; assistantId: string }
   | { type: "rename-conversation"; id: string; title: string }
+  | { type: "start-conversation-title"; id: string; messageId: string }
+  | { type: "finish-conversation-title"; id: string; messageId: string; title?: string }
   | { type: "configure-conversation"; id: string; settings: import("./conversationConfig").ConversationConfig; title?: string }
   | { type: "edit-message"; conversationId: string; messageId: string; content: string }
   | { type: "delete-message"; conversationId: string; messageId: string }

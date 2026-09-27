@@ -15,6 +15,7 @@ Ayase Studio is a deliberately small, local-first desktop chat client. It uses T
 - Normalized HTTP, network, protocol, and abort outcomes
 - Three-level supplier → connection → model configuration, including repeated protocols, per-connection model discovery/testing, persisted active-model selection, and deterministic legacy migration
 - Assistant templates with independent full conversation settings, compact settings dialogs, safe legacy migration, and Dexie persistence
+- First-message conversation titles, followed by one background summary request using the same model; failures keep the original-text title and manual names take priority
 - User and assistant message copying, editing while preserving history, user-message edit-and-send with confirmed history truncation, single-message deletion, explicit regeneration, and independent conversation branches
 - Conversation-owned system instruction, model, validated generation settings, local input-history budget, protocol-specific safe JSON supplements, and streaming/non-streaming generation, initialized from assistant defaults
 - Top-level chat/settings navigation with a dedicated, categorized settings center

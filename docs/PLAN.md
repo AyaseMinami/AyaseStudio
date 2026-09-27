@@ -10,6 +10,10 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## v0.1 scope
 
+### Issue #31 automatic conversation titles
+
+按 2026-09-27 用户修订采用两步命名：首条消息提交后立即以原文命名（合并空白，最多 40 个 Unicode 码点；仅附件用文件名），后台使用同一模型概括后替换。失败保留原文标题，替代远端 Issue 的默认标题回退要求。每个对话只尝试一次；手动改名优先，后续消息及重试不反复命名。后台命名不阻塞主聊天与导航，不读取附件正文，不引入专用模型设置页。远端 Issue 未修改。
+
 ### Desktop UI #44–#47
 
 按 2026-09-26 至 27 用户反馈实施：#44 统筹三页风格；#45 保留级联悬浮导航，外框圆角 8px、间隙 4px，用户消息继续跟随浅蓝默认或自定义强调色，消息操作常显图标；#46 小圆角分组卡片、独立标题及宽屏固定双消息预览；#47 供应商、连接渠道两级导航及右侧模型管理。设置框架采用小圆角卡片，两页统一外层边距与页面标题。字体层级和中文字体观感尚待用户共同精调，本次提交是阶段性基线，不代表最终视觉验收。用户后续要求停止截图验收，由其亲自反馈；远端 Issue 不在本轮修改或关闭。
@@ -46,7 +50,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 - Global shortcuts, tray behavior, frameless-window tricks, and multi-window behavior.
 - Provider-managed conversation state. OpenAI Responses uses local history with `store: false`.
 - Rendering raw HTML from model output. `rehype-raw` is prohibited.
-- Conversation search, folders, pinning, and automatic title generation.
+- Conversation search, folders, and pinning.
 - Unverified relay-specific reasoning extensions (including Chat `reasoning_content`).
 
 ## Module seams
@@ -100,7 +104,7 @@ Assistant
 
 ## Conversation roadmap
 
-Issue #4 extends the original `current` state into assistant-owned conversations. Under the revised Issue #28 contract, assistants provide defaults for new conversations; each conversation owns a full configuration snapshot without copying credentials. Requests freeze the current conversation's settings. Issue #14 branches copy that configuration and can then be edited independently. Editing an assistant does not change existing conversations; restoring assistant defaults is an explicit draft action that takes effect on save. Search, folders, pinning, and automatic titles remain separate later decisions.
+Issue #4 extends the original `current` state into assistant-owned conversations. Under the revised Issue #28 contract, assistants provide defaults for new conversations; each conversation owns a full configuration snapshot without copying credentials. Requests freeze the current conversation's settings. Issue #14 branches copy that configuration and can then be edited independently. Editing an assistant does not change existing conversations; restoring assistant defaults is an explicit draft action that takes effect on save. Search, folders, and pinning remain separate later decisions. Automatic titles follow the revised Issue #31 contract above.
 
 ## Delivery stages
 

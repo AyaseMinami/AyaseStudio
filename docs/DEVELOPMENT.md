@@ -1,5 +1,13 @@
 # Ayase Studio Development Guide
 
+## Issue #31 定向验证（2026-09-27）
+
+按用户要求不运行全量测试，使用 Codex 内置浏览器验收，不操作原生桌面。确定性检查覆盖 `conversationTitle.test.ts`、`conversationTitle.repository.test.ts`、`useChatSession.title.test.tsx`，以及受影响的 workspace、消息发送、附件与跨对话并发测试。新增 UI 回归确认仅编辑标题才设 manual 标记；仅修改参数不锁定标题。旧测试的请求观察器现在区分主聊天和额外命名请求，相关失败已定向修复并重跑通过。`npx.cmd tsc --noEmit` 和 `git diff --check` 通过；未运行全量 check、Rust 编译或真实供应商探测。
+
+独立审查发现并修复了 Responses/Gemini 输出截断被误收为标题，以及首条附件消息提交后停止漏掉命名的分支；后者用延迟附件 verify 的确定性用例覆盖。复审未发现剩余运行时问题。
+
+内置浏览器使用独立 `127.0.0.1:1438` origin 和忽略目录 `ui-review.local` 的模拟 transport，实际渲染 App 并操作发送/编辑/导航。确认长原文立即截断为标题、成功后顶部与侧栏同步显示摘要、失败保留原文、后续消息不重命名、手动标题不被迟到结果覆盖，以及刷新后持久化。截图：`ui-review.local/title-success.png`、`ui-review.local/title-verified.png`。模拟请求只验证界面与应用编排，不代表真实模型标题质量或供应商兼容性验收。
+
 ## Issue #55 pre-push verification
 
 供应商连接列表与返回入口的提交前检查：`npm.cmd test -- src` 的 43 个文件、458 项测试通过，包含新增的列表字段与多连接跳转、返回时未保存模型编辑确认、删除取消/确认、生成期间禁用、焦点恢复及空状态用例。`npm.cmd run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml` 通过；构建仍提示部分 chunk 超过 500 kB。
