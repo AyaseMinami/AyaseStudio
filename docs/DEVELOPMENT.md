@@ -130,7 +130,9 @@ Windows 11 最大化按钮悬停 Snap Layout 尚未接入：普通 HTML 按钮�
 
 本机凭据在 Git 忽略的 `.env.deepseek.local`，脱敏统计在 `.deepseek-probe.local/results.json`；这些本地文件不随仓库分发。现有 `probe:live` 仍读取 `.env.probe.local`，不会自动读取 DeepSeek 专用文件。不要将真实 Key 或完整思考文本加入报告。
 
-Issue #36 定向验证：`npm.cmd test -- src/chat/CodeBlock.test.tsx src/chat/SafeMarkdown.test.tsx src/ui/chat/SearchResults.test.tsx`，配合 `npm.cmd run build` 和 `git diff --check`。覆盖代码高亮、未知语言、逐段流式更新、原文复制（缩进、空行、CRLF、末尾换行）、复制失败与既有公式/引用安全边界。浏览器检查浅深主题及窄窗口的代码局部滚动；桌面剪贴板实际交互仍需桌面验收。本项不改变原生权限、存储或供应商协议。
+Issue #36 / #61 定向验证：`npm.cmd test -- src/chat/CodeBlock.test.tsx src/chat/SafeMarkdown.test.tsx src/ui/chat/SearchResults.test.tsx`，配合 `npm.cmd run build` 和 `git diff --check`。覆盖代码高亮、未知语言、逐段流式更新、原文复制（缩进、空行、CRLF、末尾换行）、复制失败与既有公式/引用安全边界，以及每块独立换行、流式更新保留选择和两种模式下复制原文。浏览器检查浅深主题、窄窗口自动折行与关闭后的局部滚动；桌面剪贴板实际交互仍需桌面验收。本项不改变原生权限、存储或供应商协议。
+
+2026-09-27 #61 本地验证：`npm.cmd run check` 通过（50 个测试文件、497 项测试及生产构建），Rust check 通过；构建仍有大 chunk 提示。内置浏览器合成样例验证浅深主题、320px/900px 内容容器：窄容器代码正文 clientWidth/scrollWidth 为 286/286，关闭换行后为 286/1877，页面仍为 680/680；900px 容器中换行正文为 866/866，页面为 1100/1100。真实 MessageList 合成消息在 320px 容器中正文为 231/231，页面无横向溢出。键盘 Enter 可切换模式，模拟流式追加至闭合围栏后保持选择。鼠标自动化点击无状态变化，未记作通过。复制按钮显示成功，但浏览器剪贴板读取接口返回空值，原文一致性以组件测试为证，真实剪贴板仍待手动确认。未调用供应商或原生桌面自动化。
 
 本指南用于在办公室、家里或新的 Windows 开发环境中稳定地继续 Ayase Studio 的开发。仓库中的锁文件是依赖版本的权威来源；真实 API Key 与本地运行产物不进入 Git。
 

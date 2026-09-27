@@ -69,8 +69,18 @@
   --color-warning-text: 253 230 138;
   --color-code-inline: 41 37 36;
   --color-code-inline-text: 191 219 254;
-  --color-code-block: 12 10 9;
+  --color-code-block: 41 37 36;
   --color-code-block-text: 231 229 228;
+  --code-toolbar: #302c2b;
+  --code-border: #44403c;
+  --code-action: #ffffff18;
+  --code-comment: #a8a29e;
+  --code-keyword: #c4b5fd;
+  --code-string: #86efac;
+  --code-number: #fdba74;
+  --code-title: #7dd3fc;
+  --code-meta: #fde68a;
+  --code-deletion: #fca5a5;
   --color-shadow: 0 0 0;
   --appearance-background-image: none;
   --appearance-background-fit: cover;
@@ -127,8 +137,18 @@
   --color-warning-text: 146 64 14;
   --color-code-inline: 239 246 255;
   --color-code-inline-text: 29 78 216;
-  --color-code-block: 28 25 23;
-  --color-code-block-text: 245 245 244;
+  --color-code-block: 250 249 247;
+  --color-code-block-text: 41 37 36;
+  --code-toolbar: #f0eeeb;
+  --code-border: #e5e2dd;
+  --code-action: #29252412;
+  --code-comment: #706960;
+  --code-keyword: #7542a3;
+  --code-string: #2d7045;
+  --code-number: #96551d;
+  --code-title: #24638d;
+  --code-meta: #80621b;
+  --code-deletion: #b03f45;
   --color-shadow: 87 83 78;
   color-scheme: light;
 }
@@ -2274,20 +2294,23 @@ textarea:disabled {
   color: rgb(var(--color-code-block-text));
 }
 
-.code-block { min-width: 0; max-width: 100%; margin: 1em 0; overflow: hidden; border: 1px solid rgb(var(--color-border)); border-radius: 0.8rem; background: rgb(var(--color-code-block)); color: rgb(var(--color-code-block-text)); }
-.code-block-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid rgb(var(--color-border)); font-size: 12px; }
+.code-block { min-width: 0; max-width: 100%; margin: 1em 0; overflow: hidden; border: 1px solid var(--code-border); border-radius: 0.8rem; background: rgb(var(--color-code-block)); color: rgb(var(--color-code-block-text)); }
+.code-block-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--code-border); background: var(--code-toolbar); font-size: 12px; }
 .code-block-language { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-block-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; min-width: 0; }
+.code-block-actions button[aria-pressed="true"] { background: var(--code-action); }
 .code-block-toolbar button { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; cursor: pointer; padding: 3px 5px; border-radius: 4px; }
-.code-block-toolbar button:hover { background: #ffffff18; }
+.code-block-toolbar button:hover { background: var(--code-action); }
 .code-block-toolbar button:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
 .markdown .code-block pre { margin: 0; border: 0; border-radius: 0; max-width: 100%; white-space: pre; overflow-wrap: normal; }
-.code-block .hljs-comment, .code-block .hljs-quote { color: #a8a29e; }
-.code-block .hljs-keyword, .code-block .hljs-selector-tag, .code-block .hljs-literal { color: #c4b5fd; }
-.code-block .hljs-string, .code-block .hljs-regexp, .code-block .hljs-addition { color: #86efac; }
-.code-block .hljs-number, .code-block .hljs-attr, .code-block .hljs-variable, .code-block .hljs-template-variable { color: #fdba74; }
-.code-block .hljs-title, .code-block .hljs-built_in, .code-block .hljs-type { color: #7dd3fc; }
-.code-block .hljs-meta, .code-block .hljs-symbol, .code-block .hljs-bullet { color: #fde68a; }
-.code-block .hljs-deletion { color: #fca5a5; }
+.markdown .code-block[data-wrap="true"] pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+.code-block .hljs-comment, .code-block .hljs-quote { color: var(--code-comment); }
+.code-block .hljs-keyword, .code-block .hljs-selector-tag, .code-block .hljs-literal { color: var(--code-keyword); }
+.code-block .hljs-string, .code-block .hljs-regexp, .code-block .hljs-addition { color: var(--code-string); }
+.code-block .hljs-number, .code-block .hljs-attr, .code-block .hljs-variable, .code-block .hljs-template-variable { color: var(--code-number); }
+.code-block .hljs-title, .code-block .hljs-built_in, .code-block .hljs-type { color: var(--code-title); }
+.code-block .hljs-meta, .code-block .hljs-symbol, .code-block .hljs-bullet { color: var(--code-meta); }
+.code-block .hljs-deletion { color: var(--code-deletion); }
 
 .markdown blockquote {
   border-left: 3px solid rgb(var(--color-accent));
