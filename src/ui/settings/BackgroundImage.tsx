@@ -8,6 +8,7 @@ export interface BackgroundImageProps {
   focus: BackgroundFocus | null;
   fit: "cover" | "contain";
   className?: string;
+  aspectRatio?: number;
 }
 
 interface ImageDimensions { url: string; width: number; height: number; }
@@ -29,7 +30,7 @@ export function useViewportAspectRatio(): number {
   return ratio;
 }
 
-export function BackgroundImage({ url, focus, fit, className }: BackgroundImageProps) {
+export function BackgroundImage({ url, focus, fit, className, aspectRatio }: BackgroundImageProps) {
   const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
   const clipId = useId().replace(/:/g, "");
   const viewportRatio = useViewportAspectRatio();
@@ -45,7 +46,8 @@ export function BackgroundImage({ url, focus, fit, className }: BackgroundImageP
 
   if (!url) return null;
   if (!dimensions || dimensions.url !== url) return null;
-  const { x, y, width, height } = backgroundViewport(dimensions.width, dimensions.height, viewportRatio, normalizeBackgroundFocus(focus) ?? centerBackgroundFocus, fit);
+  const ratio = aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : viewportRatio;
+  const { x, y, width, height } = backgroundViewport(dimensions.width, dimensions.height, ratio, normalizeBackgroundFocus(focus) ?? centerBackgroundFocus, fit);
   return <svg aria-hidden="true" className={`background-image ${className ?? ""}`} viewBox={`${x} ${y} ${width} ${height}`} preserveAspectRatio={fit === "cover" ? "xMidYMid slice" : "xMidYMid meet"}>
     <defs><clipPath id={clipId}><rect x={x} y={y} width={width} height={height} /></clipPath></defs>
     <image href={url} x="0" y="0" width={dimensions.width} height={dimensions.height} clipPath={`url(#${clipId})`} preserveAspectRatio="none" />

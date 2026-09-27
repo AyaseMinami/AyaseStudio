@@ -20,6 +20,9 @@ export function useAppearance() {
     setCanvasColor: (color: string | null) =>
       controller.setCanvasColor(color),
     setAssistantBubbleColor: (color: string | null) => controller.setAssistantBubbleColor(color),
+    setUnifiedTransparency: (value: number) => controller.setUnifiedTransparency(value),
+    setSidebarTransparency: (value: number) => controller.setSidebarTransparency(value),
+    setComposerTransparency: (value: number) => controller.setComposerTransparency(value),
     setAssistantBubbleTransparency: (value: number) => controller.setAssistantBubbleTransparency(value),
     setBackgroundFit: (fit: BackgroundFit) =>
       controller.setBackgroundFit(fit),

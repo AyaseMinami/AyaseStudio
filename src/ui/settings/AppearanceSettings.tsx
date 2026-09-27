@@ -1,8 +1,8 @@
-import { ImagePlus, Monitor, Moon, RotateCcw, Sun, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { CircleAlert, ImagePlus, Monitor, Moon, RotateCcw, Sun, Trash2 } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { BackgroundFocus } from "../../appearance/backgroundFocus";
 import type { BackgroundFit, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
-import { BackgroundImage, useViewportAspectRatio } from "./BackgroundImage";
+import { BackgroundImage } from "./BackgroundImage";
 import "./AppearanceSettings.css";
 import { SettingsHelp } from "./SettingsHelp";
 
@@ -15,31 +15,55 @@ const themeOptions: readonly { value: ThemeMode; label: string; description: str
 export interface AppearanceSettingsProps {
   themeMode: ThemeMode; resolvedTheme: ResolvedTheme; accentColor: string | null; canvasColor: string | null;
   assistantBubbleColor: string | null; assistantBubbleTransparency: number; effectiveAccentColor: string; effectiveCanvasColor: string;
+  unifiedTransparency: number; sidebarTransparency: number; composerTransparency: number;
   backgroundReference: string | null; backgroundUrl: string | null; backgroundFocus: BackgroundFocus | null; backgroundFit: BackgroundFit;
   backgroundMask: number; backgroundBlur: number; backgroundBusy: boolean; backgroundError: string | null; readabilityWarnings: string[];
   onThemeModeChange(themeMode: ThemeMode): void; onAccentColorChange(color: string | null): void; onCanvasColorChange(color: string | null): void;
   onAssistantBubbleColorChange(color: string | null): void; onAssistantBubbleTransparencyChange(value: number): void; onEditBackgroundFocus(): void;
+  onUnifiedTransparencyChange(value: number): void; onSidebarTransparencyChange(value: number): void; onComposerTransparencyChange(value: number): void;
   onBackgroundFitChange(fit: BackgroundFit): void; onBackgroundMaskChange(mask: number): void; onBackgroundBlurChange(blur: number): void;
   onSelectBackground(): Promise<void> | void; onRemoveBackground(): Promise<void> | void; onResetCustomAppearance(): Promise<void> | void;
 }
 
 export function AppearanceSettings({
   themeMode, resolvedTheme, accentColor, canvasColor, assistantBubbleColor, assistantBubbleTransparency,
+  unifiedTransparency, sidebarTransparency, composerTransparency,
   effectiveAccentColor, effectiveCanvasColor, backgroundReference, backgroundUrl, backgroundFocus, backgroundFit,
   backgroundMask, backgroundBlur, backgroundBusy, backgroundError, readabilityWarnings, onThemeModeChange,
   onAccentColorChange, onCanvasColorChange, onAssistantBubbleColorChange, onAssistantBubbleTransparencyChange,
+  onUnifiedTransparencyChange, onSidebarTransparencyChange, onComposerTransparencyChange,
   onEditBackgroundFocus, onBackgroundFitChange, onBackgroundMaskChange, onBackgroundBlurChange, onSelectBackground,
   onRemoveBackground, onResetCustomAppearance,
 }: AppearanceSettingsProps) {
-  const viewportAspectRatio = useViewportAspectRatio();
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [previewScale, setPreviewScale] = useState(0);
+  useLayoutEffect(() => {
+    const element = previewRef.current;
+    if (!element) return;
+    const update = () => setPreviewScale(element.clientWidth / 1920);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const mixedTransparency = sidebarTransparency !== composerTransparency || sidebarTransparency !== assistantBubbleTransparency;
   return <section className="settings-page settings-workspace-page appearance-settings-page" aria-labelledby="appearance-title">
     <div className="settings-page-heading"><h2 id="appearance-title">外观</h2><p className="muted-text">选择 Ayase Studio 在这台设备上的显示方式。</p></div>
 
     <div className="appearance-layout">
     <div className="appearance-preview-column">
-    <div aria-label="背景图片预览" className="appearance-background-preview" style={{ aspectRatio: viewportAspectRatio }} data-has-image={backgroundReference ? "true" : undefined}>
-        <div className="appearance-background-art"><BackgroundImage url={backgroundUrl} focus={backgroundFocus} fit={backgroundFit} /></div>{backgroundUrl && <div className="appearance-background-preview-mask" />}
-        <div className="appearance-background-preview-content"><span className="appearance-preview-badge">聊天画布预览</span><small>{backgroundReference ? "本地背景已应用" : "当前使用纯色画布"}</small><div className="user-message user-bubble-preview">帮我整理一下今天的阅读笔记。</div><div className="assistant-message assistant-bubble-preview"><strong>这是一条助手回复</strong><p>气泡背景会随颜色和透明度设置即时变化。</p><small>文字和操作按钮不随背景变透明。</small></div></div>
+    <p className="appearance-preview-caption">1920 × 1080 · 16:9 等比预览 · {backgroundReference ? "本地背景已应用" : "当前使用纯色画布"}</p>
+    <div ref={previewRef} aria-label="聊天界面预览" className="appearance-background-preview" data-has-image={backgroundReference ? "true" : undefined}>
+      <div className="appearance-preview-stage" style={{ transform: `scale(${previewScale})` }}>
+        <div className="appearance-background-art"><BackgroundImage url={backgroundUrl} focus={backgroundFocus} fit={backgroundFit} aspectRatio={16 / 9} /></div>{backgroundUrl && <div className="appearance-background-preview-mask" />}
+        <div className="appearance-preview-rail" aria-hidden="true"><strong>A</strong><span>聊天</span><span>设置</span></div>
+        <div className="appearance-preview-titlebar"><span>☰</span><strong>今天的阅读笔记</strong><span>−　□　×</span></div>
+        <div className="appearance-background-preview-content">
+          <aside className="appearance-preview-sidebar" aria-label="助手侧栏预览"><strong>助手</strong><span>✦ 默认助手</span><span>◇ 写作助手</span></aside>
+          <aside className="appearance-preview-sidebar" aria-label="对话侧栏预览"><strong>对话</strong><span>今天的阅读笔记</span><span>新的对话</span></aside>
+          <div className="appearance-preview-chat"><div className="user-message user-bubble-preview">帮我整理一下今天的阅读笔记。</div><div className="assistant-message assistant-bubble-preview"><strong>这是一条助手回复</strong><p>我整理了三个重点，方便稍后回顾。</p><p>先确定阅读主题，再记录核心观点和支持它的证据，最后留下值得继续思考的问题。</p></div><div className="appearance-preview-composer composer-frame"><span>发送消息…</span><div className="appearance-preview-tools">＋　⌕　✦　选择模型 <span>➤</span></div></div></div>
+        </div>
+      </div>
       </div>
 
     </div>
@@ -66,12 +90,21 @@ export function AppearanceSettings({
     </section>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-bubble-title">
-      <GroupHeading id="appearance-bubble-title" title="助手回复">只改变助手气泡底色；用户气泡仍跟随强调色。</GroupHeading>
+      <GroupHeading id="appearance-bubble-title" title="助手回复">助手气泡底色独立设置；用户气泡仍跟随强调色。</GroupHeading>
       <div className="appearance-rows">
         <label className="appearance-row"><RowCopy title="气泡背景色" /><input aria-label="助手回复气泡颜色" type="color" value={assistantBubbleColor ?? (resolvedTheme === "dark" ? "#292524" : "#f5f5f4")} onChange={(event) => onAssistantBubbleColorChange(event.currentTarget.value)} /></label>
-        <label className="appearance-row appearance-range-row"><RowCopy title="背景透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="助手回复气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} max="100" min="0" /></label>
       </div>
       <button className="settings-button appearance-secondary-action" type="button" disabled={!assistantBubbleColor} onClick={() => onAssistantBubbleColorChange(null)}>气泡颜色跟随主题</button>
+    </section>
+
+    <section className="appearance-group appearance-group-card" aria-labelledby="appearance-transparency-title">
+      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。</GroupHeading>
+      <div className="appearance-rows">
+        <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖三个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} max="100" min="0" /></div>
+        <label className="appearance-row appearance-range-row"><RowCopy title="侧栏透明度" /><RangeControl value={`${sidebarTransparency}%`} ariaLabel="侧栏透明度" valueNumber={sidebarTransparency} onChange={onSidebarTransparencyChange} max="100" min="0" /></label>
+        <label className="appearance-row appearance-range-row"><RowCopy title="输入区域透明度" /><RangeControl value={`${composerTransparency}%`} ariaLabel="输入区域透明度" valueNumber={composerTransparency} onChange={onComposerTransparencyChange} max="100" min="0" /></label>
+        <label className="appearance-row appearance-range-row"><RowCopy title="消息气泡透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="消息气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} max="100" min="0" /></label>
+      </div>
     </section>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-background-title">
@@ -90,7 +123,7 @@ export function AppearanceSettings({
     </section>
 
     <section className="appearance-group appearance-group-card appearance-reset-group" aria-labelledby="appearance-reset-title">
-      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、助手气泡和背景设置，不删除原始图片文件。</GroupHeading>
+      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、各区域透明度和背景设置，不删除原始图片文件。</GroupHeading>
       <button className="settings-button" disabled={backgroundBusy} onClick={() => void onResetCustomAppearance()} type="button"><RotateCcw size={15} />恢复当前主题默认外观</button>
     </section>
     </div>
