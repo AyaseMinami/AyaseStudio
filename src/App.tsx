@@ -44,12 +44,8 @@ function App() {
         <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingIds={chat.generatingConversationIds}
           toolbar={<ChatHeader key={chat.workspace.conversation?.id ?? "loading"} title={chat.workspace.conversation?.title ?? "新对话"}
             layout={chatLayout.layout} onToggleLayout={chatLayout.toggleLayout} isHydrated={chat.isHydrated}
-            isGenerating={chat.isGenerating} protocolLabel={modelLabel}
-            modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}
-            onClear={chat.clearConversation}
-          modelPicker={{ settings: chat.connectionSettings, selectedModelId: chat.workspace.effective.modelId,
-            disabled: !chat.isHydrated, error: chat.workspace.operationError ?? chat.workspace.loadError,
-            onSelect: chat.setConversationModel }} />}>
+            isGenerating={chat.isGenerating}
+            onClear={chat.clearConversation} />}>
         <ChatWorkspace hideHeader
           layout={chatLayout.layout}
           onToggleLayout={chatLayout.toggleLayout}
@@ -73,6 +69,10 @@ function App() {
           onWebSearchChange={(enabled) => void chat.setWebSearch(enabled)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={modelLabel}
+          modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}
+          modelPicker={{ settings: chat.connectionSettings, selectedModelId: chat.workspace.effective.modelId,
+            disabled: !chat.isHydrated, error: chat.workspace.operationError ?? chat.workspace.loadError,
+            onSelect: chat.setConversationModel }}
           onClear={chat.clearConversation}
           onDraftChange={chat.setDraft}
           onFiles={(files) => void chat.addFiles(files)}

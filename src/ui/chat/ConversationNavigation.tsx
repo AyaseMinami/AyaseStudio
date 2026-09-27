@@ -118,12 +118,12 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     if (conversationPanelOpen) closeConversations();
     else closeNavigation();
   }}>
-    <div className="conversation-navigation-toolbar">
+    <div className="conversation-navigation-toolbar" data-tauri-drag-region>
       <button ref={toggleRef} className="workspace-sidebar-toggle" type="button" aria-label="助手与对话" aria-expanded={navigationOpen} aria-controls="assistant-navigation" title={navigationOpen ? "收起助手与对话侧栏" : "展开助手与对话侧栏"} onClick={() => navigationOpen ? closeNavigation() : setNavigationOpen(true)}>
         {navigationOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
       </button>
-      <span className="workspace-breadcrumb" title={`${selectedAssistant?.name ?? ""} / ${conversation?.title ?? ""}`}>
-        <span className="workspace-conversation-title">{conversation?.title ?? "尚无对话"}</span>
+      <span className="workspace-breadcrumb" data-tauri-drag-region title={`${selectedAssistant?.name ?? ""} / ${conversation?.title ?? ""}`}>
+        <span className="workspace-conversation-title" data-tauri-drag-region>{conversation?.title ?? "尚无对话"}</span>
       </span>
       {toolbar}
     </div>

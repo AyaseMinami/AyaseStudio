@@ -1,5 +1,23 @@
 # Ayase Studio Development Guide
 
+## Issue #9 标题栏样板（2026-09-27）
+
+按用户确认，Windows 原生标题栏与聊天顶部栏合并，对话标题居中，模型选择迁移至输入框底部，宽窄与清空在窗口三键左侧独立成组。设置页同样保留窗口三键。用户随后要求将聊天顶部栏收紧至 40px；内置浏览器实测高度 40px，三键贴顶对齐，无页面横向溢出。
+
+用户在上述调整后明确授权提交代码，并将 #9 标记为已完成。关闭依据是用户本轮指示，不将其扩大为全部原生交互测试或安装发布验收通过；以下已验证范围及 Snap Layout 限制继续保留。
+
+默认自主 UI 验收使用 Codex 内置浏览器，详见 [AGENTS.md](../AGENTS.md#editing-and-verification)。只有用户明确要求时才使用 Computer Use 或其他原生 UI 自动化。原生能力仍需相关编译、启动检查；浏览器无法验证的行为明确交由用户手动验收，不用浏览器模拟替代。
+
+本轮 `npm.cmd run check` 的 48 个文件、482 项测试与生产构建通过，`cargo check --manifest-path src-tauri/Cargo.toml` 通过；构建保留既有大 chunk 提示。窗口测试覆盖浏览器/原生装饰分支、三键分发、最大化状态同步、迟到状态忽略、重复命令防护、错误呈现和卸载监听清理。后续仅 CSS 微调重跑相关 32 项测试和 TypeScript 检查。
+
+独立只读审查确认并复核修复了最小窗口下长标题与操作区重叠的问题，未发现其余确认的 P1/P2 缺陷；该审查不替代下面列出的原生体验验收。
+
+内置浏览器使用独立 `127.0.0.1:1441` origin 与 `ui-review.local/titlebar.html` 样板，拦截原生命令且不请求供应商。720×520 下浅深主题、模型弹窗与 Escape 焦点回退可用；长标题居中（聊天区域与标题中心均为 x=392），标题右缘 472px、操作区左缘约 487px，无重叠及页面横向溢出。截图 `ui-review.local/titlebar-720-dark.png` 为浏览器模拟的原生按钮外观，不是原生窗口截图。
+
+`npm.cmd run tauri dev` 已编译启动，原生可访问性树确认窗口三键出现，并读取到真实最大化状态。用户新增默认浏览器验收要求前尝试的 Computer Use 截图报 `FrameArrived timed out`，点击报 `coordinate input geometry is unavailable`；因此未声称拖动、双击、三键原生动作、阴影或系统菜单通过。启动日志仍出现 IPC 自定义协议回退到 postMessage 的警告。
+
+Windows 11 最大化按钮悬停 Snap Layout 尚未接入：普通 HTML 按钮与 `toggleMaximize` 不提供原生 `HTMAXBUTTON` 命中行为。其余 Snap、系统菜单、阴影和缩放也待用户实机确认；若原生体验明显退化，应按 #9 保留原生标题栏，不将当前样板视为发布通过。可在启动前设置 `$env:AYASE_NATIVE_TITLEBAR = '1'` 恢复原生装饰，自定义三键会随之隐藏；移除此环境变量并重启可恢复样板。官方依据：[Tauri 窗口定制](https://v2.tauri.app/learn/window-customization/)、[Microsoft 自定义标题栏 Snap Layout](https://learn.microsoft.com/windows/apps/desktop/modernize/apply-snap-layout-menu)。
+
 ## Alpha 2 候选包验证（2026-09-27）
 
 版本统一为 `0.1.0-alpha.2`，继续仅构建 Windows x64 NSIS 安装程序。`npm.cmd run check` 通过：46 个文件、473 项确定性测试及 TypeScript/Vite 生产构建；`cargo test --manifest-path src-tauri/Cargo.toml` 的 20 项单元测试和 `cargo check --manifest-path src-tauri/Cargo.toml` 通过。

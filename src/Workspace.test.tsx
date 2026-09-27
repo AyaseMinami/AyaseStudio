@@ -67,8 +67,12 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
   }
 
-  it("selects a model from the header, scopes persistence to this conversation and restores focus on cancel", async () => {
+  it("selects a model from the composer, scopes persistence to this conversation and restores focus on cancel", async () => {
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="切换模型"]')!;
+    const tools = container.querySelector(".composer-tools")!;
+    expect(tools.lastElementChild).toBe(trigger);
+    expect(trigger.previousElementSibling?.getAttribute("aria-label")).toBe("联网搜索");
+    expect(container.querySelector(".conversation-navigation-toolbar .chat-model-trigger")).toBeNull();
     trigger.focus();
     await click("切换模型");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("搜索模型");
@@ -104,7 +108,7 @@ describe("assistant workspace public behavior", () => {
     let saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(selectedConversation(saved)?.settings).toMatchObject({ config: { systemInstruction: "Conversation only" }, modelId: "model-b" });
     expect(saved.assistants.find((item) => item.id === "default")?.defaultConfig.systemInstruction).toBe("");
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("upstream-b");
+    expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-b");
     await click("编辑对话 对话 A");
     await fill("#session-system", "Discard me");
     await fill("#conversation-title", "Discard title");
@@ -536,13 +540,13 @@ describe("assistant workspace public behavior", () => {
     await fill(".composer-input", "A draft");
     await chooseAssistant("写作助手", "对话 B");
     expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("");
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("upstream-b");
+    expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-b");
     await fill(".composer-input", "B draft");
     await click("编辑助手 写作助手"); expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Only B");
     await click("关闭");
     await chooseAssistant("默认助手", "对话 A");
     expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("A draft");
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("upstream-a");
+    expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-a");
     await chooseAssistant("写作助手", "对话 B");
     await act(async () => root.unmount()); root = createRoot(container);
     await act(async () => root.render(<App />));
@@ -656,7 +660,7 @@ describe("assistant workspace public behavior", () => {
     await wait(() => !container.querySelector('[role="dialog"]'));
     const state = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(selectedConversation(state)).toMatchObject({ id: "b", assistantId: "default" });
-    expect(container.querySelector(".chat-header-copy")?.textContent).toContain("upstream-b");
+    expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-b");
     expect(selectedConversation(state)?.settings?.config.systemInstruction).toBe("Only B");
     expect((await repo.load("b"))?.messages).toEqual([]);
   });

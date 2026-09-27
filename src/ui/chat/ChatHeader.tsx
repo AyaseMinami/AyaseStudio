@@ -1,6 +1,6 @@
-import { ChevronDown, MoveHorizontal } from "lucide-react";
+import { MoveHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ModelPicker, type ModelPickerProps } from "./ModelPicker";
+import { WindowControls } from "../window/WindowControls";
 import type { ChatLayout } from "./useChatLayout";
 
 function ClearConfirmation({ disabled, onClose, onConfirm }: {
@@ -39,10 +39,7 @@ export interface ChatHeaderProps {
   title: string;
   isHydrated: boolean;
   isGenerating: boolean;
-  protocolLabel: string;
-  modelLabel?: string;
   onClear(): void;
-  modelPicker?: Omit<ModelPickerProps, "onClose">;
 }
 
 export function ChatHeader({
@@ -51,21 +48,11 @@ export function ChatHeader({
   title,
   isHydrated,
   isGenerating,
-  protocolLabel,
-  modelLabel = protocolLabel,
   onClear,
-  modelPicker,
 }: ChatHeaderProps) {
-  const [selectingModel, setSelectingModel] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
   return (
-    <header className="chat-header" aria-label={title}>
-      <div className="chat-header-copy">
-        {modelPicker ? <button className="chat-model-trigger" type="button" aria-label="切换模型"
-          aria-haspopup="dialog" aria-expanded={selectingModel} onClick={() => setSelectingModel(true)} disabled={!isHydrated} title={protocolLabel}>
-          <span>{modelLabel}</span><ChevronDown size={14} />
-        </button> : <p className="muted-text">{protocolLabel}</p>}
-      </div>
+    <header className="chat-header" aria-label={title} data-tauri-drag-region>
       <div className="chat-header-actions">
         {onToggleLayout && <button className="chat-layout-button" type="button"
           aria-label={layout === "narrow" ? "展开聊天内容" : "收窄聊天内容"}
@@ -74,8 +61,8 @@ export function ChatHeader({
           <MoveHorizontal size={16} />
         </button>}
         <button className="clear-button" onClick={() => setConfirmingClear(true)} disabled={isGenerating || !isHydrated} type="button">清空</button>
+        <WindowControls />
       </div>
-      {selectingModel && modelPicker && <ModelPicker {...modelPicker} onClose={() => setSelectingModel(false)} />}
       {confirmingClear && <ClearConfirmation disabled={isGenerating || !isHydrated} onClose={() => setConfirmingClear(false)} onConfirm={() => {
         setConfirmingClear(false);
         onClear();

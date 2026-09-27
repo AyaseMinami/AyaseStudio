@@ -5,6 +5,7 @@ import type { DraftAttachment } from "../../chat/attachments";
 export interface ComposerProps {
   thinkingControl?: ReactNode;
   searchControl?: ReactNode;
+  modelControl?: ReactNode;
   draft: string;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;
@@ -22,6 +23,7 @@ export interface ComposerProps {
 export function Composer({
   thinkingControl,
   searchControl,
+  modelControl,
   draft,
   draftAttachments = [],
   attachmentBusy,
@@ -96,6 +98,7 @@ export function Composer({
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
             {thinkingControl}
             {searchControl}
+            {modelControl}
             </div>
             {isGenerating ? (
               <button

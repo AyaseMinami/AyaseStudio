@@ -1,5 +1,6 @@
 import { Info, Palette, Server } from "lucide-react";
 import { AboutSettings } from "./AboutSettings";
+import { WindowControls } from "../window/WindowControls";
 
 import {
   AppearanceSettings,
@@ -27,11 +28,12 @@ export function SettingsWorkspace({
 }: SettingsWorkspaceProps) {
   return (
     <div className="settings-workspace">
-      <header className="settings-header">
-        <div>
-          <h1>设置</h1>
-          <p className="muted-text">管理连接、外观与应用信息</p>
+      <header className="settings-header" data-tauri-drag-region>
+        <div data-tauri-drag-region>
+          <h1 data-tauri-drag-region>设置</h1>
+          <p className="muted-text" data-tauri-drag-region>管理连接、外观与应用信息</p>
         </div>
+        <WindowControls />
       </header>
 
       <div className="settings-body">
