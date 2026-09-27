@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { base64ToBytes, safeTextAttachment, type RequestAttachment, type SentAttachment } from "../../chat/attachments";
+import { base64ToBytes, isOfficeAttachment, safeTextAttachment, type RequestAttachment, type SentAttachment } from "../../chat/attachments";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 
 function PdfPreview({ data }: { data: string }) {
@@ -51,30 +51,62 @@ function PdfPreview({ data }: { data: string }) {
   </div>;
 }
 
-export function SentAttachmentPreview({ item, read, onClose }: {
+export function SentAttachmentPreview({ item, read, images = [], onNavigate, returnFocus, onClose }: {
   item: SentAttachment;
   read(item: SentAttachment): Promise<RequestAttachment>;
+  images?: SentAttachment[];
+  onNavigate?: (item: SentAttachment) => void;
+  returnFocus: HTMLElement;
   onClose(): void;
 }) {
   const [loaded, setLoaded] = useState<RequestAttachment>();
   const [error, setError] = useState("");
   const dialog = useRef<HTMLDivElement>(null);
+  const infoOnly = isOfficeAttachment(item);
+  const imageIndex = images.findIndex((image) => image.reference === item.reference);
+  useEffect(() => {
+    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => { if (returnFocus.isConnected) returnFocus.focus({ preventScroll: true }); };
+  }, []);
   useEffect(() => {
     let alive = true;
-    void read(item).then((value) => { if (alive) setLoaded(value); })
+    setLoaded(undefined);
+    setError("");
+    if (!infoOnly) void read(item).then((value) => { if (alive) setLoaded(value); })
       .catch((caught) => { if (alive) setError(caught instanceof Error ? caught.message : "附件读取失败。"); });
-    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => { alive = false; };
-  }, [item, read]);
+  }, [item, read, infoOnly]);
   return <div className="attachment-preview-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose();
   }}>
     <div ref={dialog} className="attachment-preview-dialog" role="dialog" aria-modal="true"
-      aria-label={`预览 ${item.name}`} onKeyDown={(event) => { if (event.key === "Escape") onClose(); }}>
+      aria-label={`预览 ${item.name}`} onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); return; }
+        if (imageIndex >= 0 && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+          const next = images[imageIndex + (event.key === "ArrowLeft" ? -1 : 1)];
+          if (next) { event.preventDefault(); onNavigate?.(next); }
+        }
+        if (event.key !== "Tab") return;
+        const fields = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+        const index = fields.indexOf(document.activeElement as HTMLButtonElement);
+        if (event.shiftKey && index <= 0) { event.preventDefault(); fields[fields.length - 1]?.focus(); }
+        else if (!event.shiftKey && index === fields.length - 1) { event.preventDefault(); fields[0]?.focus(); }
+      }}>
       <div className="attachment-preview-heading"><h2>{item.name}</h2>
         <button type="button" aria-label="关闭预览" onClick={onClose}><X size={18} /></button></div>
+      {imageIndex >= 0 && images.length > 1 && <div className="attachment-preview-navigation">
+        <button type="button" aria-disabled={imageIndex === 0} onClick={() => {
+          if (imageIndex > 0) onNavigate?.(images[imageIndex - 1]);
+        }}>上一张</button>
+        <span>{imageIndex + 1} / {images.length}</span>
+        <button type="button" aria-disabled={imageIndex === images.length - 1} onClick={() => {
+          if (imageIndex < images.length - 1) onNavigate?.(images[imageIndex + 1]);
+        }}>下一张</button>
+      </div>}
       {error && <p role="alert">{error}</p>}
-      {!loaded && !error && <p role="status">正在读取附件…</p>}
+      {infoOnly && <div className="attachment-preview-text"><p>{item.name} · {(item.size / 1_000_000).toFixed(2)} MB</p>
+        <p>{item.mimeType}</p><p>原文件已保存在本地。本应用不解析或预览 Office 正文，发送时由 Responses 服务端处理。</p></div>}
+      {!infoOnly && !loaded && !error && <p role="status">正在读取附件…</p>}
       {!error && loaded?.mimeType.startsWith("image/") &&
         <img className="attachment-preview-image" alt={loaded.name}
           onError={() => setError("图片加载失败，无法预览。附件记录仍保持不变。")}

@@ -33,11 +33,18 @@ const connectionSettings: ConnectionSettingsState = {
 
 const sharedProps = {
   appearance: {
+    unifiedThemeColor: null, effectiveUserBubbleColor: "#d2e3f7",
+    onUnifiedThemeColorChange: () => undefined, onUserBubbleColorChange: () => undefined,
+    colorPreset: "default" as const,
+    onColorPresetChange: () => undefined,
     themeMode: "system" as const,
     resolvedTheme: "light" as const,
     accentColor: null,
     canvasColor: null,
     assistantBubbleColor: null,
+    unifiedTransparency: 0,
+    sidebarTransparency: 0,
+    composerTransparency: 0,
     assistantBubbleTransparency: 6,
     effectiveAccentColor: "#6d28d9",
     effectiveCanvasColor: "#fafaf9",
@@ -54,6 +61,9 @@ const sharedProps = {
     onAccentColorChange: () => undefined,
     onCanvasColorChange: () => undefined,
     onAssistantBubbleColorChange: () => undefined,
+    onUnifiedTransparencyChange: () => undefined,
+    onSidebarTransparencyChange: () => undefined,
+    onComposerTransparencyChange: () => undefined,
     onAssistantBubbleTransparencyChange: () => undefined,
     onEditBackgroundFocus: () => undefined,
     onBackgroundFitChange: () => undefined,

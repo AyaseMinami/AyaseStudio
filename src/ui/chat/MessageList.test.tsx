@@ -54,6 +54,21 @@ function setup(actions: Partial<MessageActions> = {}, actionsDisabled = false, o
   return { host, root, handlers, render };
 }
 
+it("keeps both action bars and copy feedback outside message bodies", async () => {
+  const { host, root, render } = setup();
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(async () => {}) } });
+  try {
+    await act(async () => render());
+    for (const group of host.querySelectorAll(".user-message-group, .assistant-message-group")) {
+      const body = group.querySelector(".markdown")!;
+      expect(body.querySelector(".message-actions")).toBeNull();
+      expect(body.nextElementSibling?.className).toBe("message-actions");
+      await act(async () => group.querySelector<HTMLButtonElement>("[aria-label='复制']")!.click());
+      expect(group.querySelector(".message-copy-feedback")?.parentElement).toBe(group);
+    }
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 // happy-dom has no layout; model the scroll container's measured geometry and
 // browser clamping while exercising the real component events and updates.
 async function setupScrolling(withAttachment = false) {
@@ -253,7 +268,7 @@ it("cancels an edit, then saves without a destructive confirmation", async () =>
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it("confirms deletion and retries from the linked user message", async () => {
+it("confirms deletion and retries directly from the linked user message", async () => {
   const { host, root, handlers, render } = setup();
   try {
     await act(async () => render());
@@ -262,13 +277,12 @@ it("confirms deletion and retries from the linked user message", async () => {
     await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
     expect(handlers.delete).toHaveBeenCalledWith("user");
     await act(async () => host.querySelector<HTMLButtonElement>("article:nth-child(2) [aria-label='重新生成']")!.click());
-    expect(host.querySelector('[role="dialog"]')?.textContent).toContain("1 条消息");
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
     expect(handlers.retry).toHaveBeenCalledWith("user");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it("closes the retry confirmation before a long-running retry resolves", async () => {
+it("keeps copy available while a direct retry is pending", async () => {
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   let finish: (() => void) | undefined;
@@ -277,7 +291,6 @@ it("closes the retry confirmation before a long-running retry resolves", async (
   try {
     await act(async () => render());
     await act(async () => host.querySelector<HTMLButtonElement>("article:nth-child(2) [aria-label='重新生成']")!.click());
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
     expect(retry).toHaveBeenCalledWith("user");
     expect(host.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='复制']")!.click());
@@ -299,18 +312,13 @@ it("keeps the edit draft open when saving reports no change", async () => {
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it("confirms edit and send only for user messages and supports cancelling the confirmation", async () => {
+it("runs edit and send directly only for user messages", async () => {
   const { host, root, handlers, render } = setup();
   try {
     await act(async () => render());
     await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
     await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-send")!.click());
-    expect(host.querySelector('[role="dialog"]')?.textContent).toContain("1 条消息");
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-actions button")!.click());
-    expect(handlers.editAndSend).not.toHaveBeenCalled();
-    expect(host.querySelector("textarea")).not.toBeNull();
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-send")!.click());
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
     expect(handlers.editAndSend).toHaveBeenCalledWith("user", "**raw markdown**");
     expect(handlers.edit).not.toHaveBeenCalled();
     await act(async () => host.querySelector<HTMLButtonElement>("article:nth-child(2) [aria-label='编辑']")!.click());
@@ -338,5 +346,53 @@ it("contains Escape inside message confirmation instead of closing the conversat
     await act(async () => host.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(host.querySelector('[role="dialog"]')).toBeNull();
     expect(parentEscape).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("pages only the latest assistant round and respects boundaries and disabled state", async () => {
+  const selectVersion = vi.fn(async () => true);
+  const { host, root, handlers } = setup({ selectVersion });
+  const history: StoredChatMessage[] = [
+    { ...messages[0], roundVersions: { selected: 1, pairs: [
+      [messages[0], messages[1]], [messages[0], messages[1]], [messages[0], messages[1]],
+    ] } }, messages[1],
+  ];
+  try {
+    await act(async () => root.render(<MessageList messages={history} actions={handlers} />));
+    expect(host.querySelector("article:first-child .message-version-pager")).toBeNull();
+    const pager = host.querySelector("article:last-child .message-version-pager")!;
+    expect(pager.textContent).toContain("2/3");
+    await act(async () => pager.querySelector<HTMLButtonElement>('[aria-label="上一版问答"]')!.click());
+    expect(selectVersion).toHaveBeenCalledWith(0);
+    await act(async () => pager.querySelector<HTMLButtonElement>('[aria-label="下一版问答"]')!.click());
+    expect(selectVersion).toHaveBeenCalledWith(2);
+    await act(async () => root.render(<MessageList messages={[{ ...history[0], roundVersions: { ...history[0].roundVersions!, selected: 2 } }, history[1]]}
+      actions={handlers} actionsDisabled />));
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="下一版问答"]')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="上一版问答"]')?.disabled).toBe(true);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("supports editor shortcuts without submitting composition, repeated or modified keys", async () => {
+  const { host, root, handlers, render } = setup();
+  const press = async (options: KeyboardEventInit) => act(async () => {
+    host.querySelector("textarea")!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...options }));
+  });
+  try {
+    await act(async () => render());
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
+    await press({ key: "Enter", shiftKey: true });
+    await press({ key: "Enter", isComposing: true });
+    await press({ key: "Enter", repeat: true });
+    await press({ key: "Enter", altKey: true });
+    expect(handlers.edit).not.toHaveBeenCalled();
+    await press({ key: "Enter" });
+    expect(handlers.edit).toHaveBeenCalledOnce();
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
+    await press({ key: "Enter", ctrlKey: true });
+    expect(handlers.editAndSend).toHaveBeenCalledOnce();
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
+    await press({ key: "Escape" });
+    expect(host.querySelector("textarea")).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

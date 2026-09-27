@@ -8,6 +8,7 @@ import { remarkMathSyntax } from "./markdownMath";
 import { remarkCodeBlocks } from "./markdownCode";
 import { CodeBlock } from "./CodeBlock";
 import type { ExtraProps } from "react-markdown";
+import type { PluggableList } from "unified";
 
 import type { SearchRecord } from "./nativeSearch";
 import { openExternal, safeExternalUrl } from "./externalLinks";
@@ -151,7 +152,7 @@ function CodePre({ node, children, ...props }: ComponentPropsWithoutRef<"pre"> &
 
 export function SafeMarkdown({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
   const citations = validCitations(search, children);
-  const remarkPlugins = [remarkGfm, remarkMath, remarkMathSyntax, remarkCodeBlocks,
+  const remarkPlugins: PluggableList = [[remarkGfm, { singleTilde: false }], remarkMath, remarkMathSyntax, remarkCodeBlocks,
     ...(citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : []),
     () => (tree: unknown) => addSoftLineBreaks(tree)];
   return <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[[rehypeKatex, { trust: false, errorColor: "currentColor" }]]} components={{

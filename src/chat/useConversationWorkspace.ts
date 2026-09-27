@@ -97,7 +97,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     const next = queue.current.catch(() => undefined).then(async () => {
       try {
         const current = snapshotRef.current!;
-        const messageAction = action.type === "edit-message" || action.type === "delete-message" || action.type === "fork-conversation";
+        const messageAction = action.type === "edit-message" || action.type === "delete-message" || action.type === "fork-conversation" || action.type === "select-round-version";
         if (
           (messageAction && isGenerating(action.conversationId)) ||
           (action.type === "delete-conversation" && isGenerating(action.id)) ||
@@ -115,7 +115,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
         for (const id of stores.current.keys()) {
           if (!remaining.has(id)) { stores.current.delete(id); views.current.delete(id); }
         }
-        if (action.type === "edit-message" || action.type === "delete-message") {
+        if (action.type === "edit-message" || action.type === "delete-message" || action.type === "select-round-version") {
           const id = action.conversationId;
           const view = views.current.get(id);
           // If reloading fails, the old writable store must not resurrect the

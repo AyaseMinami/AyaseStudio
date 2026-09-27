@@ -10,6 +10,10 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## v0.1 scope
 
+### Issue #63 lightweight attachments
+
+2026-09-27 用户确认首批范围：CSV/TSV/JSON/XML/YAML/日志及常见代码、配置文本按 UTF-8 正文发送；DOCX/XLSX/PPTX 仅经 Responses 原文件内联发送，Office 本地仅展示信息。无本地 OCR、内容提取、格式转换、Office 正文预览或新增依赖；音视频留待后续。Office 只检查 ZIP 文件头，完整可解析性由上游判断，这取代远端 Issue 对全部损坏/伪造文件预先拒绝的宽泛要求。未知模型和中转站能力不臆断，失败不自动重试。远端 Issue 未修改。
+
 ### Issue #31 automatic conversation titles
 
 按 2026-09-27 用户修订采用两步命名：首条消息提交后立即以原文命名（合并空白，最多 40 个 Unicode 码点；仅附件用文件名），后台使用同一模型概括后替换。失败保留原文标题，替代远端 Issue 的默认标题回退要求。每个对话只尝试一次；手动改名优先，后续消息及重试不反复命名。后台命名不阻塞主聊天与导航，不读取附件正文，不引入专用模型设置页。远端 Issue 未修改。
@@ -44,7 +48,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 ## Explicitly out of scope
 
 - Agents, MCP, RAG, knowledge bases, and client-executed tools/search.
-- Provider Files API uploads, audio/video/Office attachments, and unsent attachment persistence.
+- Provider Files API uploads, audio/video attachments, local Office parsing/conversion, and unsent attachment persistence.
 - Saved edit/regeneration versions and arrow navigation (separate Issue #17).
 - Accounts, cloud sync, telemetry, auto-update, plugins, and marketplace features.
 - Global shortcuts, tray behavior, frameless-window tricks, and multi-window behavior.
@@ -146,9 +150,9 @@ Issue #13 implements protocol-aware URL resolution before expanding the feature 
 
 ### Issue #14 message operations (2026-09-19)
 
-按用户确认，两类消息均提供复制 Markdown 原文、编辑、单条删除、重新请求和分支。Issue #37 将保存编辑改为保留后续历史且不请求、不清理附件；仅用户消息可“编辑并发送”，确认后用修改后的提问和上文生成一次回复，移除后续记录。重新请求同样冻结当前配置，丢弃原回复和后续记录。截断和删除前明确确认。分支保留切点并复制为同助手下独立对话，使用 `(N)` 后缀，不显示来源、不请求网络；创建快照仅作记录。按 Issue #28 的本轮修订，分支复制完整对话配置，后续独立修改。附件清理按所有对话的剩余引用执行。
+按用户确认，两类消息均提供复制 Markdown 原文、编辑、单条删除、重新请求和分支。Issue #37 将保存编辑改为保留后续历史且不请求、不清理附件；仅用户消息可“编辑并发送”。2026-09-27 用户进一步确认：编辑发送、重新请求均直接执行、不弹确认；最新一轮保留问答候选，旧轮操作仍移除后续记录。删除前仍明确确认。分支保留切点并复制可见历史为同助手下独立对话，使用 `(N)` 后缀，不显示来源、不请求网络；创建快照仅作记录。按 Issue #28 的本轮修订，分支复制完整对话配置，后续独立修改。附件清理按所有对话及保留候选的引用执行。
 
-这取代远端 #14 中“原结果仍可访问”的首版要求。编辑版本与替代回复的保存、左右箭头导航已移至低优先级 [Issue #17](https://github.com/AyaseMinami/AyaseStudio/issues/17)，无法追溯恢复首版已丢弃内容。未修改远端 #14。验证集中于消息操作、截断、配置冻结、生成冲突、分支恢复与附件引用，不新增模型白名单或供应商参数组合限制。
+本轮将 [Issue #17](https://github.com/AyaseMinami/AyaseStudio/issues/17) 收窄为最新一轮问答版本：最新提问编辑发送或重新生成新增候选，箭头同时切换问答；下一轮消息提交并核验附件成功后丢弃其他候选，失败或停止的网络生成不恢复它们。仅保存编辑修改当前候选，不另存编辑历史；不做多轮版本树，无法恢复此前已丢弃内容。与 #50 一起实现输入和编辑快捷键。该范围替代远端 #17 的广义消息编辑历史要求，远端 Issue 未修改。
 
 ### Issue #16 protocol thinking extension (2026-09-19)
 

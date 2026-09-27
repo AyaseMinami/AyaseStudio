@@ -9,7 +9,7 @@ import {
 import type { ChatProtocol, ChatRequest } from "./types";
 import { geminiThinkingBody } from "./geminiThinking";
 import { getThinkingSettings, validateThinkingSelection, protocolThinkingBody } from "./thinking";
-import { attachmentCapabilityFailure, safeTextAttachment, type RequestAttachment } from "./attachments";
+import { attachmentCapabilityFailure, isOfficeAttachment, safeTextAttachment, type RequestAttachment } from "./attachments";
 import { searchRequestBody } from "./nativeSearch";
 
 export class RequestConfigError extends Error {
@@ -197,10 +197,10 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   const mapped = messages.map((message) => ({ message, attachments: readyAttachments(message) }));
   const inlineAttachments = mapped.flatMap(({ attachments }) => attachments);
   if (protocol === "openai-chat" || protocol === "openai-responses") {
-    const files = inlineAttachments.filter((item) => item.mimeType === "application/pdf");
+    const files = inlineAttachments.filter((item) => item.mimeType === "application/pdf" || isOfficeAttachment(item));
     if (files.some((item) => item.size >= 50_000_000) ||
       files.reduce((sum, item) => sum + item.size, 0) > 50_000_000) {
-      throw new RequestConfigError({ customJson: "OpenAI 文件输入要求单个 PDF 小于 50 MB、请求内所有文件合计不超过 50 MB。" });
+      throw new RequestConfigError({ customJson: "OpenAI 文件输入要求单个文件小于 50 MB、请求内所有文件合计不超过 50 MB。" });
     }
   }
   const hasInlineMedia = mapped.some(({ attachments }) => attachments.some((item) => !item.mimeType.startsWith("text/")));
@@ -255,8 +255,8 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
           { type: "input_text", text: message.content },
           ...attachments.map((item) => item.mimeType.startsWith("text/")
             ? { type: "input_text", text: documentText(item) }
-            : item.mimeType === "application/pdf"
-              ? { type: "input_file", filename: item.name, file_data: `data:application/pdf;base64,${item.data}` }
+            : item.mimeType === "application/pdf" || isOfficeAttachment(item)
+              ? { type: "input_file", filename: item.name, file_data: `data:${item.mimeType};base64,${item.data}` }
               : { type: "input_image", image_url: `data:${item.mimeType};base64,${item.data}` }),
         ] })),
       ...(system ? { instructions: system } : {}),

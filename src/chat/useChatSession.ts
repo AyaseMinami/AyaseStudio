@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { GenerationTasks } from "./generationTasks";
+import { appendRoundVersion, withoutVersions } from "./roundVersions";
 import { summarizeConversationTitle } from "./conversationTitle";
 import { isTauri } from "@tauri-apps/api/core";
 
@@ -635,7 +636,7 @@ export function useChatSession({
     }
     if ((retryMessageId || resumeMessageId) && !targetUser) { setError("原用户消息已删除，无法重新请求此回复。"); return; }
     if (!content.trim() && !frozenAttachments.length && !existingAttachments.length) return;
-    const history = withReplyLinks(targetUser ? messages.slice(0, messages.findIndex((message) => message.id === targetUser.id)) : messages);
+    const history = withReplyLinks(targetUser ? messages.slice(0, messages.findIndex((message) => message.id === targetUser.id)) : messages).map(withoutVersions);
     if (!activeTarget) {
       if (!connectionSettings.providers.some((provider) => provider.connections.some((connection) => connection.models.length))) onConfigurationRequired();
       setError("当前会话的模型未选择或已失效，请通过对话行的编辑按钮选择模型或恢复助手默认值。");
@@ -780,7 +781,7 @@ export function useChatSession({
       }
       setContextPlan(summarizeContextPlan(planned));
       setError(undefined);
-      const userMessage: StoredChatMessage = targetUser ?? {
+      let userMessage: StoredChatMessage = targetUser ?? {
         id: newId(),
         role: "user",
         content,
@@ -802,6 +803,7 @@ export function useChatSession({
             ? { role: "user" as const, content, ...(userMessage.attachments?.length ? { attachments: userMessage.attachments } : {}) } : message),
         } } : {}),
       };
+      if (!resume) userMessage = appendRoundVersion(withReplyLinks(messages), userMessage, assistantMessage);
       let workingMessages = [...history, userMessage, assistantMessage];
       try {
         await requestStore.updateMessages(workingMessages);
@@ -832,7 +834,7 @@ export function useChatSession({
         await requestStore.updateMessages(workingMessages).catch(() => undefined);
         setMessages(workingMessages);
         consumeSentDraft();
-        if (targetUser) await cleanupAttachments().catch(() => setError("消息已保存，但附件副本整理失败；下次启动将重试。"));
+        await cleanupAttachments().catch(() => setError("消息已保存，但附件副本整理失败；下次启动将重试。"));
         return true;
       }
       setMessages(workingMessages);
@@ -990,7 +992,7 @@ export function useChatSession({
         if (persistenceFailed) {
           setError((current) => current ?? "回复已生成，但保存本地记录失败。");
         }
-        if (targetUser) await cleanupAttachments().catch(() => setError((current) => current ?? "消息已保存，但附件副本整理失败；下次启动将重试。"));
+        await cleanupAttachments().catch(() => setError((current) => current ?? "消息已保存，但附件副本整理失败；下次启动将重试。"));
       }
       return true;
     } finally {
@@ -1064,6 +1066,10 @@ export function useChatSession({
     editMessage,
     deleteMessage,
     branchMessage,
+    selectRoundVersion: async (index: number): Promise<boolean> => {
+      if (!workspace.canSend() || !sessionStore) return false;
+      return workspace.execute({ type: "select-round-version", conversationId: sessionStore.id, index });
+    },
     retryMessage: async (id: string): Promise<void> => { await sendMessage(id); },
     editAndSendMessage: async (id: string, content: string): Promise<boolean> => !!(await sendMessage(id, undefined, content)),
     continueMessage: async (id: string): Promise<void> => { await sendMessage(undefined, id); },

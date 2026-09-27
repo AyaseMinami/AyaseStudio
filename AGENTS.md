@@ -67,5 +67,7 @@ git diff --check
 git status --short --branch
 ```
 
-- Run `npm.cmd run tauri dev` and perform a desktop smoke test for Tauri permissions, runtime networking, window behavior, local files, or theme-first-paint changes.
+- Use the Codex in-app browser for autonomous UI acceptance: layout, themes, responsive sizes, navigation, dialogs, and frontend interactions. Use isolated local test data and mocked native/provider boundaries when necessary; do not read live credentials or send provider requests for UI checks.
+- Do not try Computer Use, native desktop screenshots, or other native UI automation by default, including as a preliminary step or fallback after browser verification. Use them only when the user explicitly requests them.
+- For Tauri permissions, runtime networking, window behavior, local files, or theme-first-paint changes, run the relevant native checks and `npm.cmd run tauri dev` startup smoke check. Record native-only interactions (such as window dragging, minimize/maximize, Snap Layout, and OS file dialogs) as pending user manual acceptance when they cannot be verified in the in-app browser. Browser checks, compilation, or successful startup must not be reported as native interaction acceptance.
 - Keep `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, and `docs/PROTOCOLS.md` synchronized with changes to their stated contracts.

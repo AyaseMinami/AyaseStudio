@@ -56,8 +56,41 @@ it("keeps the block mounted during streaming and reports clipboard failures", as
       previous = block;
     }
     expect(host.querySelector("pre")?.textContent).toBe("const x = '<script>';\n");
-    await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>("[aria-label='复制代码']")!.click());
     expect(host.textContent).toContain("复制失败");
     expect(host.querySelector("script")).toBeNull();
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("keeps wrap mode local and stable during streaming, and copies original text in both modes", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  const first = "```text\n| a | b |\n```\n\n";
+  const code = "\tconst url = 'https://example.test/" + "long".repeat(60) + "';\r\n";
+  try {
+    await act(async () => root.render(<SafeMarkdown>{first + "```js\n" + code.slice(0, 50)}</SafeMarkdown>));
+    const blocks = host.querySelectorAll(".code-block");
+    const block = blocks[1];
+    const toggle = block.querySelector<HTMLButtonElement>("[aria-label='自动换行']")!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => toggle.click());
+    expect(block.getAttribute("data-wrap")).toBe("false");
+    expect(blocks[0].getAttribute("data-wrap")).toBe("true");
+    for (const suffix of ["", "```"]) {
+      await act(async () => root.render(<SafeMarkdown>{first + "```js\n" + code + suffix}</SafeMarkdown>));
+      expect(host.querySelectorAll(".code-block")[1]).toBe(block);
+      expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    }
+    const copy = block.querySelector<HTMLButtonElement>("[aria-label='复制代码']")!;
+    await act(async () => copy.click());
+    expect(writeText).toHaveBeenLastCalledWith(code);
+    await act(async () => toggle.click());
+    expect(block.getAttribute("data-wrap")).toBe("true");
+    expect(block.querySelector("pre code")?.textContent).toBe(code);
+    expect(block.querySelector(".hljs-keyword")).not.toBeNull();
+    await act(async () => copy.click());
+    expect(writeText).toHaveBeenLastCalledWith(code);
   } finally { await act(async () => root.unmount()); }
 });

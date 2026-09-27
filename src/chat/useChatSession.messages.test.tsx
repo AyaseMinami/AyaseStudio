@@ -67,6 +67,43 @@ describe("message actions through the session", () => {
     } } satisfies ChatTransport);
   }
 
+  it("switches latest paired versions, persists selection and discards alternatives on the next turn", async () => {
+    respond();
+    await act(async () => { await session.editAndSendMessage("u3", "three revised"); });
+    expect(session.messages[session.messages.length - 2]?.roundVersions?.pairs).toHaveLength(2);
+    await act(async () => { expect(await session.selectRoundVersion(0)).toBe(true); });
+    expect(session.messages.slice(-2).map((item) => item.content)).toEqual(["three", "old three"]);
+    expect((await repo.load("current"))?.messages.slice(-2)[0]?.roundVersions?.selected).toBe(0);
+    await act(async () => { await session.retryMessage("a3"); });
+    expect(session.messages[session.messages.length - 2]?.roundVersions?.pairs).toHaveLength(3);
+    await act(async () => { await session.selectRoundVersion(1); });
+    expect(session.messages.slice(-2).map((item) => item.content)).toEqual(["three revised", "new answer"]);
+    let sent: ChatRequest | undefined;
+    respond((request) => { sent = request; });
+    await act(async () => session.setDraft("four"));
+    await act(async () => { await session.sendMessage(); });
+    expect(sent?.messages.map((item) => item.content)).toEqual(["one", "old one", "two", "old two", "three revised", "new answer", "four"]);
+    expect(session.messages.every((item) => !item.roundVersions)).toBe(true);
+    expect((await repo.load("current"))?.messages.every((item) => !item.roundVersions)).toBe(true);
+  });
+
+  it("keeps the old pair after a failed regeneration and forbids switching during generation", async () => {
+    let finish!: () => void;
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      throw new Error("synthetic failure");
+      yield { type: "completed", finishReason: "stop" };
+    } } satisfies ChatTransport);
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.retryMessage("a3"); });
+    await wait(() => !!finish);
+    await act(async () => { expect(await session.selectRoundVersion(0)).toBe(false); });
+    await act(async () => { finish(); await sending; });
+    expect(session.messages[session.messages.length - 1]?.status).toBe("failed");
+    await act(async () => { expect(await session.selectRoundVersion(0)).toBe(true); });
+    expect(session.messages.slice(-2).map((item) => item.content)).toEqual(["three", "old three"]);
+  });
+
   it("sends the original math source from restored history", async () => {
     const source = String.raw`设 $A^2=I$，求 \(A\)。`;
     await act(async () => { await session.editMessage("u3", source); });

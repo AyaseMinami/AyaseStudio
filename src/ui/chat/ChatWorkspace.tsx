@@ -6,6 +6,8 @@ import type { ChatProtocol } from "../../chat/types";
 import type { StoredChatMessage } from "../../chat/repository";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
+import { ModelSelector } from "./ModelSelector";
+import type { ModelPickerProps } from "./ModelPicker";
 import { MessageList, type MessageActions } from "./MessageList";
 import { ThinkingToolbarControl } from "./ThinkingControl";
 import type { ThinkingSettings } from "../../chat/thinking";
@@ -33,6 +35,8 @@ export interface ChatWorkspaceProps {
   messageActionsDisabled?: boolean;
   messageActionError?: string;
   protocolLabel: string;
+  modelLabel?: string;
+  modelPicker?: Omit<ModelPickerProps, "onClose">;
   modelId?: string;
   protocol?: ChatProtocol;
   onClear(): void;
@@ -65,6 +69,8 @@ export function ChatWorkspace({
   messageActionsDisabled,
   messageActionError,
   protocolLabel,
+  modelLabel,
+  modelPicker,
   modelId,
   protocol,
   onClear,
@@ -104,7 +110,6 @@ export function ChatWorkspace({
         title={title}
         isHydrated={isHydrated}
         isGenerating={isGenerating}
-        protocolLabel={protocolLabel}
         onClear={onClear}
       />}
       {contextPlan && (contextPlan.trimmedTurns > 0 || contextPlan.excludedIncompleteTurns > 0) && (
@@ -121,6 +126,10 @@ export function ChatWorkspace({
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
           attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
+        protocol={protocol}
+        modelControl={modelPicker
+          ? <ModelSelector label={modelLabel ?? "选择模型"} fullLabel={protocolLabel} {...modelPicker} />
+          : <span className="composer-model-label">{protocolLabel}</span>}
         searchControl={onWebSearchChange ? <button type="button" className="composer-tool-button"
           aria-label="联网搜索" aria-pressed={webSearch ?? false}
           style={webSearch ? { color: "rgb(var(--color-accent-text))", background: "rgb(var(--color-accent) / 0.1)" } : undefined}

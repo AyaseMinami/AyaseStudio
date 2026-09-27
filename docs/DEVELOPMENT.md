@@ -1,5 +1,83 @@
 # Ayase Studio Development Guide
 
+2026-09-28 后续外观微调：色盘、透明度和背景数值旁补充单项恢复按钮；统一色和统一透明度分别原子恢复其覆盖范围内的方案默认值。沿用用户暂不测试的要求，仅做源码复核与 diff 检查，dev 视觉和交互由用户确认。
+
+## 统一主题色与独立子项（2026-09-28）
+
+配色新增统一主题色、独立组件色与用户气泡色，默认方案保留不同色；助手和画布不受统一操作影响。同步更新接口样例和旧对比度预期，补充统一覆盖、独立修改、同色同步、重启与预设恢复的确定性测试源码。遵循本次用户要求，未运行测试、构建、浏览器或原生启动；只做源码复核和 diff 空白检查，视觉效果由用户正在运行的 dev 验收。
+
+## 浅色配色预设（2026-09-27）
+
+默认配色改为中性灰助手气泡与较明显的浅蓝用户气泡，原暖灰配色保留为外观设置的“阅读”预设，具体色值及交互见 [UI 约定](UI-DESIGN.md#确认状态)。按用户要求不运行测试、构建或启动新的 dev 实例；仅做源码检查及 diff 空白检查，现有测试中的默认值与接口样例同步更新但未执行。用户使用已运行的 dev 直接确认视觉效果，运行时和视觉验收尚未完成。
+
+## 最新一轮问答版本与快捷键（#17 / #50，2026-09-27）
+
+按用户要求执行最小相关验证：`npm.cmd test -- src/chat/roundVersions.test.ts src/chat/repository.test.ts src/chat/useChatSession.messages.test.tsx src/chat/useChatSession.concurrency.test.tsx src/ui/chat/MessageList.test.tsx src/ui/chat/Composer.test.tsx`，6 文件 47 项通过；修复箭头切换后的焦点恢复后，仅重跑 MessageList 的 19 项通过。`npx.cmd tsc --noEmit`、`git diff --check` 通过。独立只读审查覆盖存储、请求上下文、附件引用、并发保护、恢复和 UI，未发现剩余确认缺陷。
+
+内置浏览器通过隔离 origin `127.0.0.1:1458/ui-review.local/round50.html` 运行真实 App、Dexie、会话逻辑与组件，仅替换 transport 为本地合成回复，不读取真实凭据或发送供应商请求。验收 Enter / Ctrl+Enter 发送、Shift+Enter 换行、编辑 Ctrl+Enter 直接发送、Enter 仅保存、Escape 取消；重新生成及修改提问产生 3 个候选，箭头同步恢复对应问答，刷新保持 2/3 选择。箭头切换到边界后焦点转到可用箭头，可连续键盘切换。继续下一轮后旧候选入口消失，保留选中问答；新一轮可独立新增候选。720×520 深色与默认尺寸浅色布局无页面横向溢出，浏览器无 error 日志。
+
+验收截图：`ui-review.local/round50-versions.png`、`ui-review.local/round50-dark.png`；样例、模拟 transport 和独立 Vite 配置均位于忽略目录，不随仓库交付。不运行全量测试、Rust 检查或原生启动；本轮无原生合同变更。真实 Windows 输入法选词仍需用户实机确认，合成事件测试只验证组合输入保护分支。未提交、推送或修改远端 Issue。
+
+## Issue #62 消息内图片预览（2026-09-27）
+
+粘贴默认名规则补充：附件 UI 16 项与 TypeScript 通过，确定性测试覆盖同批/同秒连续粘贴编号、跨秒重置、明确名称保留、扩展名及原字节/MIME/修改时间保留。内置浏览器通过合成 clipboard paste 事件验证两张默认名分别变为时间名和 `-2`，`风景.png` 保留，改名后可点击预览且发送计数为 0；截图 `ui-review.local/paste-names62.png`。这验证应用粘贴处理，不代表 Windows 系统剪贴板格式兼容性的全面验收。
+
+后续补充待发送图片标签点击预览，保持紧凑标签和独立移除按钮。附件 UI 15 项测试、TypeScript 与 diff 检查通过；新增测试覆盖显式打开才读取、关闭再打开重新读取、草稿保持、附件移除后关闭、读取失败且不发送。内置浏览器 `ui-review.local/draft62.html` 合成图片验证鼠标打开、Escape 关闭后标签焦点恢复、草稿文字及附件保留，点击 × 只移除，发送计数始终为 0。截图 `ui-review.local/draft62-preview.png`。未运行全量或原生检查，未改变附件保存/传输协议。
+
+按用户确认实施适当尺寸的消息内图片预览：单图最大 560×420px，多图最多两列、每格最大 280×280px，窄内容区域单列，等比完整显示且不放大小图。见 [UI 规则](UI-DESIGN.md#消息内图片预览issue-62) 与 [临时读取生命周期](ARCHITECTURE.md#message-image-previews-62)。
+
+最低限度验证：`npm.cmd test -- src/ui/chat/AttachmentUi.test.tsx src/ui/chat/MessageList.test.tsx` 首轮 29 项通过；末张导航焦点修复后只重跑附件 UI，13 项通过（消息组件既有 17 项此前通过）。`npx.cmd tsc --noEmit` 与 `git diff --check` 通过。新增测试覆盖可视范围读取/释放、迟到结果丢弃、图片失败、弹窗切换和焦点返回。独立只读审查发现的中等宽度单格超限、末张导航焦点逃逸已修复并复核，无剩余确认缺陷。
+
+内置浏览器使用隔离 origin `127.0.0.1:1456` 和 `ui-review.local/images62.html`，真实消息组件配合合成图片与读取回调。1200×850 下单图外框 560×420px、多图两列各 280×280px；横图、竖图和长截图完整显示，80×60 小图不放大。720×520 窗口中的 320px 内容区改为单列，无页面或消息区横向溢出；浅深主题均检查。鼠标打开/关闭、左右键切图、Escape 返回、末张导航后 Tab 回到关闭按钮通过；读取失败、解码失败、延迟加载均保留稳定占位。20 条长对话在底部仅挂载附近两张图片，滚到顶部后换为前两张且总高度不变。刷新合成样例后图片重新读取并正常显示。
+
+浏览器验收修复了首版长图裁切和多图意外单列问题。截图保存在 `ui-review.local/images62-single.png`、`images62-multi-light.png` 与 `images62-narrow-dark.png`。这是隔离样例的组件/布局验收，不代表原生私有附件持久化或真实供应商验收；不调用真实供应商，不读取凭据，未运行全量测试、生产构建、Rust 或原生启动。未提交、推送或修改远端 Issue；最终主观视觉效果由用户确认。
+
+## Issue #63 轻量附件扩展（2026-09-27）
+
+后续按用户反馈取消选择器的协议过滤：所有连接（包括尚未选择模型）都列出 DOCX/XLSX/PPTX，加入草稿后再提示 Responses 发送要求。切换连接保留草稿，非 Responses 的发送限制不变。
+
+该修复通过 9 项附件 UI 测试、TypeScript 与 diff 检查；内置浏览器确认 Anthropic 下文件输入 accept 包含三个 Office 后缀，添加后显示限制原因并禁用发送。此轮未操作 Windows 原生选择对话框。
+
+新增 UTF-8 结构化文本/代码，以及仅 Responses 可发送的 DOCX/XLSX/PPTX 原文件。Office 仅验证 ZIP 文件头，不做完整 OOXML 解析；预览只读元数据，无新增依赖。验收范围及远端需求差异见 [计划](PLAN.md#issue-63-lightweight-attachments)。
+
+定向前端 5 个文件、54 项测试通过（格式识别、请求映射、私有存储接口、会话附件生命周期及 UI），生产构建通过，保留既有大 chunk 提示。Rust 附件 14 项测试和 cargo check 通过。独立只读审查未发现确认缺陷。未运行无关全量测试，也未读取凭据或请求真实供应商。
+
+内置浏览器使用独立 `127.0.0.1:1453` 与 `ui-review.local/attachments63.html`，真实组件和请求映射配合合成附件、本地模拟存储。通过键盘验证添加草稿、切换协议保留附件且阻止发送、切回 Responses 后产生原 Office Base64 与 CSV 正文、Office 信息预览及 CSV 中文预览、Escape 关闭；浏览器刷新恢复仅验证模拟存储，正式持久化由既有会话测试及本轮 Rust 副本测试覆盖。720×520 浅深主题均无横向溢出；截图为 `ui-review.local/attachments63-light.png` 与 `attachments63-preview.png`。鼠标点击工具未改变页面，未将其计为通过。
+
+`tauri dev --no-watch` 启动检查因用户正在运行的 `target/debug/ayase-studio.exe` 被占用，链接替换报 Windows 拒绝访问而未完成；保留该实例，不强制关闭。原生文件对话框与真实供应商兼容性未验收，浏览器检查不替代它们。
+
+## Issue #59 区域透明度（2026-09-27）
+
+后续按用户要求将预览改为固定 1920×1080 的完整模拟画布并整体缩放，背景取景明确为 16:9。10 项相关测试、TypeScript、生产构建和 diff 检查通过；测试覆盖容器宽度变化、observer 清理、固定预览取景及真实窗口默认取景。内置浏览器实测内部尺寸始终 1920×1080，在 1280px 宽窗口显示为 948×533.25，在 1440px 双列设置页显示为 597×335.8125；720×520 下无横向溢出，浅深主题和透明度实时更新正常。截图为 `ui-review.local/preview-1080p.png`，独立只读复审无确认缺陷。本轮仅改预览与可选背景比例参数，未重复全量测试、Rust 或原生启动。
+
+统一滑块覆盖侧栏、输入栏、双方消息气泡；独立调整只覆盖对应区域，差异以橙色叹号提示，手动恢复一致后同步统一值。预览包括两级侧栏、双方气泡与输入区，方案见 [UI 约定](UI-DESIGN.md#透明度设置issue-59)。
+
+最终 `npm.cmd run check` 通过 49 个测试文件、489 项测试和 TypeScript/Vite 构建；`cargo check --manifest-path src-tauri/Cargo.toml` 通过。新增确定性测试覆盖统一一次存储、独立覆盖与收敛、恢复偏好、旧配置/非法值回退、重置、差异提示、提示层视口边界，以及浅深主题和自定义配色下每个整数透明度的用户文字对比度。构建保留既有大 chunk 提示。
+
+内置浏览器使用隔离 `127.0.0.1:1445` origin 和 `ui-review.local/opacity.html`，供应商请求被阻断，背景适配器提供合成图形。实测统一 100%、单项变 0%、手动恢复 100% 的提示出现/消失，以及统一 30% 后侧栏 40% 刷新恢复；预览与实际聊天对应底板 alpha 相同，内容 opacity 保持 1（侧栏原有开关动画除外）。浅深主题、1440×900 与 720×520 均无页面横向溢出，键盘聚焦显示差异说明；最终截图为 `ui-review.local/opacity-dark.png`。导航和精确数值测试通过键盘 Enter/方向键完成，另实测鼠标拖动统一滑块将三个区域同步为 60%，差异标识消失。
+
+独立审查发现并修复高透明度下深色画布上的用户文字对比不足，以及说明提示在滚动区或窗口边缘裁切；复审无剩余确认缺陷。浏览器确认深色无背景图、100% 气泡透明度时用户文字为白色，实际聊天与预览一致；说明提示使用 body portal，Escape 关闭。
+
+未访问真实密钥或供应商、未提交或修改远端 Issue。本轮不涉及原生权限、网络、文件实现或主题首屏机制；未重启用户正在运行的桌面实例，浏览器验收不代表原生安装/启动与用户主观视觉验收。
+
+## Issue #9 标题栏样板（2026-09-27）
+
+按用户确认，Windows 原生标题栏与聊天顶部栏合并，对话标题居中，模型选择迁移至输入框底部，宽窄与清空在窗口三键左侧独立成组。设置页同样保留窗口三键。用户随后要求将聊天顶部栏收紧至 40px；内置浏览器实测高度 40px，三键贴顶对齐，无页面横向溢出。
+
+用户在上述调整后明确授权提交代码，并将 #9 标记为已完成。关闭依据是用户本轮指示，不将其扩大为全部原生交互测试或安装发布验收通过；以下已验证范围及 Snap Layout 限制继续保留。
+
+默认自主 UI 验收使用 Codex 内置浏览器，详见 [AGENTS.md](../AGENTS.md#editing-and-verification)。只有用户明确要求时才使用 Computer Use 或其他原生 UI 自动化。原生能力仍需相关编译、启动检查；浏览器无法验证的行为明确交由用户手动验收，不用浏览器模拟替代。
+
+本轮 `npm.cmd run check` 的 48 个文件、482 项测试与生产构建通过，`cargo check --manifest-path src-tauri/Cargo.toml` 通过；构建保留既有大 chunk 提示。窗口测试覆盖浏览器/原生装饰分支、三键分发、最大化状态同步、迟到状态忽略、重复命令防护、错误呈现和卸载监听清理。后续仅 CSS 微调重跑相关 32 项测试和 TypeScript 检查。
+
+独立只读审查确认并复核修复了最小窗口下长标题与操作区重叠的问题，未发现其余确认的 P1/P2 缺陷；该审查不替代下面列出的原生体验验收。
+
+内置浏览器使用独立 `127.0.0.1:1441` origin 与 `ui-review.local/titlebar.html` 样板，拦截原生命令且不请求供应商。720×520 下浅深主题、模型弹窗与 Escape 焦点回退可用；长标题居中（聊天区域与标题中心均为 x=392），标题右缘 472px、操作区左缘约 487px，无重叠及页面横向溢出。截图 `ui-review.local/titlebar-720-dark.png` 为浏览器模拟的原生按钮外观，不是原生窗口截图。
+
+`npm.cmd run tauri dev` 已编译启动，原生可访问性树确认窗口三键出现，并读取到真实最大化状态。用户新增默认浏览器验收要求前尝试的 Computer Use 截图报 `FrameArrived timed out`，点击报 `coordinate input geometry is unavailable`；因此未声称拖动、双击、三键原生动作、阴影或系统菜单通过。启动日志仍出现 IPC 自定义协议回退到 postMessage 的警告。
+
+Windows 11 最大化按钮悬停 Snap Layout 尚未接入：普通 HTML 按钮与 `toggleMaximize` 不提供原生 `HTMAXBUTTON` 命中行为。其余 Snap、系统菜单、阴影和缩放也待用户实机确认；若原生体验明显退化，应按 #9 保留原生标题栏，不将当前样板视为发布通过。可在启动前设置 `$env:AYASE_NATIVE_TITLEBAR = '1'` 恢复原生装饰，自定义三键会随之隐藏；移除此环境变量并重启可恢复样板。官方依据：[Tauri 窗口定制](https://v2.tauri.app/learn/window-customization/)、[Microsoft 自定义标题栏 Snap Layout](https://learn.microsoft.com/windows/apps/desktop/modernize/apply-snap-layout-menu)。
+
 ## Alpha 2 候选包验证（2026-09-27）
 
 版本统一为 `0.1.0-alpha.2`，继续仅构建 Windows x64 NSIS 安装程序。`npm.cmd run check` 通过：46 个文件、473 项确定性测试及 TypeScript/Vite 生产构建；`cargo test --manifest-path src-tauri/Cargo.toml` 的 20 项单元测试和 `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
@@ -84,7 +162,9 @@
 
 本机凭据在 Git 忽略的 `.env.deepseek.local`，脱敏统计在 `.deepseek-probe.local/results.json`；这些本地文件不随仓库分发。现有 `probe:live` 仍读取 `.env.probe.local`，不会自动读取 DeepSeek 专用文件。不要将真实 Key 或完整思考文本加入报告。
 
-Issue #36 定向验证：`npm.cmd test -- src/chat/CodeBlock.test.tsx src/chat/SafeMarkdown.test.tsx src/ui/chat/SearchResults.test.tsx`，配合 `npm.cmd run build` 和 `git diff --check`。覆盖代码高亮、未知语言、逐段流式更新、原文复制（缩进、空行、CRLF、末尾换行）、复制失败与既有公式/引用安全边界。浏览器检查浅深主题及窄窗口的代码局部滚动；桌面剪贴板实际交互仍需桌面验收。本项不改变原生权限、存储或供应商协议。
+Issue #36 / #61 定向验证：`npm.cmd test -- src/chat/CodeBlock.test.tsx src/chat/SafeMarkdown.test.tsx src/ui/chat/SearchResults.test.tsx`，配合 `npm.cmd run build` 和 `git diff --check`。覆盖代码高亮、未知语言、逐段流式更新、原文复制（缩进、空行、CRLF、末尾换行）、复制失败与既有公式/引用安全边界，以及每块独立换行、流式更新保留选择和两种模式下复制原文。浏览器检查浅深主题、窄窗口自动折行与关闭后的局部滚动；桌面剪贴板实际交互仍需桌面验收。本项不改变原生权限、存储或供应商协议。
+
+2026-09-27 #61 本地验证：`npm.cmd run check` 通过（50 个测试文件、497 项测试及生产构建），Rust check 通过；构建仍有大 chunk 提示。内置浏览器合成样例验证浅深主题、320px/900px 内容容器：窄容器代码正文 clientWidth/scrollWidth 为 286/286，关闭换行后为 286/1877，页面仍为 680/680；900px 容器中换行正文为 866/866，页面为 1100/1100。真实 MessageList 合成消息在 320px 容器中正文为 231/231，页面无横向溢出。键盘 Enter 可切换模式，模拟流式追加至闭合围栏后保持选择。鼠标自动化点击无状态变化，未记作通过。复制按钮显示成功，但浏览器剪贴板读取接口返回空值，原文一致性以组件测试为证，真实剪贴板仍待手动确认。未调用供应商或原生桌面自动化。
 
 本指南用于在办公室、家里或新的 Windows 开发环境中稳定地继续 Ayase Studio 的开发。仓库中的锁文件是依赖版本的权威来源；真实 API Key 与本地运行产物不进入 Git。
 

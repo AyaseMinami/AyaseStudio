@@ -52,9 +52,26 @@ fn kind(name: &str, bytes: &[u8]) -> Result<(&'static str, &'static str), Attach
             Ok((mime, ext))
         }
         "pdf" => Ok(("application/pdf", "pdf")),
+        "docx" | "xlsx" | "pptx" => {
+            if !bytes.starts_with(b"PK\x03\x04") { return Err(AttachmentError::Corrupt); }
+            let mime = match extension.as_str() {
+                "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                _ => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            };
+            Ok((mime, match extension.as_str() {
+                "docx" => "docx", "xlsx" => "xlsx", _ => "pptx",
+            }))
+        }
         "txt" | "md" | "markdown" => {
             std::str::from_utf8(bytes).map_err(|_| AttachmentError::Corrupt)?;
             Ok(if extension == "txt" { ("text/plain", "txt") } else { ("text/markdown", "md") })
+        }
+        "csv" | "tsv" | "json" | "xml" | "yaml" | "yml" | "log" | "html" | "htm"
+        | "css" | "js" | "jsx" | "ts" | "tsx" | "py" | "rs" | "java" | "c" | "cpp"
+        | "h" | "hpp" | "cs" | "go" | "sh" | "sql" | "toml" | "ini" | "tex" => {
+            std::str::from_utf8(bytes).map_err(|_| AttachmentError::Corrupt)?;
+            Ok(("text/plain", "txt"))
         }
         _ => Err(AttachmentError::Unsupported),
     }
@@ -68,7 +85,7 @@ fn managed_name(reference: &str) -> Result<&str, AttachmentError> {
         || parsed.get_variant() != Variant::RFC4122 || parsed.hyphenated().to_string() != id {
         return Err(AttachmentError::InvalidReference);
     }
-    if !matches!(extension, "png" | "jpg" | "webp" | "pdf" | "txt" | "md") {
+    if !matches!(extension, "png" | "jpg" | "webp" | "pdf" | "txt" | "md" | "docx" | "xlsx" | "pptx") {
         return Err(AttachmentError::InvalidReference);
     }
     Ok(filename)
@@ -283,6 +300,49 @@ mod tests {
     #[test]
     fn unrecognized_image_header_does_not_create_a_second_native_format_gate() {
         assert_eq!(kind("unknown.png", b"GIF89a\x01\x00\x01\x00"), Ok(("image/png", "png")));
+    }
+
+    #[test]
+    fn office_files_keep_their_original_bytes_and_mime_types() {
+        let temp = tempfile::tempdir().unwrap();
+        let bytes = b"PK\x03\x04original office bytes\x00\xff";
+        for (extension, mime) in [
+            ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        ] {
+            let name = format!("report.{extension}");
+            let saved = save(temp.path(), name.clone(), STANDARD.encode(bytes)).unwrap();
+            assert_eq!(saved.name, name);
+            assert_eq!(saved.mime_type, mime);
+            assert!(saved.reference.ends_with(&format!(".{extension}")));
+            assert_eq!(read_saved(temp.path(), &saved.reference).unwrap(), STANDARD.encode(bytes));
+        }
+    }
+
+    #[test]
+    fn office_files_require_a_zip_local_header() {
+        for extension in ["docx", "xlsx", "pptx"] {
+            assert_eq!(kind(&format!("report.{extension}"), b"PK\x05\x06"), Err(AttachmentError::Corrupt));
+            assert_eq!(kind(&format!("report.{extension}"), b"PK\x03"), Err(AttachmentError::Corrupt));
+        }
+    }
+
+    #[test]
+    fn utf8_text_extensions_are_stored_as_plain_text() {
+        let temp = tempfile::tempdir().unwrap();
+        for extension in ["csv", "tsv", "json", "xml", "yaml", "yml", "log", "html", "htm",
+            "css", "js", "jsx", "ts", "tsx", "py", "rs", "java", "c", "cpp", "h", "hpp",
+            "cs", "go", "sh", "sql", "toml", "ini", "tex"] {
+            let name = format!("source.{extension}");
+            let saved = save(temp.path(), name.clone(), STANDARD.encode("你好")).unwrap();
+            assert_eq!(saved.name, name);
+            assert_eq!(saved.mime_type, "text/plain");
+            assert!(saved.reference.ends_with(".txt"));
+            assert_eq!(read_saved(temp.path(), &saved.reference).unwrap(), STANDARD.encode("你好"));
+            assert_eq!(kind(&name, b"\xff"), Err(AttachmentError::Corrupt));
+        }
+        assert_eq!(kind("notes.md", b"markdown"), Ok(("text/markdown", "md")));
     }
 
     #[test]

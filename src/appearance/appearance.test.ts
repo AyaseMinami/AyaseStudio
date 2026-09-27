@@ -14,10 +14,16 @@ import {
 } from "./appearance";
 
 const expectedDefaultPreferences = {
+  userBubbleColor: null,
+  unifiedThemeColor: null,
+  colorPreset: "default" as const,
   themeMode: "system" as const,
   accentColor: null,
   canvasColor: null,
   assistantBubbleColor: null,
+  unifiedTransparency: 0,
+  sidebarTransparency: 0,
+  composerTransparency: 0,
   assistantBubbleTransparency: 6,
   backgroundReference: null,
   backgroundFocus: null,
@@ -79,6 +85,97 @@ function createThemeHarness(initiallyDark = false) {
 }
 
 describe("appearance preferences", () => {
+  it("unifies only component and user colors, then preserves independent edits across restart", async () => {
+    let saved: string | null = null;
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    const harness = createThemeHarness();
+    const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    await controller.ready;
+    expect(controller.getSnapshot()).toMatchObject({ effectiveAccentColor: "#2563eb", effectiveUserBubbleColor: "#d2e3f7" });
+    controller.setAssistantBubbleColor("#eeeeee");
+    controller.setCanvasColor("#fafafa");
+    controller.setUnifiedThemeColor("#ddeeff");
+    expect(controller.getSnapshot()).toMatchObject({ accentColor: "#ddeeff", userBubbleColor: "#ddeeff", unifiedThemeColor: "#ddeeff", assistantBubbleColor: "#eeeeee", canvasColor: "#fafafa" });
+    expect(harness.styleProperties.get("--color-accent")).toBe("221 238 255");
+    expect(harness.styleProperties.get("--color-user-message")).toBe("221 238 255");
+    controller.setUserBubbleColor("#eedddd");
+    expect(controller.getSnapshot()).toMatchObject({ accentColor: "#ddeeff", userBubbleColor: "#eedddd", unifiedThemeColor: "#ddeeff" });
+    controller.setAccentColor("#eedddd");
+    expect(controller.getSnapshot().unifiedThemeColor).toBe("#eedddd");
+    const restarted = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    await restarted.ready;
+    expect(restarted.getSnapshot()).toMatchObject({ effectiveAccentColor: "#eedddd", effectiveUserBubbleColor: "#eedddd" });
+    restarted.setColorPreset("reading");
+    expect(restarted.getSnapshot()).toMatchObject({ effectiveAccentColor: "#2563eb", effectiveUserBubbleColor: "#eef2f6", unifiedThemeColor: null });
+    await restarted.resetCustomAppearance();
+    expect(restarted.getSnapshot()).toMatchObject({ effectiveAccentColor: "#2563eb", effectiveUserBubbleColor: "#d2e3f7" });
+    restarted.destroy();
+    controller.destroy();
+  });
+
+  it("keeps user text readable as its bubble fades into either solid canvas", () => {
+    function brightness(rgb: number[]) {
+      const linear = rgb.map(channel => channel / 255 <= 0.04045 ? channel / 255 / 12.92 : ((channel / 255 + 0.055) / 1.055) ** 2.4);
+      return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+    }
+    for (const dark of [false, true]) {
+      const harness = createThemeHarness(dark);
+      const controller = createAppearanceController({ storage: { getItem: () => null, setItem: () => {} }, systemTheme: harness.systemTheme, target: harness.target });
+      for (const custom of [false, true]) {
+        controller.setAccentColor(custom ? "#802040" : null);
+        controller.setCanvasColor(custom ? "#345678" : null);
+        for (let transparency = 0; transparency <= 100; transparency++) {
+          controller.setAssistantBubbleTransparency(transparency);
+          const vars = harness.styleProperties;
+          const accent = (vars.get("--color-user-message") ?? (dark ? "147 197 253" : "210 227 247")).split(" ").map(Number);
+          const canvas = (vars.get("--color-canvas") ?? (dark ? "12 10 9" : "250 250 250")).split(" ").map(Number);
+          const foreground = (vars.get("--color-user-message-text") ?? (dark ? "15 23 42" : "41 42 45")).split(" ").map(Number);
+          const background = accent.map((channel, index) => Math.round(channel * (1 - transparency / 100) + canvas[index] * transparency / 100));
+          const a = brightness(foreground), b = brightness(background);
+          expect((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      controller.destroy();
+    }
+  });
+
+  it("applies one unified adjustment atomically, then lets individual adjustments win and converge", async () => {
+    let saved: string | null = null;
+    const writes: string[] = [];
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; writes.push(value); } };
+    const harness = createThemeHarness();
+    const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    controller.setUnifiedTransparency(48);
+    expect(writes).toHaveLength(1);
+    expect(controller.getSnapshot()).toMatchObject({ unifiedTransparency: 48, sidebarTransparency: 48, composerTransparency: 48, assistantBubbleTransparency: 48 });
+    expect(harness.styleProperties.get("--sidebar-background-opacity")).toBe("0.52");
+    controller.setSidebarTransparency(22);
+    expect(controller.getSnapshot()).toMatchObject({ unifiedTransparency: 48, sidebarTransparency: 22, composerTransparency: 48, assistantBubbleTransparency: 48 });
+    controller.setComposerTransparency(22);
+    controller.setAssistantBubbleTransparency(22);
+    expect(controller.getSnapshot()).toMatchObject({ unifiedTransparency: 22, sidebarTransparency: 22, composerTransparency: 22, assistantBubbleTransparency: 22 });
+    const restarted = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    await restarted.ready;
+    expect(restarted.getSnapshot()).toMatchObject({ unifiedTransparency: 22, sidebarTransparency: 22, composerTransparency: 22, assistantBubbleTransparency: 22 });
+    controller.setUnifiedTransparency(100);
+    expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("0");
+    expect(harness.styleProperties.get("--composer-background-opacity")).toBe("0");
+    await controller.resetCustomAppearance();
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 6 });
+  });
+
+  it("uses per-field defaults for old, missing, and invalid transparency values", () => {
+    let saved: string | null = JSON.stringify({ assistantBubbleTransparency: 37 });
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 37 });
+    saved = JSON.stringify({ unifiedTransparency: -1, sidebarTransparency: 101, composerTransparency: 9.5, assistantBubbleTransparency: "42" });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 6 });
+    saved = JSON.stringify({ unifiedTransparency: -1, sidebarTransparency: 40, composerTransparency: 40, assistantBubbleTransparency: 40 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 40, sidebarTransparency: 40, composerTransparency: 40, assistantBubbleTransparency: 40 });
+    saved = "{";
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 6 });
+  });
+
   it("persists independent bubble color and transparency including both endpoints, and resets them", async () => {
     let saved: string | null = null;
     const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
@@ -86,14 +183,14 @@ describe("appearance preferences", () => {
     const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
     controller.setAssistantBubbleColor("#123456");
     controller.setAssistantBubbleTransparency(100);
-    expect(harness.styleProperties.get("--assistant-bubble-opacity")).toBe("0");
+    expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("0");
     expect(harness.styleProperties.get("--color-assistant-bubble")).toBe("18 52 86");
     expect(harness.styleProperties.has("--color-user-message")).toBe(false);
     controller.setThemeMode("dark");
     const restored = applyInitialAppearance({ storage, systemPrefersDark: false, target: harness.target });
     expect(restored).toMatchObject({ assistantBubbleColor: "#123456", assistantBubbleTransparency: 100, backgroundMask: 65 });
     controller.setAssistantBubbleTransparency(0);
-    expect(harness.styleProperties.get("--assistant-bubble-opacity")).toBe("1");
+    expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("1");
     await controller.resetCustomAppearance();
     expect(loadAppearancePreferences(storage)).toMatchObject({ assistantBubbleColor: null, assistantBubbleTransparency: 6, themeMode: "dark" });
     expect(harness.styleProperties.has("--color-assistant-bubble")).toBe(false);
@@ -231,6 +328,7 @@ describe("appearance preferences", () => {
       ...expectedDefaultPreferences,
       themeMode: "system",
       accentColor: "#a855f7",
+      userBubbleColor: "#a855f7",
       canvasColor: "#112233",
       backgroundReference:
         "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp",
@@ -284,8 +382,9 @@ describe("appearance controller", () => {
       ...expectedDefaultPreferences,
       ...expectedDefaultRuntime,
       resolvedTheme: "light",
-      effectiveAccentColor: "#60a5fa",
-      effectiveCanvasColor: "#fafaf9",
+      effectiveAccentColor: "#2563eb",
+      effectiveUserBubbleColor: "#d2e3f7",
+      effectiveCanvasColor: "#fafafa",
       readabilityWarnings: [],
     });
     expect(harness.attributes.get("data-theme")).toBe("light");
@@ -323,8 +422,9 @@ describe("appearance controller", () => {
       ...expectedDefaultRuntime,
       themeMode: "light",
       resolvedTheme: "light",
-      effectiveAccentColor: "#60a5fa",
-      effectiveCanvasColor: "#fafaf9",
+      effectiveAccentColor: "#2563eb",
+      effectiveUserBubbleColor: "#d2e3f7",
+      effectiveCanvasColor: "#fafafa",
       readabilityWarnings: [],
     });
     expect(JSON.parse(saved)).toEqual({
@@ -354,13 +454,13 @@ describe("appearance controller", () => {
     expect(controller.getSnapshot().accentColor).toBe("#ffffff");
     expect(controller.getSnapshot().canvasColor).toBe("#000000");
     expect(controller.getSnapshot().readabilityWarnings).toEqual([
-      "强调色已自动调整，以保持文字和控件清晰。",
       "画布颜色已自动调整，以匹配当前基础主题的可读表面。",
     ]);
-    expect(harness.styleProperties.get("--color-accent")).not.toBe(
+    expect(harness.styleProperties.get("--color-accent")).toBe(
       "255 255 255",
     );
     expect(harness.styleProperties.get("--color-canvas")).not.toBe("0 0 0");
+    expect(harness.styleProperties.get("--color-accent-text")).not.toBe("255 255 255");
     expect(JSON.parse(saved)).toMatchObject({
       accentColor: "#ffffff",
       canvasColor: "#000000",
@@ -631,7 +731,7 @@ describe("appearance controller", () => {
       canvasColor: "#000000",
     });
     expect(controller.getSnapshot().effectiveCanvasColor).not.toBe(lightCanvas);
-    expect(controller.getSnapshot().effectiveAccentColor).not.toBe(lightAccent);
+    expect(controller.getSnapshot().effectiveAccentColor).toBe(lightAccent);
   });
 
   it("clears a missing private background reference without blocking startup", async () => {

@@ -1,0 +1,28 @@
+.window-controls {
+  position: relative;
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+  margin-left: 8px;
+  border-left: 1px solid rgb(var(--color-border) / 0.6);
+  color: rgb(var(--color-text));
+}
+.window-controls > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+.window-controls > button:hover:not(:disabled) { background: rgb(var(--color-hover)); }
+.window-controls > button:active:not(:disabled) { background: rgb(var(--color-text) / 0.16); }
+.window-controls > .window-close:hover:not(:disabled) { color: white; background: #c42b1c; }
+.window-controls > .window-close:active:not(:disabled) { color: white; background: #a82418; }
+.window-controls > button:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: -3px; }
+.window-controls > button:disabled { opacity: 0.45; }
+.window-control-error { position: absolute; top: 100%; right: 4px; z-index: 100; padding: 8px 12px; white-space: nowrap; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); border: 1px solid rgb(var(--color-border)); border-radius: 6px; font-size: var(--font-small); }

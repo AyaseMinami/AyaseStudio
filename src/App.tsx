@@ -44,12 +44,8 @@ function App() {
         <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingIds={chat.generatingConversationIds}
           toolbar={<ChatHeader key={chat.workspace.conversation?.id ?? "loading"} title={chat.workspace.conversation?.title ?? "新对话"}
             layout={chatLayout.layout} onToggleLayout={chatLayout.toggleLayout} isHydrated={chat.isHydrated}
-            isGenerating={chat.isGenerating} protocolLabel={modelLabel}
-            modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}
-            onClear={chat.clearConversation}
-          modelPicker={{ settings: chat.connectionSettings, selectedModelId: chat.workspace.effective.modelId,
-            disabled: !chat.isHydrated, error: chat.workspace.operationError ?? chat.workspace.loadError,
-            onSelect: chat.setConversationModel }} />}>
+            isGenerating={chat.isGenerating}
+            onClear={chat.clearConversation} />}>
         <ChatWorkspace hideHeader
           layout={chatLayout.layout}
           onToggleLayout={chatLayout.toggleLayout}
@@ -63,7 +59,7 @@ function App() {
           isHydrated={chat.isHydrated}
           isGenerating={chat.isGenerating}
           messages={chat.messages}
-          messageActions={{ edit: chat.editMessage, editAndSend: chat.editAndSendMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage, continue: chat.continueMessage }}
+          messageActions={{ edit: chat.editMessage, editAndSend: chat.editAndSendMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage, continue: chat.continueMessage, selectVersion: chat.selectRoundVersion }}
           messageActionsDisabled={!chat.isHydrated || chat.isGenerating}
           messageActionError={chat.workspace.operationError}
           modelId={chat.activeModel?.modelId}
@@ -73,6 +69,10 @@ function App() {
           onWebSearchChange={(enabled) => void chat.setWebSearch(enabled)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={modelLabel}
+          modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}
+          modelPicker={{ settings: chat.connectionSettings, selectedModelId: chat.workspace.effective.modelId,
+            disabled: !chat.isHydrated, error: chat.workspace.operationError ?? chat.workspace.loadError,
+            onSelect: chat.setConversationModel }}
           onClear={chat.clearConversation}
           onDraftChange={chat.setDraft}
           onFiles={(files) => void chat.addFiles(files)}
@@ -89,8 +89,15 @@ function App() {
             themeMode: appearance.themeMode,
             resolvedTheme: appearance.resolvedTheme,
             accentColor: appearance.accentColor,
+            unifiedThemeColor: appearance.unifiedThemeColor,
+            effectiveUserBubbleColor: appearance.effectiveUserBubbleColor,
+            onUnifiedThemeColorChange: appearance.setUnifiedThemeColor,
+            onUserBubbleColorChange: appearance.setUserBubbleColor,
             canvasColor: appearance.canvasColor,
             assistantBubbleColor: appearance.assistantBubbleColor,
+            unifiedTransparency: appearance.unifiedTransparency,
+            sidebarTransparency: appearance.sidebarTransparency,
+            composerTransparency: appearance.composerTransparency,
             assistantBubbleTransparency: appearance.assistantBubbleTransparency,
             effectiveAccentColor: appearance.effectiveAccentColor,
             effectiveCanvasColor: appearance.effectiveCanvasColor,
@@ -104,9 +111,14 @@ function App() {
             backgroundError: appearance.backgroundError,
             readabilityWarnings: appearance.readabilityWarnings,
             onThemeModeChange: appearance.setThemeMode,
+            colorPreset: appearance.colorPreset,
+            onColorPresetChange: appearance.setColorPreset,
             onAccentColorChange: appearance.setAccentColor,
             onCanvasColorChange: appearance.setCanvasColor,
             onAssistantBubbleColorChange: appearance.setAssistantBubbleColor,
+            onUnifiedTransparencyChange: appearance.setUnifiedTransparency,
+            onSidebarTransparencyChange: appearance.setSidebarTransparency,
+            onComposerTransparencyChange: appearance.setComposerTransparency,
             onAssistantBubbleTransparencyChange: appearance.setAssistantBubbleTransparency,
             onEditBackgroundFocus: appearance.editBackgroundFocus,
             onBackgroundFitChange: appearance.setBackgroundFit,

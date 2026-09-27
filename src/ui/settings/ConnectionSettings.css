@@ -32,23 +32,124 @@
 }
 
 .connection-settings-page .connection-detail {
-  padding: clamp(1rem, 2.2vw, 1.4rem);
+  padding: 0.875rem 1.25rem;
+}
+
+.connection-detail-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .connection-settings-page .connection-detail-heading {
-  gap: 0.25rem;
-  padding-bottom: 0.875rem;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.625rem;
+  padding-bottom: 0.625rem;
 }
 
 .connection-settings-page .connection-detail-heading p,
 .connection-settings-page .connection-detail-heading h3 {
   margin: 0;
   line-height: 1.5;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .connection-settings-page .connection-detail-heading p {
+  flex: 0 1 auto;
+  border-left: 1px solid rgb(var(--color-border));
+  padding-left: 0.625rem;
+  color: rgb(var(--color-muted));
+  font-weight: 400;
   letter-spacing: normal;
   text-transform: none;
+}
+
+.connection-settings-page .connection-detail-heading .connection-back-button {
+  flex: 0 0 auto;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+}
+
+.connection-settings-page .connection-interface {
+  flex-shrink: 0;
+}
+
+.connection-settings-page .connection-interface > summary {
+  padding: 0.625rem 0;
+}
+
+.connection-settings-page .connection-interface-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.625rem 0.875rem;
+  padding: 0 0 0.125rem;
+}
+
+.connection-settings-page .connection-identity-fields {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem;
+}
+
+.connection-settings-page .connection-field-group {
+  align-content: start;
+}
+
+.connection-settings-page .connection-models {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 12rem;
+  margin-top: 0.625rem;
+  padding-top: 0.625rem;
+}
+
+.connection-settings-page .connection-model-heading {
+  flex-shrink: 0;
+}
+
+.connection-settings-page .connection-models > .model-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+@container (max-width: 38rem) {
+  .connection-settings-page .connection-interface-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 28rem) {
+  .connection-settings-page .connection-identity-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .connection-settings-page .connection-detail-heading {
+    flex-wrap: wrap;
+  }
+
+  .connection-settings-page .connection-detail-heading h3 {
+    max-width: calc(100% - 2.375rem);
+  }
+
+  .connection-settings-page .connection-detail-heading p {
+    flex-basis: 100%;
+    margin-left: 2.375rem;
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 
 

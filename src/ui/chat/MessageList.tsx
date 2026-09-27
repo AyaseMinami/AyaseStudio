@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bot, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2 } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
 import { retryUser } from "../../chat/messageOperations";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 import type { RequestAttachment, SentAttachment } from "../../chat/attachments";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
+import { SentImageAttachment } from "./SentImageAttachment";
 import { ThinkingSummary } from "./ThinkingSummary";
 import { SearchResults } from "./SearchResults";
 
@@ -16,12 +17,10 @@ export interface MessageActions {
   retry(id: string): Promise<void>;
   branch(id: string): Promise<boolean>;
   continue?(id: string): Promise<void>;
+  selectVersion?(index: number): Promise<boolean>;
 }
 
-type Confirmation =
-  | { kind: "delete"; message: StoredChatMessage }
-  | { kind: "retry"; message: StoredChatMessage; target: StoredChatMessage; removed: number }
-  | { kind: "edit"; message: StoredChatMessage; content: string; removed: number };
+type Confirmation = { kind: "delete"; message: StoredChatMessage };
 
 function actionKey(kind: string, id: string) { return `${kind}:${id}`; }
 
@@ -34,16 +33,9 @@ function MessageActionButton({ label, title, disabled, busy, onClick, children }
     disabled={disabled || busy} onClick={onClick}>{busy ? <LoaderCircle size={15} className="spin" aria-hidden="true" /> : children}</button>;
 }
 
-function ConfirmationDialog({ confirmation, busy, disabled, error, onClose, onConfirm }: {
+function ConfirmationDialog({ busy, disabled, error, onClose, onConfirm }: {
   confirmation: Confirmation; busy: boolean; disabled: boolean; error?: string; onClose(): void; onConfirm(): void;
 }) {
-  const content = confirmation.kind === "delete"
-    ? <>永久删除这条消息，无法撤销。</>
-    : confirmation.kind === "retry"
-      ? <>将移除这条提问之后的 {confirmation.removed} 条消息，并重新生成回复。旧回复不会保留。</>
-      : <>保存并发送将永久移除这条提问之后的 {confirmation.removed} 条消息，并根据修改后的提问生成新回复，无法撤销。</>;
-  const confirmLabel = confirmation.kind === "delete" ? "确认删除消息"
-    : confirmation.kind === "retry" ? "确认重新生成" : "确认保存并发送";
   const dialog = useRef<HTMLElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -64,10 +56,10 @@ function ConfirmationDialog({ confirmation, busy, disabled, error, onClose, onCo
     if (event.target === event.currentTarget) onClose();
   }}><section ref={dialog} className="message-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="message-confirm-title"
     onKeyDown={containTab}>
-    <h2 id="message-confirm-title">确认操作</h2><p>{content}</p>
+    <h2 id="message-confirm-title">确认操作</h2><p>永久删除这条消息，无法撤销。</p>
     {error && <p role="alert">{error}</p>}
     <div className="message-confirm-actions"><button type="button" onClick={onClose}>取消</button>
-      <button type="button" className="settings-button" onClick={onConfirm} disabled={busy || disabled}>{busy ? "处理中…" : confirmLabel}</button></div>
+      <button type="button" className="settings-button" onClick={onConfirm} disabled={busy || disabled}>{busy ? "处理中…" : "确认删除消息"}</button></div>
   </section></div>;
 }
 
@@ -80,11 +72,12 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
   const scrollRegionRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const previousScrollTopRef = useRef(0);
-  const [preview, setPreview] = useState<SentAttachment>();
+  const [preview, setPreview] = useState<{ messageId: string; item: SentAttachment; opener: HTMLElement }>();
   const [editing, setEditing] = useState<{ id: string; content: string }>();
   const [confirmation, setConfirmation] = useState<Confirmation>();
   const [pending, setPending] = useState<string>();
   const pendingRef = useRef<string | undefined>(undefined);
+  const pageFocus = useRef<string | undefined>(undefined);
   const [copyFeedback, setCopyFeedback] = useState<Record<string, string>>({});
   const [copyingId, setCopyingId] = useState<string>();
 
@@ -99,10 +92,18 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
     }
   }, [messages]);
   useEffect(() => {
-    if (preview && !messages.some((message) => message.attachments?.some((item) => item.reference === preview.reference))) setPreview(undefined);
+    if (preview && !messages.some((message) => message.id === preview.messageId &&
+      message.attachments?.some((item) => item.reference === preview.item.reference))) setPreview(undefined);
     if (editing && !messages.some((message) => message.id === editing.id)) setEditing(undefined);
   }, [messages, preview, editing]);
   useEffect(() => { setConfirmation(undefined); }, [messages]);
+  useLayoutEffect(() => {
+    if (pending || !pageFocus.current) return;
+    const pager = scrollRegionRef.current?.querySelector(".message-version-pager");
+    const preferred = pager?.querySelector<HTMLButtonElement>(`button[aria-label="${pageFocus.current}"]:not(:disabled)`);
+    (preferred ?? pager?.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus();
+    pageFocus.current = undefined;
+  }, [messages, pending]);
 
   const run = async (key: string, operation: () => Promise<unknown>) => {
     if (pendingRef.current || actionsDisabled) return;
@@ -120,14 +121,8 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
   const confirm = () => {
     if (!confirmation || !actions) return;
     const value = confirmation;
-    if (value.kind === "retry") {
-      setConfirmation(undefined);
-      void run(actionKey(value.kind, value.message.id), () => actions.retry(value.target.id));
-      return;
-    }
-    if (value.kind === "edit") setConfirmation(undefined);
-    void run(actionKey(value.kind, value.message.id), async () => {
-      const changed = value.kind === "delete" ? await actions.delete(value.message.id) : await actions.editAndSend(value.message.id, value.content);
+    void run(actionKey("delete", value.message.id), async () => {
+      const changed = await actions.delete(value.message.id);
       if (changed) { setConfirmation(undefined); setEditing(undefined); }
     });
   };
@@ -151,29 +146,57 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
     </div> : <div className="space-y-7">{messages.map((message, index) => {
       const isEditing = editing?.id === message.id;
       const retryTarget = retryUser(messages, message.id);
-      const retryRemoved = retryTarget ? messages.length - messages.findIndex((item) => item.id === retryTarget.id) - 1 : 0;
-      const editRemoved = messages.length - index - 1;
       const disabled = actionsDisabled || !actions;
+      const versions = message.role === "assistant" && index === messages.length - 1 && messages[index - 1]?.role === "user"
+        ? messages[index - 1].roundVersions : undefined;
+      const versionCount = versions?.pairs.length ?? 0;
+      const canPage = !disabled && !pending && !editing && !confirmation && !!actions?.selectVersion;
+      const save = () => void run(actionKey("edit", message.id), async () => {
+        if (await actions!.edit(message.id, editing!.content)) setEditing(undefined);
+      });
+      const editAndSend = () => void run(actionKey("edit", message.id), async () => {
+        if (await actions!.editAndSend(message.id, editing!.content)) setEditing(undefined);
+      });
       const body = <>
           {message.role === "assistant" && <ThinkingSummary message={message} />}
           {isEditing ? <div className="message-editor"><label htmlFor={`message-edit-${message.id}`}>编辑消息</label>
             <textarea id={`message-edit-${message.id}`} value={editing.content} disabled={actionsDisabled || !!pending}
-              onChange={(event) => setEditing({ ...editing, content: event.target.value })} />
-            <p className="message-editor-hint">保存仅修改这条消息，保留后续历史。{message.role === "user" && "保存并发送会移除后续历史并生成新回复。"}</p>
+              onChange={(event) => setEditing({ ...editing, content: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat || event.altKey) return;
+                if (event.key === "Escape" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                  event.preventDefault(); event.stopPropagation(); setEditing(undefined);
+                } else if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+                  event.preventDefault(); event.stopPropagation(); if (!actionsDisabled && !pending) save();
+                } else if (event.key === "Enter" && event.ctrlKey && !event.metaKey && !event.shiftKey && message.role === "user") {
+                  event.preventDefault(); event.stopPropagation(); if (!actionsDisabled && !pending) editAndSend();
+                }
+              }} />
+            <p className="message-editor-hint">Enter 仅保存 · Shift+Enter 换行 · Esc 取消。{message.role === "user" && (index >= messages.length - 2
+              ? "Ctrl+Enter 保存并发送，保留本轮问答版本。" : "Ctrl+Enter 保存并发送，会移除后续历史并生成新回复。")}</p>
             <div><button type="button" disabled={!!pending} onClick={() => setEditing(undefined)}>取消</button>
               <button type="button" className="settings-button" disabled={actionsDisabled || !!pending}
-                onClick={() => void run(actionKey("edit", message.id), async () => {
-                  if (await actions!.edit(message.id, editing.content)) setEditing(undefined);
-                })}>保存</button>
+                onClick={save}>保存</button>
               {message.role === "user" && <button type="button" className="settings-button message-editor-send" disabled={actionsDisabled || !!pending}
-                onClick={() => setConfirmation({ kind: "edit", message, content: editing.content, removed: editRemoved })}>保存并发送</button>}</div>
+                onClick={editAndSend}>保存并发送</button>}</div>
           </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
               : <span className="subtle-text">（无文本输出）</span>) : message.content ? <SafeMarkdown>{message.content}</SafeMarkdown> : null}</>}
           {message.role === "assistant" && message.search && <SearchResults search={message.search} />}
           {message.editedAt !== undefined && <p className="message-edited">已编辑</p>}
-          {!!message.attachments?.length && <div className="sent-attachment-list">{message.attachments.map((item) => <button type="button" key={item.reference} aria-label={`预览附件 ${item.name}`}
-            disabled={!onReadAttachment} onClick={() => setPreview(item)}>{item.name} · {(item.size / 1_000_000).toFixed(2)} MB</button>)}</div>}
+          {!!message.attachments?.length && <>
+            {message.attachments.some((item) => item.mimeType.startsWith("image/")) && onReadAttachment &&
+              <div className={`sent-image-list ${message.attachments.filter((item) => item.mimeType.startsWith("image/")).length > 1 ? "sent-image-list-multiple" : ""}`}>
+                {message.attachments.filter((item) => item.mimeType.startsWith("image/")).map((item) =>
+                  <SentImageAttachment key={item.reference} item={item} read={onReadAttachment} scrollRoot={scrollRegionRef}
+                    onOpen={(opener) => setPreview({ messageId: message.id, item, opener })} />)}
+              </div>}
+            {message.attachments.some((item) => !item.mimeType.startsWith("image/") || !onReadAttachment) &&
+              <div className="sent-attachment-list">{message.attachments.filter((item) => !item.mimeType.startsWith("image/") || !onReadAttachment).map((item) =>
+              <button type="button" key={item.reference} aria-label={`预览附件 ${item.name}`}
+                disabled={!onReadAttachment} onClick={(event) => setPreview({ messageId: message.id, item, opener: event.currentTarget })}>
+                {item.name} · {(item.size / 1_000_000).toFixed(2)} MB</button>)}</div>}
+          </>}
           {message.status === "aborted" && <p className="message-status message-status-warning">已停止</p>}
           {message.status === "incomplete" && <p className="message-status message-status-warning">回复未完整；下次请求不会带入这一轮</p>}
           {message.status === "paused" && <p className="message-status message-status-warning">回复已暂停，可以继续生成。</p>}
@@ -188,8 +211,15 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
             <MessageActionButton label="编辑" disabled={disabled || !!pending} busy={pending === actionKey("edit", message.id)} onClick={() => setEditing({ id: message.id, content: message.content })}><Pencil size={15} /></MessageActionButton>
             <MessageActionButton label="删除" disabled={disabled || !!pending} busy={pending === actionKey("delete", message.id)} onClick={() => setConfirmation({ kind: "delete", message })}><Trash2 size={15} /></MessageActionButton>
             <MessageActionButton label="重新生成" disabled={disabled || !!pending || !retryTarget} busy={pending === actionKey("retry", message.id)} title={retryTarget ? "重新生成这轮回复" : "此消息没有可重新生成的用户提问"}
-              onClick={() => retryTarget && setConfirmation({ kind: "retry", message, target: retryTarget, removed: retryRemoved })}><RefreshCw size={15} /></MessageActionButton>
+              onClick={() => retryTarget && void run(actionKey("retry", message.id), () => actions!.retry(retryTarget.id))}><RefreshCw size={15} /></MessageActionButton>
             <MessageActionButton label="分支" disabled={disabled || !!pending} busy={pending === actionKey("branch", message.id)} onClick={() => void run(actionKey("branch", message.id), () => actions!.branch(message.id))}><GitBranch size={15} /></MessageActionButton>
+            {versionCount > 1 && <span className="message-version-pager" aria-label="问答版本">
+              <MessageActionButton label="上一版问答" disabled={!canPage || versions!.selected <= 0} busy={pending === actionKey("version", message.id)}
+                onClick={() => { pageFocus.current = "上一版问答"; void run(actionKey("version", message.id), () => actions!.selectVersion!(versions!.selected - 1)); }}><ChevronLeft size={15} /></MessageActionButton>
+              <span className="message-version-count" aria-live="polite">{versions!.selected + 1}/{versionCount}</span>
+              <MessageActionButton label="下一版问答" disabled={!canPage || versions!.selected >= versionCount - 1} busy={pending === actionKey("version", message.id)}
+                onClick={() => { pageFocus.current = "下一版问答"; void run(actionKey("version", message.id), () => actions!.selectVersion!(versions!.selected + 1)); }}><ChevronRight size={15} /></MessageActionButton>
+            </span>}
           </div>
           {copyFeedback[message.id] && <p className="message-copy-feedback" role="status">{copyFeedback[message.id]}</p>}
       </>;
@@ -197,11 +227,16 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
         {message.role === "user" ? <div className="user-message-group">
           <div className="user-message markdown">{body}</div>
           {controls}
-        </div> : <div className="assistant-message markdown">{body}{controls}</div>}
+        </div> : <div className="assistant-message-group">
+          <div className="assistant-message markdown">{body}</div>
+          {controls}
+        </div>}
       </article>;
     })}</div>}
   </div>
-  {preview && onReadAttachment && <SentAttachmentPreview key={preview.reference} item={preview} read={onReadAttachment} onClose={() => setPreview(undefined)} />}
+  {preview && onReadAttachment && <SentAttachmentPreview item={preview.item} read={onReadAttachment} returnFocus={preview.opener}
+    images={messages.find((message) => message.id === preview.messageId)?.attachments?.filter((item) => item.mimeType.startsWith("image/")) ?? []}
+    onNavigate={(item) => setPreview({ ...preview, item })} onClose={() => setPreview(undefined)} />}
   {confirmation && <ConfirmationDialog confirmation={confirmation} busy={!!pending} disabled={actionsDisabled} error={actionError} onClose={() => setConfirmation(undefined)} onConfirm={confirm} />}
   </div>;
 }

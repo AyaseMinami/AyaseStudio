@@ -50,7 +50,11 @@ pub fn run() {
             )?;
             let window = app.config().app.windows.first().ok_or_else(||
                 std::io::Error::other("main window configuration missing"))?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), window)?.build()?;
+            let builder = tauri::WebviewWindowBuilder::from_config(app.handle(), window)?;
+            // Keep a native-frame escape hatch for Windows integration verification.
+            #[cfg(windows)]
+            let builder = builder.decorations(std::env::var_os("AYASE_NATIVE_TITLEBAR").is_some());
+            builder.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

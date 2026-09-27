@@ -3,12 +3,20 @@ import { focusFromLegacyCrop, normalizeBackgroundFocus, type BackgroundFocus } f
 export type ThemeMode = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<ThemeMode, "system">;
 export type BackgroundFit = "cover" | "contain";
+export type ColorPreset = "default" | "reading";
 
 export interface AppearancePreferences {
+  colorPreset: ColorPreset;
   themeMode: ThemeMode;
   accentColor: string | null;
+  userBubbleColor: string | null;
+  unifiedThemeColor: string | null;
   canvasColor: string | null;
   assistantBubbleColor: string | null;
+  unifiedTransparency: number;
+  sidebarTransparency: number;
+  composerTransparency: number;
+  // Shared by user and assistant message backgrounds; assistant color remains separate.
   assistantBubbleTransparency: number;
   backgroundReference: string | null;
   backgroundFocus: BackgroundFocus | null;
@@ -64,6 +72,7 @@ export type BackgroundStatus = "none" | "loading" | "ready" | "error";
 export interface AppearanceSnapshot extends AppearancePreferences {
   resolvedTheme: ResolvedTheme;
   effectiveAccentColor: string;
+  effectiveUserBubbleColor: string;
   effectiveCanvasColor: string;
   readabilityWarnings: string[];
   backgroundUrl: string | null;
@@ -74,13 +83,19 @@ export interface AppearanceSnapshot extends AppearancePreferences {
 }
 
 export interface AppearanceController {
+  setColorPreset(preset: ColorPreset): void;
   ready: Promise<void>;
   getSnapshot(): AppearanceSnapshot;
   subscribe(listener: () => void): () => void;
   setThemeMode(themeMode: ThemeMode): void;
   setAccentColor(color: string | null): void;
+  setUserBubbleColor(color: string | null): void;
+  setUnifiedThemeColor(color: string | null): void;
   setCanvasColor(color: string | null): void;
   setAssistantBubbleColor(color: string | null): void;
+  setUnifiedTransparency(transparency: number | null): void;
+  setSidebarTransparency(transparency: number): void;
+  setComposerTransparency(transparency: number): void;
   setAssistantBubbleTransparency(transparency: number): void;
   setBackgroundFit(fit: BackgroundFit): void;
   setBackgroundMask(mask: number): void;
@@ -97,10 +112,16 @@ export interface AppearanceController {
 export const APPEARANCE_STORAGE_KEY = "ayase-studio.appearance.v1";
 
 export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
+  colorPreset: "default",
   themeMode: "system",
   accentColor: null,
+  userBubbleColor: null,
+  unifiedThemeColor: null,
   canvasColor: null,
   assistantBubbleColor: null,
+  unifiedTransparency: 0,
+  sidebarTransparency: 0,
+  composerTransparency: 0,
   assistantBubbleTransparency: 6,
   backgroundReference: null,
   backgroundFocus: null,
@@ -138,6 +159,11 @@ function numberInRange(
     : fallback;
 }
 
+function transparencyInRange(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100
+    ? value : fallback;
+}
+
 export function loadAppearancePreferences(
   storage: AppearanceStorage,
 ): AppearancePreferences {
@@ -150,7 +176,15 @@ export function loadAppearancePreferences(
       return { ...defaultAppearancePreferences };
     }
 
+    const sidebarTransparency = transparencyInRange(stored.sidebarTransparency, defaultAppearancePreferences.sidebarTransparency);
+    const composerTransparency = transparencyInRange(stored.composerTransparency, defaultAppearancePreferences.composerTransparency);
+    const assistantBubbleTransparency = transparencyInRange(stored.assistantBubbleTransparency, defaultAppearancePreferences.assistantBubbleTransparency);
+    const unifiedTransparency = sidebarTransparency === composerTransparency && sidebarTransparency === assistantBubbleTransparency
+      ? sidebarTransparency
+      : transparencyInRange(stored.unifiedTransparency, defaultAppearancePreferences.unifiedTransparency);
+
     return {
+      colorPreset: stored.colorPreset === "reading" ? "reading" : "default",
       themeMode:
         stored.themeMode === "light" ||
         stored.themeMode === "dark" ||
@@ -158,12 +192,14 @@ export function loadAppearancePreferences(
           ? stored.themeMode
           : defaultAppearancePreferences.themeMode,
       accentColor: normalizeHexColor(stored.accentColor),
+      userBubbleColor: stored.userBubbleColor === undefined ? normalizeHexColor(stored.accentColor) : normalizeHexColor(stored.userBubbleColor),
+      unifiedThemeColor: normalizeHexColor(stored.unifiedThemeColor),
       canvasColor: normalizeHexColor(stored.canvasColor),
       assistantBubbleColor: normalizeHexColor(stored.assistantBubbleColor),
-      assistantBubbleTransparency: numberInRange(
-        stored.assistantBubbleTransparency, 0, 100,
-        defaultAppearancePreferences.assistantBubbleTransparency,
-      ),
+      unifiedTransparency,
+      sidebarTransparency,
+      composerTransparency,
+      assistantBubbleTransparency,
       backgroundReference: isBackgroundReference(stored.backgroundReference)
         ? stored.backgroundReference
         : null,
@@ -216,10 +252,10 @@ const basePalette: Record<
   { accent: Rgb; canvas: Rgb; panel: Rgb; text: Rgb }
 > = {
   light: {
-    accent: [96, 165, 250],
-    canvas: [250, 250, 249],
+    accent: [37, 99, 235],
+    canvas: [250, 250, 250],
     panel: [255, 255, 255],
-    text: [28, 25, 23],
+    text: [41, 42, 45],
   },
   dark: {
     accent: [147, 197, 253],
@@ -311,6 +347,10 @@ function rgbHex(color: Rgb): string {
     .join("")}`;
 }
 
+function userBubbleColorFor(preferences: AppearancePreferences, theme: ResolvedTheme): string {
+  return preferences.userBubbleColor ?? (theme === "dark" ? "#93c5fd" : preferences.colorPreset === "reading" ? "#eef2f6" : "#d2e3f7");
+}
+
 function deriveAppearanceVariables(
   preferences: AppearancePreferences,
   resolvedTheme: ResolvedTheme,
@@ -320,15 +360,28 @@ function deriveAppearanceVariables(
   effectiveAccentColor: string;
   effectiveCanvasColor: string;
 } {
-  const base = basePalette[resolvedTheme];
+  const reading = resolvedTheme === "light" && preferences.colorPreset === "reading";
+  const base = reading ? { ...basePalette.light, canvas: [247, 247, 245] as Rgb } : basePalette[resolvedTheme];
   const variables = new Map<string, string>();
   const readabilityWarnings: string[] = [];
   let panel = base.panel;
   let effectiveCanvas = base.canvas;
   let effectiveAccent = base.accent;
+  const effectiveUserBackground = parseHexColor(userBubbleColorFor(preferences, resolvedTheme));
+  let effectiveUserText: Rgb = resolvedTheme === "light" ? [41, 42, 45] : [15, 23, 42];
+
+  if (reading) {
+    variables.set("--color-canvas", rgbValue(base.canvas));
+    variables.set("--color-user-message", rgbValue(effectiveUserBackground));
+    variables.set("--color-assistant-bubble", "240 240 237");
+  }
 
   if (preferences.assistantBubbleColor) {
     variables.set("--color-assistant-bubble", rgbValue(parseHexColor(preferences.assistantBubbleColor)));
+  }
+
+  if (preferences.userBubbleColor) {
+    variables.set("--color-user-message", rgbValue(effectiveUserBackground));
   }
 
   if (preferences.canvasColor) {
@@ -367,12 +420,13 @@ function deriveAppearanceVariables(
 
   if (preferences.accentColor) {
     const requestedAccent = parseHexColor(preferences.accentColor);
-    const accent = ensureContrast(
+    const accentText = ensureContrast(
       requestedAccent,
       panel,
       4.5,
       base.text,
     );
+    const accent = requestedAccent;
     effectiveAccent = accent;
     const accentHover = mixColor(accent, base.text, 0.14);
     const darkText: Rgb = [12, 10, 9];
@@ -382,18 +436,22 @@ function deriveAppearanceVariables(
         ? darkText
         : lightText;
     variables.set("--color-accent", rgbValue(accent));
-    variables.set("--color-accent-text", rgbValue(accent));
+    variables.set("--color-accent-text", rgbValue(accentText));
     variables.set("--color-accent-hover", rgbValue(accentHover));
     variables.set("--color-on-accent", rgbValue(onAccent));
-    variables.set("--color-user-message", rgbValue(accent));
-    variables.set("--color-user-message-text", rgbValue(onAccent));
-    variables.set("--color-focus", rgbValue(accent));
-    variables.set("--color-code-inline-text", rgbValue(accentHover));
-    if (!colorEquals(accent, requestedAccent)) {
-      readabilityWarnings.unshift(
-        "强调色已自动调整，以保持文字和控件清晰。",
-      );
-    }
+    variables.set("--color-focus", rgbValue(accentText));
+    variables.set("--color-code-inline-text", rgbValue(accentText));
+  }
+
+  // The blue user bubble can become darker than its original foreground as it
+  // fades into a dark canvas. Preserve that foreground when readable, otherwise
+  // choose black/white against the composited solid canvas. Arbitrary images
+  // still require the user's background mask; we do not sample private images.
+  const userBackground = mixColor(effectiveUserBackground, effectiveCanvas, preferences.assistantBubbleTransparency / 100);
+  if (contrastRatio(effectiveUserText, userBackground) < 4.5) {
+    const black: Rgb = [0, 0, 0];
+    const white: Rgb = [255, 255, 255];
+    variables.set("--color-user-message-text", rgbValue(contrastRatio(black, userBackground) >= contrastRatio(white, userBackground) ? black : white));
   }
 
   return {
@@ -430,7 +488,9 @@ function applyAppearanceVariables(
       target.style.setProperty(property, value);
     }
   });
-  target.style.setProperty("--assistant-bubble-opacity", String(1 - preferences.assistantBubbleTransparency / 100));
+  target.style.setProperty("--sidebar-background-opacity", String(1 - preferences.sidebarTransparency / 100));
+  target.style.setProperty("--composer-background-opacity", String(1 - preferences.composerTransparency / 100));
+  target.style.setProperty("--message-bubble-opacity", String(1 - preferences.assistantBubbleTransparency / 100));
   return {
     readabilityWarnings,
     effectiveAccentColor,
@@ -516,6 +576,7 @@ function createSnapshot(
   return {
     ...preferences,
     resolvedTheme,
+    effectiveUserBubbleColor: userBubbleColorFor(preferences, resolvedTheme),
     readabilityWarnings,
     effectiveAccentColor,
     effectiveCanvasColor,
@@ -557,10 +618,16 @@ export function createAppearanceController({
     target,
   });
   let preferences: AppearancePreferences = {
+    colorPreset: snapshot.colorPreset,
     themeMode: snapshot.themeMode,
     accentColor: snapshot.accentColor,
+    userBubbleColor: snapshot.userBubbleColor,
+    unifiedThemeColor: snapshot.unifiedThemeColor,
     canvasColor: snapshot.canvasColor,
     assistantBubbleColor: snapshot.assistantBubbleColor,
+    unifiedTransparency: snapshot.unifiedTransparency,
+    sidebarTransparency: snapshot.sidebarTransparency,
+    composerTransparency: snapshot.composerTransparency,
     assistantBubbleTransparency: snapshot.assistantBubbleTransparency,
     backgroundReference: snapshot.backgroundReference,
     backgroundFocus: snapshot.backgroundFocus,
@@ -693,6 +760,9 @@ export function createAppearanceController({
 
   return {
     ready,
+    setColorPreset(colorPreset) {
+      updatePreferences({ ...preferences, colorPreset, accentColor: null, userBubbleColor: null, unifiedThemeColor: null, canvasColor: null, assistantBubbleColor: null });
+    },
     getSnapshot: () => snapshot,
     subscribe(listener) {
       listeners.add(listener);
@@ -706,8 +776,25 @@ export function createAppearanceController({
     setAccentColor(color) {
       const normalized = color === null ? null : normalizeHexColor(color);
       if (normalized !== null || color === null) {
-        updatePreferences({ ...preferences, accentColor: normalized });
+        const next = { ...preferences, accentColor: normalized };
+        const component = normalized ?? rgbHex(basePalette[snapshot.resolvedTheme].accent);
+        updatePreferences(component === userBubbleColorFor(next, snapshot.resolvedTheme) ? { ...next, unifiedThemeColor: component } : next);
       }
+    },
+    setUserBubbleColor(color) {
+      const normalized = color === null ? null : normalizeHexColor(color);
+      if (normalized !== null || color === null) {
+        const next = { ...preferences, userBubbleColor: normalized };
+        updatePreferences(userBubbleColorFor(next, snapshot.resolvedTheme) === snapshot.effectiveAccentColor ? { ...next, unifiedThemeColor: snapshot.effectiveAccentColor } : next);
+      }
+    },
+    setUnifiedThemeColor(color) {
+      if (color === null) {
+        updatePreferences({ ...preferences, unifiedThemeColor: null, accentColor: null, userBubbleColor: null });
+        return;
+      }
+      const normalized = normalizeHexColor(color);
+      if (normalized) updatePreferences({ ...preferences, unifiedThemeColor: normalized, accentColor: normalized, userBubbleColor: normalized });
     },
     setCanvasColor(color) {
       const normalized = color === null ? null : normalizeHexColor(color);
@@ -721,9 +808,36 @@ export function createAppearanceController({
         updatePreferences({ ...preferences, assistantBubbleColor: normalized });
       }
     },
+    setUnifiedTransparency(transparency) {
+      if (transparency === null) {
+        const { unifiedTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency } = defaultAppearancePreferences;
+        updatePreferences({ ...preferences, unifiedTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency });
+        return;
+      }
+      if (Number.isFinite(transparency)) {
+        const value = Math.round(Math.min(100, Math.max(0, transparency)));
+        updatePreferences({ ...preferences, unifiedTransparency: value, sidebarTransparency: value, composerTransparency: value, assistantBubbleTransparency: value });
+      }
+    },
+    setSidebarTransparency(transparency) {
+      if (Number.isFinite(transparency)) {
+        const value = Math.round(Math.min(100, Math.max(0, transparency)));
+        const next = { ...preferences, sidebarTransparency: value };
+        updatePreferences(next.composerTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
+      }
+    },
+    setComposerTransparency(transparency) {
+      if (Number.isFinite(transparency)) {
+        const value = Math.round(Math.min(100, Math.max(0, transparency)));
+        const next = { ...preferences, composerTransparency: value };
+        updatePreferences(next.sidebarTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
+      }
+    },
     setAssistantBubbleTransparency(transparency) {
       if (Number.isFinite(transparency)) {
-        updatePreferences({ ...preferences, assistantBubbleTransparency: Math.round(Math.min(100, Math.max(0, transparency))) });
+        const value = Math.round(Math.min(100, Math.max(0, transparency)));
+        const next = { ...preferences, assistantBubbleTransparency: value };
+        updatePreferences(next.sidebarTransparency === value && next.composerTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setBackgroundFit(fit) {
