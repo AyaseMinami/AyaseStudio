@@ -1,5 +1,15 @@
 # Ayase Studio Development Guide
 
+2026-09-28 后续外观微调：色盘、透明度和背景数值旁补充单项恢复按钮；统一色和统一透明度分别原子恢复其覆盖范围内的方案默认值。沿用用户暂不测试的要求，仅做源码复核与 diff 检查，dev 视觉和交互由用户确认。
+
+## 统一主题色与独立子项（2026-09-28）
+
+配色新增统一主题色、独立组件色与用户气泡色，默认方案保留不同色；助手和画布不受统一操作影响。同步更新接口样例和旧对比度预期，补充统一覆盖、独立修改、同色同步、重启与预设恢复的确定性测试源码。遵循本次用户要求，未运行测试、构建、浏览器或原生启动；只做源码复核和 diff 空白检查，视觉效果由用户正在运行的 dev 验收。
+
+## 浅色配色预设（2026-09-27）
+
+默认配色改为中性灰助手气泡与较明显的浅蓝用户气泡，原暖灰配色保留为外观设置的“阅读”预设，具体色值及交互见 [UI 约定](UI-DESIGN.md#确认状态)。按用户要求不运行测试、构建或启动新的 dev 实例；仅做源码检查及 diff 空白检查，现有测试中的默认值与接口样例同步更新但未执行。用户使用已运行的 dev 直接确认视觉效果，运行时和视觉验收尚未完成。
+
 ## 最新一轮问答版本与快捷键（#17 / #50，2026-09-27）
 
 按用户要求执行最小相关验证：`npm.cmd test -- src/chat/roundVersions.test.ts src/chat/repository.test.ts src/chat/useChatSession.messages.test.tsx src/chat/useChatSession.concurrency.test.tsx src/ui/chat/MessageList.test.tsx src/ui/chat/Composer.test.tsx`，6 文件 47 项通过；修复箭头切换后的焦点恢复后，仅重跑 MessageList 的 19 项通过。`npx.cmd tsc --noEmit`、`git diff --check` 通过。独立只读审查覆盖存储、请求上下文、附件引用、并发保护、恢复和 UI，未发现剩余确认缺陷。

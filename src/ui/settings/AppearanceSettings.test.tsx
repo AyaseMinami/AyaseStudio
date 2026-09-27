@@ -21,6 +21,8 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
   document.body.append(host);
   root = createRoot(host);
   const handlers = {
+    onUnifiedThemeColorChange: vi.fn(), onUserBubbleColorChange: vi.fn(),
+    onColorPresetChange: vi.fn(),
     onThemeModeChange: vi.fn(), onAccentColorChange: vi.fn(), onCanvasColorChange: vi.fn(),
     onAssistantBubbleColorChange: vi.fn(), onAssistantBubbleTransparencyChange: vi.fn(), onEditBackgroundFocus: vi.fn(),
     onUnifiedTransparencyChange: vi.fn(), onSidebarTransparencyChange: vi.fn(), onComposerTransparencyChange: vi.fn(),
@@ -28,6 +30,8 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     onSelectBackground: vi.fn(), onRemoveBackground: vi.fn(), onResetCustomAppearance: vi.fn(),
   };
   const props: AppearanceSettingsProps = {
+    unifiedThemeColor: null, effectiveUserBubbleColor: "#d2e3f7",
+    colorPreset: "default",
     themeMode: "system", resolvedTheme: "light", accentColor: null, canvasColor: null,
     assistantBubbleColor: "#123456", unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0,
     assistantBubbleTransparency: 6, effectiveAccentColor: "#6d28d9", effectiveCanvasColor: "#fafaf9",
@@ -106,7 +110,7 @@ describe("AppearanceSettings", () => {
     const { handlers } = await render();
     await act(async () => {
       host!.querySelector<HTMLInputElement>('input[value="dark"]')!.click();
-      host!.querySelector<HTMLButtonElement>(".appearance-secondary-action")!.click();
+      host!.querySelector<HTMLButtonElement>('button[aria-label="恢复助手回复气泡颜色默认值"]')!.click();
     });
     expect(handlers.onThemeModeChange).toHaveBeenCalledWith("dark");
     expect(handlers.onAssistantBubbleColorChange).toHaveBeenCalledWith(null);

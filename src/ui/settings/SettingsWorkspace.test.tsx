@@ -33,6 +33,10 @@ const connectionSettings: ConnectionSettingsState = {
 
 const sharedProps = {
   appearance: {
+    unifiedThemeColor: null, effectiveUserBubbleColor: "#d2e3f7",
+    onUnifiedThemeColorChange: () => undefined, onUserBubbleColorChange: () => undefined,
+    colorPreset: "default" as const,
+    onColorPresetChange: () => undefined,
     themeMode: "system" as const,
     resolvedTheme: "light" as const,
     accentColor: null,
