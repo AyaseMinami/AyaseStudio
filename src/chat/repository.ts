@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
+import { retainedRoundMessages, selectRoundVersion, withoutVersions } from "./roundVersions";
 import { titleFromText } from "./conversationTitle";
 import { copyAssistantConfig, resolveConversationConfig } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
@@ -16,6 +17,7 @@ export type StoredMessageStatus =
   | "failed";
 
 export interface StoredChatMessage extends ChatMessage {
+  roundVersions?: import("./roundVersions").RoundVersions;
   id: string;
   replyToId?: string | null;
   editedAt?: number;
@@ -82,7 +84,7 @@ class DexieChatRepository implements WorkspaceRepository {
 
   async attachmentReferences(): Promise<string[]> {
     const chats = await this.database.chats.toArray();
-    return [...new Set(chats.flatMap((chat) => chat.messages.flatMap((message) =>
+    return [...new Set(chats.flatMap((chat) => chat.messages.flatMap(retainedRoundMessages).flatMap((message) =>
       message.attachments?.map((attachment) => attachment.reference) ?? [])))];
   }
 
@@ -295,6 +297,15 @@ class DexieChatRepository implements WorkspaceRepository {
           });
           break;
         }
+        case "select-round-version": {
+          const source = await requireConversation(action.conversationId);
+          const chat = await db.chats.get(source.id);
+          const messages = selectRoundVersion(withReplyLinks(chat?.messages ?? []), action.index);
+          const now = Date.now();
+          await db.chats.put({ id: source.id, updatedAt: now, messages });
+          await db.conversations.update(source.id, { updatedAt: now });
+          break;
+        }
         case "edit-message":
         case "delete-message":
         case "fork-conversation": {
@@ -326,6 +337,7 @@ class DexieChatRepository implements WorkspaceRepository {
                 status: message.status === "paused" ? "incomplete" : message.status }, ...messages.slice(index + 1)];
             } else next = messages.filter((message) => message.id !== action.messageId).map((message) =>
               message.status === "paused" ? { ...message, status: "incomplete" as const, continuation: undefined } : message);
+            if (action.type === "delete-message" && index >= messages.length - 2) next = next.map(withoutVersions);
             await db.chats.put({ id: source.id, updatedAt: now, messages: next });
             await db.conversations.update(source.id, { updatedAt: now });
           }

@@ -1,5 +1,13 @@
 # Ayase Studio Development Guide
 
+## 最新一轮问答版本与快捷键（#17 / #50，2026-09-27）
+
+按用户要求执行最小相关验证：`npm.cmd test -- src/chat/roundVersions.test.ts src/chat/repository.test.ts src/chat/useChatSession.messages.test.tsx src/chat/useChatSession.concurrency.test.tsx src/ui/chat/MessageList.test.tsx src/ui/chat/Composer.test.tsx`，6 文件 47 项通过；修复箭头切换后的焦点恢复后，仅重跑 MessageList 的 19 项通过。`npx.cmd tsc --noEmit`、`git diff --check` 通过。独立只读审查覆盖存储、请求上下文、附件引用、并发保护、恢复和 UI，未发现剩余确认缺陷。
+
+内置浏览器通过隔离 origin `127.0.0.1:1458/ui-review.local/round50.html` 运行真实 App、Dexie、会话逻辑与组件，仅替换 transport 为本地合成回复，不读取真实凭据或发送供应商请求。验收 Enter / Ctrl+Enter 发送、Shift+Enter 换行、编辑 Ctrl+Enter 直接发送、Enter 仅保存、Escape 取消；重新生成及修改提问产生 3 个候选，箭头同步恢复对应问答，刷新保持 2/3 选择。箭头切换到边界后焦点转到可用箭头，可连续键盘切换。继续下一轮后旧候选入口消失，保留选中问答；新一轮可独立新增候选。720×520 深色与默认尺寸浅色布局无页面横向溢出，浏览器无 error 日志。
+
+验收截图：`ui-review.local/round50-versions.png`、`ui-review.local/round50-dark.png`；样例、模拟 transport 和独立 Vite 配置均位于忽略目录，不随仓库交付。不运行全量测试、Rust 检查或原生启动；本轮无原生合同变更。真实 Windows 输入法选词仍需用户实机确认，合成事件测试只验证组合输入保护分支。未提交、推送或修改远端 Issue。
+
 ## Issue #62 消息内图片预览（2026-09-27）
 
 粘贴默认名规则补充：附件 UI 16 项与 TypeScript 通过，确定性测试覆盖同批/同秒连续粘贴编号、跨秒重置、明确名称保留、扩展名及原字节/MIME/修改时间保留。内置浏览器通过合成 clipboard paste 事件验证两张默认名分别变为时间名和 `-2`，`风景.png` 保留，改名后可点击预览且发送计数为 0；截图 `ui-review.local/paste-names62.png`。这验证应用粘贴处理，不代表 Windows 系统剪贴板格式兼容性的全面验收。

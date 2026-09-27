@@ -57,8 +57,8 @@ export function Composer({
   const canSend = !isGenerating && isHydrated && !attachmentBusy && !attachmentBlockReason &&
     (!!draft.trim() || draftAttachments.length > 0);
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat || event.altKey) return;
+    if (event.key === "Enter" && !event.shiftKey && !event.metaKey) {
       event.preventDefault();
       if (canSend) onSend();
     }
@@ -118,7 +118,7 @@ export function Composer({
                 return new File([image], name, { type: image.type, lastModified: image.lastModified });
               }));
             }}
-            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            placeholder="输入消息，Enter / Ctrl+Enter 发送，Shift+Enter 换行"
             disabled={!isHydrated}
           />
           {attachmentBusy && <p className="attachment-loading" role="status">正在读取附件，完成后才能发送…</p>}

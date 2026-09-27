@@ -51,6 +51,7 @@ export type WorkspaceCommand =
   | { type: "finish-conversation-title"; id: string; messageId: string; title?: string }
   | { type: "configure-conversation"; id: string; settings: import("./conversationConfig").ConversationConfig; title?: string }
   | { type: "edit-message"; conversationId: string; messageId: string; content: string }
+  | { type: "select-round-version"; conversationId: string; index: number }
   | { type: "delete-message"; conversationId: string; messageId: string }
   | { type: "fork-conversation"; id: string; conversationId: string; messageId: string;
       creationConfig: NonNullable<Conversation["creationConfig"]> }

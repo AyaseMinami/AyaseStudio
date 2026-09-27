@@ -1,4 +1,5 @@
 import type { StoredChatMessage } from "./repository";
+import { withoutVersions } from "./roundVersions";
 
 // Legacy transcripts had only positional pairs. Resolve them before any deletion
 // so a surviving reply can never silently acquire a different user message.
@@ -25,7 +26,7 @@ export function retryUser(messages: StoredChatMessage[], messageId: string): Sto
 export function copyBranchMessages(messages: StoredChatMessage[]): StoredChatMessage[] {
   const ids = new Map(messages.map((message) => [message.id, crypto.randomUUID()]));
   return withReplyLinks(messages).map((message) => ({
-    ...structuredClone(message), id: ids.get(message.id)!,
+    ...structuredClone(withoutVersions(message)), id: ids.get(message.id)!,
     ...(message.role === "assistant" ? { replyToId: ids.get(message.replyToId ?? "") ?? null } : {}),
   }));
 }
