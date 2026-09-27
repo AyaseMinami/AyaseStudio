@@ -68,7 +68,7 @@ describe("attachment send ownership", () => {
   it("does not save or request before Send; persists an attachment-only user message and recovers on restart", async () => {
     let observed: ChatRequest | undefined;
     const transport: ChatTransport = { async *stream(request) {
-      observed = request;
+      if (request.config?.stream !== false) observed = request;
       yield { type: "text-delta", text: "read" };
       yield { type: "completed", finishReason: "stop" };
     } };
@@ -189,6 +189,45 @@ describe("attachment send ownership", () => {
       { role: "user", status: "complete", attachments: [expect.objectContaining({ name: "note.txt" })] },
       { role: "assistant", status: "aborted", content: "partial" },
     ]);
+  });
+
+  it("names a committed first attachment after Stop while verification is pending", async () => {
+    let verifyStarted!: () => void;
+    let releaseVerify!: () => void;
+    const started = new Promise<void>((resolve) => { verifyStarted = resolve; });
+    mocks.verify.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      releaseVerify = resolve;
+      verifyStarted();
+    }));
+    const titleRequests: ChatRequest[] = [];
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      titleRequests.push(request);
+      yield { type: "failed", error: { kind: "network", message: "offline", retryable: false } };
+    } } satisfies ChatTransport);
+    await mount(); await stage();
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await started;
+    expect((await repository.load("current"))?.messages[0]).toMatchObject({
+      role: "user", status: "complete", content: "", attachments: [expect.objectContaining({ name: "note.txt" })],
+    });
+    await act(async () => session.stopGeneration());
+    releaseVerify();
+    await act(async () => sending);
+    let named = (await repository.initializeWorkspace(null, [])).conversations.find((item) => item.id === "current");
+    for (let index = 0; index < 50 &&
+      (typeof named?.titleNaming !== "object" || named.titleNaming.status !== "finished"); index++) {
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      named = (await repository.initializeWorkspace(null, [])).conversations.find((item) => item.id === "current");
+    }
+    expect((await repository.load("current"))?.messages).toMatchObject([
+      { role: "user", status: "complete", attachments: [expect.objectContaining({ name: "note.txt" })] },
+      { role: "assistant", status: "aborted" },
+    ]);
+    expect(session.draftAttachments).toEqual([]);
+    expect(named).toMatchObject({ title: "note.txt", titleNaming: { source: "note.txt", status: "finished" } });
+    expect(titleRequests).toMatchObject([{ messages: [{ role: "user", content: "note.txt" }], config: { stream: false } }]);
+    expect(mocks.discardUncommitted).not.toHaveBeenCalled();
   });
 
   it("does not use the old 30 MB app gate for OpenAI historical attachments", async () => {

@@ -1,5 +1,75 @@
 # Ayase Studio Development Guide
 
+## Alpha 2 候选包验证（2026-09-27）
+
+版本统一为 `0.1.0-alpha.2`，继续仅构建 Windows x64 NSIS 安装程序。`npm.cmd run check` 通过：46 个文件、473 项确定性测试及 TypeScript/Vite 生产构建；`cargo test --manifest-path src-tauri/Cargo.toml` 的 20 项单元测试和 `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
+
+默认测试由 `vitest.config.ts` 限定为 `src/**/*.test.{ts,tsx}`，覆盖全部正式前端测试，避免误收集被忽略的本地供应商探针。真实供应商探测仍由独立的 `probe:live` 显式运行，本轮未调用。App 请求断言已区分主聊天和后台自动命名请求；命名行为本身仍由专门测试覆盖。生产构建保留大于 500 kB 的 chunk 提示。
+
+此记录不代表安装或升级验收。发布前仍需检查全新安装、覆盖升级、聊天/连接凭据/附件/背景保留，以及窗口尺寸与最大化状态的关闭重启恢复。候选包提交到 `dev → main` PR 供用户检查，PR 创建不等于合并或正式发布。
+
+本轮 `npm.cmd run tauri dev` 编译并启动成功，系统确认主窗口存在且响应正常，检查后已关闭。该检查未操作窗口恢复或安装器；日志包含 libpng 颜色配置警告。独立只读审查覆盖并发任务归属、标题写入保护及窗口状态插件生命周期，未发现确认的 P1/P2 缺陷。
+
+`npm.cmd run build:windows` 构建应用成功；后续仅修改安装模板，使用 `npm.cmd run tauri -- bundle --bundles nsis` 重新封装。当前候选包为 `src-tauri/target/release/bundle/nsis/Ayase Studio_0.1.0-alpha.2_x64-setup.exe`（6,063,106 字节）；应用 ProductVersion 为 `0.1.0-alpha.2`。安装包签名状态为 `NotSigned`，SHA-256：`7E9F0F2134B3815864248E4ABD2A1D5D53143616308EB74C63D2CD14F7A11BAC`。本地 `check-alpha.local.log`、`build-alpha.local.log`、`desktop-alpha.local.log`、`bundle-overwrite.local.log` 保存对应日志且不提交。
+
+覆盖升级调整：同版本 NSIS 重装和向上升级直接跳过“先卸载/不卸载”选择页，继续原有文件覆盖安装；首次安装、降级和 WiX 迁移保留上游流程。模板来源与维护说明见 [Windows installer template](../src-tauri/windows/README.md)。`pwsh -NoProfile -File scripts/test-installer-policy.ps1` 使用 NSIS 编译并执行真实版本比较和策略代码，六项用例通过；独立只读审查未发现安装流程缺陷。测试不写安装注册表或应用数据，不能替代实际界面和数据保留验收。本轮未改应用代码，未重复前述全量测试。
+
+## Issue #54 窗口尺寸记忆
+
+用户本轮将需求明确为“记住上次关闭时的窗口大小”；远端 Issue 未修改。首次启动使用 1040×760，正常关闭后保存普通窗口尺寸及最大化状态，后续启动恢复；仍允许手动调整，保留 720×520 最小尺寸。状态文件为应用配置目录下的 `.window-state.json`，与聊天数据独立。
+
+桌面验收步骤：首次启动检查默认尺寸；调整为其他尺寸后关闭并重启，确认恢复；最大化后关闭重启，确认最大化并可还原至原普通尺寸；最小化后通过任务栏关闭再启动，确认窗口正常可见。不能以浏览器窗口或 Rust 编译结果替代这些原生交互验证。
+
+2026-09-27：`cargo check --manifest-path src-tauri/Cargo.toml`、现有 20 项 Rust 单元测试及 `git diff --check` 通过。`npm.cmd run tauri dev` 已编译启动，操作系统报告主窗口存在且响应；未完成上述尺寸往返和视觉验收，现有单元测试也不覆盖原生窗口恢复。启动日志有 IPC 自定义协议转 postMessage 及异步回调丢失警告，不将进程启动记作完整桌面验收。本次未修改前端，未运行前端全量测试或真实供应商探测。
+
+## Issue #31 定向验证（2026-09-27）
+
+按用户要求不运行全量测试，使用 Codex 内置浏览器验收，不操作原生桌面。确定性检查覆盖 `conversationTitle.test.ts`、`conversationTitle.repository.test.ts`、`useChatSession.title.test.tsx`，以及受影响的 workspace、消息发送、附件与跨对话并发测试。新增 UI 回归确认仅编辑标题才设 manual 标记；仅修改参数不锁定标题。旧测试的请求观察器现在区分主聊天和额外命名请求，相关失败已定向修复并重跑通过。`npx.cmd tsc --noEmit` 和 `git diff --check` 通过；未运行全量 check、Rust 编译或真实供应商探测。
+
+独立审查发现并修复了 Responses/Gemini 输出截断被误收为标题，以及首条附件消息提交后停止漏掉命名的分支；后者用延迟附件 verify 的确定性用例覆盖。复审未发现剩余运行时问题。
+
+内置浏览器使用独立 `127.0.0.1:1438` origin 和忽略目录 `ui-review.local` 的模拟 transport，实际渲染 App 并操作发送/编辑/导航。确认长原文立即截断为标题、成功后顶部与侧栏同步显示摘要、失败保留原文、后续消息不重命名、手动标题不被迟到结果覆盖，以及刷新后持久化。截图：`ui-review.local/title-success.png`、`ui-review.local/title-verified.png`。模拟请求只验证界面与应用编排，不代表真实模型标题质量或供应商兼容性验收。
+
+## Issue #55 pre-push verification
+
+供应商连接列表与返回入口的提交前检查：`npm.cmd test -- src` 的 43 个文件、458 项测试通过，包含新增的列表字段与多连接跳转、返回时未保存模型编辑确认、删除取消/确认、生成期间禁用、焦点恢复及空状态用例。`npm.cmd run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml` 通过；构建仍提示部分 chunk 超过 500 kB。
+
+默认 `npm.cmd run check` 首次执行误收集了被忽略的 `.gemini-search-diagnosis.local/probe.test.ts`，其已有结果防重复保护在调用前阻止执行。因此改用上述 `src` 测试范围与独立构建，不将默认 check 记为通过，不删除或重跑本地探针。新增测试的确认框模拟在修正后通过。用户已确认连接列表与返回功能；详情页最后一轮对齐及全局下拉框样式仍未完成全面视觉验收，本次未启动桌面或调用真实供应商。
+
+## Issue #51 切换对话定位定向验证
+
+2026-09-27：用户确认 #42 与 #51 手动验收均已完成并通过，授权关闭两项 Issue 并提交代码。此记录为用户提供的界面验收结果。
+
+复用 #42 已有的绘制前定位实现，新增两组组件回归覆盖缓存历史直接挂载、异步历史加载、从上滚暂停的对话切走并切回，以及新建空对话。通过父组件 layout effect 读取子组件位置，验证在 passive effect 前已经到底，避免只检查最终位置而漏掉首屏跳动。happy-dom 的容器尺寸由测试模拟，不能替代实际绘制验收。
+
+验证命令：`npm.cmd test -- src/ui/chat/MessageList.test.tsx`（16 项）、`npx.cmd tsc --noEmit` 和 `git diff --check`。按用户要求不运行全量测试或 Computer Use，切换时无可见滚动过程及空对话显示由用户手动验收。
+
+## Issue #42 流式滚动定向验证
+
+`npm.cmd test -- src/ui/chat/MessageList.test.tsx` 的 14 项测试通过；新增用例模拟滚动容器尺寸，覆盖流式跟随、上滚滚轮先于 scroll 事件时暂停、底部附近继续上滚仍暂停、滚动条回到底部 48px 内恢复、附件预览滚轮不误暂停聊天，以及清空消息和切换会话重置。`npx.cmd tsc --noEmit` 通过。按用户要求不运行全量测试和 Computer Use；实际滚轮与滚动条交互由用户验收，组件模拟不代表实机验证。
+
+## UI #44–#47 定向验证（2026-09-26）
+
+按用户要求使用内置浏览器，避免全量测试和原生桌面自动化。定向回归范围为 `src/App.test.tsx`、`src/Workspace.test.tsx`、`src/ui/chat/MessageList.test.tsx`、`src/ui/settings/SettingsWorkspace.test.tsx`、`src/ui/settings/AppearanceSettings.test.tsx`、`src/ui/settings/ConnectionSettings.test.tsx`。覆盖页面/会话切换、生成状态保护、消息入口、主题/滑块回调、树展开与节点选择分离、模型浏览不改默认、放弃编辑后不残留草稿。前端构建和 Git diff 检查补充验证；未修改 Rust、权限、协议或持久化。
+
+浏览器使用独立 `127.0.0.1:1437` origin 与忽略目录 `ui-review.local` 中的合成供应商、模型和聊天样例，不读取真实密钥、不调用模型。首轮宽屏 1440×900 曾检查贴边级联面板，但该外观被用户指出偏离保留悬浮面板的要求，不能作为视觉接受证据，720×520 验证覆盖导航前后输入框 x/width 不变、分级 Escape、草稿保留和连接详情可访问；浅深主题与透明度回调均实际检查。该证据不等于原生文件选择、背景持久化、安装包升级或真实供应商验收，用户主观视觉反馈仍可继续调整。
+
+首轮上述定向文件的 62 项回归均通过（分别执行，失败修复后仅重跑受影响文件），另对前景色 token 调整执行外观控制器与搜索结果的 28 项相关回归，通过；TypeScript/Vite build 与 diff 检查通过，构建仍有既有大 chunk 提示。独立审查指出并修复了同连接模型切换的编辑残留、最后一个模型删除后的焦点回退和浅蓝前景/焦点对比度。首轮页面截图保存在忽略目录 `ui-review.local/{chat,appearance,connections}.png`，不包含真实聊天或凭据，不代表后续调整版本。
+
+2026-09-27 阶段性提交：依据用户反馈恢复悬浮聊天侧栏、连接两级树，设置页面和分组采用小圆角卡片，外观预览增加用户消息并支持宽屏固定。两级树修正后 App 的 20 项及连接设置的 3 项定向测试通过；后续菜单排版调整重跑连接设置 3 项通过。外观设置 2 项测试在结构调整后通过。用户已要求不再进行截图验收，后续视觉效果由其亲自检查；字体大小、字重、中文字体回退仍待下一轮共同调整。
+
+## Issue #49 图片预览回归
+
+按用户最终确认的样式，待发送附件在输入框上方显示紧凑标签：文件图标、文件名、移除按钮。长文件名省略、多附件换行，完整名称、MIME 与大小放入悬浮提示；草稿不再解码图片或创建 object URL，也不需要扩展 CSP。已发送图片仍可打开预览，解码失败显示明确错误，不改变附件或消息正文。定向回归命令：`npm.cmd test -- src/ui/chat/AttachmentUi.test.tsx`。
+
+2026-09-26：初版曾验证缺少 `blob:` CSP 来源导致缩略图被拦截；用户随后要求改为紧凑标签，最终实现移除草稿缩略图及对应 CSP 改动。桌面自动化截图超时后，按用户要求使用内置浏览器做视觉验收。安装版需重新构建更新后才能获得修复；全程不需真实供应商调用。
+
+已发送附件弹窗的失败提示、关闭再打开及消息保留由组件测试覆盖；浏览器验收聚焦草稿标签布局和交互，不代表原生附件持久化验收。
+
+最终紧凑标签版：426 项测试及前端构建通过；内置浏览器确认标签高 24px、长名称省略、720×520 窗口下多附件换行和单独移除正常。完整文件信息仍可从悬浮提示查看，未发起供应商请求。
+
+用户随后明确确认测试通过，已按授权将 #49 关闭为已完成。此为用户提供的验收结果，不扩大为安装包发布或升级验证。
+
 ## Issue #39 现有 OpenAI 兼容协议修复
 
 2026-09-21：按用户本轮要求复用现有 Chat/Responses adapter，补齐 Chat `reasoning_content` 与 Responses `reasoning_text` 的本地显示；保留 OpenAI 官方摘要、显示开关、正文隔离和本地历史规则。用户将 #39 范围修订为修复现有协议，不新增协议或供应商模板，并确认按此范围验收关闭。DeepSeek Chat 关闭思考参数差异另由低优先级 [#40](https://github.com/AyaseMinami/AyaseStudio/issues/40) 跟踪，暂缓处理。OpenAI/DeepSeek 官方合同及参数差异见 [协议说明](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)。
@@ -263,6 +333,12 @@ Issue #28 完整快照调整的定向检查包括 `src/chat/conversationConfig.t
 完整快照版验证：存储/迁移、工作区、请求编排、思考控件与 7 项 App 配置用例定向通过，生产构建通过，独立审查无遗留 P1/P2。内置浏览器确认旧配置转换后模型和参数保留、所有逐项来源提示移除、独立设置刷新保留、恢复可取消及保存后生效。没有运行全量测试、调用真实供应商或进行原生截图验收。
 
 本地输入预算是 Token **估算**，不是供应商公布的模型上下文上限。已知 OpenAI 模型按对应本地 BPE 分词，未知或非 OpenAI 模型按 UTF-8 字节保守估算；消息封装开销仍可能与供应商计费值不同。真实中转站若出现传输差异，应先核对官方协议，再把中转站观测单独记录。桌面烟雾测试需要实际操作配置面板、非流式停止、协议切换与恢复，单纯启动 `tauri dev` 不构成交互验收。
+
+## Concurrent conversation checks (Issue #53)
+
+Run `npm.cmd test -- src/chat/generationTasks.test.ts src/chat/useChatSession.concurrency.test.tsx src/chat/useChatSession.messages.test.tsx src/chat/useChatSession.attachments.test.tsx src/chat/useConversationWorkspace.test.tsx src/Workspace.test.tsx`, then the default code gate. Deterministic transports control A/B event ordering without real credentials or provider tokens. Verify simultaneous sends, isolated text and terminal persistence, current-conversation Stop, same-conversation duplicate rejection, preparation failure, final-save ownership, deletion protection and unmount cancellation. App tests also exercise sending from B while A is still generating. These checks do not establish live-provider throughput or native desktop interaction acceptance.
+
+2026-09-26 内置浏览器行为验收通过：在独立本地 origin 上使用合成配置和可控 SSE，保留真实 App、任务管理、IndexedDB 和 OpenAI Chat 协议解析，仅替换 Tauri 网络入口。通过页面结构读取及键盘操作确认 A 生成时 B 可编辑历史并发送、双任务同时生成、停止 B 不影响 A、A 失败或完成不解除 B 的生成保护，以及刷新后独立恢复消息与终态。未使用截图；浏览器点击接口报错，因此本轮不声称验证了鼠标点击路径或视觉布局。未读取真实密钥、调用供应商或验证原生窗口；临时验收文件和服务已清理。
 
 ## Attachment checks (Issue #5)
 

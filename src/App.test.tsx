@@ -255,6 +255,10 @@ describe("App navigation", () => {
     let observed: ChatRequest | undefined;
     runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
       async *stream(request: ChatRequest) {
+        if (request.config?.systemInstruction?.includes("对话标题")) {
+          yield { type: "completed" };
+          return;
+        }
         observed = request;
         yield { type: "text-delta", text: "Complete answer" };
         yield { type: "completed" };
@@ -300,6 +304,10 @@ describe("App navigation", () => {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
       async *stream(request: ChatRequest) {
+        if (request.config?.systemInstruction?.includes("对话标题")) {
+          yield { type: "completed" };
+          return;
+        }
         observed = request;
         yield { type: "text-delta", text: "partial" };
         await gate;
@@ -370,6 +378,10 @@ describe("App navigation", () => {
     const observed: ChatRequest[] = [];
     runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
       async *stream(request: ChatRequest) {
+        if (request.config?.systemInstruction?.includes("对话标题")) {
+          yield { type: "completed" };
+          return;
+        }
         observed.push(request);
         yield { type: "text-delta", text: observed.length === 1 ? "Cut short" : "Next answer" };
         yield { type: "completed", finishReason: observed.length === 1 ? "length" : "stop" };
@@ -640,11 +652,11 @@ describe("App navigation", () => {
     expect(container.textContent).not.toContain("model-d");
 
     await clickButton("查看连接 连接 2");
-    expect(container.textContent).toContain("model-d");
-    expect(container.textContent).not.toContain("model-a");
+    expect(container.querySelector('[aria-label="模型列表"]')?.textContent).toContain("model-d");
+    expect(container.querySelector('[aria-label="模型列表"]')?.textContent).not.toContain("model-a");
 
     const settingsBefore = loadConnectionSettings();
-    await clickButton("中转站 A");
+    await clickButton("收起供应商 中转站 A");
     expect(container.querySelector<HTMLElement>(".connection-tree-children")?.hidden).toBe(true);
     expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe("https://two.example.com/v1");
     const interfaceSection = container.querySelector<HTMLDetailsElement>(".connection-interface")!;
@@ -652,7 +664,7 @@ describe("App navigation", () => {
     expect(container.querySelector('[aria-label="模型管理"]')?.closest(".connection-interface")).toBeNull();
     expect(container.querySelector('[aria-label="模型列表"]')?.textContent).toContain("model-d");
     expect(loadConnectionSettings()).toEqual(settingsBefore);
-    await clickButton("中转站 A");
+    await clickButton("展开供应商 中转站 A");
     await openConnectionMenu("连接 1");
     await clickButtonWithText("重命名");
     const rename = container.querySelector<HTMLInputElement>(".connection-entity-menu input")!;

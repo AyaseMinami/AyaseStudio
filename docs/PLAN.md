@@ -10,6 +10,14 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## v0.1 scope
 
+### Issue #31 automatic conversation titles
+
+按 2026-09-27 用户修订采用两步命名：首条消息提交后立即以原文命名（合并空白，最多 40 个 Unicode 码点；仅附件用文件名），后台使用同一模型概括后替换。失败保留原文标题，替代远端 Issue 的默认标题回退要求。每个对话只尝试一次；手动改名优先，后续消息及重试不反复命名。后台命名不阻塞主聊天与导航，不读取附件正文，不引入专用模型设置页。远端 Issue 未修改。
+
+### Desktop UI #44–#47
+
+按 2026-09-26 至 27 用户反馈实施：#44 统筹三页风格；#45 保留级联悬浮导航，外框圆角 8px、间隙 4px，用户消息继续跟随浅蓝默认或自定义强调色，消息操作常显图标；#46 小圆角分组卡片、独立标题及宽屏固定双消息预览；#47 供应商、连接渠道两级导航及右侧模型管理。设置框架采用小圆角卡片，两页统一外层边距与页面标题。字体层级和中文字体观感尚待用户共同精调，本次提交是阶段性基线，不代表最终视觉验收。用户后续要求停止截图验收，由其亲自反馈；远端 Issue 不在本轮修改或关闭。
+
 ### Issue #38 about and feedback
 
 后续样式确认：将问题与建议合并为一个“反馈与建议”入口，使用紧凑列表替代双卡片，移除宣传文案和装饰图标；此要求替代 Issue 原先区分两个入口的验收。邮箱保留展示与复制。
@@ -42,7 +50,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 - Global shortcuts, tray behavior, frameless-window tricks, and multi-window behavior.
 - Provider-managed conversation state. OpenAI Responses uses local history with `store: false`.
 - Rendering raw HTML from model output. `rehype-raw` is prohibited.
-- Conversation search, folders, pinning, and automatic title generation.
+- Conversation search, folders, and pinning.
 - Unverified relay-specific reasoning extensions (including Chat `reasoning_content`).
 
 ## Module seams
@@ -96,7 +104,7 @@ Assistant
 
 ## Conversation roadmap
 
-Issue #4 extends the original `current` state into assistant-owned conversations. Under the revised Issue #28 contract, assistants provide defaults for new conversations; each conversation owns a full configuration snapshot without copying credentials. Requests freeze the current conversation's settings. Issue #14 branches copy that configuration and can then be edited independently. Editing an assistant does not change existing conversations; restoring assistant defaults is an explicit draft action that takes effect on save. Search, folders, pinning, and automatic titles remain separate later decisions.
+Issue #4 extends the original `current` state into assistant-owned conversations. Under the revised Issue #28 contract, assistants provide defaults for new conversations; each conversation owns a full configuration snapshot without copying credentials. Requests freeze the current conversation's settings. Issue #14 branches copy that configuration and can then be edited independently. Editing an assistant does not change existing conversations; restoring assistant defaults is an explicit draft action that takes effect on save. Search, folders, and pinning remain separate later decisions. Automatic titles follow the revised Issue #31 contract above.
 
 ## Delivery stages
 
@@ -152,7 +160,7 @@ Issue 原文的未知模型默认限制、切换型号重置与供应商预算/�
 
 以下为 2026-09-16 首版历史记录，型号限制已由上述 #16 修订取代。本轮按用户要求将思考摘要展示纳入首版，仅实现 Gemini Native。输入区提供按明确型号能力变化的强度/预算菜单及独立的摘要开关，沿用当前助手共享配置（不同于原 Issue 的按对话保存）。Gemini 3 使用型号声明的档位，2.5 使用预算；未知型号省略思考参数。摘要独立于正文保存和折叠展示，不作为聊天历史回传。没有收到摘要时不显示空框，不推断模型思考用时。其他协议和中转站专属兼容规则留待后续；远端 Issue 未修改。
 
-Issue #4 adds create/switch/rename/delete, assistant ordering/default configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. Issue #28 makes each conversation's configuration independent. One generation may run across navigation or assistant edits; its request settings remain frozen and all deltas, errors and saves remain bound to its original conversation. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
+Issue #4 adds create/switch/rename/delete, assistant ordering/default configuration, restart selection recovery, idempotent legacy migration, and transactional safe deletion. Issue #28 makes each conversation's configuration independent. Issue #53 allows concurrent generation across conversations, with at most one task per conversation from preparation through terminal persistence. Request settings remain frozen and all deltas, errors, cancellation and saves remain bound to their original conversation. Other conversations remain editable and sendable; finishing or stopping one task does not unlock another. Browser interaction checks supplement deterministic tests; desktop acceptance is performed by the user.
 
 - Streamed text is incremental and ordered.
 - A request produces exactly one terminal outcome: completed, failed, or aborted.

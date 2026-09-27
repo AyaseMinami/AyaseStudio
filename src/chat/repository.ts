@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
+import { titleFromText } from "./conversationTitle";
 import { copyAssistantConfig, resolveConversationConfig } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
 
@@ -258,14 +259,40 @@ class DexieChatRepository implements WorkspaceRepository {
           if (action.title !== undefined && !action.title.trim()) throw new Error("请输入对话标题。");
           await db.conversations.update(action.id, {
             settings: action.settings,
-            ...(action.title === undefined ? {} : { title: action.title.trim() }),
+            ...(action.title === undefined ? {} : { title: action.title.trim(), titleNaming: "manual" as const }),
           });
           break;
         }
         case "rename-conversation": {
           await requireConversation(action.id);
           if (!action.title.trim()) throw new Error("请输入对话标题。");
-          await db.conversations.update(action.id, { title: action.title.trim() });
+          await db.conversations.update(action.id, { title: action.title.trim(), titleNaming: "manual" });
+          break;
+        }
+        case "start-conversation-title": {
+          const conversation = await db.conversations.get(action.id);
+          const chat = await db.chats.get(action.id);
+          const firstUser = chat?.messages.find((message) => message.role === "user");
+          if (!conversation || conversation.titleNaming || conversation.title !== "新对话" || firstUser?.id !== action.messageId) break;
+          const source = firstUser.content.trim() || firstUser.attachments?.map((item) => item.name).join("、") || "";
+          const title = titleFromText(source);
+          if (!title) break;
+          await db.conversations.update(action.id, { title,
+            titleNaming: { sourceMessageId: action.messageId, source, status: "pending" } });
+          break;
+        }
+        case "finish-conversation-title": {
+          const conversation = await db.conversations.get(action.id);
+          const naming = conversation?.titleNaming;
+          if (!naming || naming === "manual" || naming.status !== "pending" || naming.sourceMessageId !== action.messageId) break;
+          const chat = await db.chats.get(action.id);
+          const firstUser = chat?.messages.find((message) => message.role === "user");
+          const source = firstUser && (firstUser.content.trim() || firstUser.attachments?.map((item) => item.name).join("、") || "");
+          const title = action.title && titleFromText(action.title);
+          await db.conversations.update(action.id, {
+            ...(title && firstUser?.id === action.messageId && source === naming.source ? { title } : {}),
+            titleNaming: { ...naming, status: "finished" },
+          });
           break;
         }
         case "edit-message":

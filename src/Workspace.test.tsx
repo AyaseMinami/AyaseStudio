@@ -549,11 +549,17 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.includes("对话 B") === true);
   });
 
-  it("keeps a stream bound to its origin while another assistant is selected, including its terminal save", async () => {
+  it("sends in another assistant while the original stream continues and saves both conversations", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     let observed: ChatRequest | undefined;
-    const transport: ChatTransport = { async *stream(request) { observed = request; yield { type: "text-delta", text: "A partial" }; await gate; yield { type: "text-delta", text: " finished" }; yield { type: "completed" }; } };
+    const transport: ChatTransport = { async *stream(request) {
+      if (request.model === "upstream-b") {
+        yield { type: "text-delta", text: "B answer" }; yield { type: "completed" }; return;
+      }
+      observed = request; yield { type: "text-delta", text: "A partial" }; await gate;
+      yield { type: "text-delta", text: " finished" }; yield { type: "completed" };
+    } };
     runtime.createRuntimeChatTransport.mockResolvedValue(transport);
     await fill(".composer-input", "Question A"); await click("发送");
     await wait(() => container.textContent?.includes("A partial") === true);
@@ -561,11 +567,13 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector(".message-list")?.textContent ?? "").not.toContain("A partial");
     await fill(".composer-input", "B during A");
     await act(async () => { container.querySelector(".composer-input")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
-    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
+    await wait(() => container.textContent?.includes("B answer") === true);
+    expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(2);
+    expect(observed?.signal?.aborted).toBe(false);
     await act(async () => release());
     await wait(() => container.querySelector('[aria-label="发送"]') !== null);
-    expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("B during A");
-    expect((await repo.load("b"))?.messages).toEqual([]);
+    expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("");
+    expect((await repo.load("b"))?.messages.map((item) => item.content)).toEqual(["B during A", "B answer"]);
     const saved = (await repo.load("current"))!.messages;
     expect(saved[saved.length - 1]).toMatchObject({ content: "A partial finished", status: "complete" });
     expect(observed?.model).toBe("upstream-a");
@@ -665,14 +673,64 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.startsWith("新建验收") === true);
     await click("删除对话 新建验收"); await click("取消");
     expect(container.querySelector(".workspace-conversation-title")?.textContent).toContain("新建验收");
-    await click("删除对话 新建验收"); await click("确认永久删除对话");
+    await click("删除对话 新建验收");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    await click("确认删除对话 新建验收");
     await wait(() => container.querySelector(".workspace-conversation-title")?.textContent?.startsWith("对话 A") === true);
+  });
+
+  it("cancels inline deletion on Escape, outside click, focus departure and panel closure without deleting", async () => {
+    await click("默认助手");
+    const pending = () => container.querySelector('[aria-label="确认删除对话 对话 A"]');
+    await click("删除对话 对话 A");
+    await act(async () => pending()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(pending()).toBeNull();
+    expect(container.querySelector('.conversation-cascade-pane:not([inert])')).not.toBeNull();
+    await click("删除对话 对话 A");
+    await act(async () => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(pending()).toBeNull();
+    await click("删除对话 对话 A");
+    await act(async () => { (pending() as HTMLButtonElement).focus(); container.querySelector<HTMLTextAreaElement>('.composer-input')!.focus(); });
+    expect(pending()).toBeNull();
+    await click("删除对话 对话 A");
+    await click("收起对话栏");
+    await click("默认助手");
+    expect(pending()).toBeNull();
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.some((item) => item.id === "current")).toBe(true);
+  });
+
+  it("requires two clicks even with Ctrl and keeps the same button for rapid confirmation", async () => {
+    await click("默认助手");
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="删除对话 对话 A"]')!;
+    await act(async () => button.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+    expect(button.getAttribute("aria-label")).toBe("确认删除对话 对话 A");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.some((item) => item.id === "current")).toBe(true);
+    await act(async () => button.click());
+    await wait(() => !container.querySelector('[aria-label="删除对话 对话 A"]') && !container.querySelector('[aria-label="确认删除对话 对话 A"]'));
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.some((item) => item.id === "current")).toBe(false);
+  });
+
+  it("only marks a conversation title manual when its field was edited", async () => {
+    await click("默认助手"); await click("新建对话");
+    await wait(() => !!container.querySelector('[aria-label="编辑对话 新对话"]'));
+    await click("编辑对话 新对话");
+    await fill("#session-system", "Only change the persona");
+    await click("保存对话"); await wait(() => !container.querySelector('[role="dialog"]'));
+    const state = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    const id = state.selection.lastSelected.default!;
+    expect(state.conversations.find((item) => item.id === id)?.titleNaming).toBeUndefined();
+    await click("编辑对话 新对话");
+    await fill("#conversation-title", "自定"); await fill("#conversation-title", "新对话");
+    await click("保存对话"); await wait(() => !container.querySelector('[role="dialog"]'));
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.find((item) => item.id === id)?.titleNaming).toBe("manual");
   });
 
   it("keeps existing conversations independent of later assistant edits", async () => {
     const observed: ChatRequest[] = [];
     runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request: ChatRequest) {
-      observed.push(request); yield { type: "completed" };
+      if (request.config?.stream !== false) observed.push(request);
+      yield { type: "completed" };
     } } satisfies ChatTransport);
     await click("默认助手");
     await click("新建对话");

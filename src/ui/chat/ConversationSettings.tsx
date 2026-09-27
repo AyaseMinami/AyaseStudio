@@ -14,13 +14,15 @@ export function ConversationSettings({ workspace, conversation, settings, onClos
 }) {
   const [draft, setDraft] = useState(() => readConversationConfig(conversation.settings));
   const [title, setTitle] = useState(conversation.title);
+  const [titleEdited, setTitleEdited] = useState(false);
   const [resetCount, setResetCount] = useState(0);
   const assistant = workspace.snapshot?.assistants.find((item) => item.id === conversation.assistantId);
   const target = getActiveTarget({ ...settings, activeModelId: draft.modelId });
   const protocol = target?.connection.protocol;
   const errors = validateRequestConfig(draft.config, protocol ?? "openai-chat", target?.model.modelId ?? "");
   async function save() {
-    if (await workspace.execute({ type: "configure-conversation", id: conversation.id, settings: draft, title })) onClose();
+    if (await workspace.execute({ type: "configure-conversation", id: conversation.id, settings: draft,
+      ...(titleEdited ? { title } : {}) })) onClose();
   }
   return <SessionConfigPanel presentation="modal" title="编辑对话" description="设置仅用于此对话，保存后用于下一次请求。"
     disabled={workspace.busy} config={draft.config} errors={errors} protocol={protocol} model={target?.model.modelId ?? ""}
@@ -30,7 +32,7 @@ export function ConversationSettings({ workspace, conversation, settings, onClos
       <button type="button" className="settings-button" disabled={workspace.busy || !title.trim()} onClick={() => void save()}>保存对话</button></>}>
     <section className="session-config-section">
       <label htmlFor="conversation-title">对话标题</label>
-      <input id="conversation-title" value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
+      <input id="conversation-title" value={title} maxLength={200} onChange={(event) => { setTitle(event.target.value); setTitleEdited(true); }} />
       <label htmlFor="conversation-model">会话模型 / 连接</label>
       <select id="conversation-model" value={draft.modelId ?? ""} onChange={(event) => {
         const modelId = event.target.value || null;

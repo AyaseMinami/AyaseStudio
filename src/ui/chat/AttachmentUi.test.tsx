@@ -9,6 +9,7 @@ import { ChatWorkspace } from "./ChatWorkspace";
 let root: ReturnType<typeof createRoot> | undefined;
 let container: HTMLDivElement;
 async function mount(element: React.ReactNode) {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -18,9 +19,44 @@ afterEach(async () => {
   await act(async () => root?.unmount());
   container?.remove();
   root = undefined;
+  vi.restoreAllMocks();
 });
 
 describe("attachment UI", () => {
+  it("shows a compact filename chip before the input without decoding the draft image", async () => {
+    const createUrl = vi.spyOn(URL, "createObjectURL");
+    const item = { id: "a", name: "broken.png", mimeType: "image/png" as const, size: 3,
+      file: new File(["bad"], "broken.png") };
+    const props = { draft: "keep this text", isHydrated: true, isGenerating: false,
+      onDraftChange: vi.fn(), onSend: vi.fn(), onStop: vi.fn() };
+    await mount(<Composer {...props} draftAttachments={[item]} />);
+    const chip = container.querySelector('.composer-attachment')!;
+    expect(chip.textContent).toBe("broken.png");
+    expect(chip.getAttribute("title")).toContain("image/png");
+    expect(container.querySelector('.composer-attachments')?.nextElementSibling?.tagName).toBe("TEXTAREA");
+    expect(container.querySelector("img")).toBeNull();
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(container.querySelector("textarea")?.value).toBe("keep this text");
+    expect(container.querySelector('[aria-label="移除附件 broken.png"]')).not.toBeNull();
+    await act(async () => root!.render(<Composer {...props} draftAttachments={[]} />));
+    expect(container.querySelector('.composer-attachments')).toBeNull();
+  });
+
+  it("shows a readable sent image decode failure without changing the message", async () => {
+    const attachment = { reference: "attachments/id.png", name: "broken.png", mimeType: "image/png" as const, size: 3 };
+    const read = vi.fn().mockResolvedValue({ ...attachment, data: "AQID" });
+    await mount(<MessageList messages={[{ id: "u", role: "user", content: "message remains", status: "complete",
+      attachments: [attachment] }]} onReadAttachment={read} />);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="预览附件 broken.png"]')!.click());
+    await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("图片加载失败");
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("message remains");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭预览"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="预览附件 broken.png"]')!.click());
+    expect(container.querySelector("img")).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
   it("stages a picked file and only sends on explicit Send", async () => {
     const onFiles = vi.fn();
     const onSend = vi.fn();
