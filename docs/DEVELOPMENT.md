@@ -10,7 +10,9 @@
 
 本轮 `npm.cmd run tauri dev` 编译并启动成功，系统确认主窗口存在且响应正常，检查后已关闭。该检查未操作窗口恢复或安装器；日志包含 libpng 颜色配置警告。独立只读审查覆盖并发任务归属、标题写入保护及窗口状态插件生命周期，未发现确认的 P1/P2 缺陷。
 
-`npm.cmd run build:windows` 成功生成 `src-tauri/target/release/bundle/nsis/Ayase Studio_0.1.0-alpha.2_x64-setup.exe`（6,062,037 字节）；应用 ProductVersion 为 `0.1.0-alpha.2`。安装包签名状态为 `NotSigned`，SHA-256：`C1F390F60686A6E4AFCD70AD6F775A888FAC8703A0FCFD6B72344F743CE87122`。本地 `check-alpha.local.log`、`build-alpha.local.log`、`desktop-alpha.local.log` 保存对应日志且不提交。
+`npm.cmd run build:windows` 构建应用成功；后续仅修改安装模板，使用 `npm.cmd run tauri -- bundle --bundles nsis` 重新封装。当前候选包为 `src-tauri/target/release/bundle/nsis/Ayase Studio_0.1.0-alpha.2_x64-setup.exe`（6,063,106 字节）；应用 ProductVersion 为 `0.1.0-alpha.2`。安装包签名状态为 `NotSigned`，SHA-256：`7E9F0F2134B3815864248E4ABD2A1D5D53143616308EB74C63D2CD14F7A11BAC`。本地 `check-alpha.local.log`、`build-alpha.local.log`、`desktop-alpha.local.log`、`bundle-overwrite.local.log` 保存对应日志且不提交。
+
+覆盖升级调整：同版本 NSIS 重装和向上升级直接跳过“先卸载/不卸载”选择页，继续原有文件覆盖安装；首次安装、降级和 WiX 迁移保留上游流程。模板来源与维护说明见 [Windows installer template](../src-tauri/windows/README.md)。`pwsh -NoProfile -File scripts/test-installer-policy.ps1` 使用 NSIS 编译并执行真实版本比较和策略代码，六项用例通过；独立只读审查未发现安装流程缺陷。测试不写安装注册表或应用数据，不能替代实际界面和数据保留验收。本轮未改应用代码，未重复前述全量测试。
 
 ## Issue #54 窗口尺寸记忆
 
