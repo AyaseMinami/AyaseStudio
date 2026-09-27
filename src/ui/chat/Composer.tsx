@@ -1,7 +1,16 @@
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { FileImage, FileText, Paperclip, Send, Square, X } from "lucide-react";
-import { attachmentAccept, type DraftAttachment } from "../../chat/attachments";
+import { attachmentAccept, materializeDraftAttachment, type DraftAttachment } from "../../chat/attachments";
 import type { ChatProtocol } from "../../chat/types";
+import { SentAttachmentPreview } from "./SentAttachmentPreview";
+
+function DraftImagePreview({ item, opener, onClose }: {
+  item: DraftAttachment; opener: HTMLElement; onClose(): void;
+}) {
+  const previewItem = useMemo(() => ({ name: item.name, mimeType: item.mimeType, size: item.size, reference: item.id }), [item]);
+  const read = useCallback(() => materializeDraftAttachment(item), [item]);
+  return <SentAttachmentPreview item={previewItem} read={read} returnFocus={opener} onClose={onClose} />;
+}
 
 export interface ComposerProps {
   protocol?: ChatProtocol;
@@ -41,6 +50,10 @@ export function Composer({
   onStop,
 }: ComposerProps) {
   const picker = useRef<HTMLInputElement>(null);
+  const pasteSequence = useRef({ stamp: "", count: 0 });
+  const [preview, setPreview] = useState<{ id: string; opener: HTMLElement }>();
+  const previewItem = preview && draftAttachments.find((item) => item.id === preview.id);
+  useEffect(() => { if (preview && !previewItem) setPreview(undefined); }, [preview, previewItem]);
   const canSend = !isGenerating && isHydrated && !attachmentBusy && !attachmentBlockReason &&
     (!!draft.trim() || draftAttachments.length > 0);
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -69,9 +82,11 @@ export function Composer({
           {!!draftAttachments.length && <div className="composer-attachments" aria-label="待发送附件">
             {draftAttachments.map((item) => <span className="composer-attachment" key={item.id}
               title={`${item.name} · ${item.mimeType} · ${(item.size / 1_000_000).toFixed(2)} MB`}>
-              {item.mimeType.startsWith("image/")
-                ? <FileImage size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
-              <span className="composer-attachment-name">{item.name}</span>
+              {item.mimeType.startsWith("image/") ? <button type="button" className="composer-attachment-open"
+                aria-label={`预览待发送图片 ${item.name}`} disabled={!isHydrated}
+                onClick={(event) => setPreview({ id: item.id, opener: event.currentTarget })}>
+                <FileImage size={14} aria-hidden="true" /><span className="composer-attachment-name">{item.name}</span>
+              </button> : <><FileText size={14} aria-hidden="true" /><span className="composer-attachment-name">{item.name}</span></>}
               <button className="attachment-remove" type="button" aria-label={`移除附件 ${item.name}`}
                 disabled={!isHydrated}
                 onClick={() => onRemoveAttachment?.(item.id)}><X size={13} /></button>
@@ -86,8 +101,22 @@ export function Composer({
               const images = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
               if (!images.length) return;
               event.preventDefault();
-              onFiles?.(images.map((image, index) => new File([image], image.name && image.name.includes(".")
-                ? image.name : `粘贴图片-${index + 1}.${image.type === "image/jpeg" ? "jpg" : image.type === "image/webp" ? "webp" : "png"}`)));
+              const now = new Date();
+              const pad = (value: number) => String(value).padStart(2, "0");
+              const stamp = `${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+              if (pasteSequence.current.stamp !== stamp) pasteSequence.current = { stamp, count: 0 };
+              const names = new Set([...draftAttachments.map((item) => item.name), ...images.map((image) => image.name)]);
+              onFiles?.(images.map((image) => {
+                if (image.name.trim() && !/^image(?:\.[a-z0-9]+)?$/i.test(image.name)) return image;
+                const extension = image.type === "image/jpeg" ? "jpg" : image.type === "image/webp" ? "webp" : "png";
+                let name: string;
+                do {
+                  const count = ++pasteSequence.current.count;
+                  name = `粘贴图片-${stamp}${count > 1 ? `-${count}` : ""}.${extension}`;
+                } while (names.has(name));
+                names.add(name);
+                return new File([image], name, { type: image.type, lastModified: image.lastModified });
+              }));
             }}
             placeholder="输入消息，Enter 发送，Shift+Enter 换行"
             disabled={!isHydrated}
@@ -126,6 +155,8 @@ export function Composer({
           </div>
         </div>
       </div>
+      {preview && previewItem && <DraftImagePreview key={previewItem.id} item={previewItem} opener={preview.opener}
+        onClose={() => setPreview(undefined)} />}
     </footer>
   );
 }

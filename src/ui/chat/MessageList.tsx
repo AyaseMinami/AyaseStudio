@@ -6,6 +6,7 @@ import { retryUser } from "../../chat/messageOperations";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 import type { RequestAttachment, SentAttachment } from "../../chat/attachments";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
+import { SentImageAttachment } from "./SentImageAttachment";
 import { ThinkingSummary } from "./ThinkingSummary";
 import { SearchResults } from "./SearchResults";
 
@@ -80,7 +81,7 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
   const scrollRegionRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const previousScrollTopRef = useRef(0);
-  const [preview, setPreview] = useState<SentAttachment>();
+  const [preview, setPreview] = useState<{ messageId: string; item: SentAttachment; opener: HTMLElement }>();
   const [editing, setEditing] = useState<{ id: string; content: string }>();
   const [confirmation, setConfirmation] = useState<Confirmation>();
   const [pending, setPending] = useState<string>();
@@ -99,7 +100,8 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
     }
   }, [messages]);
   useEffect(() => {
-    if (preview && !messages.some((message) => message.attachments?.some((item) => item.reference === preview.reference))) setPreview(undefined);
+    if (preview && !messages.some((message) => message.id === preview.messageId &&
+      message.attachments?.some((item) => item.reference === preview.item.reference))) setPreview(undefined);
     if (editing && !messages.some((message) => message.id === editing.id)) setEditing(undefined);
   }, [messages, preview, editing]);
   useEffect(() => { setConfirmation(undefined); }, [messages]);
@@ -172,8 +174,19 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
               : <span className="subtle-text">（无文本输出）</span>) : message.content ? <SafeMarkdown>{message.content}</SafeMarkdown> : null}</>}
           {message.role === "assistant" && message.search && <SearchResults search={message.search} />}
           {message.editedAt !== undefined && <p className="message-edited">已编辑</p>}
-          {!!message.attachments?.length && <div className="sent-attachment-list">{message.attachments.map((item) => <button type="button" key={item.reference} aria-label={`预览附件 ${item.name}`}
-            disabled={!onReadAttachment} onClick={() => setPreview(item)}>{item.name} · {(item.size / 1_000_000).toFixed(2)} MB</button>)}</div>}
+          {!!message.attachments?.length && <>
+            {message.attachments.some((item) => item.mimeType.startsWith("image/")) && onReadAttachment &&
+              <div className={`sent-image-list ${message.attachments.filter((item) => item.mimeType.startsWith("image/")).length > 1 ? "sent-image-list-multiple" : ""}`}>
+                {message.attachments.filter((item) => item.mimeType.startsWith("image/")).map((item) =>
+                  <SentImageAttachment key={item.reference} item={item} read={onReadAttachment} scrollRoot={scrollRegionRef}
+                    onOpen={(opener) => setPreview({ messageId: message.id, item, opener })} />)}
+              </div>}
+            {message.attachments.some((item) => !item.mimeType.startsWith("image/") || !onReadAttachment) &&
+              <div className="sent-attachment-list">{message.attachments.filter((item) => !item.mimeType.startsWith("image/") || !onReadAttachment).map((item) =>
+              <button type="button" key={item.reference} aria-label={`预览附件 ${item.name}`}
+                disabled={!onReadAttachment} onClick={(event) => setPreview({ messageId: message.id, item, opener: event.currentTarget })}>
+                {item.name} · {(item.size / 1_000_000).toFixed(2)} MB</button>)}</div>}
+          </>}
           {message.status === "aborted" && <p className="message-status message-status-warning">已停止</p>}
           {message.status === "incomplete" && <p className="message-status message-status-warning">回复未完整；下次请求不会带入这一轮</p>}
           {message.status === "paused" && <p className="message-status message-status-warning">回复已暂停，可以继续生成。</p>}
@@ -204,7 +217,9 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
       </article>;
     })}</div>}
   </div>
-  {preview && onReadAttachment && <SentAttachmentPreview key={preview.reference} item={preview} read={onReadAttachment} onClose={() => setPreview(undefined)} />}
+  {preview && onReadAttachment && <SentAttachmentPreview item={preview.item} read={onReadAttachment} returnFocus={preview.opener}
+    images={messages.find((message) => message.id === preview.messageId)?.attachments?.filter((item) => item.mimeType.startsWith("image/")) ?? []}
+    onNavigate={(item) => setPreview({ ...preview, item })} onClose={() => setPreview(undefined)} />}
   {confirmation && <ConfirmationDialog confirmation={confirmation} busy={!!pending} disabled={actionsDisabled} error={actionError} onClose={() => setConfirmation(undefined)} onConfirm={confirm} />}
   </div>;
 }
