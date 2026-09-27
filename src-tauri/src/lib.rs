@@ -39,6 +39,15 @@ pub fn run() {
                     Err(error) => return Err(error.into()),
                 }
             }
+            #[cfg(desktop)]
+            app.handle().plugin(
+                tauri_plugin_window_state::Builder::default()
+                    .with_state_flags(
+                        tauri_plugin_window_state::StateFlags::SIZE
+                            | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                    )
+                    .build(),
+            )?;
             let window = app.config().app.windows.first().ok_or_else(||
                 std::io::Error::other("main window configuration missing"))?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), window)?.build()?;

@@ -255,6 +255,10 @@ describe("App navigation", () => {
     let observed: ChatRequest | undefined;
     runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
       async *stream(request: ChatRequest) {
+        if (request.config?.systemInstruction?.includes("对话标题")) {
+          yield { type: "completed" };
+          return;
+        }
         observed = request;
         yield { type: "text-delta", text: "Complete answer" };
         yield { type: "completed" };
@@ -300,6 +304,10 @@ describe("App navigation", () => {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
       async *stream(request: ChatRequest) {
+        if (request.config?.systemInstruction?.includes("对话标题")) {
+          yield { type: "completed" };
+          return;
+        }
         observed = request;
         yield { type: "text-delta", text: "partial" };
         await gate;
@@ -370,6 +378,10 @@ describe("App navigation", () => {
     const observed: ChatRequest[] = [];
     runtimeMocks.createRuntimeChatTransport.mockResolvedValue({
       async *stream(request: ChatRequest) {
+        if (request.config?.systemInstruction?.includes("对话标题")) {
+          yield { type: "completed" };
+          return;
+        }
         observed.push(request);
         yield { type: "text-delta", text: observed.length === 1 ? "Cut short" : "Next answer" };
         yield { type: "completed", finishReason: observed.length === 1 ? "length" : "stop" };

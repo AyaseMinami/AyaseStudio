@@ -1,5 +1,25 @@
 # Ayase Studio Development Guide
 
+## Alpha 2 候选包验证（2026-09-27）
+
+版本统一为 `0.1.0-alpha.2`，继续仅构建 Windows x64 NSIS 安装程序。`npm.cmd run check` 通过：46 个文件、473 项确定性测试及 TypeScript/Vite 生产构建；`cargo test --manifest-path src-tauri/Cargo.toml` 的 20 项单元测试和 `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
+
+默认测试由 `vitest.config.ts` 限定为 `src/**/*.test.{ts,tsx}`，覆盖全部正式前端测试，避免误收集被忽略的本地供应商探针。真实供应商探测仍由独立的 `probe:live` 显式运行，本轮未调用。App 请求断言已区分主聊天和后台自动命名请求；命名行为本身仍由专门测试覆盖。生产构建保留大于 500 kB 的 chunk 提示。
+
+此记录不代表安装或升级验收。发布前仍需检查全新安装、覆盖升级、聊天/连接凭据/附件/背景保留，以及窗口尺寸与最大化状态的关闭重启恢复。候选包提交到 `dev → main` PR 供用户检查，PR 创建不等于合并或正式发布。
+
+本轮 `npm.cmd run tauri dev` 编译并启动成功，系统确认主窗口存在且响应正常，检查后已关闭。该检查未操作窗口恢复或安装器；日志包含 libpng 颜色配置警告。独立只读审查覆盖并发任务归属、标题写入保护及窗口状态插件生命周期，未发现确认的 P1/P2 缺陷。
+
+`npm.cmd run build:windows` 成功生成 `src-tauri/target/release/bundle/nsis/Ayase Studio_0.1.0-alpha.2_x64-setup.exe`（6,062,037 字节）；应用 ProductVersion 为 `0.1.0-alpha.2`。安装包签名状态为 `NotSigned`，SHA-256：`C1F390F60686A6E4AFCD70AD6F775A888FAC8703A0FCFD6B72344F743CE87122`。本地 `check-alpha.local.log`、`build-alpha.local.log`、`desktop-alpha.local.log` 保存对应日志且不提交。
+
+## Issue #54 窗口尺寸记忆
+
+用户本轮将需求明确为“记住上次关闭时的窗口大小”；远端 Issue 未修改。首次启动使用 1040×760，正常关闭后保存普通窗口尺寸及最大化状态，后续启动恢复；仍允许手动调整，保留 720×520 最小尺寸。状态文件为应用配置目录下的 `.window-state.json`，与聊天数据独立。
+
+桌面验收步骤：首次启动检查默认尺寸；调整为其他尺寸后关闭并重启，确认恢复；最大化后关闭重启，确认最大化并可还原至原普通尺寸；最小化后通过任务栏关闭再启动，确认窗口正常可见。不能以浏览器窗口或 Rust 编译结果替代这些原生交互验证。
+
+2026-09-27：`cargo check --manifest-path src-tauri/Cargo.toml`、现有 20 项 Rust 单元测试及 `git diff --check` 通过。`npm.cmd run tauri dev` 已编译启动，操作系统报告主窗口存在且响应；未完成上述尺寸往返和视觉验收，现有单元测试也不覆盖原生窗口恢复。启动日志有 IPC 自定义协议转 postMessage 及异步回调丢失警告，不将进程启动记作完整桌面验收。本次未修改前端，未运行前端全量测试或真实供应商探测。
+
 ## Issue #31 定向验证（2026-09-27）
 
 按用户要求不运行全量测试，使用 Codex 内置浏览器验收，不操作原生桌面。确定性检查覆盖 `conversationTitle.test.ts`、`conversationTitle.repository.test.ts`、`useChatSession.title.test.tsx`，以及受影响的 workspace、消息发送、附件与跨对话并发测试。新增 UI 回归确认仅编辑标题才设 manual 标记；仅修改参数不锁定标题。旧测试的请求观察器现在区分主聊天和额外命名请求，相关失败已定向修复并重跑通过。`npx.cmd tsc --noEmit` 和 `git diff --check` 通过；未运行全量 check、Rust 编译或真实供应商探测。

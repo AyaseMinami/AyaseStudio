@@ -1,6 +1,6 @@
 [package]
 name = "ayase-studio"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 description = "A lightweight local-first desktop chat client"
 authors = ["Ayase Studio contributors"]
 edition = "2024"
@@ -30,6 +30,7 @@ base64 = "0.22"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "~2.4"
 
 [dev-dependencies]
 tempfile = "3"

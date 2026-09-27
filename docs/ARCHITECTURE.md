@@ -45,6 +45,8 @@ Ayase Studio 是一个轻量、local-first 的桌面聊天客户端。架构目�
 
 ## Runtime topology
 
+Issue #54：按用户进一步确认，桌面窗口记住上次正常关闭时的普通窗口尺寸与最大化状态。取得应用数据目录进程锁后、手动创建主窗口前注册官方 `tauri-plugin-window-state`，仅启用 `SIZE | MAXIMIZED`；状态保存在应用配置目录的 `.window-state.json`，不进入聊天数据库。首次启动或状态文件无法读取时沿用配置的 1040×760，最小尺寸仍为 720×520，用户可继续调整窗口。位置、最小化、可见性和全屏状态不恢复。插件限定在兼容现有 Tauri 的 2.4 系列；无需前端插件调用或新增 IPC 权限。
+
 ```text
 React UI
   │ neutral ChatRequest / ChatEvent
