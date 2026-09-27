@@ -916,14 +916,15 @@ export function ConnectionSettings({
               const protocol = getProtocolOption(connection.protocol);
               const preview = generationPreview(connection,
                 activeTarget?.connection.id === connection.id ? activeTarget.model.modelId : undefined, streamPreview);
-              return <div key={connection.id} >
+              return <div key={connection.id} className="connection-detail-body">
                 <header className="connection-detail-heading">
                   <button className="connection-back-button" type="button"
+                    aria-label="返回供应商连接列表" title="返回供应商连接列表"
                     onClick={() => selectProvider(selectedProvider.id)}>
-                    <ArrowLeft size={15} aria-hidden="true" />返回供应商连接列表
+                    <ArrowLeft size={18} aria-hidden="true" />
                   </button>
-                  <p className="muted-text">{selectedProvider?.name}</p>
-                  <h3>{connection.name}</h3>
+                  <h3 title={connection.name}>{connection.name}</h3>
+                  <p className="muted-text" title={selectedProvider.name}>{selectedProvider.name}</p>
                 </header>
                 <details className="connection-interface" open>
                   <summary><strong>接口配置</strong><span className="connection-interface-summary">{protocol.label} · {connectionHost(connection.baseUrl)}</span><ChevronDown size={16} /></summary>
