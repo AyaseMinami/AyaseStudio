@@ -11,6 +11,15 @@ function render(content: string) {
 }
 
 describe("SafeMarkdown", () => {
+  it("preserves tilde number ranges while supporting double-tilde strikethrough", () => {
+    const host = render("通常建议**男性从 10~12 磅、女性从 8~10 磅**开始适应。~~删除线~~");
+
+    expect(host.querySelector("strong")?.textContent).toBe("男性从 10~12 磅、女性从 8~10 磅");
+    expect(host.querySelector("strong del")).toBeNull();
+    expect(host.querySelectorAll("del")).toHaveLength(1);
+    expect(host.querySelector("del")?.textContent).toBe("删除线");
+  });
+
   it("renders model-provided raw HTML as inert text", () => {
     const html = renderToStaticMarkup(
       <SafeMarkdown>{'Hello <script>window.stealKey()</script>'}</SafeMarkdown>,
