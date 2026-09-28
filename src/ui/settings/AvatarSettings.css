@@ -1,4 +1,29 @@
 .avatar-page { max-width: 800px; margin: 0 auto; }
+.avatar-settings-layout, .avatar-settings-controls, .avatar-settings-preview { min-width: 0; }
+.avatar-settings-layout { display: flex; flex-direction: column; gap: 16px; }
+.avatar-settings-controls { display: flex; flex-direction: column; gap: 16px; }
+.avatar-settings-controls > .settings-page { width: 100%; max-width: none; margin: 0; padding: 0; }
+.avatar-settings-page .avatar-card-heading { padding: 10px 14px; }
+.avatar-settings-page .avatar-profile { gap: 14px; padding: 14px; }
+.avatar-settings-page .avatar-profile > div:last-child { min-width: 0; }
+.avatar-settings-page .avatar-profile p { margin: 4px 0 10px; }
+.avatar-settings-page .avatar-large { width: 56px; height: 56px; border-radius: 12px; }
+.avatar-settings-page .avatar-format { padding: 0 14px 12px; }
+.avatar-settings-page .avatar-local-note { margin: 8px 0 0; line-height: 1.6; }
+.avatar-settings-page .avatar-preview { margin: 0; padding: 16px; }
+.avatar-settings-page .avatar-preview-label { margin-bottom: 16px; }
+.avatar-settings-page .avatar-library-note { margin: 10px 14px; }
+.avatar-settings-page .avatar-library-grid { padding: 0 14px; }
+.avatar-settings-page .avatar-library-actions { padding: 12px 14px; }
+@media (min-width: 1440px) and (min-height: 700px) {
+  .settings-page-scroll:has(.avatar-settings-page) { overflow: hidden; }
+  .settings-page.avatar-settings-page { display: flex; flex-direction: column; height: 100%; }
+  .avatar-settings-page > .settings-page-heading { flex-shrink: 0; }
+  .avatar-settings-layout { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(26rem, 0.9fr) minmax(0, 1.1fr); gap: 24px; }
+  .avatar-settings-controls { grid-column: 1; grid-row: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding-right: 12px; padding-bottom: 8px; }
+  .avatar-settings-preview { grid-column: 2; grid-row: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-rows: minmax(min-content, 2fr) minmax(0, 1fr); }
+  .avatar-settings-preview > .avatar-preview { align-self: safe center; }
+}
 .avatar-card { border: 1px solid rgb(var(--color-border)); border-radius: 8px; background: rgb(var(--color-panel)); overflow: hidden; }
 .avatar-card-heading { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgb(var(--color-border)); }
 .avatar-card-heading h3 { margin: 0; font-size: var(--font-ui); font-weight: 600; }

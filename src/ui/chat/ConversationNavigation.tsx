@@ -214,7 +214,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
         <input id="assistant-name" value={dialog.input.name} disabled={busy || dialog.existing?.id === DEFAULT_ASSISTANT_ID} maxLength={100}
           onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, name: event.target.value } })} />
         </div>
-        <AssistantAvatarEditor value={dialog.input.avatar} defaultAvatar={dialog.input.defaultAvatar} legacyIcon={dialog.input.icon} disabled={busy}
+        <AssistantAvatarEditor assistantName={dialog.input.name} value={dialog.input.avatar} defaultAvatar={dialog.input.defaultAvatar} legacyIcon={dialog.input.icon} disabled={busy}
           onBusyChange={setAvatarBusy}
           onChange={(avatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, avatar } } : current)}
           onDefaultChange={(defaultAvatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, defaultAvatar, icon: "" } } : current)} />

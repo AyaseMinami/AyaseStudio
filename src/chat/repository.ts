@@ -1,4 +1,5 @@
-import Dexie, { type EntityTable } from "dexie";
+import { AyaseDatabase } from "../storage/database";
+import { resolveAvatarSource, withoutAvatarSource } from "../avatar/repository";
 import { retainedRoundMessages, selectRoundVersion, withoutVersions } from "./roundVersions";
 import { titleFromText } from "./conversationTitle";
 import { copyAssistantConfig, resolveConversationConfig } from "./conversationConfig";
@@ -6,7 +7,7 @@ import { copyBranchMessages, withReplyLinks } from "./messageOperations";
 
 import type { ChatMessage } from "./types";
 import { defaultSessionConfig, restoreSessionConfig, type SessionConfig } from "./sessionConfig";
-import { DEFAULT_ASSISTANT_ID, orderedConversations, type AssistantPreset, type Conversation, type WorkspaceCommand, type WorkspaceSelection, type WorkspaceSnapshot } from "./workspace";
+import { DEFAULT_ASSISTANT_ID, orderedConversations, type AssistantPreset, type WorkspaceCommand, type WorkspaceSelection, type WorkspaceSnapshot } from "./workspace";
 
 export type StoredMessageStatus =
   | "complete"
@@ -46,35 +47,6 @@ export interface WorkspaceRepository extends ChatRepository {
   execute(command: WorkspaceCommand): Promise<WorkspaceSnapshot>;
 }
 
-class AyaseDatabase extends Dexie {
-  legacyConversationConfigs!: EntityTable<{ id: string; generationConfig?: SessionConfig; lastUsedModelId?: string | null }, "id">;
-  chats!: EntityTable<ChatSnapshot, "id">;
-  assistants!: EntityTable<AssistantPreset, "id">;
-  conversations!: EntityTable<Conversation, "id">;
-  workspace!: EntityTable<WorkspaceSelection, "id">;
-
-  constructor(name: string) {
-    super(name);
-    this.version(1).stores({ chats: "id,updatedAt" });
-    this.version(2).stores({
-      chats: "id,updatedAt", assistants: "id,sortOrder",
-      conversations: "id,assistantId,updatedAt", workspace: "id",
-    });
-    this.version(3).stores({ legacyConversationConfigs: "id" }).upgrade(async (transaction) => {
-      const chats = transaction.table("chats");
-      const conversations = transaction.table("conversations");
-      for (const chat of await chats.toArray()) {
-        const conversation = await conversations.get(chat.id);
-        await transaction.table("legacyConversationConfigs").put({ id: chat.id,
-          generationConfig: chat.generationConfig, lastUsedModelId: conversation?.lastUsedModelId });
-        delete chat.generationConfig;
-        await chats.put(chat);
-      }
-      await conversations.toCollection().modify((item) => { delete item.lastUsedModelId; });
-    });
-  }
-}
-
 class DexieChatRepository implements WorkspaceRepository {
   constructor(private readonly database: AyaseDatabase) {}
 
@@ -111,13 +83,17 @@ class DexieChatRepository implements WorkspaceRepository {
 
   private transaction<T>(action: () => Promise<T>): Promise<T> {
     const db = this.database;
-    return db.transaction("rw", [db.chats, db.assistants, db.conversations, db.workspace, db.legacyConversationConfigs], action);
+    return db.transaction("rw", [db.chats, db.assistants, db.conversations, db.workspace, db.legacyConversationConfigs, db.avatarLibrary], action);
   }
 
   private async snapshot(): Promise<WorkspaceSnapshot> {
     const db = this.database;
+    const resources = new Set(await db.avatarLibrary.toCollection().primaryKeys());
     return {
-      assistants: (await db.assistants.toArray()).sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)),
+      assistants: (await db.assistants.toArray()).map(assistant =>
+        assistant.avatar?.source && !resources.has(assistant.avatar.source.resourceId)
+          ? { ...assistant, avatar: withoutAvatarSource(assistant.avatar) } : assistant)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)),
       conversations: orderedConversations(await db.conversations.toArray()),
       selection: (await db.workspace.get("selection"))!,
     };
@@ -212,11 +188,12 @@ class DexieChatRepository implements WorkspaceRepository {
         case "edit-assistant": {
           if (!action.input.name.trim()) throw new Error("请输入助手名称。");
           const existing = action.type === "edit-assistant" ? await requireAssistant(action.id) : undefined;
+          const avatar = await resolveAvatarSource(db, action.input.avatar);
           const orders = (await db.assistants.toArray()).map((item) => item.sortOrder);
           const assistant: AssistantPreset = { id: action.id, sortOrder: existing?.sortOrder ?? Math.max(0, ...orders) + 1,
             name: action.id === DEFAULT_ASSISTANT_ID ? "默认助手" : action.input.name.trim(),
             icon: action.input.icon.trim(), defaultModelId: action.input.defaultModelId,
-            avatar: action.input.avatar, defaultAvatar: action.input.defaultAvatar,
+            avatar, defaultAvatar: action.input.defaultAvatar,
             defaultConfig: restoreSessionConfig(action.input.defaultConfig) };
           if (existing) await db.assistants.put(assistant); else await db.assistants.add(assistant);
           if (!existing) selection.activeAssistantId = action.id;

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Crop, ImagePlus } from "lucide-react";
-import { assistantAvatarDefaults } from "../../avatar/assistantDefaults";
 import { centeredCrop, decodeAvatar, renderAvatar } from "../../avatar/image";
 import type { AvatarCrop, UserAvatar } from "../../avatar/repository";
 import { AvatarCropDialog, type Draft } from "../settings/AvatarSettings";
 import { AssistantAvatar } from "./AssistantAvatar";
+import { AssistantAvatarSelector } from "../avatar/AvatarLibrary";
 
 export interface AssistantAvatarEditorProps {
+  assistantName?: string;
   value?: UserAvatar;
   defaultAvatar?: string;
   legacyIcon?: string;
@@ -16,16 +17,16 @@ export interface AssistantAvatarEditorProps {
   onBusyChange?(busy: boolean): void;
 }
 
-export function AssistantAvatarEditor({ value, defaultAvatar, legacyIcon, disabled = false, onChange, onDefaultChange, onBusyChange }: AssistantAvatarEditorProps) {
-  const picker = useRef<HTMLInputElement>(null);
+export function AssistantAvatarEditor({ assistantName = "新助手", value, defaultAvatar, legacyIcon, disabled = false, onChange, onDefaultChange, onBusyChange }: AssistantAvatarEditorProps) {
   const active = useRef(false);
   const operation = useRef(0);
   const [draft, setDraft] = useState<Draft>();
+  const [selecting, setSelecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const busy = loading || saving;
-  const blocked = disabled || busy || !!draft;
+  const blocked = disabled || busy || !!draft || selecting;
   useEffect(() => { active.current = true; return () => { active.current = false; operation.current++; }; }, []);
   useEffect(() => () => { if (draft) URL.revokeObjectURL(draft.url); }, [draft]);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
@@ -51,7 +52,7 @@ export function AssistantAvatarEditor({ value, defaultAvatar, legacyIcon, disabl
     try {
       const thumbnail = await renderAvatar(draft.image, crop);
       if (active.current && current === operation.current) {
-        onChange({ original: draft.original, thumbnail, crop });
+        onChange({ original: draft.original, thumbnail, crop, ...(value?.source ? { source: value.source } : {}) });
         setDraft(undefined);
       }
     } catch {
@@ -63,22 +64,17 @@ export function AssistantAvatarEditor({ value, defaultAvatar, legacyIcon, disabl
     <div className="assistant-avatar-editor-profile">
       <AssistantAvatar avatar={value} defaultAvatar={defaultAvatar} legacyIcon={legacyIcon} className="assistant-avatar-editor-preview" />
       <div className="avatar-buttons">
-        <button type="button" className="settings-button" disabled={blocked} onClick={() => picker.current?.click()}><ImagePlus size={15} />{value ? "更换图片" : "选择图片"}</button>
+        <button type="button" className="settings-button" disabled={blocked} onClick={() => setSelecting(true)}><ImagePlus size={15} />选择头像</button>
         {value && <><button type="button" className="settings-button" disabled={blocked} onClick={() => void open(value.original, value.crop)}><Crop size={15} />重新裁切</button>
           <button type="button" className="settings-button" disabled={blocked} onClick={() => { setError(undefined); onChange(undefined); }}>移除图片</button></>}
       </div>
     </div>
-    <input ref={picker} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="选择助手头像图片" disabled={blocked} onChange={(event) => {
-      const file = event.target.files?.[0]; event.target.value = ""; if (file && !blocked) void open(file);
-    }} />
     <p className="assistant-avatar-editor-note">PNG、JPEG 或 WebP · 最大 20 MB · 图片仅在本机保存</p>
-    <div className="assistant-avatar-defaults" aria-label="内置助手头像">
-      {assistantAvatarDefaults.map((avatar) => <button key={avatar.id} type="button" className="assistant-avatar-default-choice" disabled={blocked}
-        aria-pressed={!value && defaultAvatar === avatar.id} onClick={() => { setError(undefined); onChange(undefined); onDefaultChange(avatar.id); }}>
-        <AssistantAvatar defaultAvatar={avatar.id} />{avatar.label}
-      </button>)}
-    </div>
     {error && <p className="avatar-error" role="alert">{error}</p>}
     {draft && <AvatarCropDialog draft={draft} saving={saving || disabled} error={error} onCancel={() => { operation.current++; setError(undefined); setDraft(undefined); }} onSave={apply} />}
+    {selecting && <AssistantAvatarSelector assistantName={assistantName} value={value} defaultAvatar={defaultAvatar}
+      onBusyChange={onBusyChange} onClose={() => setSelecting(false)} onApply={(next, builtin) => {
+        onChange(next); if (builtin) onDefaultChange(builtin); setSelecting(false);
+      }} />}
   </section>;
 }

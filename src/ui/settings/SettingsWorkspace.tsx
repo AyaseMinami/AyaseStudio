@@ -1,7 +1,8 @@
 import { Info, Palette, Server, UserRound } from "lucide-react";
-import { AvatarSettings } from "./AvatarSettings";
+import { AvatarPreview } from "./AvatarSettings";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
 import { AssistantAvatarDefaults } from "./AssistantAvatarDefaults";
+import { AvatarLibraryPanel } from "../avatar/AvatarLibrary";
 import { AboutSettings } from "./AboutSettings";
 import { WindowControls } from "../window/WindowControls";
 
@@ -95,7 +96,16 @@ export function SettingsWorkspace({
           ) : activeSection === "appearance" ? (
             <AppearanceSettings {...appearance} />
           ) : activeSection === "avatars" ? (
-            <>{avatar && <AvatarSettings avatar={avatar} />}<AssistantAvatarDefaults /></>
+            <section className="settings-page settings-workspace-page avatar-settings-page" aria-labelledby="avatar-settings-title">
+              <header className="settings-page-heading"><h2 id="avatar-settings-title">头像</h2><p className="muted-text">管理用户头像与本地头像库。</p></header>
+              <div className="avatar-settings-layout">
+                <div className="avatar-settings-preview">{avatar && <AvatarPreview avatar={avatar} />}</div>
+                <div className="avatar-settings-controls">
+                  <AssistantAvatarDefaults />
+                  {avatar && <AvatarLibraryPanel avatar={avatar} />}
+                </div>
+              </div>
+            </section>
           ) : (
             <AboutSettings />
           )}
