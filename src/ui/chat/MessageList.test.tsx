@@ -141,11 +141,12 @@ it("keeps both action bars and copy feedback outside message bodies", async () =
 async function setupScrolling(withAttachment = false) {
   const { host, root } = setup();
   let chunk = 0;
+  let users: StoredChatMessage[] = [];
   const attachment = { reference: "attachments/notes.txt", name: "notes.txt", mimeType: "text/plain" as const, size: 5 };
   const readAttachment = async () => ({ ...attachment, data: "SGVsbG8=" });
   const render = (key = "conversation", empty = false) => root.render(<MessageList key={key}
     onReadAttachment={readAttachment}
-    messages={empty ? [] : [{ ...messages[1], content: `chunk ${++chunk}`, status: "streaming",
+    messages={empty ? [] : [...users, { ...messages[1], content: `chunk ${++chunk}`, status: "streaming",
       attachments: withAttachment ? [attachment] : undefined }]} />);
   await act(async () => render());
   const region = host.querySelector<HTMLDivElement>(".message-scroll-region")!;
@@ -164,9 +165,50 @@ async function setupScrolling(withAttachment = false) {
     region.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -20 }));
   });
   const grow = async () => { height += 100; await act(async () => render()); };
+  const send = async (content = "new message") => {
+    users = [...users, { id: `sent-${users.length}`, role: "user", content, status: "complete" }];
+    height += 100;
+    await act(async () => render());
+  };
+  const edit = async () => {
+    users = users.map((user) => ({ ...user, content: "edited message" }));
+    height += 100;
+    await act(async () => render());
+  };
   await act(async () => render());
-  return { host, root, region, scroll, wheelUp, grow, render };
+  return { host, root, region, scroll, wheelUp, grow, render, send, edit };
 }
+
+it.each(["new message", ""])("resumes following after sending a user message (content: %s)", async (content) => {
+  const { host, root, region, grow, scroll, wheelUp, send } = await setupScrolling();
+  try {
+    await scroll(200);
+    await grow();
+    expect(region.scrollTop).toBe(200);
+    await send(content);
+    expect(region.scrollTop).toBe(800);
+    await grow();
+    expect(region.scrollTop).toBe(900);
+    await wheelUp();
+    await scroll(850);
+    await grow();
+    expect(region.scrollTop).toBe(850);
+    await send(content);
+    expect(region.scrollTop).toBe(1100);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("does not resume following for edits or reply updates with the same user ID", async () => {
+  const { host, root, region, grow, scroll, send, edit } = await setupScrolling();
+  try {
+    await send();
+    await scroll(200);
+    await edit();
+    expect(region.scrollTop).toBe(200);
+    await grow();
+    expect(region.scrollTop).toBe(200);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 it("keeps following stream growth without user scrolling", async () => {
   const { host, root, region, grow } = await setupScrolling();

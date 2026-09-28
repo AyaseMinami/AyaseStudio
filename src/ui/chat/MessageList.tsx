@@ -74,6 +74,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
 }) {
   const scrollRegionRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
+  const previousUserIdsRef = useRef(new Set<string>());
   const previousScrollTopRef = useRef(0);
   const [preview, setPreview] = useState<{ messageId: string; item: SentAttachment; opener: HTMLElement }>();
   const [editing, setEditing] = useState<{ id: string; content: string }>();
@@ -87,7 +88,12 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
 
   useLayoutEffect(() => {
     const region = scrollRegionRef.current!;
-    if (messages.length === 0) followingRef.current = true;
+    const userIds = new Set(messages.filter((message) => message.role === "user").map((message) => message.id));
+    const hasNewUserMessage = [...userIds].some((id) => !previousUserIdsRef.current.has(id));
+    previousUserIdsRef.current = userIds;
+    // A committed new send resumes following; edits, retries and stream chunks
+    // keep the user's current reading position because their user IDs stay stable.
+    if (messages.length === 0 || hasNewUserMessage) followingRef.current = true;
     if (followingRef.current) {
       // Position restored history before paint, including after asynchronous loading.
       // Immediate movement also avoids smooth scrolling fighting user input.
