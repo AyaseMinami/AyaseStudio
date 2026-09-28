@@ -50,6 +50,7 @@ function App() {
             onClear={chat.clearConversation} />}>
         <ChatWorkspace hideHeader
           userAvatarUrl={avatar.url}
+          assistant={chat.workspace.assistant}
           layout={chatLayout.layout}
           onToggleLayout={chatLayout.toggleLayout}
           key={chat.workspace.conversation?.id ?? "loading"}

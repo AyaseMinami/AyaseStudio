@@ -13,8 +13,10 @@ import { ThinkingToolbarControl } from "./ThinkingControl";
 import type { ThinkingSettings } from "../../chat/thinking";
 import { Globe } from "lucide-react";
 import type { ChatLayout } from "./useChatLayout";
+import type { AssistantPreset } from "../../chat/workspace";
 
 export interface ChatWorkspaceProps {
+  assistant?: AssistantPreset;
   userAvatarUrl?: string;
   hideHeader?: boolean;
   layout?: ChatLayout;
@@ -50,6 +52,7 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  assistant,
   userAvatarUrl,
   hideHeader = false,
   layout = "narrow",
@@ -120,7 +123,7 @@ export function ChatWorkspace({
           {contextPlan.inputTokens} Token（估算，{contextPlan.countingLabel}）。原始记录未修改。
         </div>
       )}
-      <MessageList userAvatarUrl={userAvatarUrl} messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
+      <MessageList assistant={assistant} userAvatarUrl={userAvatarUrl} messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
         actionsDisabled={messageActionsDisabled} actionError={messageActionError} />
       {draftAttachments && (attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
         attachmentCapabilityNotice(modelId ?? "", draftAttachments)) &&

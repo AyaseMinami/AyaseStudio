@@ -216,6 +216,7 @@ class DexieChatRepository implements WorkspaceRepository {
           const assistant: AssistantPreset = { id: action.id, sortOrder: existing?.sortOrder ?? Math.max(0, ...orders) + 1,
             name: action.id === DEFAULT_ASSISTANT_ID ? "默认助手" : action.input.name.trim(),
             icon: action.input.icon.trim(), defaultModelId: action.input.defaultModelId,
+            avatar: action.input.avatar, defaultAvatar: action.input.defaultAvatar,
             defaultConfig: restoreSessionConfig(action.input.defaultConfig) };
           if (existing) await db.assistants.put(assistant); else await db.assistants.add(assistant);
           if (!existing) selection.activeAssistantId = action.id;

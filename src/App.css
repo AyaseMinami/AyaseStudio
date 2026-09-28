@@ -2057,6 +2057,10 @@ textarea:disabled {
 }
 
 .assistant-message-group { align-items: flex-start; }
+.message-row:has(.message-assistant-avatar) { gap: 8px; align-items: flex-start; }
+.message-row:has(.message-assistant-avatar) .assistant-message-group { max-width: calc(100% - 48px); }
+.message-row .message-assistant-avatar { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 10px; }
+.message-assistant-avatar .assistant-avatar-legacy { font-size: 25px; }
 .assistant-message-group:has(.message-editor) { width: 100%; }
 
 .user-message-group {
@@ -2717,6 +2721,7 @@ textarea:disabled {
 .assistant-branch-toggle { flex: 1; min-width: 0; padding: 0.5rem 3rem 0.5rem 0.5rem; }
 .assistant-branch-toggle > svg { position: absolute; right: 0.35rem; top: calc(50% - 8px); }
 .assistant-branch-icon { display: inline-flex; flex: 0 0 1rem; width: 1rem; height: 1rem; align-items: center; justify-content: center; }
+.assistant-branch-toggle .assistant-branch-icon { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 7px; }
 .assistant-branch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-conversation-count { flex-shrink: 0; }
 .assistant-actions { position: absolute; right: 1.5rem; top: calc(50% - 0.875rem); width: 1.75rem; }

@@ -1,5 +1,17 @@
 # Ayase Studio Development Guide
 
+## Assistant avatars #67 (2026-09-28)
+
+提交前验证：最终 40px 聊天头像版本通过 `npm.cmd run check`（57 个文件、529 项测试及 TypeScript/Vite 构建）、`cargo check --locked --manifest-path src-tauri/Cargo.toml`。构建保留既有大 chunk 提示；下文 32px 浏览器测量属于此前版本，本次未重复视觉或原生交互验收。
+
+后续用户确认未设置用户图片时也应显示默认头像：用户消息和设置预览新增默认人形图标，图片加载失败、移除时回退该图标。消息与用户头像两套测试共 22 项通过，TypeScript 和 diff 检查通过；新增覆盖双方头像共存、切换助手互不影响、图片失败和移除回退。内置浏览器合成数据确认用户人形头像与助手图片同时显示，均为 32×32，无页面横向溢出。此轮仅调整前端默认显示，不重复原生检查或全量构建。
+
+`npm.cmd run check` passed 54 files / 516 tests and TypeScript/Vite production build. After adding focused component tests and correcting sidebar square sizing, five targeted suites passed 31 tests (assistant defaults, persistence, display, crop editor, message regression); the worker also checked the existing user-avatar suites. `cargo check --manifest-path src-tauri/Cargo.toml` passed. Independent read-only review found no actionable defect in persistence, request privacy, crop lifecycle, or defaults. The build retains the existing large-chunk warning.
+
+The isolated in-app browser origin `127.0.0.1:1467/ui-review.local/assistant67.html` uses synthetic local image/chat data and no configured provider. Verified crop zoom/drag, Escape cancel retaining the outer editor, Apply followed by Save Assistant, 256×256 thumbnail recovery after reload, removal falling back to the saved built-in and editor cancellation retaining the custom image, and a changed global default appearing in a new assistant draft. At 720×520 the message avatar is 32×32 with no page horizontal overflow; dark low-height crop controls remain visible. The normal light viewport was also inspected. Controls were exercised by keyboard and crop dragging by pointer; no native file dialog was automated.
+
+Screenshot: `ui-review.local/assistant67-crop-dark.png` (ignored local evidence). Native file selection and actual desktop restart remain manual acceptance; no native permission, filesystem command, or transport contract changed, so this run did not relaunch the desktop app. Subjective visual acceptance remains with the user. No commit, push, or remote Issue update was performed.
+
 ## User avatar #32 / #34 verification (2026-09-28)
 
 头像原图、裁切参数及缩略图保存于 WebView 的 `ayase-studio-avatars` IndexedDB；备份应用数据时需包含 WebView 本地目录，没有单独的头像文件目录。浏览器验收数据与桌面应用分离。

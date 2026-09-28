@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2, UserRound } from "lucide-react";
+import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { AssistantAvatar } from "./AssistantAvatar";
+import { AssistantAvatarEditor } from "./AssistantAvatarEditor";
+import { readAssistantDefaultAvatar } from "../../avatar/assistantDefaults";
 import { AssistantActions } from "./AssistantActions";
 import { ConversationSettings } from "./ConversationSettings";
 import type { useConversationWorkspace } from "../../chat/useConversationWorkspace";
@@ -46,6 +49,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 860);
   const [conversationPanelOpen, setConversationPanelOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>();
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string>();
   const pendingDeleteRef = useRef<HTMLLIElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
@@ -78,13 +82,13 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   }, [pendingDelete]);
   const selectedAssistant = snapshot?.assistants.find((item) => item.id === snapshot.selection.activeAssistantId);
   const conversations = snapshot?.conversations.filter((item) => item.assistantId === selectedAssistant?.id) ?? [];
-  const close = () => { if (!busy) setDialog(undefined); };
+  const close = () => { if (!busy && !avatarBusy) setDialog(undefined); };
   async function perform(command: WorkspaceCommand) {
     if (await execute(command)) setDialog(undefined);
   }
   function editAssistant(existing?: AssistantPreset) {
     setDialog({ type: "assistant", existing, input: existing ? structuredClone(existing) : {
-      name: "新助手", icon: "", defaultModelId: selectedAssistant?.defaultModelId ?? null, defaultConfig: defaultSessionConfig(),
+      name: "新助手", icon: "", defaultAvatar: readAssistantDefaultAvatar(), defaultModelId: selectedAssistant?.defaultModelId ?? null, defaultConfig: defaultSessionConfig(),
     } });
   }
   const editorTarget = dialog?.type === "assistant" ? getActiveTarget({ ...settings, activeModelId: dialog.input.defaultModelId }) : undefined;
@@ -148,7 +152,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
           return <li className="chat-navigation-item assistant-branch" key={assistant.id}>
           <button type="button" className="chat-navigation-select assistant-branch-toggle" aria-label={assistant.name} aria-expanded={expanded} aria-controls={`assistant-conversations-${assistant.id}`} aria-pressed={selected} disabled={busy}
             onClick={() => void openAssistant(assistant.id)}>
-            <span className="assistant-branch-icon" aria-hidden="true">{assistant.icon || <UserRound size={17} />}</span>
+            <AssistantAvatar className="assistant-branch-icon" avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} />
             <span className="assistant-branch-name" title={assistant.name}>{assistant.name}</span><span className="assistant-conversation-count" aria-hidden="true">({count})</span>
             <ChevronRight size={16} />
           </button>
@@ -202,20 +206,18 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       config={dialog.input.defaultConfig} errors={editorErrors} protocol={editorTarget?.connection.protocol} model={editorTarget?.model.modelId ?? ""}
       onChange={(config) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: config } })}
       onReset={() => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: defaultSessionConfig() } })} onClose={close}
-      footer={<><button className="settings-button" type="button" disabled={busy} onClick={close}>取消</button><button className="settings-button" type="button" disabled={busy || !dialog.input.name.trim() || Object.keys(editorErrors).length > 0}
+      footer={<><button className="settings-button" type="button" disabled={busy || avatarBusy} onClick={close}>取消</button><button className="settings-button" type="button" disabled={busy || avatarBusy || !dialog.input.name.trim() || Object.keys(editorErrors).length > 0}
         onClick={() => void perform({ type: dialog.existing ? "edit-assistant" : "create-assistant", id: dialog.existing?.id ?? crypto.randomUUID(), input: dialog.input })}>保存助手</button></>}>
       <section className="session-config-section">
         <label htmlFor="assistant-name">助手名称</label>
         <div className="assistant-identity-row">
-        <div className="assistant-icon-picker" title="选择助手图标">
-          <span aria-hidden="true">{dialog.input.icon || <UserRound size={21} />}<ChevronRight size={12} /></span>
-          <select id="assistant-icon" aria-label="图标" value={dialog.input.icon} disabled={busy} onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, icon: event.target.value } })}>
-            {["", "💬", "📝", "💻", "🌐", "📚", "🎨"].map((icon) => <option key={icon} value={icon}>{icon || "默认图标"}</option>)}
-          </select>
-        </div>
         <input id="assistant-name" value={dialog.input.name} disabled={busy || dialog.existing?.id === DEFAULT_ASSISTANT_ID} maxLength={100}
           onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, name: event.target.value } })} />
         </div>
+        <AssistantAvatarEditor value={dialog.input.avatar} defaultAvatar={dialog.input.defaultAvatar} legacyIcon={dialog.input.icon} disabled={busy}
+          onBusyChange={setAvatarBusy}
+          onChange={(avatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, avatar } } : current)}
+          onDefaultChange={(defaultAvatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, defaultAvatar, icon: "" } } : current)} />
         <label htmlFor="assistant-model">助手模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
           onChange={(event) => {
             const defaultModelId = event.target.value || null;

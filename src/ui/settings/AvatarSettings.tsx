@@ -5,7 +5,7 @@ import type { AvatarCrop } from "../../avatar/repository";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
 import "./AvatarSettings.css";
 
-interface Draft { original: Blob; image: HTMLImageElement; url: string; crop: AvatarCrop }
+export interface Draft { original: Blob; image: HTMLImageElement; url: string; crop: AvatarCrop }
 
 export function AvatarSettings({ avatar }: { avatar: UserAvatarState }) {
   const picker = useRef<HTMLInputElement>(null);
@@ -32,7 +32,7 @@ export function AvatarSettings({ avatar }: { avatar: UserAvatarState }) {
       <div className="avatar-card-heading"><h3 id="user-avatar-title">用户头像</h3><span>仅在本机</span></div>
       <div className="avatar-profile">
         <div className="avatar-large">{avatar.url ? <img src={avatar.url} alt="当前用户头像" /> : <UserRound size={32} strokeWidth={1.5} />}</div>
-        <div><strong>{avatar.url ? "你的聊天头像" : "还没有设置头像"}</strong><p className="muted-text">显示在用户消息右侧，所有对话共用。</p>
+        <div><strong>{avatar.url ? "你的聊天头像" : "默认用户头像"}</strong><p className="muted-text">显示在用户消息右侧，所有对话共用。</p>
           <div className="avatar-buttons"><button className="settings-button settings-button-primary" disabled={busy} onClick={() => picker.current?.click()}><ImagePlus size={15} />{avatar.url ? "更换图片" : "选择图片"}</button>
             {avatar.value && <button className="settings-button" disabled={busy} onClick={() => void open(avatar.value!.original, avatar.value!.crop)}><Crop size={15} />重新裁切</button>}
             {(avatar.value || avatar.error) && <button className="settings-button" disabled={busy} onClick={() => { setError(undefined); void avatar.save(); }}>移除</button>}</div>
@@ -44,10 +44,10 @@ export function AvatarSettings({ avatar }: { avatar: UserAvatarState }) {
       <p className="avatar-format">PNG、JPEG 或 WebP · 最大 20 MB · 支持正方形裁切</p>
     </section>
     <section className="avatar-preview" aria-label="头像聊天效果预览"><div className="avatar-preview-label">聊天效果</div>
-      <div className="avatar-preview-user"><div className="avatar-preview-bubble">今天也聊点有趣的吧。</div>{avatar.url && <img src={avatar.url} alt="" />}</div>
+      <div className="avatar-preview-user"><div className="avatar-preview-bubble">今天也聊点有趣的吧。</div>{avatar.url ? <img src={avatar.url} alt="" /> : <span className="message-user-avatar message-avatar-fallback" role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>}</div>
       <div className="avatar-preview-reply">好呀，你想从哪里开始？</div>
     </section>
-    <p className="avatar-local-note">图片与裁切结果只保存在本机，不会上传或随消息发送。移除后恢复无头像样式。</p>
+    <p className="avatar-local-note">图片与裁切结果只保存在本机，不会上传或随消息发送。移除后恢复默认用户头像。</p>
     {(error || avatar.error) && <p role="alert" className="avatar-error">{error || avatar.error}</p>}
     {draft && <AvatarCropDialog draft={draft} saving={avatar.busy} onCancel={() => setDraft(undefined)} onSave={async (crop) => {
       try {
@@ -58,18 +58,19 @@ export function AvatarSettings({ avatar }: { avatar: UserAvatarState }) {
   </section>;
 }
 
-function AvatarCropDialog({ draft, saving, error, onCancel, onSave }: {
+export function AvatarCropDialog({ draft, saving, error, onCancel, onSave }: {
   draft: Draft; saving: boolean; error?: string; onCancel(): void; onSave(crop: AvatarCrop): Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [crop, setCrop] = useState(draft.crop);
   const [processing, setProcessing] = useState(false);
+  const active = useRef(false);
   const drag = useRef<{ x: number; y: number; crop: AvatarCrop } | null>(null);
   const busy = saving || processing;
-  useEffect(() => { const node = dialog.current!; node.showModal(); return () => node.close(); }, []);
+  useEffect(() => { active.current = true; const node = dialog.current!; node.showModal(); return () => { active.current = false; node.close(); }; }, []);
   const width = draft.image.naturalWidth, height = draft.image.naturalHeight;
   const rect = cropRectangle(width, height, crop);
-  return <dialog ref={dialog} className="avatar-crop-dialog" aria-labelledby="avatar-crop-title" onCancel={(event) => { event.preventDefault(); if (!busy) onCancel(); }}>
+  return <dialog ref={dialog} className="avatar-crop-dialog" aria-labelledby="avatar-crop-title" onKeyDown={(event) => event.stopPropagation()} onCancel={(event) => { event.preventDefault(); if (!busy) onCancel(); }}>
     <header><h2 id="avatar-crop-title">裁切头像</h2><p className="muted-text">拖动图片调整位置，缩放选择合适的范围。</p></header>
     <svg className="avatar-crop-stage" viewBox={`${rect.x} ${rect.y} ${rect.side} ${rect.side}`} aria-label="正方形头像裁切预览"
       onPointerDown={(event) => { if (busy) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, crop: { ...crop, x: (rect.x + rect.side / 2) / width, y: (rect.y + rect.side / 2) / height } }; }}
@@ -84,6 +85,6 @@ function AvatarCropDialog({ draft, saving, error, onCancel, onSave }: {
       ["zoom", "缩放", 1, 4, 0.01], ["x", "横向位置", 0, 1, 0.01], ["y", "纵向位置", 0, 1, 0.01],
     ] as const).map(([key, label, min, max, step]) => <label key={key}>{label}<input type="range" aria-label={label} min={min} max={max} step={step} value={crop[key]} disabled={busy} onChange={(event) => setCrop({ ...crop, [key]: Number(event.target.value) })} /><output>{Math.round(crop[key] * 100)}%</output></label>)}</div>
     {error && <p role="alert" className="avatar-error">{error}</p>}
-    <footer><button className="settings-button" disabled={busy} onClick={() => setCrop(centeredCrop)}>恢复居中</button><span /><button className="settings-button" disabled={busy} onClick={onCancel}>取消</button><button className="settings-button settings-button-primary" disabled={busy} onClick={async () => { setProcessing(true); try { await onSave(crop); } finally { setProcessing(false); } }}>{busy ? "保存中…" : "应用头像"}</button></footer>
+    <footer><button className="settings-button" disabled={busy} onClick={() => setCrop(centeredCrop)}>恢复居中</button><span /><button className="settings-button" disabled={busy} onClick={onCancel}>取消</button><button className="settings-button settings-button-primary" disabled={busy} onClick={async () => { setProcessing(true); try { await onSave(crop); } finally { if (active.current) setProcessing(false); } }}>{busy ? "保存中…" : "应用头像"}</button></footer>
   </dialog>;
 }

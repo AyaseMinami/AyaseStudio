@@ -1,0 +1,19 @@
+.assistant-avatar { width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; vertical-align: middle; background: rgb(var(--color-hover)); color: rgb(var(--color-text)); }
+.assistant-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.assistant-avatar svg { width: 62.5%; height: 62.5%; }
+.assistant-avatar-blue { background: #dbeafe; color: #1d4ed8; }
+.assistant-avatar-green { background: #dcfce7; color: #166534; }
+.assistant-avatar-violet { background: #ede9fe; color: #6d28d9; }
+.assistant-avatar-legacy { font-size: 20px; line-height: 1; }
+.assistant-avatar-editor { display: grid; gap: 12px; }
+.assistant-avatar-editor-profile { display: flex; align-items: center; gap: 14px; }
+.assistant-avatar-editor-preview { width: 64px; height: 64px; border-radius: 12px; }
+.assistant-avatar-editor-preview .assistant-avatar-legacy { font-size: 32px; }
+.assistant-avatar-editor .avatar-buttons { gap: 6px; }
+.assistant-avatar-editor-note { margin: 0; font-size: var(--font-caption); color: rgb(var(--color-muted)); line-height: 1.6; }
+.assistant-avatar-defaults { display: flex; flex-wrap: wrap; gap: 8px; }
+.assistant-avatar-default-choice { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid rgb(var(--color-border)); border-radius: 8px; background: transparent; color: rgb(var(--color-text)); font-size: var(--font-small); cursor: pointer; }
+.assistant-avatar-default-choice[aria-pressed="true"] { border-color: rgb(var(--color-accent)); background: rgb(var(--color-hover)); }
+.assistant-avatar-default-choice:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+.assistant-avatar-default-choice:disabled { cursor: default; opacity: .5; }
+.assistant-avatar-editor .avatar-error { margin: 0; }

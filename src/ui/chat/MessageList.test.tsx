@@ -7,11 +7,52 @@ import type { StoredChatMessage } from "../../chat/repository";
 import { MessageList, type MessageActions } from "./MessageList";
 import "fake-indexeddb/auto";
 import { createChatRepository } from "../../chat/repository";
+import { defaultSessionConfig } from "../../chat/sessionConfig";
 
 const messages: StoredChatMessage[] = [
   { id: "user", role: "user", content: "**raw markdown**", status: "complete", replyToId: null },
   { id: "answer", role: "assistant", content: "Answer", status: "complete", replyToId: "user" },
 ];
+
+it("keeps the user avatar visible alongside assistant avatars and across assistant changes", async () => {
+  const { host, root } = setup();
+  const makeUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:assistant-avatar");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const assistant = { id: "a", name: "A", icon: "", sortOrder: 0, defaultModelId: null, defaultConfig: defaultSessionConfig(), defaultAvatar: "blue" };
+  const userImage = () => host.querySelector<HTMLImageElement>(".message-row-user .message-user-avatar");
+  try {
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:user-avatar" assistant={assistant} />));
+    expect(userImage()?.getAttribute("src")).toBe("blob:user-avatar");
+    expect(host.querySelectorAll(".message-assistant-avatar")).toHaveLength(1);
+    const avatar = { original: new Blob(["source"]), thumbnail: new Blob(["crop"]), crop: { x: .5, y: .5, zoom: 1 } };
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:user-avatar" assistant={{ ...assistant, id: "b", avatar }} />));
+    const assistantImage = host.querySelector<HTMLImageElement>(".message-assistant-avatar img")!;
+    expect(assistantImage.getAttribute("src")).toBe("blob:assistant-avatar");
+    expect(userImage()?.getAttribute("src")).toBe("blob:user-avatar");
+    await act(async () => assistantImage.dispatchEvent(new Event("error")));
+    expect(userImage()?.getAttribute("src")).toBe("blob:user-avatar");
+    expect(host.querySelector(".message-assistant-avatar img")).toBeNull();
+  } finally {
+    await act(async () => root.unmount()); host.remove(); makeUrl.mockRestore(); revoke.mockRestore();
+  }
+});
+
+it("shows the default user avatar when unset, removed, or unable to load", async () => {
+  const { host, root } = setup();
+  const fallback = () => host.querySelector('[aria-label="默认用户头像"]');
+  try {
+    await act(async () => root.render(<MessageList messages={messages} />));
+    expect(fallback()?.closest(".message-row-user")).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:custom" />));
+    expect(fallback()).toBeNull();
+    await act(async () => host.querySelector<HTMLImageElement>(".message-user-avatar")!.dispatchEvent(new Event("error")));
+    expect(fallback()).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:replacement" />));
+    expect(fallback()).toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} />));
+    expect(fallback()).not.toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 it("restores raw math and renders user, summary and streamed assistant consistently", async () => {
   const name = `MathMessages-${crypto.randomUUID()}`;

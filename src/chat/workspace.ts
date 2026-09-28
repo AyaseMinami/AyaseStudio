@@ -1,4 +1,5 @@
 import type { SessionConfig } from "./sessionConfig";
+import type { UserAvatar } from "../avatar/repository";
 
 export const DEFAULT_ASSISTANT_ID = "default";
 
@@ -6,6 +7,8 @@ export interface AssistantPreset {
   id: string;
   name: string;
   icon: string;
+  avatar?: UserAvatar;
+  defaultAvatar?: string;
   sortOrder: number;
   defaultModelId: string | null;
   defaultConfig: SessionConfig;
@@ -37,7 +40,7 @@ export interface WorkspaceSnapshot {
   selection: WorkspaceSelection;
 }
 
-export type AssistantInput = Pick<AssistantPreset, "name" | "icon" | "defaultModelId" | "defaultConfig">;
+export type AssistantInput = Pick<AssistantPreset, "name" | "icon" | "avatar" | "defaultAvatar" | "defaultModelId" | "defaultConfig">;
 
 // Commands express complete atomic user actions, including navigation repair.
 export type WorkspaceCommand =

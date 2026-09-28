@@ -1,6 +1,7 @@
 import { Info, Palette, Server, UserRound } from "lucide-react";
 import { AvatarSettings } from "./AvatarSettings";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
+import { AssistantAvatarDefaults } from "./AssistantAvatarDefaults";
 import { AboutSettings } from "./AboutSettings";
 import { WindowControls } from "../window/WindowControls";
 
@@ -94,7 +95,7 @@ export function SettingsWorkspace({
           ) : activeSection === "appearance" ? (
             <AppearanceSettings {...appearance} />
           ) : activeSection === "avatars" ? (
-            avatar && <AvatarSettings avatar={avatar} />
+            <>{avatar && <AvatarSettings avatar={avatar} />}<AssistantAvatarDefaults /></>
           ) : (
             <AboutSettings />
           )}

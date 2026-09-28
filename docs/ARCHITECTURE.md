@@ -1,10 +1,16 @@
 # Ayase Studio Architecture
 
+## Assistant avatars (#67)
+
+Each `AssistantPreset` may contain an `avatar` (original Blob, cropped 256×256 PNG, crop coordinates) and a `defaultAvatar` built-in ID. These optional, non-indexed fields use the existing assistant table without a schema migration. `ChatRepository` saves the full assistant atomically; cancel or a failed save retains the previous record, and deleting the assistant deletes its image in the same transaction. Assistant images belong directly to their assistant, without shared resource references or a second-database commit. Conversation configuration and provider requests never include these fields.
+
+`AssistantAvatarEditor` reuses the user crop dialog and holds changes in the editor draft until Save Assistant. Display object URLs are released on replacement/unmount; invalid images fall back to the saved built-in avatar, legacy Emoji, or system default. Sidebar and historical assistant messages resolve the current owner assistant, including after conversations move to the default assistant. The local preference `ayase-studio.assistant-default-avatar` is copied when opening a new assistant draft and never changes existing assistants. Old Emoji data remains readable; its selector is replaced with image controls and bundled vector defaults. No native file permissions, upload, sync, or provider protocol changes are introduced.
+
 ## Local user avatar (#32 / #34)
 
 `src/avatar/repository.ts` owns a separate IndexedDB database, `ayase-studio-avatars`, containing one `user` record with original Blob, 256×256 PNG thumbnail, and square crop coordinates/zoom. In the desktop app this lives in its WebView local profile, not in `backgrounds` or `attachments`. One atomic put replaces all three values; delete removes the whole record. No shared resource references or avatar library exist yet.
 
-`useUserAvatar` is owned by App, independently of chat/session state. UI receives an object URL for the thumbnail, never a message attachment. Settings locally decode PNG/JPEG/WebP (up to 20 MB), preview a square crop, and persist only after confirmation; recropping uses the retained original. Cancel and failed persistence retain the prior avatar. Loading failures fall back to no avatar and permit replacement/removal. Object URLs are revoked on replacement/unmount. CSP permits `blob:` only in `img-src`; no network or native filesystem permission is added. Avatars never enter model requests, telemetry, or logs.
+`useUserAvatar` is owned by App, independently of chat/session state. UI receives an object URL for the thumbnail, never a message attachment. Settings locally decode PNG/JPEG/WebP (up to 20 MB), preview a square crop, and persist only after confirmation; recropping uses the retained original. Cancel and failed persistence retain the prior avatar. Unset, removed, or failed user images display the bundled person icon in messages and the unset settings preview; user and assistant avatars coexist. Loading failures permit replacement/removal. Object URLs are revoked on replacement/unmount. CSP permits `blob:` only in `img-src`; no network or native filesystem permission is added. Avatars never enter model requests, telemetry, or logs.
 
 ## Latest-round versions and shortcuts (#17 / #50)
 

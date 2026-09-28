@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bot, ChevronLeft, ChevronRight, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
+import { AssistantAvatar } from "./AssistantAvatar";
 import { retryUser } from "../../chat/messageOperations";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 import type { RequestAttachment, SentAttachment } from "../../chat/attachments";
@@ -63,7 +64,8 @@ function ConfirmationDialog({ busy, disabled, error, onClose, onConfirm }: {
   </section></div>;
 }
 
-export function MessageList({ messages, userAvatarUrl, onReadAttachment, actions, actionsDisabled = false, actionError }: { messages: StoredChatMessage[];
+export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachment, actions, actionsDisabled = false, actionError }: { messages: StoredChatMessage[];
+  assistant?: import("../../chat/workspace").AssistantPreset;
   userAvatarUrl?: string;
   onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment>;
   actions?: MessageActions;
@@ -226,6 +228,7 @@ export function MessageList({ messages, userAvatarUrl, onReadAttachment, actions
           {copyFeedback[message.id] && <p className="message-copy-feedback" role="status">{copyFeedback[message.id]}</p>}
       </>;
       return <article key={message.id} className={message.role === "user" ? "message-row message-row-user" : "message-row"}>
+        {message.role === "assistant" && assistant && <AssistantAvatar className="message-assistant-avatar" avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} />}
         {message.role === "user" ? <div className="user-message-group">
           <div className="user-message markdown">{body}</div>
           {controls}
@@ -233,8 +236,9 @@ export function MessageList({ messages, userAvatarUrl, onReadAttachment, actions
           <div className="assistant-message markdown">{body}</div>
           {controls}
         </div>}
-        {message.role === "user" && userAvatarUrl && failedAvatarUrl !== userAvatarUrl && <img
-          className="message-user-avatar" src={userAvatarUrl} alt="用户头像" onError={() => setFailedAvatarUrl(userAvatarUrl)} />}
+        {message.role === "user" && (userAvatarUrl && failedAvatarUrl !== userAvatarUrl ? <img
+          className="message-user-avatar" src={userAvatarUrl} alt="用户头像" onError={() => setFailedAvatarUrl(userAvatarUrl)} />
+          : <span className="message-user-avatar message-avatar-fallback" role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>)}
       </article>;
     })}</div>}
   </div>
