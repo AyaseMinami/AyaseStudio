@@ -14,6 +14,32 @@ const messages: StoredChatMessage[] = [
   { id: "answer", role: "assistant", content: "Answer", status: "complete", replyToId: "user" },
 ];
 
+it("shows only the start prompt and current assistant avatar in an empty chat", async () => {
+  const { host, root } = setup();
+  const makeUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:empty-avatar");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const assistant = { id: "a", name: "A", icon: "", sortOrder: 0, defaultModelId: null, defaultConfig: defaultSessionConfig(), defaultAvatar: "blue" };
+  try {
+    await act(async () => root.render(<MessageList messages={[]} assistant={assistant} />));
+    expect(host.querySelector(".empty-state")?.textContent).toBe("发送消息以开始对话。");
+    expect(host.querySelector(".empty-state-avatar.assistant-avatar-blue")).not.toBeNull();
+    const avatar = { original: new Blob(["source"]), thumbnail: new Blob(["crop"]), crop: { x: .5, y: .5, zoom: 1 } };
+    await act(async () => root.render(<MessageList messages={[]} assistant={{ ...assistant, id: "b", avatar, defaultAvatar: "green" }} />));
+    const image = host.querySelector<HTMLImageElement>(".empty-state-avatar img")!;
+    expect(image.getAttribute("src")).toBe("blob:empty-avatar");
+    await act(async () => image.dispatchEvent(new Event("error")));
+    expect(host.querySelector(".empty-state-avatar img")).toBeNull();
+    expect(host.querySelector(".empty-state-avatar.assistant-avatar-green svg")).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={[]} />));
+    expect(host.querySelector(".empty-state-avatar.assistant-avatar-system svg")).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} assistant={assistant} />));
+    expect(host.querySelector(".empty-state")).toBeNull();
+    expect(host.querySelectorAll("article")).toHaveLength(2);
+  } finally {
+    await act(async () => root.unmount()); host.remove(); makeUrl.mockRestore(); revoke.mockRestore();
+  }
+});
+
 it("keeps the user avatar visible alongside assistant avatars and across assistant changes", async () => {
   const { host, root } = setup();
   const makeUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:assistant-avatar");

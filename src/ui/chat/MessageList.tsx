@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bot, ChevronLeft, ChevronRight, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
 import { AssistantAvatar } from "./AssistantAvatar";
@@ -145,8 +145,9 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
         followingRef.current = true;
       }
     }}><div className="message-list">
-    {messages.length === 0 ? <div className="empty-state"><div className="empty-state-mark"><Bot size={24} /></div>
-      <h2 className="text-lg font-medium">只保留聊天本身</h2><p className="muted-text mt-2 text-sm leading-6">配置一个协议后开始对话。没有 Agent、知识库或插件系统。</p>
+    {messages.length === 0 ? <div className="empty-state">
+      <AssistantAvatar className="empty-state-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} />
+      <p className="empty-state-prompt">发送消息以开始对话。</p>
     </div> : <div className="space-y-7">{messages.map((message, index) => {
       const isEditing = editing?.id === message.id;
       const retryTarget = retryUser(messages, message.id);

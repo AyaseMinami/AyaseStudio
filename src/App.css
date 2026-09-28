@@ -1678,8 +1678,7 @@ textarea:disabled {
   background: rgb(var(--color-assistant-bubble, var(--color-panel)) / var(--message-bubble-opacity));
 }
 
-:root[data-has-background="true"] .assistant-message,
-:root[data-has-background="true"] .empty-state {
+:root[data-has-background="true"] .assistant-message {
   border: 1px solid rgb(var(--color-border));
   border-radius: 0.9rem;
   background: rgb(var(--color-panel) / 0.94);
@@ -2027,17 +2026,27 @@ textarea:disabled {
   max-width: 28rem;
   margin: auto;
   text-align: center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-.empty-state-mark {
-  display: grid;
+.empty-state .empty-state-avatar {
   width: 3rem;
   height: 3rem;
-  margin: 0 auto 1.25rem;
-  place-items: center;
   border-radius: 1rem;
-  background: rgb(var(--color-elevated));
-  color: rgb(var(--color-accent-text));
+}
+
+.empty-state-avatar .assistant-avatar-legacy {
+  font-size: 30px;
+}
+
+.empty-state-prompt {
+  margin: 1.25rem 0 0;
+  color: rgb(var(--color-text) / 0.65);
+  font-size: var(--font-section);
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 .message-row {
