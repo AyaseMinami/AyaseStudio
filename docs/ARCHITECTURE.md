@@ -1,5 +1,11 @@
 # Ayase Studio Architecture
 
+## Input history (#64)
+
+`useConversationWorkspace` owns runtime-only input history within each conversation view: draft revision, caret selection, original draft, active candidate identity (message ID plus source text), and edited candidate copies. `inputHistory.ts` handles navigation and revision-guarded consumption against the current visible transcript; changed/deleted sources cannot overwrite modified unsent copies. Modified copies whose source disappeared remain temporary draft candidates, never persisted or restored to the transcript. Hidden round versions, assistants and attachment-only messages are not input history.
+
+`Composer` handles unmodified, non-IME arrow eligibility and measures first/last visual lines using a temporary typography/width-matched DOM mirror, independently of textarea scroll. It reports selection separately from text edits, restores requested selection without taking focus, and suppresses stale selection events during history navigation. History navigation increments the same draft revision used by the existing async send guard. A committed recalled message restores the original only if that revision still owns the input; the captured workspace closure targets the originating conversation even after navigation. No repository schema, provider protocol or native host changes.
+
 ## Local background library (#70)
 
 Original and thumbnail resolution use separate controller-lifetime caches keyed by immutable original reference, including in-flight reads. They hold asset URLs, not image bytes. Startup, application and restoration validate originals afresh; explicit preview retry bypasses the relevant cache. Cleanup evicts unretained references and destruction clears both caches.

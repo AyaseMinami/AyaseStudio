@@ -24,6 +24,38 @@ describe("workspace failure recovery", () => {
     await act(async () => root.render(<Probe />)); await wait(() => current.isReady);
   }
 
+  it("isolates history, edits, original drafts and delayed send consumption by conversation", async () => {
+    const repo = createChatRepository(`History-${crypto.randomUUID()}`);
+    await repo.initializeWorkspace(null, []);
+    await repo.save({ id: "current", updatedAt: 1, messages: [{ id: "a", role: "user", content: "A history", status: "complete" }] });
+    await repo.execute({ type: "create-conversation", id: "b", assistantId: "default" });
+    await repo.save({ id: "b", updatedAt: 1, messages: [{ id: "b", role: "user", content: "B history", status: "complete" }] });
+    await repo.execute({ type: "select", assistantId: "default", conversationId: "current" });
+    await mount(repo);
+    await act(async () => current.setDraft("A unsent"));
+    await act(async () => { expect(current.browseHistory(-1, { start: 2, end: 2 })).toBe(true); });
+    await act(async () => current.setDraft("A edited"));
+    const a = current;
+    await act(async () => { await current.execute({ type: "select", assistantId: "default", conversationId: "b" }); });
+    await act(async () => current.setDraft("B unsent"));
+    await act(async () => { current.browseHistory(-1, { start: 0, end: 0 }); });
+    expect(current.view.draft).toBe("B history");
+    await act(async () => a.clearDraftIfUnchanged(a.view.draftRevision));
+    expect(current.view.draft).toBe("B history");
+    await act(async () => { await current.execute({ type: "select", assistantId: "default", conversationId: "current" }); });
+    expect(current.view.draft).toBe("A unsent");
+    expect(current.view.draftSelection).toEqual({ start: 2, end: 2 });
+    await act(async () => { await current.execute({ type: "select", assistantId: "default", conversationId: "b" }); });
+    expect(current.view.draft).toBe("B history");
+    await act(async () => { current.browseHistory(1, { start: 9, end: 9 }); });
+    expect(current.view.draft).toBe("B unsent");
+    expect((await repo.load("current"))?.messages[0].content).toBe("A history");
+    await act(async () => root.unmount()); container.remove();
+    await mount(repo);
+    expect(current.view.draft).toBe("");
+    expect(current.view.inputHistory).toBeUndefined();
+  });
+
   it("does not repeat a committed create when loading its new transcript fails", async () => {
     const repo = createChatRepository(`Recovery-${crypto.randomUUID()}`); await mount(repo);
     vi.spyOn(repo, "load").mockRejectedValueOnce(new Error("temporary read failure"));

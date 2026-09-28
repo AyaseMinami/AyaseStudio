@@ -97,6 +97,41 @@ describe("parallel conversation generation", () => {
     vi.restoreAllMocks();
   });
 
+  it("does not overwrite a newly edited recalled draft when an originating send commits in the background", async () => {
+    const old: StoredChatMessage = { id: "old", role: "user", content: "historical question", status: "complete" };
+    await act(async () => {
+      session.workspace.setMessages([old]);
+      await session.workspace.store!.updateMessages([old]);
+      session.setDraft("original unsent");
+    });
+    await act(async () => { session.workspace.browseHistory(-1, { start: 3, end: 3 }); });
+    let release!: () => void;
+    let blocked = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const update = SessionStore.prototype.updateMessages;
+    vi.spyOn(SessionStore.prototype, "updateMessages").mockImplementation(async function(this: SessionStore, messages) {
+      if (this.id === "current" && messages.length === 3 && !blocked) { blocked = true; await gate; }
+      return update.call(this, messages);
+    });
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream() { yield { type: "completed", finishReason: "stop" }; } } satisfies ChatTransport);
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => blocked);
+    await act(async () => session.setDraft("new edit during preparation"));
+    await select("other");
+    await act(async () => session.setDraft("other draft"));
+    await act(async () => { release(); await sending; });
+    expect(session.draft).toBe("other draft");
+    await select("current");
+    expect(session.draft).toBe("new edit during preparation");
+    await act(async () => { session.workspace.browseHistory(1, { start: 27, end: 27 }); });
+    // The newly committed message is newer than the recalled source; one more Down reaches the original.
+    await act(async () => { session.workspace.browseHistory(1, { start: session.draft.length, end: session.draft.length }); });
+    expect(session.draft).toBe("original unsent");
+    expect((await repo.load("current"))?.messages.filter(item => item.role === "user").map(item => item.content))
+      .toEqual(["historical question", "historical question"]);
+  });
+
   it("streams two conversations independently and keeps only its own task locked while its final save is pending", async () => {
     const requests: ControlledRequest[] = [];
     runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));

@@ -57,6 +57,9 @@ function App() {
           key={chat.workspace.conversation?.id ?? "loading"}
           title={chat.workspace.conversation?.title ?? "新对话"}
           draft={chat.draft}
+          draftSelection={chat.workspace.view.draftSelection}
+          onDraftSelectionChange={chat.workspace.setDraftSelection}
+          onBrowseHistory={chat.workspace.browseHistory}
           draftAttachments={chat.draftAttachments}
           attachmentBusy={chat.attachmentBusy}
           contextPlan={chat.contextPlan}

@@ -6,6 +6,7 @@ import type { ChatProtocol } from "../../chat/types";
 import type { StoredChatMessage } from "../../chat/repository";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
+import type { DraftSelection } from "../../chat/inputHistory";
 import { ModelSelector } from "./ModelSelector";
 import type { ModelPickerProps } from "./ModelPicker";
 import { MessageList, type MessageActions } from "./MessageList";
@@ -27,6 +28,9 @@ export interface ChatWorkspaceProps {
   onThinkingChange?(value: ThinkingSettings): void;
   title: string;
   draft: string;
+  draftSelection?: DraftSelection;
+  onDraftSelectionChange?(selection: DraftSelection): void;
+  onBrowseHistory?(direction: -1 | 1, selection: DraftSelection): boolean;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;
   contextPlan?: ContextSummary;
@@ -63,6 +67,9 @@ export function ChatWorkspace({
   onThinkingChange,
   title,
   draft,
+  draftSelection,
+  onDraftSelectionChange,
+  onBrowseHistory,
   draftAttachments,
   attachmentBusy,
   contextPlan,
@@ -144,6 +151,9 @@ export function ChatWorkspace({
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
           disabled={!isHydrated} scope="当前会话" hint="当前会话 · 自动保存，下次请求生效" onChange={onThinkingChange} /> : undefined}
         draft={draft}
+        draftSelection={draftSelection}
+        onDraftSelectionChange={onDraftSelectionChange}
+        onBrowseHistory={onBrowseHistory}
         draftAttachments={draftAttachments}
         attachmentBusy={attachmentBusy}
         attachmentBlockReason={draftAttachments ? attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) : undefined}

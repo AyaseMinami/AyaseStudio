@@ -5,12 +5,11 @@ import type { StoredChatMessage, WorkspaceRepository } from "./repository";
 import type { ConfigErrors } from "./sessionConfig";
 import type { DraftAttachment } from "./attachments";
 import { SessionStore } from "./sessionStore";
+import { browseInputHistory, consumeInputDraft, type InputDraft, type DraftSelection } from "./inputHistory";
 import { selectedConversation, type WorkspaceCommand, type WorkspaceSnapshot } from "./workspace";
 
-interface ConversationView {
+interface ConversationView extends InputDraft {
   messages: StoredChatMessage[];
-  draft: string;
-  draftRevision: number;
   draftAttachments: DraftAttachment[];
   attachmentBusy: boolean;
   error?: string;
@@ -19,7 +18,7 @@ interface ConversationView {
 }
 
 function emptyView(): ConversationView {
-  return { messages: [], draft: "", draftRevision: 0, draftAttachments: [], attachmentBusy: false, configErrors: {} };
+  return { messages: [], draft: "", draftRevision: 0, draftSelection: { start: 0, end: 0 }, draftAttachments: [], attachmentBusy: false, configErrors: {} };
 }
 
 export function useConversationWorkspace(repository: WorkspaceRepository, legacyModelId: string | null,
@@ -197,8 +196,27 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
       changed();
     },
     clearDraftIfUnchanged: (revision: number) => {
-      if (!id || views.current.get(id)?.draftRevision !== revision) return;
-      setField("draft", "");
+      if (!id) return;
+      const current = views.current.get(id);
+      if (!current || current.draftRevision !== revision) return;
+      views.current.set(id, { ...current, ...consumeInputDraft(current, revision) });
+      changed();
+    },
+    setDraftSelection: (selection: DraftSelection) => {
+      if (!id) return;
+      const current = views.current.get(id);
+      if (!current || (current.draftSelection.start === selection.start && current.draftSelection.end === selection.end)) return;
+      // Selection is remembered for remount/navigation, without rerendering on every caret move.
+      views.current.set(id, { ...current, draftSelection: { ...selection } });
+    },
+    browseHistory: (direction: -1 | 1, selection: DraftSelection): boolean => {
+      if (!id || pending.current || !snapshotRef.current || selectedConversation(snapshotRef.current)?.id !== id) return false;
+      const current = views.current.get(id);
+      if (!current) return false;
+      const next = browseInputHistory(current, current.messages, direction, selection);
+      if (!next) return false;
+      if (next !== current) { views.current.set(id, { ...current, ...next }); changed(); }
+      return true;
     },
     setDraftAttachments: (value: SetStateAction<DraftAttachment[]>) => setField("draftAttachments", value),
     setAttachmentBusy: (value: boolean) => setField("attachmentBusy", value),

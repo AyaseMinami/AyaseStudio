@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { FileImage, FileText, Paperclip, Send, Square, X } from "lucide-react";
 import { attachmentAccept, materializeDraftAttachment, type DraftAttachment } from "../../chat/attachments";
 import type { ChatProtocol } from "../../chat/types";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
+import { isTextareaVisualBoundary, type TextareaCaretAffinity } from "./textareaVisualLine";
 
 function DraftImagePreview({ item, opener, onClose }: {
   item: DraftAttachment; opener: HTMLElement; onClose(): void;
@@ -18,6 +19,9 @@ export interface ComposerProps {
   searchControl?: ReactNode;
   modelControl?: ReactNode;
   draft: string;
+  draftSelection?: { start: number; end: number };
+  onDraftSelectionChange?(selection: { start: number; end: number }): void;
+  onBrowseHistory?(direction: -1 | 1, selection: { start: number; end: number }): boolean;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;
   attachmentBlockReason?: string;
@@ -37,6 +41,9 @@ export function Composer({
   searchControl,
   modelControl,
   draft,
+  draftSelection,
+  onDraftSelectionChange,
+  onBrowseHistory,
   draftAttachments = [],
   attachmentBusy,
   attachmentBlockReason,
@@ -50,6 +57,16 @@ export function Composer({
   onStop,
 }: ComposerProps) {
   const picker = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const historySelectionPending = useRef(false);
+  const caretAffinity = useRef<TextareaCaretAffinity | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (input.current && draftSelection && (input.current.selectionStart !== draftSelection.start ||
+      input.current.selectionEnd !== draftSelection.end)) {
+      input.current.setSelectionRange(draftSelection.start, draftSelection.end);
+    }
+  }, [draft, draftSelection]);
+  useLayoutEffect(() => { historySelectionPending.current = false; });
   const pasteSequence = useRef({ stamp: "", count: 0 });
   const [preview, setPreview] = useState<{ id: string; opener: HTMLElement }>();
   const previewItem = preview && draftAttachments.find((item) => item.id === preview.id);
@@ -57,7 +74,22 @@ export function Composer({
   const canSend = !isGenerating && isHydrated && !attachmentBusy && !attachmentBlockReason &&
     (!!draft.trim() || draftAttachments.length > 0);
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    historySelectionPending.current = false;
     if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat || event.altKey) return;
+    if ((event.key === "ArrowUp" || event.key === "ArrowDown") && isHydrated &&
+      !event.shiftKey && !event.ctrlKey && !event.metaKey && onBrowseHistory) {
+      const textarea = event.currentTarget;
+      const direction = event.key === "ArrowUp" ? -1 : 1;
+      if (textarea.selectionStart === textarea.selectionEnd &&
+        isTextareaVisualBoundary(textarea, direction, caretAffinity.current) && onBrowseHistory(direction, {
+        start: textarea.selectionStart, end: textarea.selectionEnd,
+      })) {
+        // React can emit onSelect for the old value during this same key dispatch.
+        historySelectionPending.current = true;
+        event.preventDefault();
+      }
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.metaKey) {
       event.preventDefault();
       if (canSend) onSend();
@@ -93,10 +125,31 @@ export function Composer({
             </span>)}
           </div>}
           <textarea
+            ref={input}
             className="composer-input"
             value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
+            onChange={(event) => {
+              historySelectionPending.current = false;
+              caretAffinity.current = (event.nativeEvent as InputEvent).inputType?.startsWith("insert") ? "upstream" : undefined;
+              onDraftChange(event.target.value);
+              onDraftSelectionChange?.({
+                start: event.target.selectionStart, end: event.target.selectionEnd,
+              });
+            }}
             onKeyDown={handleKeyDown}
+            onKeyUp={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              if (event.key === "End" || event.key === "ArrowRight") caretAffinity.current = "upstream";
+              else if (event.key === "Home" || event.key === "ArrowLeft") caretAffinity.current = "downstream";
+              else if (event.key === "ArrowUp" || event.key === "ArrowDown") caretAffinity.current = undefined;
+            }}
+            onPointerDown={() => { historySelectionPending.current = false; caretAffinity.current = undefined; }}
+            onFocus={() => { historySelectionPending.current = false; caretAffinity.current = undefined; }}
+            onSelect={(event) => {
+              if (!historySelectionPending.current) onDraftSelectionChange?.({
+                start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd,
+              });
+            }}
             onPaste={(event) => {
               const images = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
               if (!images.length) return;
@@ -118,7 +171,8 @@ export function Composer({
                 return new File([image], name, { type: image.type, lastModified: image.lastModified });
               }));
             }}
-            placeholder="输入消息，Enter / Ctrl+Enter 发送，Shift+Enter 换行"
+            placeholder={`输入消息，Enter / Ctrl+Enter 发送，Shift+Enter 换行${onBrowseHistory ? "；首行 ↑ / 末行 ↓ 浏览历史" : ""}`}
+            title={onBrowseHistory ? "首行按 ↑ 浏览历史输入，末行按 ↓ 返回较新输入或草稿" : undefined}
             disabled={!isHydrated}
           />
           {attachmentBusy && <p className="attachment-loading" role="status">正在读取附件，完成后才能发送…</p>}
