@@ -1,4 +1,6 @@
-import { Info, Palette, Server } from "lucide-react";
+import { Info, Palette, Server, UserRound } from "lucide-react";
+import { AvatarSettings } from "./AvatarSettings";
+import type { UserAvatarState } from "../../avatar/useUserAvatar";
 import { AboutSettings } from "./AboutSettings";
 import { WindowControls } from "../window/WindowControls";
 
@@ -11,11 +13,12 @@ import {
   type ConnectionSettingsProps,
 } from "./ConnectionSettings";
 
-export type SettingsSection = "connections" | "appearance" | "about";
+export type SettingsSection = "connections" | "appearance" | "avatars" | "about";
 
 export interface SettingsWorkspaceProps {
   activeSection: SettingsSection;
   appearance: AppearanceSettingsProps;
+  avatar?: UserAvatarState;
   connection: ConnectionSettingsProps;
   onSectionChange(section: SettingsSection): void;
 }
@@ -23,6 +26,7 @@ export interface SettingsWorkspaceProps {
 export function SettingsWorkspace({
   activeSection,
   appearance,
+  avatar,
   connection,
   onSectionChange,
 }: SettingsWorkspaceProps) {
@@ -31,7 +35,7 @@ export function SettingsWorkspace({
       <header className="settings-header" data-tauri-drag-region>
         <div data-tauri-drag-region>
           <h1 data-tauri-drag-region>设置</h1>
-          <p className="muted-text" data-tauri-drag-region>管理连接、外观与应用信息</p>
+          <p className="muted-text" data-tauri-drag-region>管理连接、外观、头像与应用信息</p>
         </div>
         <WindowControls />
       </header>
@@ -64,6 +68,12 @@ export function SettingsWorkspace({
               <small>主题与显示偏好</small>
             </span>
           </button>
+          <button className="settings-navigation-button" aria-label="头像"
+            aria-current={activeSection === "avatars" ? "page" : undefined}
+            onClick={() => onSectionChange("avatars")} type="button">
+            <UserRound size={18} />
+            <span><strong>头像</strong><small>用户头像与裁切</small></span>
+          </button>
           <button className="settings-navigation-button" aria-label="关于"
             aria-current={activeSection === "about" ? "page" : undefined}
             onClick={() => onSectionChange("about")} type="button">
@@ -83,6 +93,8 @@ export function SettingsWorkspace({
             <ConnectionSettings {...connection} />
           ) : activeSection === "appearance" ? (
             <AppearanceSettings {...appearance} />
+          ) : activeSection === "avatars" ? (
+            avatar && <AvatarSettings avatar={avatar} />
           ) : (
             <AboutSettings />
           )}

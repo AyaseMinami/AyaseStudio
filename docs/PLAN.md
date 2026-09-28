@@ -1,5 +1,11 @@
 # Ayase Studio v0.1 Plan
 
+## User avatar #32 / #34 (2026-09-28)
+
+本地实现独立头像设置页、全局用户消息头像、正方形缩放/位置裁切、保留原图重裁、更换及移除。原图/裁切参数/缩略图原子保存于独立本地 IndexedDB，不进入模型请求；无法读取时回退原有无头像样式。仅用户消息行容纳 32px 头像，助手宽度不变。
+
+这是 Epic #68 的首个限定范围实现；助手头像及共享头像/背景库留待后续。定向自动验证和内置浏览器验收完成，主观视觉及原生选图/桌面重启验收待用户确认。远端 Issue 未更新或关闭。
+
 ## Goal
 
 Build a fast, local-first desktop chat client with a deliberately small feature set. Ayase Studio is a new implementation, not a Cherry Studio fork.

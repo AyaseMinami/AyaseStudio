@@ -1,5 +1,11 @@
 # Ayase Studio Architecture
 
+## Local user avatar (#32 / #34)
+
+`src/avatar/repository.ts` owns a separate IndexedDB database, `ayase-studio-avatars`, containing one `user` record with original Blob, 256×256 PNG thumbnail, and square crop coordinates/zoom. In the desktop app this lives in its WebView local profile, not in `backgrounds` or `attachments`. One atomic put replaces all three values; delete removes the whole record. No shared resource references or avatar library exist yet.
+
+`useUserAvatar` is owned by App, independently of chat/session state. UI receives an object URL for the thumbnail, never a message attachment. Settings locally decode PNG/JPEG/WebP (up to 20 MB), preview a square crop, and persist only after confirmation; recropping uses the retained original. Cancel and failed persistence retain the prior avatar. Loading failures fall back to no avatar and permit replacement/removal. Object URLs are revoked on replacement/unmount. CSP permits `blob:` only in `img-src`; no network or native filesystem permission is added. Avatars never enter model requests, telemetry, or logs.
+
 ## Latest-round versions and shortcuts (#17 / #50)
 
 2026-09-27 用户将历史需求收窄为仅保存最新一轮的问答候选。`roundVersions.ts` 管理最后一组 user/assistant 的候选和选择；可选 `StoredChatMessage.roundVersions` 只放在该轮用户消息上，候选不递归包含版本元数据。可见消息是当前版本的权威内容，离开当前版本或新增候选前更新其槽位。旧记录无该字段仍按单版本读取，不新增表或索引。

@@ -63,7 +63,8 @@ function ConfirmationDialog({ busy, disabled, error, onClose, onConfirm }: {
   </section></div>;
 }
 
-export function MessageList({ messages, onReadAttachment, actions, actionsDisabled = false, actionError }: { messages: StoredChatMessage[];
+export function MessageList({ messages, userAvatarUrl, onReadAttachment, actions, actionsDisabled = false, actionError }: { messages: StoredChatMessage[];
+  userAvatarUrl?: string;
   onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment>;
   actions?: MessageActions;
   actionsDisabled?: boolean;
@@ -80,6 +81,7 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
   const pageFocus = useRef<string | undefined>(undefined);
   const [copyFeedback, setCopyFeedback] = useState<Record<string, string>>({});
   const [copyingId, setCopyingId] = useState<string>();
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string>();
 
   useLayoutEffect(() => {
     const region = scrollRegionRef.current!;
@@ -231,6 +233,8 @@ export function MessageList({ messages, onReadAttachment, actions, actionsDisabl
           <div className="assistant-message markdown">{body}</div>
           {controls}
         </div>}
+        {message.role === "user" && userAvatarUrl && failedAvatarUrl !== userAvatarUrl && <img
+          className="message-user-avatar" src={userAvatarUrl} alt="用户头像" onError={() => setFailedAvatarUrl(userAvatarUrl)} />}
       </article>;
     })}</div>}
   </div>

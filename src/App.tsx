@@ -1,6 +1,7 @@
 import "./App.css";
 
 import { useState } from "react";
+import { useUserAvatar } from "./avatar/useUserAvatar";
 
 import { useAppearance } from "./appearance/useAppearance";
 import { BackgroundFocusDialog } from "./ui/settings/BackgroundFocusDialog";
@@ -22,6 +23,7 @@ function App() {
   const [activeSettingsSection, setActiveSettingsSection] =
     useState<SettingsSection>("connections");
   const appearance = useAppearance();
+  const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
   const chat = useChatSession({
     onConfigurationRequired: () => {
@@ -47,6 +49,7 @@ function App() {
             isGenerating={chat.isGenerating}
             onClear={chat.clearConversation} />}>
         <ChatWorkspace hideHeader
+          userAvatarUrl={avatar.url}
           layout={chatLayout.layout}
           onToggleLayout={chatLayout.toggleLayout}
           key={chat.workspace.conversation?.id ?? "loading"}
@@ -84,6 +87,7 @@ function App() {
         </ConversationNavigation>
       ) : (
         <SettingsWorkspace
+          avatar={avatar}
           activeSection={activeSettingsSection}
           appearance={{
             themeMode: appearance.themeMode,

@@ -15,6 +15,7 @@ import { Globe } from "lucide-react";
 import type { ChatLayout } from "./useChatLayout";
 
 export interface ChatWorkspaceProps {
+  userAvatarUrl?: string;
   hideHeader?: boolean;
   layout?: ChatLayout;
   onToggleLayout?(): void;
@@ -49,6 +50,7 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  userAvatarUrl,
   hideHeader = false,
   layout = "narrow",
   onToggleLayout,
@@ -118,7 +120,7 @@ export function ChatWorkspace({
           {contextPlan.inputTokens} Token（估算，{contextPlan.countingLabel}）。原始记录未修改。
         </div>
       )}
-      <MessageList messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
+      <MessageList userAvatarUrl={userAvatarUrl} messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
         actionsDisabled={messageActionsDisabled} actionError={messageActionError} />
       {draftAttachments && (attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
         attachmentCapabilityNotice(modelId ?? "", draftAttachments)) &&
