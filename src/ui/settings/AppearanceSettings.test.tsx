@@ -27,7 +27,10 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     onAssistantBubbleColorChange: vi.fn(), onAssistantBubbleTransparencyChange: vi.fn(), onEditBackgroundFocus: vi.fn(),
     onUnifiedTransparencyChange: vi.fn(), onSidebarTransparencyChange: vi.fn(), onComposerTransparencyChange: vi.fn(),
     onBackgroundFitChange: vi.fn(), onBackgroundMaskChange: vi.fn(), onBackgroundBlurChange: vi.fn(),
-    onSelectBackground: vi.fn(), onRemoveBackground: vi.fn(), onResetCustomAppearance: vi.fn(),
+    onPrepareLibraryBackground: vi.fn().mockResolvedValue(null), onSaveLibraryBackground: vi.fn(),
+    onDiscardLibraryBackground: vi.fn().mockResolvedValue(undefined), onResolveLibraryBackground: vi.fn().mockResolvedValue({ reference: "backgrounds/example.webp", url: "asset://localhost/example.webp" }),
+    onApplyLibraryBackground: vi.fn().mockResolvedValue(undefined), onRemoveLibraryBackgrounds: vi.fn().mockResolvedValue(undefined),
+    onRestoreBackground: vi.fn().mockResolvedValue(undefined), onRemoveBackground: vi.fn(), onResetCustomAppearance: vi.fn(),
   };
   const props: AppearanceSettingsProps = {
     unifiedThemeColor: null, effectiveUserBubbleColor: "#d2e3f7",
@@ -36,6 +39,7 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     assistantBubbleColor: "#123456", unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0,
     assistantBubbleTransparency: 6, effectiveAccentColor: "#6d28d9", effectiveCanvasColor: "#fafaf9",
     backgroundReference: "backgrounds/example.webp", backgroundUrl: "asset://localhost/example.webp", backgroundFocus: null, backgroundFit: "cover",
+    backgroundLibrary: [], backgroundEnabled: true, backgroundName: "example.webp",
     backgroundMask: 65, backgroundBlur: 0, backgroundBusy: false, backgroundError: null, readabilityWarnings: [],
     ...handlers, ...overrides,
   };
@@ -49,6 +53,15 @@ function changeRange(input: HTMLInputElement, value: string) {
 }
 
 describe("AppearanceSettings", () => {
+  it("retains the current thumbnail and parameter controls when disabled and explicitly reenables", async () => {
+    const { handlers } = await render({ backgroundEnabled: false, backgroundUrl: null });
+    expect(host!.querySelector<HTMLImageElement>('[alt="当前背景缩略图"]')?.src).toBe("asset://localhost/example.webp");
+    expect(host!.textContent).toContain("已停用，图片和参数已保留");
+    expect(host!.querySelector<HTMLInputElement>('[aria-label="背景遮罩强度"]')!.disabled).toBe(false);
+    await act(async () => [...host!.querySelectorAll("button")].find((button) => button.textContent === "重新启用背景")!.click());
+    expect(handlers.onRestoreBackground).toHaveBeenCalledOnce();
+    expect(handlers.onRemoveBackground).not.toHaveBeenCalled();
+  });
   it("rescales the fixed 1080p canvas when its preview container changes size", async () => {
     let notify: (() => void) | undefined;
     const disconnect = vi.fn();

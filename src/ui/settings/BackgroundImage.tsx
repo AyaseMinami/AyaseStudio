@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { backgroundViewport, centerBackgroundFocus, normalizeBackgroundFocus, type BackgroundFocus } from "../../appearance/backgroundFocus";
 import "./backgroundFocus.css";
@@ -9,6 +9,7 @@ export interface BackgroundImageProps {
   fit: "cover" | "contain";
   className?: string;
   aspectRatio?: number;
+  onError?(): void;
 }
 
 interface ImageDimensions { url: string; width: number; height: number; }
@@ -30,7 +31,9 @@ export function useViewportAspectRatio(): number {
   return ratio;
 }
 
-export function BackgroundImage({ url, focus, fit, className, aspectRatio }: BackgroundImageProps) {
+export function BackgroundImage({ url, focus, fit, className, aspectRatio, onError }: BackgroundImageProps) {
+  const failure = useRef(onError);
+  failure.current = onError;
   const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
   const clipId = useId().replace(/:/g, "");
   const viewportRatio = useViewportAspectRatio();
@@ -39,7 +42,7 @@ export function BackgroundImage({ url, focus, fit, className, aspectRatio }: Bac
     if (!url) { setDimensions(null); return; }
     const image = new Image();
     image.onload = () => setDimensions({ url, width: image.naturalWidth, height: image.naturalHeight });
-    image.onerror = () => setDimensions(null);
+    image.onerror = () => { setDimensions(null); failure.current?.(); };
     image.src = url;
     return () => { image.onload = null; image.onerror = null; };
   }, [url]);

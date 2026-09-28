@@ -49,6 +49,9 @@ const sharedProps = {
     effectiveAccentColor: "#6d28d9",
     effectiveCanvasColor: "#fafaf9",
     backgroundReference: null,
+    backgroundLibrary: [],
+    backgroundEnabled: false,
+    backgroundName: null,
     backgroundUrl: null,
     backgroundFocus: null,
     backgroundFit: "cover" as const,
@@ -69,7 +72,13 @@ const sharedProps = {
     onBackgroundFitChange: () => undefined,
     onBackgroundMaskChange: () => undefined,
     onBackgroundBlurChange: () => undefined,
-    onSelectBackground: () => undefined,
+    onPrepareLibraryBackground: async () => null,
+    onSaveLibraryBackground: async () => { throw new Error("not used"); },
+    onDiscardLibraryBackground: async () => undefined,
+    onResolveLibraryBackground: async () => { throw new Error("not used"); },
+    onApplyLibraryBackground: async () => undefined,
+    onRemoveLibraryBackgrounds: async () => undefined,
+    onRestoreBackground: async () => undefined,
     onRemoveBackground: () => undefined,
     onResetCustomAppearance: () => undefined,
   },
@@ -151,7 +160,7 @@ describe("SettingsWorkspace", () => {
     expect(html).toContain("跟随系统");
     expect(html).toContain("自定义配色");
     expect(html).toContain('type="color"');
-    expect(html).toContain("选择本地图片");
+    expect(html).toContain("选择背景");
     expect(html).toContain("填充");
     expect(html).toContain("适应");
     expect(html).toContain("遮罩强度");
@@ -160,7 +169,7 @@ describe("SettingsWorkspace", () => {
     expect(html).not.toContain("API Key");
   });
 
-  it("shows replacement and removal controls for an imported background", () => {
+  it("shows library selection and disable controls for an applied background", () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace
         {...sharedProps}
@@ -169,6 +178,8 @@ describe("SettingsWorkspace", () => {
           ...sharedProps.appearance,
           backgroundReference:
             "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp",
+          backgroundEnabled: true,
+          backgroundUrl: "asset://localhost/private/background.webp",
           backgroundFit: "contain",
           backgroundMask: 52,
           backgroundBlur: 8,
@@ -177,8 +188,8 @@ describe("SettingsWorkspace", () => {
     );
 
     expect(html).toContain("本地背景已应用");
-    expect(html).toContain("替换本地图片");
-    expect(html).toContain("移除背景");
+    expect(html).toContain("选择背景");
+    expect(html).toContain("停用背景");
     expect(html).toContain("52%");
     expect(html).toContain("8px");
     expect(html).toMatch(/<option value="contain" selected=""/);

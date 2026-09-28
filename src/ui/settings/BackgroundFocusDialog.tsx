@@ -7,19 +7,33 @@ interface BackgroundFocusDialogProps {
   url: string;
   focus: BackgroundFocus | null;
   fit: "cover" | "contain";
+  error?: string | null;
+  confirmLabel?: string;
   onConfirm(focus: BackgroundFocus): void;
   onCancel(): void;
 }
 
-export function BackgroundFocusDialog({ url, focus, fit, onConfirm, onCancel }: BackgroundFocusDialogProps) {
+export function BackgroundFocusDialog(props: BackgroundFocusDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef(props.onCancel);
+  cancelRef.current = props.onCancel;
+  useEffect(() => {
+    const node = dialog.current!;
+    const previous = document.activeElement as HTMLElement | null;
+    node.showModal();
+    const cancel = (event: Event) => { event.preventDefault(); cancelRef.current(); };
+    node.addEventListener("cancel", cancel);
+    return () => { node.removeEventListener("cancel", cancel); if (node.open) node.close(); previous?.focus(); };
+  }, []);
+  return <dialog ref={dialog} className="background-crop-dialog" aria-labelledby="background-focus-title"><BackgroundFocusEditor {...props} /></dialog>;
+}
+
+export function BackgroundFocusEditor({ url, focus, fit, error, confirmLabel = "应用取景", onConfirm, onCancel }: BackgroundFocusDialogProps) {
   const stage = useRef<SVGSVGElement>(null);
-  const cancelRef = useRef(onCancel);
   const drag = useRef<{ x: number; y: number; focus: BackgroundFocus; bounds: { x: number; y: number; width: number; height: number } } | null>(null);
   const [draft, setDraft] = useState(() => normalizeBackgroundFocus(focus) ?? { ...centerBackgroundFocus });
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const viewportRatio = useViewportAspectRatio();
-  cancelRef.current = onCancel;
 
   useEffect(() => {
     const image = new Image();
@@ -27,15 +41,6 @@ export function BackgroundFocusDialog({ url, focus, fit, onConfirm, onCancel }: 
     image.src = url;
     return () => { image.onload = null; };
   }, [url]);
-
-  useEffect(() => {
-    const node = dialog.current;
-    if (!node) return;
-    node.showModal();
-    const cancel = (event: Event) => { event.preventDefault(); cancelRef.current(); };
-    node.addEventListener("cancel", cancel);
-    return () => { node.removeEventListener("cancel", cancel); if (node.open) node.close(); };
-  }, []);
 
   function setFocus(x: number, y: number) {
     setDraft((current) => ({ ...current, x, y }));
@@ -71,7 +76,7 @@ export function BackgroundFocusDialog({ url, focus, fit, onConfirm, onCancel }: 
   } : null;
   function finishDrag() { drag.current = null; setDraft((current) => ({ ...current })); }
 
-  return <dialog ref={dialog} className="background-crop-dialog" aria-labelledby="background-focus-title">
+  return <div className="background-focus-content">
     <div className="background-crop-scroll">
       <header><div><h2 id="background-focus-title">背景中心取景</h2><p>拖动 16:9 参考框选择中心，缩放图片调整范围。允许超出图片边缘；实际背景随窗口比例显示。</p></div><button autoFocus className="settings-button" type="button" onClick={onCancel}>取消</button></header>
       <div className="background-crop-stage-wrap">
@@ -84,11 +89,12 @@ export function BackgroundFocusDialog({ url, focus, fit, onConfirm, onCancel }: 
           <circle cx={draft.x * size.width} cy={draft.y * size.height} r={editorBounds.width * 0.009} fill="rgb(var(--color-accent))" stroke="white" strokeWidth="2" vectorEffect="non-scaling-stroke" pointerEvents="none" />
         </svg>}
       </div>
-      <label className="background-crop-zoom">图片缩放 <input aria-label="图片缩放" type="range" min="25" max="400" step="1" value={Math.round((draft.zoom ?? 1) * 100)} onChange={(event) => setDraft((current) => ({ ...current, zoom: Number(event.currentTarget.value) / 100 }))} /><output>{Math.round((draft.zoom ?? 1) * 100)}%</output></label>
+      <label className="background-crop-zoom">图片缩放 <input aria-label="图片缩放" type="range" min="25" max="400" step="1" value={Math.round((draft.zoom ?? 1) * 100)} onChange={(event) => { const zoom = Number(event.currentTarget.value) / 100; setDraft((current) => ({ ...current, zoom })); }} /><output>{Math.round((draft.zoom ?? 1) * 100)}%</output></label>
       <fieldset className="background-crop-fields"><legend>取景中心</legend>{([['x', '横向位置'], ['y', '纵向位置']] as const).map(([field, label]) => <label key={field}>{label}<input aria-label={label} type="number" step="1" value={Number((draft[field] * 100).toFixed(1))} onChange={(event) => { const value = event.currentTarget.valueAsNumber / 100; if (Number.isFinite(value)) setFocus(field === 'x' ? value : draft.x, field === 'y' ? value : draft.y); }} />%</label>)}</fieldset>
       <section className="background-crop-preview" aria-label="当前窗口取景预览" style={{ aspectRatio: viewportRatio }}><div className="appearance-background-art"><BackgroundImage url={url} focus={draft} fit={fit} /></div><span className="background-crop-preview-mask" /><strong>当前窗口效果</strong></section>
       <p className="field-hint">填充和适应决定基础图片大小，缩放与中心偏移在此基础上生效。超出原图的区域显示画布底色，不会自动吸附或限制在边缘内。</p>
+      {error && <p className="notice notice-warning" role="alert">{error}</p>}
     </div>
-    <footer><button className="settings-button" type="button" onClick={() => setDraft({ ...centerBackgroundFocus })}>恢复居中</button><span /><button className="settings-button" type="button" onClick={onCancel}>取消</button><button className="settings-button settings-button-primary" type="button" disabled={!size} onClick={() => onConfirm(draft)}>应用取景</button></footer>
-  </dialog>;
+    <footer><button className="settings-button" type="button" onClick={() => setDraft({ ...centerBackgroundFocus })}>恢复居中</button><span /><button className="settings-button" type="button" onClick={onCancel}>取消</button><button className="settings-button settings-button-primary" type="button" disabled={!size} onClick={() => onConfirm(draft)}>{confirmLabel}</button></footer>
+  </div>;
 }

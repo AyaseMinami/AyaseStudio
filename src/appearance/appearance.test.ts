@@ -14,6 +14,9 @@ import {
 } from "./appearance";
 
 const expectedDefaultPreferences = {
+  backgroundLibrary: [],
+  backgroundEnabled: true,
+  backgroundName: null,
   userBubbleColor: null,
   unifiedThemeColor: null,
   colorPreset: "default" as const,
@@ -326,6 +329,7 @@ describe("appearance preferences", () => {
 
     expect(loadAppearancePreferences(validStorage)).toEqual({
       ...expectedDefaultPreferences,
+      backgroundLibrary: [{ id: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp", reference: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp", name: "原有背景", fit: "contain", mask: 48, blur: 12, focus: null }],
       themeMode: "system",
       accentColor: "#a855f7",
       userBubbleColor: "#a855f7",
@@ -564,7 +568,7 @@ describe("appearance controller", () => {
     expect(cleanupCalls).toEqual([[previousReference], [nextReference]]);
   });
 
-  it("removes only the managed background reference and cleans private copies", async () => {
+  it("disables the background while retaining the managed reference for restoration", async () => {
     const harness = createThemeHarness(false);
     const reference =
       "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png";
@@ -599,13 +603,14 @@ describe("appearance controller", () => {
     await controller.removeBackground();
 
     expect(controller.getSnapshot()).toMatchObject({
-      backgroundReference: null,
+      backgroundReference: reference,
+      backgroundEnabled: false,
       backgroundUrl: null,
       backgroundStatus: "none",
       backgroundBusy: false,
     });
-    expect(JSON.parse(saved).backgroundReference).toBeNull();
-    expect(cleanupCalls).toEqual([[reference], []]);
+    expect(JSON.parse(saved).backgroundReference).toBe(reference);
+    expect(cleanupCalls).toEqual([[reference]]);
     expect(harness.attributes.has("data-has-background")).toBe(false);
   });
 
@@ -690,6 +695,8 @@ describe("appearance controller", () => {
 
     expect(controller.getSnapshot()).toMatchObject({
       ...expectedDefaultPreferences,
+      backgroundReference: reference, backgroundName: "原有背景", backgroundEnabled: false,
+      backgroundFit: "contain", backgroundMask: 48, backgroundBlur: 14,
       themeMode: "dark",
       resolvedTheme: "dark",
       backgroundUrl: null,
@@ -697,9 +704,11 @@ describe("appearance controller", () => {
     });
     expect(JSON.parse(saved)).toEqual({
       ...expectedDefaultPreferences,
+      backgroundReference: reference, backgroundName: "原有背景", backgroundEnabled: false,
+      backgroundFit: "contain", backgroundMask: 48, backgroundBlur: 14,
       themeMode: "dark",
     });
-    expect(cleanupCalls).toEqual([[reference], []]);
+    expect(cleanupCalls).toEqual([[reference]]);
     expect(harness.styleProperties.has("--color-accent")).toBe(false);
     expect(harness.styleProperties.has("--color-canvas")).toBe(false);
   });
@@ -734,7 +743,7 @@ describe("appearance controller", () => {
     expect(controller.getSnapshot().effectiveAccentColor).toBe(lightAccent);
   });
 
-  it("clears a missing private background reference without blocking startup", async () => {
+  it("retains a missing private background reference for recovery without blocking startup", async () => {
     const harness = createThemeHarness(false);
     const reference =
       "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp";
@@ -767,14 +776,14 @@ describe("appearance controller", () => {
     await controller.ready;
 
     expect(controller.getSnapshot()).toMatchObject({
-      backgroundReference: null,
+      backgroundReference: reference,
       backgroundUrl: null,
       backgroundStatus: "error",
       backgroundBusy: false,
       backgroundError: "已保存的背景不可用，已回退到基础主题。",
     });
-    expect(JSON.parse(saved).backgroundReference).toBeNull();
-    expect(cleanupCalls).toEqual([[]]);
+    expect(saved).toBe("");
+    expect(cleanupCalls).toEqual([]);
   });
 
   it("keeps the current background when a replacement is rejected", async () => {
@@ -861,12 +870,11 @@ describe("appearance controller", () => {
 
     await controller.confirmBackgroundFocus(centerBackgroundFocus);
     expect(controller.getSnapshot().backgroundError).toBe(
-      "背景已预览，但本机偏好暂时无法保存。",
+      "无法保存背景设置，原图片和配置保持不变，请重试。",
     );
-    expect(cleanupCalls).toEqual([
-      [previousReference],
-      [previousReference, nextReference],
-    ]);
+    expect(controller.getSnapshot().backgroundReference).toBe(previousReference);
+    expect(controller.getSnapshot().backgroundDraft?.reference).toBe(nextReference);
+    expect(cleanupCalls).toEqual([[previousReference]]);
   });
 
   it("keeps background operations busy until deferred cleanup finishes", async () => {
@@ -1051,15 +1059,17 @@ describe("appearance controller", () => {
 
     await controller.selectBackground();
     await controller.confirmBackgroundFocus(centerBackgroundFocus);
+    await controller.cancelBackgroundFocus();
     await controller.selectBackground();
     await controller.confirmBackgroundFocus(centerBackgroundFocus);
+    await controller.cancelBackgroundFocus();
     await controller.removeBackground();
 
     expect(cleanupCalls).toEqual([
       [persistedReference],
-      [persistedReference, firstPreview],
-      [persistedReference, secondPreview],
+      [persistedReference],
       [persistedReference],
     ]);
+    expect(controller.getSnapshot().backgroundReference).toBe(persistedReference);
   });
 });

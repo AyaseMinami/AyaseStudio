@@ -40,6 +40,7 @@ function App() {
       background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} /></div>}>
       {appearance.backgroundDraft && <BackgroundFocusDialog
         url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit}
+        error={appearance.backgroundError}
         onConfirm={(focus) => void appearance.confirmBackgroundFocus(focus)}
         onCancel={() => void appearance.cancelBackgroundFocus()} />}
       {activePage === "chat" ? (
@@ -107,6 +108,9 @@ function App() {
             effectiveAccentColor: appearance.effectiveAccentColor,
             effectiveCanvasColor: appearance.effectiveCanvasColor,
             backgroundReference: appearance.backgroundReference,
+            backgroundLibrary: appearance.backgroundLibrary,
+            backgroundEnabled: appearance.backgroundEnabled,
+            backgroundName: appearance.backgroundName,
             backgroundUrl: appearance.backgroundUrl,
             backgroundFocus: appearance.backgroundFocus,
             backgroundFit: appearance.backgroundFit,
@@ -129,7 +133,13 @@ function App() {
             onBackgroundFitChange: appearance.setBackgroundFit,
             onBackgroundMaskChange: appearance.setBackgroundMask,
             onBackgroundBlurChange: appearance.setBackgroundBlur,
-            onSelectBackground: appearance.selectBackground,
+            onPrepareLibraryBackground: appearance.prepareLibraryBackground,
+            onSaveLibraryBackground: appearance.saveLibraryBackground,
+            onDiscardLibraryBackground: appearance.discardLibraryBackground,
+            onResolveLibraryBackground: appearance.resolveLibraryBackground,
+            onApplyLibraryBackground: appearance.applyLibraryBackground,
+            onRemoveLibraryBackgrounds: appearance.removeLibraryBackgrounds,
+            onRestoreBackground: appearance.restoreBackground,
             onRemoveBackground: appearance.removeBackground,
             onResetCustomAppearance: appearance.resetCustomAppearance,
           }}
