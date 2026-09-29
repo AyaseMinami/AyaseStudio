@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { centerBackgroundFocus } from "./backgroundFocus";
+import { colorPresets } from "./colorPresets";
 
 import {
   APPEARANCE_STORAGE_KEY,
@@ -88,6 +89,74 @@ function createThemeHarness(initiallyDark = false) {
 }
 
 describe("appearance preferences", () => {
+  it.each(colorPresets)("persists $id across restart and theme changes without touching background or transparency", async (preset) => {
+    let saved: string | null = JSON.stringify({ ...expectedDefaultPreferences, backgroundEnabled: false,
+      sidebarTransparency: 25, composerTransparency: 35, assistantBubbleTransparency: 20, backgroundName: "保留的背景",
+      backgroundReference: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png", backgroundMask: 72, backgroundBlur: 3 });
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    const harness = createThemeHarness();
+    const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    await controller.ready;
+    const before = JSON.parse(saved!);
+    controller.setUnifiedThemeColor("#123456");
+    controller.setCanvasColor("#abcdef");
+    controller.setAssistantBubbleColor("#eeeeee");
+    controller.setColorPreset(preset.id);
+    const after = JSON.parse(saved!);
+    expect(after).toEqual({ ...before, colorPreset: preset.id });
+    expect(controller.getSnapshot()).toMatchObject({ effectiveAccentColor: preset.light.accent,
+      effectiveCanvasColor: preset.light.canvas, effectiveUserBubbleColor: preset.light.userBubble });
+    harness.setSystemTheme(true);
+    expect(controller.getSnapshot()).toMatchObject({ colorPreset: preset.id, resolvedTheme: "dark",
+      effectiveAccentColor: preset.dark.accent, effectiveCanvasColor: preset.dark.canvas, effectiveUserBubbleColor: preset.dark.userBubble });
+    controller.setUserBubbleColor("#bacdef");
+    controller.destroy();
+    const restarted = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    await restarted.ready;
+    expect(restarted.getSnapshot()).toMatchObject({ colorPreset: preset.id, userBubbleColor: "#bacdef", resolvedTheme: "dark" });
+    restarted.setThemeMode("light");
+    expect(restarted.getSnapshot()).toMatchObject({ colorPreset: preset.id, userBubbleColor: "#bacdef" });
+    restarted.setColorPreset(preset.id);
+    expect(restarted.getSnapshot()).toMatchObject({ userBubbleColor: null, effectiveUserBubbleColor: preset.light.userBubble,
+      backgroundReference: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png", backgroundEnabled: false, sidebarTransparency: 25, composerTransparency: 35 });
+    restarted.destroy();
+  });
+
+  it("keeps legacy presets and safely falls back for an unknown preset", () => {
+    for (const id of ["reading", "default", "unknown", null]) {
+      const preferences = loadAppearancePreferences({ getItem: () => JSON.stringify({ colorPreset: id, accentColor: "#123456", themeMode: "dark" }), setItem: () => {} });
+      expect(preferences).toMatchObject({ colorPreset: id === "reading" ? "reading" : "default", accentColor: "#123456", themeMode: "dark" });
+    }
+  });
+
+  it.each(colorPresets)("keeps $id text and controls readable in both themes", async (preset) => {
+    const rgb = (hex: string) => [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16));
+    const contrast = (a: number[], b: number[]) => {
+      const luminance = (channels: number[]) => channels.map(c => c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const x = luminance(a), y = luminance(b);
+      return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    };
+    for (const dark of [false, true]) {
+      const harness = createThemeHarness(dark);
+      const controller = createAppearanceController({ storage: { getItem: () => null, setItem: () => {} }, systemTheme: harness.systemTheme, target: harness.target });
+      await controller.ready;
+      controller.setColorPreset(preset.id);
+      const palette = dark ? preset.dark : preset.light;
+      const text = dark ? [245, 245, 244] : [41, 42, 45];
+      expect(contrast(text, rgb(palette.canvas))).toBeGreaterThanOrEqual(7);
+      expect(contrast(text, rgb(palette.assistantBubble))).toBeGreaterThanOrEqual(4.5);
+      const value = (name: string, fallback: string) => (harness.styleProperties.get(name) ?? fallback).split(" ").map(Number);
+      expect(contrast(value("--color-on-accent", dark ? "15 23 42" : "255 255 255"), rgb(palette.accent))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(value("--color-focus", dark ? "147 197 253" : "37 99 235"), value("--color-panel", dark ? "28 25 23" : "255 255 255"))).toBeGreaterThanOrEqual(3);
+      for (const transparency of [0, 6, 25, 50, 75, 100]) {
+        controller.setAssistantBubbleTransparency(transparency);
+        const background = rgb(palette.userBubble).map((c, i) => Math.round(c * (1 - transparency / 100) + rgb(palette.canvas)[i] * transparency / 100));
+        expect(contrast(value("--color-user-message-text", dark ? "15 23 42" : "41 42 45"), background)).toBeGreaterThanOrEqual(4.5);
+      }
+      controller.destroy();
+    }
+  });
+
   it("unifies only component and user colors, then preserves independent edits across restart", async () => {
     let saved: string | null = null;
     const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };

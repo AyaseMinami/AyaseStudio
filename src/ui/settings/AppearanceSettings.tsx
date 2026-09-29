@@ -1,8 +1,9 @@
-import { BookOpen, CircleAlert, ImagePlus, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { BookOpen, Check, CircleAlert, ImagePlus, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { BackgroundFocus } from "../../appearance/backgroundFocus";
 import type { BackgroundFit, BackgroundLibraryEdit, BackgroundLibraryEntry, BackgroundResource, ColorPreset, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
 import { defaultAppearancePreferences } from "../../appearance/appearance";
+import { colorPresets, getColorPresetPalette } from "../../appearance/colorPresets";
 import { AppearanceChatPreview } from "./AppearanceChatPreview";
 import { BackgroundLibraryDialog } from "./BackgroundLibraryDialog";
 import { BackgroundDisplayControls, RangeControl } from "./BackgroundDisplayControls";
@@ -66,6 +67,7 @@ export function AppearanceSettings({
   const thumbnailUrl = backgroundUrl ?? (thumbnail?.reference === backgroundReference ? thumbnail.url : null);
   const mixedTransparency = sidebarTransparency !== composerTransparency || sidebarTransparency !== assistantBubbleTransparency;
   const mixedThemeColor = effectiveAccentColor !== effectiveUserBubbleColor;
+  const presetPalette = getColorPresetPalette(colorPreset, resolvedTheme);
   const readingSelected = themeMode === "light" && colorPreset === "reading";
   return <section className="settings-page settings-workspace-page appearance-settings-page" aria-labelledby="appearance-title">
     <div className="settings-page-heading"><h2 id="appearance-title">外观</h2><p className="muted-text">选择 Ayase Studio 在这台设备上的显示方式。</p></div>
@@ -82,7 +84,7 @@ export function AppearanceSettings({
       <legend>主题模式</legend>
       <div className="appearance-theme-options">
         {themeOptions.map((option) => <label className="appearance-theme-option" data-selected={!readingSelected && themeMode === option.value ? "true" : undefined} key={option.value} title={option.description}>
-          <input type="radio" name="theme-mode" value={option.value} checked={!readingSelected && themeMode === option.value} onChange={() => { if (colorPreset === "reading") onColorPresetChange("default"); onThemeModeChange(option.value); }} />
+          <input type="radio" name="theme-mode" value={option.value} checked={!readingSelected && themeMode === option.value} onChange={() => { if (readingSelected) onColorPresetChange("default"); onThemeModeChange(option.value); }} />
           <span aria-hidden="true">{option.icon}</span><span>{option.label}</span>
         </label>)}
         <label className="appearance-theme-option" data-selected={readingSelected ? "true" : undefined} title="使用浅色阅读配色，重置自定义颜色，保留背景图片和透明度。">
@@ -91,6 +93,24 @@ export function AppearanceSettings({
         </label>
       </div>
     </fieldset>
+    <fieldset className="appearance-theme-group appearance-preset-group">
+      <legend>配色方案</legend>
+      <div className="appearance-preset-options">
+        {colorPresets.map((preset) => {
+          const palette = getColorPresetPalette(preset.id, resolvedTheme);
+          return <label className="appearance-preset-option" data-selected={colorPreset === preset.id ? "true" : undefined} key={preset.id} title={`${preset.label}：${preset.description}`}>
+            <input type="radio" name="color-preset" aria-label={preset.label} value={preset.id} checked={colorPreset === preset.id} onChange={() => onColorPresetChange(preset.id)} />
+            <span className="appearance-preset-preview" aria-hidden="true" style={{ backgroundColor: palette.canvas }}>
+              <span className="appearance-preset-accent" style={{ backgroundColor: palette.accent }} />
+              <span className="appearance-preset-assistant" style={{ backgroundColor: palette.assistantBubble }} />
+              <span className="appearance-preset-user" style={{ backgroundColor: palette.userBubble }} />
+            </span>
+            <Check className="appearance-preset-check" size={12} aria-hidden="true" />
+          </label>;
+        })}
+      </div>
+    </fieldset>
+    <button className="settings-button appearance-secondary-action" type="button" title="清除自定义颜色，恢复当前方案配色；保留背景图片和透明度。" onClick={() => onColorPresetChange(colorPreset)}><RotateCcw size={15} aria-hidden="true" />恢复方案配色</button>
     </div>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-colors-title">
@@ -99,7 +119,7 @@ export function AppearanceSettings({
         <div className="appearance-row"><span className="appearance-row-copy"><strong>统一主题色</strong>{mixedThemeColor && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="主题色差异" icon={<CircleAlert size={15} aria-hidden="true" />}>组件和用户消息气泡颜色不同。修改统一主题色会覆盖这两项，不影响助手气泡和画布背景。</SettingsHelp></span></span>}</span><ColorControl label="统一主题色" value={mixedThemeColor ? unifiedThemeColor ?? effectiveAccentColor : effectiveAccentColor} onChange={onUnifiedThemeColorChange} /></div>
         <div className="appearance-row appearance-color-child"><RowCopy title="组件颜色" /><ColorControl label="组件颜色" value={accentColor ?? effectiveAccentColor} onChange={onAccentColorChange} /></div>
         <div className="appearance-row appearance-color-child"><RowCopy title="用户消息气泡颜色" /><ColorControl label="用户消息气泡颜色" value={effectiveUserBubbleColor} onChange={onUserBubbleColorChange} /></div>
-        <div className="appearance-row"><RowCopy title="助手消息气泡颜色" /><ColorControl label="助手回复气泡颜色" value={assistantBubbleColor ?? (resolvedTheme === "dark" ? "#292524" : colorPreset === "reading" ? "#f0f0ed" : "#f2f2f2")} onChange={onAssistantBubbleColorChange} /></div>
+        <div className="appearance-row"><RowCopy title="助手消息气泡颜色" /><ColorControl label="助手回复气泡颜色" value={assistantBubbleColor ?? presetPalette.assistantBubble} onChange={onAssistantBubbleColorChange} /></div>
         <div className="appearance-row"><RowCopy title="画布背景色" /><ColorControl label="自定义画布背景色" value={canvasColor ?? effectiveCanvasColor} onChange={onCanvasColorChange} /></div>
       </div>
       {readabilityWarnings.map((warning) => <p className="notice notice-warning appearance-inline-notice" key={warning}>{warning}</p>)}

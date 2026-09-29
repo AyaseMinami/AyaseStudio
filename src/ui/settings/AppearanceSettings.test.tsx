@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { colorPresets, getColorPresetPalette } from "../../appearance/colorPresets";
 import { AppearanceSettings, type AppearanceSettingsProps } from "./AppearanceSettings";
 
 let host: HTMLDivElement | undefined;
@@ -53,6 +54,83 @@ function changeRange(input: HTMLInputElement, value: string) {
 }
 
 describe("AppearanceSettings", () => {
+  it("offers seven named presets alongside four theme buttons", async () => {
+    const { handlers } = await render({ colorPreset: "reading", themeMode: "dark", resolvedTheme: "dark" });
+    const modes = host!.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
+    const presets = host!.querySelectorAll<HTMLInputElement>('input[name="color-preset"]');
+    expect([...modes].map(input => input.value)).toEqual(["system", "light", "dark", "reading"]);
+    expect(presets).toHaveLength(7);
+    expect([...presets].map((input) => input.getAttribute("aria-label"))).toEqual(["晴蓝", "纸页", "青竹", "海盐", "鸢尾", "蔷薇", "琥珀"]);
+    for (const input of presets) {
+      expect(input.parentElement!.textContent).toBe("");
+      expect(input.parentElement!.title).toContain(input.getAttribute("aria-label"));
+    }
+    expect(host!.querySelector<HTMLInputElement>('input[name="theme-mode"][value="dark"]')!.checked).toBe(true);
+    expect(host!.querySelector<HTMLInputElement>('input[name="color-preset"][value="reading"]')!.checked).toBe(true);
+    await act(async () => host!.querySelector<HTMLInputElement>('input[name="color-preset"][value="sage"]')!.click());
+    expect(handlers.onColorPresetChange).toHaveBeenCalledWith("sage");
+    expect(handlers.onThemeModeChange).not.toHaveBeenCalled();
+    expect(handlers.onResetCustomAppearance).not.toHaveBeenCalled();
+    expect(handlers.onRemoveBackground).not.toHaveBeenCalled();
+    expect(handlers.onUnifiedTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it("changes theme mode while preserving a selected preset and custom colors", async () => {
+    const { handlers } = await render({ colorPreset: "sage", themeMode: "light", accentColor: "#123456", canvasColor: "#345678" });
+    await act(async () => host!.querySelector<HTMLInputElement>('input[name="theme-mode"][value="system"]')!.click());
+    expect(handlers.onThemeModeChange).toHaveBeenCalledWith("system");
+    expect(handlers.onColorPresetChange).not.toHaveBeenCalled();
+    expect(handlers.onUnifiedThemeColorChange).not.toHaveBeenCalled();
+    expect(handlers.onAccentColorChange).not.toHaveBeenCalled();
+    expect(handlers.onCanvasColorChange).not.toHaveBeenCalled();
+    expect(handlers.onAssistantBubbleColorChange).not.toHaveBeenCalled();
+  });
+
+  it("enters reading with the light paper preset without resetting background or transparency", async () => {
+    const { handlers } = await render({ colorPreset: "amber", themeMode: "dark", resolvedTheme: "dark" });
+    await act(async () => host!.querySelector<HTMLInputElement>('input[name="theme-mode"][value="reading"]')!.click());
+    expect(handlers.onColorPresetChange).toHaveBeenCalledWith("reading");
+    expect(handlers.onThemeModeChange).toHaveBeenCalledWith("light");
+    expect(handlers.onResetCustomAppearance).not.toHaveBeenCalled();
+    expect(handlers.onRemoveBackground).not.toHaveBeenCalled();
+    expect(handlers.onUnifiedTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["system", "light", "dark"])("exits reading through %s and restores the default preset", async (mode) => {
+    const { handlers } = await render({ colorPreset: "reading", themeMode: "light" });
+    expect([...host!.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]')].filter(input => input.checked).map(input => input.value)).toEqual(["reading"]);
+    await act(async () => host!.querySelector<HTMLInputElement>(`input[name="theme-mode"][value="${mode}"]`)!.click());
+    expect(handlers.onColorPresetChange).toHaveBeenCalledWith("default");
+    expect(handlers.onThemeModeChange).toHaveBeenCalledWith(mode);
+  });
+
+  it("explicitly restores the selected scheme without changing other appearance settings", async () => {
+    const { handlers } = await render({ colorPreset: "rose" });
+    const restore = [...host!.querySelectorAll("button")].find((button) => button.textContent === "恢复方案配色")!;
+    expect(restore.title).toContain("保留背景图片和透明度");
+    await act(async () => restore.click());
+    expect(handlers.onColorPresetChange).toHaveBeenCalledWith("rose");
+    expect(handlers.onThemeModeChange).not.toHaveBeenCalled();
+    expect(handlers.onResetCustomAppearance).not.toHaveBeenCalled();
+    expect(handlers.onRemoveBackground).not.toHaveBeenCalled();
+    expect(handlers.onUnifiedTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["light", "dark"] as const)("previews every preset and assistant fallback in the resolved %s theme", async (resolvedTheme) => {
+    await render({ themeMode: "system", resolvedTheme, colorPreset: "ocean", assistantBubbleColor: null });
+    for (const preset of colorPresets) {
+      const palette = getColorPresetPalette(preset.id, resolvedTheme);
+      const option = host!.querySelector<HTMLInputElement>(`input[name="color-preset"][value="${preset.id}"]`)!.parentElement!;
+      const expected = document.createElement("span");
+      for (const [className, color] of [["appearance-preset-preview", palette.canvas], ["appearance-preset-accent", palette.accent], ["appearance-preset-user", palette.userBubble], ["appearance-preset-assistant", palette.assistantBubble]]) {
+        expected.style.backgroundColor = color;
+        expect(option.querySelector<HTMLElement>(`.${className}`)!.style.backgroundColor).toBe(expected.style.backgroundColor);
+      }
+      expect(option.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    }
+    expect(host!.querySelector<HTMLInputElement>('[aria-label="助手回复气泡颜色"]')!.value).toBe(getColorPresetPalette("ocean", resolvedTheme).assistantBubble.toLowerCase());
+  });
+
   it("retains the current thumbnail and parameter controls when disabled and explicitly reenables", async () => {
     const { handlers } = await render({ backgroundEnabled: false, backgroundUrl: null });
     expect(host!.querySelector<HTMLImageElement>('[alt="当前背景缩略图"]')?.src).toBe("asset://localhost/example.webp");

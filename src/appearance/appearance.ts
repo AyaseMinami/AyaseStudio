@@ -1,9 +1,10 @@
 import { focusFromLegacyCrop, normalizeBackgroundFocus, type BackgroundFocus } from "./backgroundFocus";
+import { getColorPresetPalette, isColorPreset, type ColorPreset } from "./colorPresets";
+export type { ColorPreset } from "./colorPresets";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<ThemeMode, "system">;
 export type BackgroundFit = "cover" | "contain";
-export type ColorPreset = "default" | "reading";
 
 export interface BackgroundLibraryEntry {
   id: string;
@@ -210,7 +211,7 @@ export function loadAppearancePreferences(
       : transparencyInRange(stored.unifiedTransparency, defaultAppearancePreferences.unifiedTransparency);
 
     return {
-      colorPreset: stored.colorPreset === "reading" ? "reading" : "default",
+      colorPreset: isColorPreset(stored.colorPreset) ? stored.colorPreset : "default",
       themeMode:
         stored.themeMode === "light" ||
         stored.themeMode === "dark" ||
@@ -397,7 +398,7 @@ function rgbHex(color: Rgb): string {
 }
 
 function userBubbleColorFor(preferences: AppearancePreferences, theme: ResolvedTheme): string {
-  return preferences.userBubbleColor ?? (theme === "dark" ? "#93c5fd" : preferences.colorPreset === "reading" ? "#eef2f6" : "#d2e3f7");
+  return preferences.userBubbleColor ?? getColorPresetPalette(preferences.colorPreset, theme).userBubble;
 }
 
 function deriveAppearanceVariables(
@@ -409,8 +410,8 @@ function deriveAppearanceVariables(
   effectiveAccentColor: string;
   effectiveCanvasColor: string;
 } {
-  const reading = resolvedTheme === "light" && preferences.colorPreset === "reading";
-  const base = reading ? { ...basePalette.light, canvas: [247, 247, 245] as Rgb } : basePalette[resolvedTheme];
+  const preset = getColorPresetPalette(preferences.colorPreset, resolvedTheme);
+  const base = { ...basePalette[resolvedTheme], canvas: parseHexColor(preset.canvas), accent: parseHexColor(preset.accent) };
   const variables = new Map<string, string>();
   const readabilityWarnings: string[] = [];
   let panel = base.panel;
@@ -419,10 +420,10 @@ function deriveAppearanceVariables(
   const effectiveUserBackground = parseHexColor(userBubbleColorFor(preferences, resolvedTheme));
   let effectiveUserText: Rgb = resolvedTheme === "light" ? [41, 42, 45] : [15, 23, 42];
 
-  if (reading) {
+  if (preferences.colorPreset !== "default") {
     variables.set("--color-canvas", rgbValue(base.canvas));
     variables.set("--color-user-message", rgbValue(effectiveUserBackground));
-    variables.set("--color-assistant-bubble", "240 240 237");
+    variables.set("--color-assistant-bubble", rgbValue(parseHexColor(preset.assistantBubble)));
   }
 
   if (preferences.assistantBubbleColor) {
@@ -433,8 +434,8 @@ function deriveAppearanceVariables(
     variables.set("--color-user-message", rgbValue(effectiveUserBackground));
   }
 
-  if (preferences.canvasColor) {
-    const requestedCanvas = parseHexColor(preferences.canvasColor);
+  if (preferences.canvasColor || preferences.colorPreset !== "default") {
+    const requestedCanvas = parseHexColor(preferences.canvasColor ?? preset.canvas);
     const canvas = ensureContrast(
       requestedCanvas,
       base.text,
@@ -467,8 +468,8 @@ function deriveAppearanceVariables(
     }
   }
 
-  if (preferences.accentColor) {
-    const requestedAccent = parseHexColor(preferences.accentColor);
+  if (preferences.accentColor || preferences.colorPreset !== "default") {
+    const requestedAccent = parseHexColor(preferences.accentColor ?? preset.accent);
     const accentText = ensureContrast(
       requestedAccent,
       panel,
@@ -892,7 +893,7 @@ export function createAppearanceController({
       const normalized = color === null ? null : normalizeHexColor(color);
       if (normalized !== null || color === null) {
         const next = { ...preferences, accentColor: normalized };
-        const component = normalized ?? rgbHex(basePalette[snapshot.resolvedTheme].accent);
+        const component = normalized ?? getColorPresetPalette(preferences.colorPreset, snapshot.resolvedTheme).accent;
         updatePreferences(component === userBubbleColorFor(next, snapshot.resolvedTheme) ? { ...next, unifiedThemeColor: component } : next);
       }
     },
