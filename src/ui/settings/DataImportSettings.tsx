@@ -110,11 +110,10 @@ export function DataImportSettings(props: DataImportSettingsProps) {
     });
   }
 
-  return <section className="settings-page data-import-page" aria-label="数据导入" aria-busy={Boolean(busy)}>
-    <header className="settings-page-heading"><h2>数据导入</h2>
-      <p className="muted-text">从本机 Cherry Studio 备份导入助手分组、聊天记录和可恢复的附件。所有处理均在本地完成。</p>
-    </header>
+  return <section className="data-import-page" aria-label="从 Cherry Studio 迁移" aria-busy={Boolean(busy)}>
     <section className="settings-card data-import-intro" aria-label="Cherry 聊天导入说明">
+      <h3>从 Cherry Studio 迁移</h3>
+      <p>从本机 Cherry Studio 备份导入助手分组、聊天记录和可恢复的附件。</p>
       <p>支持备份格式 5（1.9.13 手机版）、6（1.9.13）和 7（2.1.3）。平行回答和树形分支将保留为独立对话。</p>
       <p className="muted-text">不导入 API Key、账户、模型连接、助手提示词或生成配置，也不会执行工具。缺失或不支持的附件会明确提示。</p>
       <button type="button" className="settings-button" disabled={locked} onClick={() => void selectBackup()}>

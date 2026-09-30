@@ -1,5 +1,27 @@
 # Ayase Studio Development Guide
 
+## Ayase backup verification #79
+
+数据管理入口页样式整理：统一单一页面标题、两个同宽同圆角无阴影卡片，标题和按钮都在卡片内左对齐，移除两个独立页面容器叠加的大间距；修正 Ayase 说明为完整连接／密钥备份可选择加密。设置、Cherry 导入与工作区相关 46 项测试、TypeScript/Vite 构建和 diff 检查通过；隔离浏览器确认浅色宽屏两卡片左边缘／宽度／按钮左边缘一致，标题 16px、正文 14px，间距 16px；600px 深色页无页面横向溢出，按钮在模拟边界响应。原生与导入行为未修改。
+
+最新范围修订：依据用户明确指示，以当前实现行为完成 #79，并更新了远端 Issue 描述。导出固定包含连接及 API Key，仅有一个默认关闭的加密开关；明文可直接导出，加密密码二次确认只检查一致性，任何长度和字符均接受。备份准备时冻结应用交互并等待工作区队列与全部已加载会话写入完成，之后才重新加载用于导出。前次验证记录的测试数是当时快照，最终验证数据见本次提交记录。浏览器合成数据验证不读取真实凭据；原生文件窗口、真实用户备份恢复及重启／断电场景仍需人工验收。以下记录保留此前设计及验收背景，以本段和备份指南为当前行为。
+
+2026-09-30（历史记录）：已完整读取 Issue 正文及交接信息，在原有 `dev` 工作区分阶段完成本地实现，保留原 `PLAN.md` 修改和 `ISSUE-79-BACKUP-RESEARCH.md`。范围、格式、冲突政策与操作方法见 [AYASE-BACKUP.md](AYASE-BACKUP.md)。既有 Cherry 导入仍单独保留；当时尚未提交、推送或修改远端 Issue。
+
+后续按用户新要求，将“加密备份”改为独立且默认关闭的开关；加密不再取决于是否包含 API Key。明文含密钥可无密码直接导出、校验和恢复，仅显示提示；开启时任何备份都需密码，关闭时清空密码，取消连接仍取消密钥但不改变加密状态。格式版本仍为 1，旧备份保持可读。Issue 的旧强制加密要求现已在远端描述中按当前代码行为修订。此前阶段验证了含密钥明文导出不出现密码、直接预览并另存副本（对话 1→2），无连接／无密钥时仍可加密，关闭后可直接导出；完整四种密钥／加密组合也通过 runtime 保存载荷与恢复回归。未读取真实密钥或调用供应商。
+
+阶段验收：
+
+- 数据清单与格式：显式允许字段、八张持久表、受支持偏好和原始资源；不含运行时草稿、源绝对路径和派生背景缩略图。默认包含连接、不含 API Key，含密钥强制整包认证加密。覆盖密码错误、篡改、未知版本、字段排除、资源摘要、大小与图像像素预算、候选消息及已删除提问的历史回复。
+- 恢复一致性：覆盖合并保留现有密钥、另存副本重映射、替换明确确认、缺失模型、文件碰撞、文件／数据库／偏好阶段失败、重复回滚及启动恢复。日志读取也失败时保留回滚错误并锁住所有后续操作。数据库版本升至 6，新增恢复日志；旧表不被升级清空。
+- 独立只读审查：修复图像解码前尺寸预算、Base64 大输入正则溢出、转义容器上限不一致、历史孤儿回复、空工作区入口、头像上限和回滚失败锁定。没有扩大到供应商协议或真实凭据探测。
+- 浏览器：内置浏览器在 `localhost:1486` 的忽略目录 `backup-acceptance.local/` 使用独立 `Ayase-Backup-Synthetic-Acceptance` 数据库、合成密钥及模拟文件窗口，实际调用格式、计划及恢复仓库。验证导出选项联动、密码确认、加密导出与摘要、错误密码零写入、解密前无内容预览、替换范围和密钥单独确认。另存副本后对话由 1 增至 2；随后损坏文件拒绝且写入次数仍为 1。浅色 1440×900、深色 420×740 均无横向溢出，预览和策略可纵向滚动；主观最终视觉尚待用户确认。
+- 原生：Rust 合成测试覆盖受管引用、大小、格式、路径穿越、目录链接／Windows junction、写入不覆盖、预留检查及删除；原有真实样本测试保持 ignored。Windows 文件 symlink 权限不具备时该分支没有实际创建链接，不能宣称已验证。`tauri dev -- --no-watch` 完成编译并启动；开发时入口热更新曾产生重复 createRoot 警告，已将根组件移入 `BackupApp.tsx` 并重新启动验证。
+
+最终检查：`npm.cmd run check`（77 文件 / 882 项测试、TypeScript 与 Vite 生产构建）、`cargo test --locked --manifest-path src-tauri/Cargo.toml`（95 通过、1 ignored）、`cargo check --locked --manifest-path src-tauri/Cargo.toml` 和 `git diff --check`。完整运行曾暴露原有并发测试在 React 快照未就绪时编辑的时序问题；测试改为等待 `workspace.canSend()` 后执行用户操作，未改变生产编辑逻辑。构建保留既有大 chunk 提示。浏览器测试不读取用户内容、真实凭据，不发供应商请求。
+
+待人工验收：在原生设置 → 数据管理检查保存／选择窗口及取消；分别导出不含连接、含连接无密钥、含密钥三种备份，逐类核对助手、对话、候选消息、附件、头像、背景及偏好；在可丢弃数据上检查三种策略，特别是替换范围及密钥确认；检查真实桌面中断／重启后的日志恢复。真实用户数据、原生文件窗口、实际断电和窗口交互未由本轮浏览器或编译验收替代。
+
 ## Cherry import verification (#77)
 
 The importer accepts only the pinned backup structures documented in [CHERRY-IMPORT.md](CHERRY-IMPORT.md). Local implementation, deterministic fixtures and acceptance boundaries are recorded in [ISSUE-77-IMPLEMENTATION.md](ISSUE-77-IMPLEMENTATION.md). Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml`, and `cargo check --locked --manifest-path src-tauri/Cargo.toml` before handoff. Native tests construct synthetic ZIP, Chromium and SQLite snapshots; the ignored private-sample comparison runs only with explicitly supplied local inputs, prints aggregate results, and never writes active application data. Do not add real backup content, credentials or source IDs to fixtures or documentation.
@@ -72,7 +94,7 @@ Rust 背景专项 8 项测试及 `cargo check --locked --manifest-path src-tauri
 
 此次浏览器回归使用同一隔离来源：先让用户与助手共同选用合成图片，从库删除后条目消失，但两者图片仍能加载；用户重裁为 101% 并保存，刷新后图片及该裁切值保留。原生选图/桌面恢复沿用下述待验收边界，不将浏览器刷新等同于原生重启。以下首次实现的阻止删除验收属于历史记录，已被本次规则取代。
 
-头像库与用户头像现在保存在 WebView 的 `AyaseStudio` IndexedDB 专用表，助手仍保存自身图片快照。旧 `ayase-studio-avatars` 在首次读取用户头像时兼容复制，保留旧数据库作为备份；空记录标记已迁移/已恢复默认，避免旧图复活。备份仍应包含完整 WebView 数据目录。四项已确认的产品规则及版本持有/回收约定见架构文档和计划文档，远端 Issue 未修改。
+头像库与用户头像现在保存在 WebView 的 `AyaseStudio` IndexedDB 专用表，助手仍保存自身图片快照。旧 `ayase-studio-avatars` 在首次读取用户头像时兼容复制，保留旧数据库作为备份；空记录标记已迁移/已恢复默认，避免旧图复活。此前手工备份要求包含完整 WebView 数据目录；#79 自有备份使用显式字段和 Blob 清单，见 [备份指南](AYASE-BACKUP.md)。四项已确认的产品规则及版本持有/回收约定见架构文档和计划文档，远端 Issue 未修改。
 
 确定性验证重点：导入格式/大小/命名/解码失败、裁切与取消、候选与正式应用、多个对象独立裁切、替换版本保留、删除保护、过期草稿、并发保存与删除、旧用户和助手兼容迁移、损坏回退、失败迁移后的显式恢复、迟到迁移不能覆盖新值，以及成功保存后刷新失败不得重复导入。相关用例位于 `src/avatar/library.test.ts`、`src/avatar/useUserAvatar.test.tsx`、`src/ui/avatar/AvatarLibrary.test.tsx` 和 `src/ui/chat/AssistantAvatarEditor.test.tsx`。
 
@@ -96,7 +118,7 @@ Screenshot: `ui-review.local/assistant67-crop-dark.png` (ignored local evidence)
 
 ## User avatar #32 / #34 verification (2026-09-28)
 
-头像原图、裁切参数及缩略图保存于 WebView 的 `ayase-studio-avatars` IndexedDB；备份应用数据时需包含 WebView 本地目录，没有单独的头像文件目录。浏览器验收数据与桌面应用分离。
+首次实现时头像原图、裁切参数及缩略图保存于 WebView 的 `ayase-studio-avatars` IndexedDB，手工备份需包含 WebView 本地目录，没有单独的头像文件目录。后来头像库已迁入 `AyaseStudio`，#79 自有备份按允许清单导出头像 Blob。浏览器验收数据与桌面应用分离。
 
 头像仓库/几何、Hook 保存失败、MessageList 和 SettingsWorkspace 共四个文件 28 项定向测试通过；TypeScript/Vite 构建、Cargo check 和 diff 检查通过。独立只读审查无待修复问题。未运行全量协议测试或真实供应商探针。
 

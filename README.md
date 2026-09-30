@@ -71,6 +71,7 @@ npm.cmd run build:windows
 ## 文档与反馈
 
 - [Cherry 聊天导入指南](docs/CHERRY-IMPORT.md)：设置入口、支持格式、重复导入和附件限制。
+- [Ayase 备份与恢复](docs/AYASE-BACKUP.md)：本地自有格式、连接／密钥选项、密码及恢复策略。
 
 - [开发指南](docs/DEVELOPMENT.md)：环境、命令、数据迁移与验证。
 - [架构说明](docs/ARCHITECTURE.md)：模块边界、状态与持久化。

@@ -67,6 +67,26 @@ describe("assistant workspace public behavior", () => {
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
   }
 
+  it("keeps the backup entry available after every conversation has been deleted", async () => {
+    await act(async () => root.unmount());
+    await repo.execute({ type: "delete-conversation", id: "current" });
+    const saved = await repo.execute({ type: "delete-conversation", id: "b" });
+    expect(saved.conversations).toEqual([]);
+    expect(saved.assistants).toHaveLength(2);
+    expect(selectedConversation(saved)).toBeUndefined();
+    root = createRoot(container);
+    await act(async () => root.render(<App />));
+    await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
+    await click("设置");
+    await click("数据管理");
+    const backupEntry = () => [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find(button => button.textContent?.trim() === "进入备份与恢复");
+    await wait(() => backupEntry()?.disabled === false);
+    expect(backupEntry()).toBeTruthy();
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(runtime.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+  });
+
   it("selects a model from the composer, scopes persistence to this conversation and restores focus on cancel", async () => {
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="切换模型"]')!;
     const tools = container.querySelector(".composer-tools")!;

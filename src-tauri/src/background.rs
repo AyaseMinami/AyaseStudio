@@ -16,7 +16,7 @@ pub const MAX_BACKGROUND_BYTES: u64 = 20_000_000;
 const MAX_THUMBNAIL_EDGE: u32 = 512;
 const MAX_THUMBNAIL_BYTES: u64 = 2_000_000;
 // Import, resolve and cleanup share one lock, including legacy thumbnail creation.
-static BACKGROUND_FILES: Mutex<()> = Mutex::new(());
+pub(crate) static BACKGROUND_FILES: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, PartialEq, Eq)]
 enum BackgroundError {
@@ -121,6 +121,10 @@ fn decode_background_bytes(
     reader.limits(limits);
     let image = reader.decode().map_err(|_| BackgroundError::Corrupt)?;
     Ok((kind, image))
+}
+
+pub(crate) fn backup_image_extension(bytes: &[u8]) -> Result<&'static str, ()> {
+    decode_background_bytes(bytes).map(|(kind, _)| kind.extension()).map_err(|_| ())
 }
 
 fn thumbnail_path(app_data_dir: &Path, file_name: &str) -> PathBuf {

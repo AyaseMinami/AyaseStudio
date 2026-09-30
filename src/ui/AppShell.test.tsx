@@ -29,4 +29,14 @@ describe("AppShell", () => {
       /<button[^>]*aria-label="聊天"[^>]*aria-current="page"/,
     );
   });
+
+  it("makes the whole workspace inert while a consistent backup snapshot is prepared", () => {
+    const html = renderToStaticMarkup(
+      <AppShell activePage="settings" interactionDisabled onPageChange={() => undefined}>
+        <p>Settings workspace</p>
+      </AppShell>,
+    );
+
+    expect(html).toMatch(/<main[^>]*inert=""[^>]*aria-busy="true"/);
+  });
 });

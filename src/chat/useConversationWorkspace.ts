@@ -187,6 +187,10 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
     canSend: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,
+    flushSessionWrites: async () => {
+      await queue.current;
+      await Promise.all([...stores.current.values()].map((store) => store.flush()));
+    },
     setMessages: (value: SetStateAction<StoredChatMessage[]>) => setField("messages", value),
     setDraft: (value: string) => {
       if (!id) return;

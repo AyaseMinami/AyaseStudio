@@ -1,6 +1,4 @@
 .data-import-page { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-.data-import-page > .settings-page-heading { margin-bottom: 0; }
-.data-import-page > .settings-page-heading h2 { margin-top: 0; }
 .data-import-page .settings-card { border-radius: 8px; box-shadow: none; }
 .data-import-page p { margin: 0; line-height: 1.6; }
 .data-import-intro, .data-import-result, .data-import-preview { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }

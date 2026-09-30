@@ -130,6 +130,9 @@ export function useChatSession({
   );
   const [generationTasks] = useState(() => new GenerationTasks());
   const [cherryBusy, setCherryBusy] = useState(false);
+  const [backupPreparing, setBackupPreparing] = useState(false);
+  const backupPreparingRef = useRef(false);
+  const [backupPreparationError, setBackupPreparationError] = useState<string>();
   const cherryBusyRef = useRef(false);
   const cherryToken = useRef<string | undefined>(undefined);
   const generatingConversationIds = useSyncExternalStore(generationTasks.subscribe, generationTasks.getSnapshot);
@@ -1058,11 +1061,39 @@ export function useChatSession({
     }
   }
 
+  async function prepareBackup(): Promise<boolean> {
+    if (backupPreparingRef.current) return false;
+    const canPrepare = () => workspace.canSend() && generationTasks.getSnapshot().size === 0 &&
+      !cherryBusyRef.current && imports.current.size === 0;
+    if (!canPrepare()) {
+      setBackupPreparationError("请等待当前对话操作完成后再进入备份。");
+      return false;
+    }
+    backupPreparingRef.current = true;
+    setBackupPreparing(true);
+    setBackupPreparationError(undefined);
+    try {
+      await workspace.flushSessionWrites();
+      if (!canPrepare()) throw new Error("对话操作仍在进行。");
+      return true;
+    } catch {
+      setBackupPreparationError("无法保存待写入的对话记录，备份尚未开始。请重试。");
+      return false;
+    } finally {
+      backupPreparingRef.current = false;
+      setBackupPreparing(false);
+    }
+  }
+
   return {
+    backupPreparing,
+    backupDisabled: !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing,
+    backupPreparationError,
+    prepareBackup,
     dataImport: {
-      disabled: !workspace.isReady || generatingConversationIds.size > 0 || cherryBusy,
+      disabled: !workspace.isReady || generatingConversationIds.size > 0 || cherryBusy || backupPreparing,
       async selectBackup(): Promise<CherryBackup | null> {
-        if (!isTauri() || cherryBusyRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
+        if (!isTauri() || cherryBusyRef.current || backupPreparingRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
         const backup = await invoke<CherryBackup | null>("select_cherry_backup");
         if (backup) cherryToken.current = backup.token;
         return backup;
@@ -1073,7 +1104,7 @@ export function useChatSession({
       },
       existingSourceKeys: (keys: string[]) => cherryRepository.existingSourceKeys(keys),
       async importPlan(plan: CherryImportPlan, mode: "skip" | "copy") {
-        if (cherryBusyRef.current || !workspace.canSend() || generationTasks.getSnapshot().size || !cherryToken.current) {
+        if (cherryBusyRef.current || backupPreparingRef.current || !workspace.canSend() || generationTasks.getSnapshot().size || !cherryToken.current) {
           throw new Error("请先等待当前操作完成，再导入聊天。");
         }
         cherryBusyRef.current = true; setCherryBusy(true);

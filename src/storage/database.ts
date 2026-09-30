@@ -4,6 +4,7 @@ import type { SessionConfig } from "../chat/sessionConfig";
 import type { AssistantPreset, Conversation, WorkspaceSelection } from "../chat/workspace";
 import type { UserAvatar } from "../avatar/repository";
 import type { AvatarLibraryEntry } from "../avatar/library";
+import type { BackupJournal } from "../backup/repository";
 
 export type CherryImportRecord =
   | { id: string; conversationIds: string[] }
@@ -18,6 +19,7 @@ export class AyaseDatabase extends Dexie {
   avatarLibrary!: EntityTable<AvatarLibraryEntry, "id">;
   userAvatar!: EntityTable<{ id: string; value?: UserAvatar }, "id">;
   cherryImports!: Table<CherryImportRecord, string>;
+  backupJournal!: Table<BackupJournal, string>;
 
   constructor(name: string) {
     super(name);
@@ -40,5 +42,6 @@ export class AyaseDatabase extends Dexie {
     });
     this.version(4).stores({ avatarLibrary: "id", userAvatar: "id" });
     this.version(5).stores({ cherryImports: "id" });
+    this.version(6).stores({ backupJournal: "id" });
   }
 }

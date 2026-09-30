@@ -1,5 +1,6 @@
 mod background;
 mod attachments;
+mod ayase_backup;
 mod cherry_import;
 mod cherry_legacy;
 mod cherry_leveldb;
@@ -71,6 +72,13 @@ pub fn run() {
             attachments::verify_sent_attachments,
             attachments::discard_uncommitted_attachments,
             attachments::cleanup_sent_attachments,
+            ayase_backup::select_ayase_backup,
+            ayase_backup::save_ayase_backup,
+            ayase_backup::read_ayase_resource,
+            ayase_backup::write_ayase_resource,
+            ayase_backup::remove_ayase_resources,
+            ayase_backup::assert_ayase_resources_available,
+            ayase_backup::ayase_backup_fence,
             cherry_import::select_cherry_backup,
             cherry_import::read_cherry_file,
             cherry_import::close_cherry_backup,

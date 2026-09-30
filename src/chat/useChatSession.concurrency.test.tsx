@@ -67,6 +67,44 @@ describe("parallel conversation generation", () => {
     await wait(() => session.workspace.conversation?.id === id && session.isHydrated);
   }
 
+  it("flushes every loaded conversation before backup, including after navigation", async () => {
+    await act(async () => session.clearConversation());
+    await select("other");
+    const originalFlush = SessionStore.prototype.flush;
+    const started = new Set<string>();
+    const release = new Map<string, () => void>();
+    vi.spyOn(SessionStore.prototype, "flush").mockImplementation(function (this: SessionStore) {
+      started.add(this.id);
+      return new Promise<void>((resolve, reject) => {
+        release.set(this.id, () => { void originalFlush.call(this).then(resolve, reject); });
+      });
+    });
+
+    let result: boolean | undefined;
+    let prepare!: Promise<boolean>;
+    await act(async () => { prepare = session.prepareBackup().then(value => { result = value; return value; }); });
+    await wait(() => started.has("current") && started.has("other"));
+    expect(result).toBeUndefined();
+    expect(session.backupDisabled).toBe(true);
+
+    await act(async () => {
+      release.get("current")!();
+      release.get("other")!();
+      await prepare;
+    });
+    expect(result).toBe(true);
+    expect(session.backupDisabled).toBe(false);
+    expect((await repo.load("current"))?.messages).toEqual([]);
+  });
+
+  it("does not proceed to backup when pending conversation writes cannot flush", async () => {
+    vi.spyOn(SessionStore.prototype, "flush").mockRejectedValue(new Error("synthetic storage failure"));
+    let result: boolean | undefined;
+    await act(async () => { result = await session.prepareBackup(); });
+    expect(result).toBe(false);
+    expect(session.backupPreparationError).toContain("无法保存待写入的对话记录");
+  });
+
   beforeEach(async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     localStorage.clear();
@@ -348,6 +386,10 @@ describe("parallel conversation generation", () => {
     await act(async () => {
       session.workspace.setMessages([old]);
       await session.workspace.store!.updateMessages([old]);
+    });
+    // Let queued workspace metadata and the React snapshot settle before the user action.
+    await wait(() => session.workspace.canSend());
+    await act(async () => {
       expect(await session.editMessage("editable", "after")).toBe(true);
     });
     await select("temporary-conversation", "temporary");

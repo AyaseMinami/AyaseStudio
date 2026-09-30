@@ -50,7 +50,7 @@ describe("Cherry import repository", () => {
     const database = new AyaseDatabase(name);
     databases.push(database);
     await database.open();
-    expect(database.verno).toBe(5);
+    expect(database.verno).toBe(6);
     expect(await database.chats.get(chat.id)).toEqual(chat);
     expect(await database.avatarLibrary.get(avatar.id)).toEqual(avatar);
     expect(await database.cherryImports.count()).toBe(0);

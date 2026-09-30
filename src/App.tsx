@@ -19,9 +19,9 @@ import {
 } from "./ui/settings/SettingsWorkspace";
 
 function App() {
-  const [activePage, setActivePage] = useState<AppPage>("chat");
+  const [activePage, setActivePage] = useState<AppPage>(window.location.hash === "#data" ? "settings" : "chat");
   const [activeSettingsSection, setActiveSettingsSection] =
-    useState<SettingsSection>("connections");
+    useState<SettingsSection>(window.location.hash === "#data" ? "data" : "connections");
   const appearance = useAppearance();
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
@@ -36,7 +36,7 @@ function App() {
     : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 点击选择模型`;
 
   return (
-    <AppShell activePage={activePage} onPageChange={setActivePage}
+    <AppShell activePage={activePage} onPageChange={setActivePage} interactionDisabled={chat.backupPreparing}
       background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} /></div>}>
       {appearance.backgroundDraft && <BackgroundFocusDialog
         url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit}
@@ -93,6 +93,13 @@ function App() {
       ) : (
         <SettingsWorkspace
           dataImport={chat.dataImport}
+          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy}
+          backupError={chat.backupPreparationError}
+          onBackup={() => { void chat.prepareBackup().then((prepared) => {
+            if (!prepared) return;
+            window.location.hash = "backup";
+            window.location.reload();
+          }); }}
           avatar={avatar}
           activeSection={activeSettingsSection}
           appearance={{
