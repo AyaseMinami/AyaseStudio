@@ -6,6 +6,10 @@ import { openExternal, safeExternalUrl } from "../../chat/externalLinks";
 import "./SearchResults.css";
 
 function searchLabel(search: SearchRecord): string {
+  if (search.provider === "exa-mcp" || search.provider === "exa-api") {
+    if (search.status === "searching") return `正在搜索 · ${search.provider === "exa-api" ? "Exa API" : "Exa MCP"}`;
+    if (search.status === "completed") return `已检索 · ${search.sources.length} 个来源`;
+  }
   switch (search.status) {
     case "searching": return "正在搜索";
     case "completed": return "已联网搜索";
@@ -20,7 +24,7 @@ function SourceLink({ source, index }: { source: SearchSource; index: number }) 
   const url = safeExternalUrl(source.url);
   return <li><button type="button" disabled={!url} onClick={() => url && void openExternal(url)} title={source.url}>
     <span className="search-source-number">{index + 1}</span>{source.title || source.url}
-  </button></li>;
+  </button>{source.excerpt && <p className="search-source-excerpt">{source.excerpt}</p>}</li>;
 }
 
 function sanitizedSuggestionHtml(html: string): string {
@@ -64,12 +68,17 @@ function GeminiSuggestion({ html }: { html: string }) {
   return <section className="gemini-suggestion" aria-label="搜索建议"><iframe ref={frame} title="Gemini 搜索建议" sandbox="allow-same-origin" srcDoc={srcDoc} onLoad={bindFrame} /></section>;
 }
 
-export function SearchResults({ search }: { search: SearchRecord }) {
+export function SearchResults({ search, showCitationNotice = true }: { search: SearchRecord; showCitationNotice?: boolean }) {
   const sources = search.sources;
+  const external = search.provider === "exa-mcp" || search.provider === "exa-api";
   const status = <span className={`search-status search-status-${search.status}`}><Globe size={13} aria-hidden="true" />{searchLabel(search)}</span>;
   return <aside className="search-results" aria-label="搜索结果">
-    {sources.length > 0 ? <details className="search-sources"><summary>{status}<span aria-hidden="true">·</span><span>{sources.length} 个来源</span><ChevronRight className="search-source-chevron" size={13} aria-hidden="true" /></summary><ol>{sources.map((source, index) => <SourceLink key={source.id} source={source} index={index} />)}</ol></details> : status}
+    {sources.length > 0 ? <details className="search-sources"><summary>{status}{!external && <><span aria-hidden="true">·</span><span>{sources.length} 个来源</span></>}<ChevronRight className="search-source-chevron" size={13} aria-hidden="true" /></summary><ol>{sources.map((source, index) => <SourceLink key={source.id} source={source} index={index} />)}</ol></details> : status}
     {search.error && <p className="search-error" role="status">{search.error}</p>}
+    {search.warning && <p className="search-warning" role="status">{search.warning}</p>}
+    {showCitationNotice && external && search.status === "completed" &&
+      !search.citations.some((citation) => citation.sourceIds.some((id) => sources.some((source) => source.id === id))) &&
+      <p className="search-citation-notice">已检索资料，正文未提供有效引用</p>}
     {!search.suggestionHtml && search.queries.length > 0 && <p className="search-queries">搜索：{search.queries.join(" · ")}</p>}
     {search.suggestionHtml && <GeminiSuggestion html={search.suggestionHtml} />}
   </aside>;

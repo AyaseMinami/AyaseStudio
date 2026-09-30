@@ -1,5 +1,9 @@
 # Ayase Studio v0.1 Plan
 
+## Exa external search #80 scope revision (2026-09-30)
+
+The user's later instruction splits external search into Exa API (required Key) and Exa MCP (optional Key), each with independent saved endpoint, credentials and result count. Conversation/assistant controls choose either explicitly; no automatic fallback. Legacy MCP settings remain MCP, existing native search remains native. Both share the bounded retrieval-to-answer pipeline and sources. New backups use document v3, with v1/v2 import compatibility and unchanged encryption envelope. This supersedes the earlier MCP-only scope without adding arbitrary MCP, OAuth, a tool runtime or autonomous research. See [implementation](ISSUE-80-IMPLEMENTATION.md).
+
 ## Ayase data backup and restore #79 (2026-09-30)
 
 The user's latest request supersedes the previous category checkboxes and mandatory encryption rule: export always includes connection configuration and API Keys, exposing only a default-off encryption switch button. Connection configuration includes provider groups, connection names, protocols, addresses and configured models. The switch alone decides the envelope type: plaintext backups need no password or extra export confirmation; encrypted backups require password confirmation by equality only, with no length or character restrictions (including Chinese and empty matching values). Password input is used as entered, without trimming or normalization. Show a brief plaintext credential warning when applicable. Decrypt and validate encrypted backups locally before content preview or any persistent write; an incorrect password, corruption or tampering leaves current data unchanged. Passwords are not retained or uploaded, and forgotten passwords cannot be recovered by Ayase. Older backups excluding connections or keys remain readable.
@@ -97,7 +101,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## Explicitly out of scope
 
-- Agents, MCP, RAG, knowledge bases, and client-executed tools/search.
+- Agents, arbitrary MCP servers/tools, RAG and knowledge bases. Issue #80 approves only a fixed Exa MCP external search step, without a general client tool runtime or model tool loop.
 - Provider Files API uploads, audio/video attachments, local Office parsing/conversion, and unsent attachment persistence.
 - Saved edit/regeneration versions and arrow navigation (separate Issue #17).
 - Accounts, cloud sync, telemetry, auto-update, plugins, and marketplace features.

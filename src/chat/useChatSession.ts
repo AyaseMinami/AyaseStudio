@@ -9,6 +9,12 @@ import type { CherryBackup, CherryImportPlan } from "../import/cherryTypes";
 
 import type { DiscoveredModel } from "./modelCatalog";
 import { initialSearch, finishSearch, mergeSearch } from "./nativeSearch";
+import { isExternalSearch, resolveSearchMode, withSearchMode, type SearchMode } from "../search/mode";
+import { loadSearchSettings, validateSearchQuery, type SearchSettings } from "../search/settings";
+import { searchExa } from "../search/runtime";
+import { validateExaApiSettings } from "../search/exaApi";
+import { prepareSearchContext, projectSearchHistory } from "../search/context";
+import { externalCitations } from "../search/citations";
 import { ContextBudgetError, planContextBudget,
   summarizeContextPlan, type ContextPlan } from "./contextBudget";
 import { addDraftAttachments, attachmentCapabilityFailure, materializeDraftAttachment, prepareDraftAttachment,
@@ -190,9 +196,12 @@ export function useChatSession({
       settings: { modelId: workspace.effective.modelId, config: withThinkingSettings(sessionConfig, protocol, settings) } });
   }
   async function setWebSearch(enabled: boolean): Promise<boolean> {
+    return setSearchMode(enabled ? "native" : "off");
+  }
+  async function setSearchMode(mode: SearchMode): Promise<boolean> {
     if (!workspace.conversation || !workspace.canSend()) return false;
     return workspace.execute({ type: "configure-conversation", id: workspace.conversation.id,
-      settings: { modelId: workspace.effective.modelId, config: { ...sessionConfig, webSearch: enabled } } });
+      settings: { modelId: workspace.effective.modelId, config: withSearchMode(sessionConfig, mode) } });
   }
   useEffect(() => {
     setConfigErrors(validateRequestConfig(
@@ -683,6 +692,24 @@ export function useChatSession({
     const requestStore = sessionStore;
 
     const frozenConfig = structuredClone(resume?.continuation?.config ?? sessionConfig);
+    const searchMode = isExternalSearch(resume?.search?.provider) ? resume.search.provider : resolveSearchMode(frozenConfig);
+    const externalSearch = isExternalSearch(searchMode);
+    // Keep transport configuration native-only; external data is prepared by the session.
+    frozenConfig.webSearch = searchMode === "native";
+    let searchSettings: SearchSettings | undefined;
+    let searchQuery: string | undefined;
+    if (externalSearch && !resume) {
+      try {
+        searchSettings = structuredClone(loadSearchSettings(undefined, searchMode as "exa-mcp" | "exa-api"));
+        if (searchMode === "exa-api") searchSettings = validateExaApiSettings(searchSettings);
+        searchQuery = validateSearchQuery(content);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "外部搜索配置无效。");
+        return;
+      }
+    }
+    const requestHistory = projectSearchHistory(history).map(message => message.providerReplay?.scope === replayScope
+      ? message : { ...message, providerReplay: undefined });
     const errors = validateRequestConfig(
       frozenConfig,
       requestConnection.protocol,
@@ -702,7 +729,7 @@ export function useChatSession({
         planned = resume?.continuation ? { messages: [...resume.continuation.messages,
           { role: "assistant", content: resume.content, providerReplay: resume.providerReplay }],
           keptTurns: 0, trimmedTurns: 0, excludedIncompleteTurns: 0, inputTokens: 0, countingLabel: "继续原请求", estimated: true } : await planContextBudget(
-          history.map((message) => message.providerReplay?.scope === replayScope ? message : { ...message, providerReplay: undefined }), content, frozenConfig,
+          requestHistory, content, frozenConfig,
           requestConnection.protocol, activeTarget.model.modelId, undefined,
           [...frozenAttachments, ...existingAttachments].map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
         );
@@ -807,7 +834,8 @@ export function useChatSession({
         replyToId: userMessage.id,
         content: resume?.content ?? "",
         status: "streaming",
-        search: resume?.search ?? (frozenConfig.webSearch ? initialSearch(true) : undefined),
+        search: resume?.search ?? (externalSearch ? { ...initialSearch(true), provider: searchMode as "exa-mcp" | "exa-api", status: "searching", queries: [searchQuery!] }
+          : frozenConfig.webSearch ? initialSearch(true) : undefined),
         ...(requestConnection.protocol === "anthropic-native" ? { continuation: resume?.continuation ?? {
           config: frozenConfig, model: activeTarget.model.modelId, baseUrl: requestConnection.baseUrl, scope: replayScope,
           messages: planned.messages.map((message, index) => index === planned.messages.length - 1
@@ -839,9 +867,9 @@ export function useChatSession({
         }
         return;
       }
-      startTitleNaming();
+      if (!externalSearch) startTitleNaming();
       if (controller.signal.aborted) {
-        workingMessages = [...history, userMessage, { ...assistantMessage, status: "aborted" }];
+        workingMessages = replaceAssistant(workingMessages, assistantId, assistantMessage.content, "aborted");
         await requestStore.updateMessages(workingMessages).catch(() => undefined);
         setMessages(workingMessages);
         consumeSentDraft();
@@ -900,9 +928,46 @@ export function useChatSession({
       let lastPersist = 0;
       let terminalSeen = false;
       try {
+        if (externalSearch && !resume) {
+          const result = await searchExa(searchSettings!, searchQuery!, controller.signal, searchMode as "exa-mcp" | "exa-api");
+          if (controller.signal.aborted) throw new Error("检索已停止。");
+          // Preserve successful retrieval independently of budget/model failures.
+          workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
+            search: { ...initialSearch(true), provider: searchMode as "exa-mcp" | "exa-api", status: "completed", sources: result.sources,
+              queries: [searchQuery!], ...(result.warning ? { warning: result.warning } : {}) } } : message);
+          setMessages(workingMessages); queuePersist(workingMessages);
+          const latestAttachments = requestMessages[requestMessages.length - 1]?.attachments ?? [];
+          const prepared = await prepareSearchContext(requestHistory, content, frozenConfig, requestConnection.protocol,
+            requestModelId, result.sources, latestAttachments as RequestAttachment[]);
+          if (controller.signal.aborted) throw new Error("检索已停止。");
+          planned = prepared.plan;
+          // Materialize any historical attachment newly retained after data budgeting.
+          requestMessages = [];
+          for (const message of planned.messages) {
+            const loaded: RequestAttachment[] = [];
+            for (const attachment of message.attachments ?? []) {
+              if (controller.signal.aborted) throw new Error("检索已停止。");
+              loaded.push("data" in attachment ? attachment : await attachmentStore.read(attachment));
+            }
+            requestMessages.push({ ...message, ...(loaded.length ? { attachments: loaded } : {}) });
+          }
+          buildProtocolBody(requestConnection.protocol, { baseUrl: requestConnection.baseUrl, apiKey: "", model: requestModelId,
+            messages: requestMessages, config: frozenConfig, replayScope });
+          if (controller.signal.aborted) throw new Error("检索已停止。");
+          workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
+            search: { ...message.search!, sources: prepared.sources },
+            ...(message.continuation ? { continuation: { ...message.continuation,
+              messages: planned.messages.map((item, index) => index === planned.messages.length - 1
+                ? { ...item, attachments: userMessage.attachments } : item) } } : {}) } : message);
+          setContextPlan(summarizeContextPlan(planned));
+          setMessages(workingMessages); queuePersist(workingMessages);
+          startTitleNaming();
+        }
+        if (controller.signal.aborted) throw new Error("生成已停止。");
         const transport = await createRuntimeChatTransport(
           requestConnection.protocol,
         );
+        if (controller.signal.aborted) throw new Error("生成已停止。");
         for await (const event of transport.stream({
           baseUrl: requestConnection.baseUrl,
           apiKey: requestConnection.apiKey,
@@ -913,6 +978,7 @@ export function useChatSession({
           replayScope,
         })) {
           if (event.type === "search-update") {
+            if (externalSearch) continue;
             workingMessages = workingMessages.map((message) => message.id === assistantId
               ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
             setMessages(workingMessages); queuePersist(workingMessages); continue;
@@ -935,6 +1001,8 @@ export function useChatSession({
               assistantText,
               "streaming",
             );
+            if (externalSearch && event.type === "text-delta") workingMessages = workingMessages.map(message => message.id === assistantId
+              ? { ...message, search: { ...message.search!, citations: externalCitations(assistantText, message.search!.sources) } } : message);
             const now = performance.now();
             if (now - lastPaint >= 32) {
               setMessages(workingMessages);
@@ -1169,6 +1237,8 @@ export function useChatSession({
     sessionConfig,
     setThinking,
     setWebSearch,
+    searchMode: resolveSearchMode(sessionConfig),
+    setSearchMode,
     setActiveModel,
     setConversationModel,
     stopGeneration,

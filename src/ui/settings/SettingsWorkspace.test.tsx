@@ -107,6 +107,15 @@ const sharedProps = {
 };
 
 describe("SettingsWorkspace", () => {
+  it("places an independent Exa search destination directly after connections", () => {
+    const html = renderToStaticMarkup(<SettingsWorkspace {...sharedProps} activeSection="search" />);
+    expect(html).toMatch(/<button[^>]*aria-label="网络搜索"[^>]*aria-current="page"/);
+    expect(html.indexOf('aria-label="连接配置"')).toBeLessThan(html.indexOf('aria-label="网络搜索"'));
+    expect(html.indexOf('aria-label="网络搜索"')).toBeLessThan(html.indexOf('aria-label="外观"'));
+    expect(html).toContain("Exa API / MCP");
+    expect(html).toContain("网络搜索");
+    expect(html).not.toContain('aria-label="供应商列表"');
+  });
   it("shows about and feedback as a separate settings destination", () => {
     const html = renderToStaticMarkup(<SettingsWorkspace {...sharedProps} activeSection="about" />);
     expect(html).toMatch(/<button[^>]*aria-label="关于"[^>]*aria-current="page"/);

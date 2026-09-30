@@ -59,6 +59,44 @@ async function type(text: string, value: string) {
 }
 
 describe("BackupWorkspace", () => {
+  it("counts a search-only credential and requires replacement key confirmation", async () => {
+    const valid = preview(true, false);
+    valid.document.version = 2;
+    valid.document.searchSettings = { version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "SEARCH-SECRET-DO-NOT-RENDER", numResults: 5 };
+    const { api } = await render({ inspect: vi.fn().mockResolvedValue(valid) });
+    await click("选择备份文件");
+    const summary = host!.querySelector('[aria-label="已校验的备份预览"]')!;
+    expect(summary.textContent).toContain("网络搜索配置包含 · Exa MCP（旧配置）");
+    expect(summary.textContent).toContain("API Key包含 · 1 个");
+    expect(summary.textContent).not.toContain("SEARCH-SECRET");
+    await toggle("替换"); await toggle("我已确认导入策略");
+    expect(button("确认导入").disabled).toBe(true);
+    await click("确认导入"); expect(api.restore).not.toHaveBeenCalled();
+    await toggle("我同意覆盖当前连接配置和 API Key"); await click("确认导入");
+    expect(api.restore).toHaveBeenCalledWith(valid, "replace");
+  });
+
+  it("explains that an old backup keeps local search settings and credentials", async () => {
+    await render(); await click("选择备份文件");
+    expect(host!.textContent).toContain("不包含（旧备份），保留本机搜索设置与 Key");
+  });
+
+  it("counts both API and MCP credentials in a v3 backup without displaying either", async () => {
+    const valid = preview(true, false); valid.document.version = 3;
+    valid.document.searchSettings = { version: 2,
+      exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "PRIVATE-MCP-SECRET", numResults: 5 },
+      exaApi: { version: 1, baseUrl: "https://api.exa.ai", apiKey: "PRIVATE-API-SECRET", numResults: 5 } };
+    const { api } = await render({ inspect: vi.fn().mockResolvedValue(valid) });
+    await click("选择备份文件");
+    const summary = host!.querySelector('[aria-label="已校验的备份预览"]')!;
+    expect(summary.textContent).toContain("网络搜索配置包含 · Exa API 与 Exa MCP");
+    expect(summary.textContent).toContain("API Key包含 · 2 个");
+    expect(summary.textContent).not.toContain("PRIVATE-");
+    await toggle("替换"); await toggle("我已确认导入策略");
+    expect(button("确认导入").disabled).toBe(true);
+    await toggle("我同意覆盖当前连接配置和 API Key"); await click("确认导入");
+    expect(api.restore).toHaveBeenCalledWith(valid, "replace");
+  });
   it("shows one default-off switch without export checkboxes and always exports a full backup", async () => {
     const { api, onExit } = await render();
     expect(host!.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);

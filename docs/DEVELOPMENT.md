@@ -1,5 +1,17 @@
 # Ayase Studio Development Guide
 
+## Exa API / MCP external search #80 (2026-09-30)
+
+后续用户修订为独立 Exa API（必填 Key）与 Exa MCP（Key 选填）。新增直接 API 适配器、两套配置迁移与四模式选择，备份 document v3 仍读取 v1/v2；接口见 [PROTOCOLS.md](PROTOCOLS.md)，当前行为见 [实现记录](ISSUE-80-IMPLEMENTATION.md)。以下 1049 项记录为首次 MCP-only 实现快照。
+
+本次最终 `npm.cmd run check` 通过 86 文件 / 1129 项测试、TypeScript 与 Vite 构建，Cargo check locked 通过。独立 Sol/high 审查发现的完整 v3 备份修复损坏配置问题已修复，回滚回归及独立复核通过。浏览器以模拟网络验证两卡保存隔离、API 缺 Key 阻断、MCP 空 Key、测试取消、重新加载、四模式及 API 搜索引用，覆盖浅深主题与宽窄视口；新增截图 `ui-review.local/search80-split-modes.png`。隔离 Tauri 程序再次编译启动；真实 API/MCP、模型、实际 Tauri HTTP 和原生交互未验证。Rust 未修改，下面 Cargo test 数字为首次实现记录。
+
+本地实现与验收范围见 [ISSUE-80-IMPLEMENTATION.md](ISSUE-80-IMPLEMENTATION.md)。网络搜索设置与聊天使用同一有限适配器；测试页面打开、保存、恢复备份和加载历史都不自动联网。确定性测试使用注入 fetch，覆盖 MCP 初始化、固定工具/schema、JSON/SSE、凭据隔离、错误、边界和取消；聊天测试覆盖四协议、最终预算、命名阻断、候选和并行会话、Anthropic continuation。真实服务探测仍需用户明确授权，不读取 `.env.probe.local`。
+
+最终 `npm.cmd run check` 通过 85 文件 / 1049 项测试、TypeScript 与 Vite 构建；`cargo test --locked --manifest-path src-tauri/Cargo.toml` 95 通过、1 ignored，Cargo check 通过。Rust 代码未修改。独立 Sol/high 只读审查的两处 Markdown 引用定位问题已修复并回归，最终无遗留发现。构建保留既有大 chunk 提示；本次未测量安装包/常驻内存增量。
+
+内置浏览器以隔离数据库、合成 Key、模拟搜索/模型接口检查实际设置与聊天组件：1440×900、600×740 浅深主题，显式保存/测试/停止、模式菜单键盘与焦点、来源摘录和引用、失败阻断、取消及持久化状态。页面无横向溢出。`tauri dev -- --no-watch` 使用隔离 identifier 与模拟页面编译启动；验收用 Vite 配置忽略 Rust target，避免原生编译的 DLL 文件锁中断监听。真实 Exa、匿名/Key、代理、Tauri HTTP 与原生窗口交互仍待授权或人工验收。未提交、推送、修改远端 Issue 或发布。
+
 ## Ayase backup verification #79
 
 数据管理入口页样式整理：统一单一页面标题、两个同宽同圆角无阴影卡片，标题和按钮都在卡片内左对齐，移除两个独立页面容器叠加的大间距；修正 Ayase 说明为完整连接／密钥备份可选择加密。设置、Cherry 导入与工作区相关 46 项测试、TypeScript/Vite 构建和 diff 检查通过；隔离浏览器确认浅色宽屏两卡片左边缘／宽度／按钮左边缘一致，标题 16px、正文 14px，间距 16px；600px 深色页无页面横向溢出，按钮在模拟边界响应。原生与导入行为未修改。

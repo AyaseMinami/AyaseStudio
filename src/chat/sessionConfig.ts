@@ -14,6 +14,7 @@ export type NumericField =
 export interface SessionConfig {
   version: 1;
   webSearch?: boolean;
+  webSearchProvider?: "native" | "exa-mcp" | "exa-api";
   geminiThinking?: import("./geminiThinking").GeminiThinkingSettings;
   thinking?: Partial<Record<Exclude<ChatProtocol, "gemini-native">, import("./thinking").ThinkingSettings>>;
   systemInstruction: string;

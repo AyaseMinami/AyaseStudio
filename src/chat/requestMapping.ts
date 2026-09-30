@@ -11,6 +11,7 @@ import { geminiThinkingBody } from "./geminiThinking";
 import { getThinkingSettings, validateThinkingSelection, protocolThinkingBody } from "./thinking";
 import { attachmentCapabilityFailure, isOfficeAttachment, safeTextAttachment, type RequestAttachment } from "./attachments";
 import { searchRequestBody } from "./nativeSearch";
+import { resolveSearchMode } from "../search/mode";
 
 export class RequestConfigError extends Error {
   constructor(readonly errors: ConfigErrors) {
@@ -214,7 +215,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   if (protocol === "openai-chat") {
     return checkedInlineBody(protocol, {
       ...custom,
-      ...searchRequestBody(protocol, config.webSearch === true),
+      ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
       ...thinkingBody,
       model: request.model,
       messages: system ? [{ role: "system", content: system }, ...mapped.map(({ message, attachments }) => ({
@@ -247,7 +248,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   if (protocol === "openai-responses") {
     return checkedInlineBody(protocol, {
       ...custom,
-      ...searchRequestBody(protocol, config.webSearch === true),
+      ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
       ...thinkingBody,
       model: request.model,
       input: mapped.map(({ message, attachments }) => ({ role: message.role,
@@ -279,7 +280,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
       ...(maxOutput !== undefined ? { maxOutputTokens: maxOutput } : {}),
     };
     return checkedInlineBody(protocol, {
-      ...searchRequestBody(protocol, config.webSearch === true),
+      ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
       contents: mapped.map(({ message, attachments }) => ({
         role: message.role === "assistant" ? "model" : "user",
         parts: [{ text: message.content }, ...attachments.map((item) => item.mimeType.startsWith("text/")
@@ -291,7 +292,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   }
   const body = {
     ...custom,
-    ...searchRequestBody(protocol, config.webSearch === true),
+    ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
     ...thinkingBody,
     model: request.model,
     max_tokens: maxOutput ?? 4096,

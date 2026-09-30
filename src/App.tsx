@@ -73,8 +73,8 @@ function App() {
           modelId={chat.activeModel?.modelId}
           thinking={getThinkingSettings(chat.sessionConfig, chat.activeConnection?.protocol ?? "gemini-native")}
           onThinkingChange={(value) => void chat.setThinking(value)}
-          webSearch={chat.sessionConfig.webSearch ?? false}
-          onWebSearchChange={(enabled) => void chat.setWebSearch(enabled)}
+          searchMode={chat.searchMode}
+          onSearchModeChange={(mode) => void chat.setSearchMode(mode)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={modelLabel}
           modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}

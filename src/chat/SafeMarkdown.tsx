@@ -11,6 +11,8 @@ import type { ExtraProps } from "react-markdown";
 import type { PluggableList } from "unified";
 
 import type { SearchRecord } from "./nativeSearch";
+import { renderExternalCitations } from "../search/citations";
+import { isExternalSearch } from "../search/mode";
 import { openExternal, safeExternalUrl } from "./externalLinks";
 
 type MarkdownNode = {
@@ -153,7 +155,9 @@ function CodePre({ node, children, ...props }: ComponentPropsWithoutRef<"pre"> &
 export function SafeMarkdown({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
   const citations = validCitations(search, children);
   const remarkPlugins: PluggableList = [[remarkGfm, { singleTilde: false }], remarkMath, remarkMathSyntax, remarkCodeBlocks,
-    ...(citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : []),
+    ...(isExternalSearch(search?.provider)
+      ? [() => (tree: unknown) => renderExternalCitations(tree as MarkdownNode, children, search.sources, citationNode)]
+      : citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : []),
     () => (tree: unknown) => addSoftLineBreaks(tree)];
   return <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[[rehypeKatex, { trust: false, errorColor: "currentColor" }]]} components={{
     a: ExternalLink,

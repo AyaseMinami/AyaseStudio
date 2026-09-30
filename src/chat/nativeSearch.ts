@@ -4,6 +4,7 @@ export interface SearchSource {
   id: string;
   url: string;
   title: string;
+  excerpt?: string;
 }
 
 export interface SearchCitation {
@@ -14,6 +15,8 @@ export interface SearchCitation {
 }
 
 export interface SearchRecord {
+  provider?: "exa-mcp" | "exa-api";
+  warning?: string;
   enabled: boolean;
   status: "pending" | "searching" | "completed" | "not-used" | "failed" | "cancelled";
   sources: SearchSource[];

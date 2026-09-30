@@ -1,5 +1,21 @@
 # Protocol Compatibility Contract
 
+## Independent Exa API and MCP profiles (#80 revision)
+
+The user's later request adds Exa API separately from MCP. API defaults to `https://api.exa.ai`, requires a nonempty independent Key, and sends one POST to normalized base pathname plus `/search`. It rejects query/hash/userinfo/credential URLs and redirects; `x-api-key` is a header. Payload contains only trimmed current query, configured 1–10 `numResults`, `type:auto` and `contents:{text:true}`; no summaries, agent runs, extra queries or model-generated search terms. The [official API contract](https://exa.ai/docs/reference/search) requires authentication and supplies JSON `results` containing URL/title/text. Local normalization uses the same source/excerpt bounds as MCP; unusable/empty JSON blocks answering. Total timeout 30 seconds, response cap 2 MiB, no retry or automatic fallback. No real API request was made for implementation.
+
+Local settings version 2 holds both profiles. Session mode `exa-api` dispatches direct API, `exa-mcp` dispatches the finite MCP adapter below; settings tests use the explicitly selected profile. Both suppress native model tools and share final budget, citations, history projection and Anthropic continuation rules. Each request freezes its selected profile and never uses the other service's Key. Backup document v3 accepts API mode/snapshots and both profiles; v1/v2 readers retain their original schema limits.
+
+## Fixed Exa MCP external search (#80)
+
+Exa is a client-managed pre-generation step separate from four `ChatTransport` adapters. `src/search/exa.ts` supports Streamable HTTP versions `2025-11-25`, `2025-06-18`, `2025-03-26`: initialize, initialized notification, fixed tool/schema confirmation and one `web_search_advanced_exa` call. All requests use the same validated HTTPS endpoint with fixed `tools=web_search_advanced_exa`. Optional search Key uses `x-api-key`; model credentials never reach Exa. Redirects are refused (`maxRedirections:0` in Tauri). No OAuth, legacy SSE fallback, arbitrary tools, retries or model tool loop.
+
+JSON/SSE responses require matching JSON-RPC IDs and negotiated session/version headers. The advanced tool's single text block must contain JSON `results` with valid HTTP(S) URLs and nonempty text; prose is not guessed into sources. No-results/tool errors/429/500/network/timeout block answering. Total timeout is 30 seconds, each response capped at 2 MiB. Cancellation ends local reads promptly with bounded best-effort notifications/session cleanup, without promising remote cancellation.
+
+Query is only current trimmed user text (1–2000 Unicode codepoints); `numResults` is 1–10 and `textMaxCharacters` 1500. Ordered URL-deduplicated results retain at most 10 sources, 300-codepoint titles, 2048-character URLs, 1500-codepoint excerpts each and 8000 excerpt codepoints total. Final budgeting may reduce data further. JSON data/instructions enter only the latest user request copy; stored original content is unchanged. External mode suppresses native search fields in all adapters; Responses remains `store:false`. Ordinary future history projects citations into readable source URLs and omits external replay. Explicit Anthropic continuation reuses prepared messages/sources without re-search.
+
+Pinned public source supports this contract; hosted deployment, anonymous advanced-tool access, authentication and proxy behavior remain subject to authorized live acceptance. See [design](ISSUE-80-EXA-SEARCH-PLAN.md) and [verification](ISSUE-80-IMPLEMENTATION.md).
+
 ## Lightweight files (#63)
 
 除 TXT/Markdown 外，CSV/TSV/JSON/XML/YAML、日志与常见代码/配置文件按 UTF-8 解码为 `text/plain`，使用下表同一文本映射，不解析结构、不执行 HTML/代码。DOCX/XLSX/PPTX 仅在 Responses 映射为 `input_file`，带原名和对应 Office MIME 的 Base64 data URL；不使用 Files API，不进行本地内容提取或格式转换。其他三种协议明确拒绝 Office（包括保留轮次中的历史附件），不丢弃附件或自动降级。

@@ -5,6 +5,7 @@ import { buildProtocolBody, RequestConfigError } from "./requestMapping";
 import { includeThinkingSummary } from "./thinking";
 import { ResponseThinking } from "./responseThinking";
 import { SearchDecoder } from "./searchDecoding";
+import { resolveSearchMode } from "../search/mode";
 import { resolveGenerationEndpoint, UrlResolutionError } from "./urlResolution";
 import type {
   ChatEvent,
@@ -185,7 +186,7 @@ class OpenAIChatTransport implements ChatTransport {
     let capturedFetch: ReturnType<typeof openAIFetch> | undefined;
     try {
       const body = buildProtocolBody("openai-chat", request);
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-chat",
         request.baseUrl,
@@ -286,7 +287,7 @@ class OpenAIResponsesTransport implements ChatTransport {
     try {
       const body = buildProtocolBody("openai-responses", request);
       const thinking = new ResponseThinking(includeThinkingSummary(request.config, "openai-responses"));
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-responses",
         request.baseUrl,
@@ -480,7 +481,7 @@ class GeminiNativeTransport implements ChatTransport {
       const body = buildProtocolBody("gemini-native", request);
       const streaming = request.config?.stream ?? true;
       const showThinking = includeThinkingSummary(request.config, "gemini-native");
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "gemini-native",
         request.baseUrl,
@@ -635,7 +636,7 @@ class AnthropicNativeTransport implements ChatTransport {
       const body = buildProtocolBody("anthropic-native", request);
       const showThinking = includeThinkingSummary(request.config, "anthropic-native");
       const streaming = request.config?.stream ?? true;
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "anthropic-native",
         request.baseUrl,

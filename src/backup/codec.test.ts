@@ -168,6 +168,89 @@ describe("backup envelope", () => {
 });
 
 describe("backup document validation", () => {
+  it.each([false, true])("roundtrips v3 API/MCP profiles and API snapshots with encrypted=%s", async encrypted => {
+    const value = document(true); value.version = 3;
+    value.searchSettings = { version: 2, exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "synthetic-mcp-key", numResults: 5 }, exaApi: { version: 1, baseUrl: "https://api.exa.ai", apiKey: "synthetic-api-search-key", numResults: 3 } };
+    (value.rows.assistants[0] as any).defaultConfig.webSearchProvider = "exa-api";
+    (value.rows.chats[0] as any).messages[1].search = { enabled: true, provider: "exa-api", status: "completed", queries: ["query"], warning: "warning", sources: [{ id: "s", title: "source", url: "https://example.invalid", excerpt: "bounded" }], citations: [] };
+    const serialized = await encodeBackup(value, encrypted, password, password);
+    expect(JSON.parse(serialized).version).toBe(1);
+    expect(serialized.includes("synthetic-mcp-key")).toBe(!encrypted);
+    expect(serialized.includes("synthetic-api-search-key")).toBe(!encrypted);
+    expect((await decodeBackup(serialized, password)).document).toEqual(value);
+  });
+  it.each(["api selection", "api record", "nested configuration"])("v2 strictly rejects v3 %s", async field => {
+    const value = document(); value.version = 2;
+    if (field === "api selection") (value.rows.assistants[0] as any).defaultConfig.webSearchProvider = "exa-api";
+    if (field === "api record") (value.rows.chats[0] as any).messages[1].search = { enabled: true, provider: "exa-api", status: "completed", queries: [], sources: [], citations: [] };
+    if (field === "nested configuration") value.searchSettings = { version: 2, exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 5 }, exaApi: { version: 1, baseUrl: "https://api.exa.ai", numResults: 5 } };
+    await expect(decodeBackup(await plainEnvelope(value))).rejects.toThrow();
+  });
+  it.each(["old configuration", "unknown root", "unknown MCP", "unknown API", "missing API", "unexpected MCP key", "unexpected API key", "oversized API snapshot"])("v3 rejects %s with excluded credentials", async field => {
+    const value = document(); value.version = 3;
+    const config = { version: 2, exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 5 }, exaApi: { version: 1, baseUrl: "https://api.exa.ai", numResults: 5 } } as any;
+    value.searchSettings = config;
+    if (field === "old configuration") value.searchSettings = config.exaMcp;
+    if (field === "unknown root") config.extra = true;
+    if (field === "unknown MCP") config.exaMcp.extra = true;
+    if (field === "unknown API") config.exaApi.extra = true;
+    if (field === "missing API") delete config.exaApi;
+    if (field === "unexpected MCP key") config.exaMcp.apiKey = "synthetic-mcp-key";
+    if (field === "unexpected API key") config.exaApi.apiKey = "synthetic-api-search-key";
+    if (field === "oversized API snapshot") (value.rows.chats[0] as any).messages[1].search = { enabled: true, provider: "exa-api", status: "completed", queries: ["query"], sources: [{ id: "s", title: "source", url: "https://example.invalid", excerpt: "x".repeat(1501) }], citations: [] };
+    await expect(decodeBackup(await plainEnvelope(value))).rejects.toThrow();
+  });
+  it.each([false, true])("roundtrips v2 external search settings, credentials and snapshots with encrypted=%s in envelope v1", async encrypted => {
+    const value = document(true); value.version = 2;
+    value.searchSettings = { version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "synthetic-search-key", numResults: 5 };
+    (value.rows.assistants[0] as any).defaultConfig.webSearchProvider = "exa-mcp";
+    const answer = (value.rows.chats[0] as any).messages[1];
+    answer.search = { enabled: true, provider: "exa-mcp", status: "completed", queries: ["中文🙂"], warning: "有界提示",
+      sources: [{ id: "source-1", title: "source", url: "https://example.invalid", excerpt: "检索摘录🙂" }], citations: [{ start: 0, end: 6, sourceIds: ["source-1"] }] };
+    const serialized = await encodeBackup(value, encrypted, password, password);
+    expect(JSON.parse(serialized).version).toBe(1);
+    expect(serialized.includes("synthetic-search-key")).toBe(!encrypted);
+    expect((await decodeBackup(serialized, password)).document).toEqual(value);
+  });
+  it.each(["settings", "selection", "provider", "warning", "excerpt"])("v1 rejects v2 %s fields", async field => {
+    const value = document();
+    const answer = (value.rows.chats[0] as any).messages[1];
+    answer.search = { enabled: true, status: "completed", queries: [], sources: [{ id: "s", title: "source", url: "https://example.invalid" }], citations: [] };
+    if (field === "settings") value.searchSettings = { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 5 };
+    if (field === "selection") (value.rows.assistants[0] as any).defaultConfig.webSearchProvider = "exa-mcp";
+    if (field === "provider") answer.search.provider = "exa-mcp";
+    if (field === "warning") answer.search.warning = "warning";
+    if (field === "excerpt") answer.search.sources[0].excerpt = "excerpt";
+    await expect(decodeBackup(await plainEnvelope(value))).rejects.toThrow();
+  });
+  it.each(["unknown settings", "invalid settings", "unexpected key", "invalid provider", "long warning", "long excerpt", "total excerpts", "too many sources", "long query", "too many queries", "long title", "long url"])("v2 rejects %s", async field => {
+    const value = document(); value.version = 2;
+    value.searchSettings = { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 5 };
+    const search = { enabled: true, provider: "exa-mcp", status: "completed", queries: ["query"], sources: [{ id: "s", title: "source", url: "https://example.invalid", excerpt: "excerpt" }], citations: [] } as any;
+    (value.rows.chats[0] as any).messages[1].search = search;
+    if (field === "unknown settings") Object.assign(value.searchSettings, { unknown: true });
+    if (field === "invalid settings") value.searchSettings.baseUrl = "http://example.invalid";
+    if (field === "unexpected key") value.searchSettings.apiKey = "synthetic-search-key";
+    if (field === "invalid provider") search.provider = "unsupported";
+    if (field === "long warning") search.warning = "🙂".repeat(1001);
+    if (field === "long excerpt") search.sources[0].excerpt = "🙂".repeat(1501);
+    if (field === "total excerpts") search.sources = Array.from({ length: 6 }, (_, i) => ({ ...search.sources[0], id: `s${i}`, excerpt: "🙂".repeat(1500) }));
+    if (field === "too many sources") search.sources = Array.from({ length: 11 }, (_, i) => ({ ...search.sources[0], id: `s${i}` }));
+    if (field === "long query") search.queries = ["🙂".repeat(2001)];
+    if (field === "too many queries") search.queries = ["one", "two"];
+    if (field === "long title") search.sources[0].title = "🙂".repeat(301);
+    if (field === "long url") search.sources[0].url = "https://example.invalid/" + "x".repeat(2048);
+    await expect(decodeBackup(await plainEnvelope(value))).rejects.toThrow();
+  });
+  it("v2 preserves native search limits and accepts Unicode bounded external text", async () => {
+    const value = document(); value.version = 2;
+    const answer = (value.rows.chats[0] as any).messages[1];
+    answer.search = { enabled: true, status: "completed", queries: ["x".repeat(2100), "second"], sources: [{ id: "native", title: "x".repeat(301), url: "https://example.invalid" }], citations: [] };
+    expect((await decodeBackup(await encodeBackup(value))).document).toEqual(value);
+    answer.search.provider = "exa-mcp"; answer.search.queries = ["🙂".repeat(2000)]; answer.search.sources[0].title = "🙂".repeat(300);
+    answer.search.sources[0].excerpt = "🙂".repeat(1500); answer.search.warning = "🙂".repeat(1000);
+    expect((await decodeBackup(await encodeBackup(value))).document).toEqual(value);
+  });
   it("roundtrips a large encrypted resource without regex stack overflow", async () => {
     const value = document(true), bytes = new Uint8Array(12 * 1024 * 1024).fill(65);
     value.assets = [{ id: reference, mime: "text/plain", data: bytesToBase64(bytes), size: bytes.length, sha256: await sha256(bytes) }];
@@ -184,7 +267,7 @@ describe("backup document validation", () => {
     expect(decoded.document.assets[0]!.size).toBe(bytes.length);
   }, 60000);
   it.each([
-    ["future version", (value: BackupDocument) => Object.assign(value, { version: 2 })],
+    ["future version", (value: BackupDocument) => Object.assign(value, { version: 4 })],
     ["unknown document field", (value: BackupDocument) => Object.assign(value, { apiKey: syntheticKey })],
     ["unknown nested field", (value: BackupDocument) => Object.assign(value.rows.assistants[0]!, { apiKey: syntheticKey })],
     ["missing table", (value: BackupDocument) => Reflect.deleteProperty(value.rows, "userAvatar")],

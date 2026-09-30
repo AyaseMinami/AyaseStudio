@@ -4,14 +4,15 @@ import { bytesToBase64 } from "../chat/attachments";
 import { check, decode64, sha256 } from "./codec";
 import { backupTables, preferenceKeys, type BackupAsset, type BackupDocument, type BackupFiles, type BackupOptions, type BackupPreferences, type BackupRows } from "./types";
 import { managedReference } from "./validation";
+import { loadSearchConfiguration, SEARCH_SETTINGS_KEY } from "../search/settings";
 
-export const allPreferenceKeys = [...preferenceKeys, connectionSettingsStorageKey] as const;
+export const allPreferenceKeys = [...preferenceKeys, connectionSettingsStorageKey, SEARCH_SETTINGS_KEY] as const;
 export interface LocalSnapshot { rows: BackupRows; preferences: Record<string, string | null> }
 export function pick(value: Record<string, any>, fields: string[]): Record<string, any> {
   return Object.fromEntries(fields.filter(k => value[k] !== undefined).map(k => [k, value[k]]));
 }
 function session(v: Record<string, any>) {
-  const result = pick(v, ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson", "webSearch", "geminiThinking", "thinking", "invalidStoredConfig"]);
+  const result = pick(v, ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson", "webSearch", "webSearchProvider", "geminiThinking", "thinking", "invalidStoredConfig"]);
   for (const key of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) result[key] = pick(v[key], ["mode", "value"]);
   result.customJson = pick(v.customJson, ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"]);
   if (v.geminiThinking) result.geminiThinking = pick(v.geminiThinking, ["choice", "budget", "includeSummary"]);
@@ -25,8 +26,14 @@ function message(v: Record<string, any>, pair = false): Record<string, any> {
   if (["streaming", "paused"].includes(result.status)) result.status = "incomplete";
   if (v.source) result.source = pick(v.source, ["source", "id", "createdAt", "unavailableAttachments"]);
   if (v.attachments) result.attachments = v.attachments.map((a: Record<string, any>) => pick(a, ["reference", "name", "mimeType", "size"]));
-  if (v.search) result.search = { ...pick(v.search, ["enabled", "status", "queries", "suggestionHtml", "error"]),
-    sources: v.search.sources.map((s: Record<string, any>) => pick(s, ["id", "url", "title"])), citations: v.search.citations.map((c: Record<string, any>) => pick(c, ["start", "end", "sourceIds"])) };
+  if (v.search) {
+    result.search = { ...pick(v.search, ["enabled", "status", "queries", "suggestionHtml", "error", "provider", "warning"]),
+      sources: v.search.sources.map((s: Record<string, any>) => pick(s, ["id", "url", "title", "excerpt"])), citations: v.search.citations.map((c: Record<string, any>) => pick(c, ["start", "end", "sourceIds"])) };
+    if (["pending", "searching"].includes(result.search.status)) {
+      result.search.status = "cancelled";
+      if (result.status === "complete") result.status = "incomplete";
+    }
+  }
   if (v.providerReplay) result.providerReplay = pick(v.providerReplay, ["protocol", "scope", "content", "responses"]);
   if (!pair && v.roundVersions) result.roundVersions = { selected: v.roundVersions.selected, pairs: v.roundVersions.pairs.map((p: Record<string, any>[]) => p.map(m => message(m, true))) };
   return result;
@@ -90,7 +97,10 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
     const mime = metadata.mime ?? (ref.endsWith(".png") ? "image/png" : ref.endsWith(".webp") ? "image/webp" : "image/jpeg");
     const asset = await addAsset(ref, mime, data); if (metadata.size !== undefined) check(asset.size === metadata.size, "附件内容与记录大小不一致。");
   }
-  return { format: "ayase-studio-backup", version: 1, createdAt: new Date().toISOString(), options: { connections: options.connections, credentials: options.credentials },
+  const configuration = loadSearchConfiguration(storage);
+  const profileFields = ["version", "baseUrl", "numResults", ...(options.credentials ? ["apiKey"] : [])];
+  const searchSettings = { version: 2, exaMcp: pick(configuration.exaMcp, profileFields), exaApi: pick(configuration.exaApi, profileFields) } as BackupDocument["searchSettings"];
+  return { format: "ayase-studio-backup", version: 3, createdAt: new Date().toISOString(), options: { connections: options.connections, credentials: options.credentials },
     rows: encoded as Record<typeof backupTables[number], unknown[]>, preferences,
-    connections: options.connections ? exportConnections(loadConnectionSettings(storage), options.credentials) : null, assets };
+    connections: options.connections ? exportConnections(loadConnectionSettings(storage), options.credentials) : null, searchSettings, assets };
 }

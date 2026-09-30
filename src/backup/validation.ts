@@ -5,6 +5,7 @@ import { isAssistantDefaultAvatar } from "../avatar/assistantDefaults";
 import { isThinkingSettings } from "../chat/thinking";
 import { isGeminiThinkingSettings } from "../chat/geminiThinking";
 import { loadAppearancePreferences } from "../appearance/appearance";
+import { validateSearchConfiguration, validateSearchSettings } from "../search/settings";
 
 export const managedReference = /^(attachments\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp|pdf|txt|md|docx|xlsx|pptx)|backgrounds\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp))$/;
 export type JsonRecord = Record<string, any>; // Untrusted values are checked before access at every boundary below.
@@ -20,6 +21,7 @@ function canonical(value: any): string {
   return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}`;
 }
 function text(value: unknown, limit = 8 * 1024 * 1024): asserts value is string { check(typeof value === "string" && value.length <= limit); }
+function unicodeText(value: unknown, limit: number): asserts value is string { text(value, limit * 2); check(Array.from(value).length <= limit); }
 function id(value: unknown): asserts value is string { text(value, 512); check(value.trim() && !["__proto__", "prototype", "constructor"].includes(value)); }
 function cherryImportId(value: unknown): asserts value is string {
   // Conversation source markers embed the ordered upstream message-ID path.
@@ -31,14 +33,15 @@ function time(value: unknown) { number(value); check(Number.isSafeInteger(value)
 function list(value: unknown, max = 100000): asserts value is any[] { check(Array.isArray(value) && value.length <= max); }
 function optional(value: JsonRecord, key: string, validator: (value: unknown) => void) { if (key in value) validator(value[key]); }
 function model(value: unknown) { if (value !== null) id(value); }
-function config(value: unknown) {
-  fields(value, ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson", "webSearch", "geminiThinking", "thinking", "invalidStoredConfig"],
+function config(value: unknown, version: 1 | 2 | 3) {
+  fields(value, ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson", "webSearch", ...(version >= 2 ? ["webSearchProvider"] : []), "geminiThinking", "thinking", "invalidStoredConfig"],
     ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson"]);
   check(value.version === 1 && typeof value.dualSamplingConfirmed === "boolean"); text(value.systemInstruction);
   for (const k of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) { fields(value[k], ["mode", "value"], ["mode"]); check(["auto", "custom"].includes(value[k].mode)); if (value[k].mode === "custom") text(value[k].value, 100); }
   fields(value.customJson, ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"]);
   Object.values(value.customJson).forEach(v => text(v));
   optional(value, "webSearch", v => check(typeof v === "boolean"));
+  optional(value, "webSearchProvider", v => check(["native", "exa-mcp", ...(version === 3 ? ["exa-api"] : [])].includes(v as string)));
   optional(value, "invalidStoredConfig", text);
   // Thinking is plain option data, never connection configuration or runtime requests.
   if (value.geminiThinking !== undefined) { fields(value.geminiThinking, ["choice", "budget", "includeSummary"]); check(isGeminiThinkingSettings(value.geminiThinking)); }
@@ -48,7 +51,7 @@ function config(value: unknown) {
   const errors = validateSessionConfig(value as SessionConfig);
   check(!errors.systemInstruction && !errors.stream && !errors.customJson);
 }
-function conversationConfig(v: unknown) { fields(v, ["modelId", "config"]); model(v.modelId); config(v.config); }
+function conversationConfig(v: unknown, version: 1 | 2 | 3) { fields(v, ["modelId", "config"]); model(v.modelId); config(v.config, version); }
 export function validateConnections(value: unknown, credentials: boolean) {
   fields(value, ["version", "providers", "activeModelId"]); check(value.version === 3); model(value.activeModelId); list(value.providers, 5000);
   const ids = new Set<string>(), models = new Set<string>();
@@ -76,10 +79,28 @@ export async function validateDocument(raw: unknown): Promise<void> {
     check(typeof v === "object");
     for (const [k, item] of Object.entries(v!)) { check(!["__proto__", "prototype", "constructor"].includes(k)); budget(item, depth + 1, k === "data" && depth === 2); }
   }
-  fields(raw, ["format", "version", "createdAt", "options", "rows", "preferences", "connections", "assets"]);
-  check(raw.format === "ayase-studio-backup" && raw.version === 1, "不支持此备份版本。"); text(raw.createdAt, 64); check(Number.isFinite(Date.parse(raw.createdAt)));
+  object(raw);
+  check(raw.format === "ayase-studio-backup" && [1, 2, 3].includes(raw.version), "不支持此备份版本。");
+  const version = raw.version as 1 | 2 | 3;
+  const required = ["format", "version", "createdAt", "options", "rows", "preferences", "connections", "assets"];
+  fields(raw, [...required, ...(version >= 2 ? ["searchSettings"] : [])], required);
+  text(raw.createdAt, 64); check(Number.isFinite(Date.parse(raw.createdAt)));
   fields(raw.options, ["connections", "credentials"]); check(typeof raw.options.connections === "boolean" && typeof raw.options.credentials === "boolean" && (!raw.options.credentials || raw.options.connections));
+  const credentials = raw.options.credentials;
   list(raw.assets, 2000); budget(raw, 0);
+  function searchProfile(value: unknown) {
+    fields(value, ["version", "baseUrl", "numResults", ...(credentials ? ["apiKey"] : [])]);
+    text(value.baseUrl, 2048);
+    if (credentials) text(value.apiKey, 4096);
+    return validateSearchSettings({ ...value, apiKey: credentials ? value.apiKey : "" });
+  }
+  if (raw.searchSettings !== undefined) {
+    if (version === 2) searchProfile(raw.searchSettings);
+    else {
+      fields(raw.searchSettings, ["version", "exaMcp", "exaApi"]); check(raw.searchSettings.version === 2);
+      validateSearchConfiguration({ version: 2, exaMcp: searchProfile(raw.searchSettings.exaMcp), exaApi: searchProfile(raw.searchSettings.exaApi) });
+    }
+  }
   const assets = new Map<string, JsonRecord>(); let bytesTotal = 0;
   for (const a of raw.assets) {
     fields(a, ["id", "mime", "size", "data", "sha256"]); id(a.id); text(a.mime, 128); check(!assets.has(a.id) && (a.id.startsWith("blob:") || managedReference.test(a.id)));
@@ -119,12 +140,17 @@ export async function validateDocument(raw: unknown): Promise<void> {
     if (v.source) { fields(v.source, ["source", "id", "createdAt", "unavailableAttachments"], ["source", "id", "createdAt"]); check(v.source.source === "cherry"); id(v.source.id); time(v.source.createdAt);
       if (v.source.unavailableAttachments) { list(v.source.unavailableAttachments, 2000); v.source.unavailableAttachments.forEach((n: unknown) => { text(n, 4096); check(!/[\\/\p{Cc}]/u.test(n)); }); } }
     if (v.attachments) { list(v.attachments, 2000); for (const a of v.attachments) { fields(a, ["reference", "name", "size", "mimeType"]); resource(a.reference, "attachments/"); text(a.name, 4096); check(a.name && !/[\\/\p{Cc}]/u.test(a.name)); check(a.size === assets.get(a.reference)?.size && a.mimeType === assets.get(a.reference)?.mime); } }
-    if (v.search) { fields(v.search, ["enabled", "status", "sources", "citations", "queries", "suggestionHtml", "error"], ["enabled", "status", "sources", "citations", "queries"]);
+    if (v.search) { fields(v.search, ["enabled", "status", "sources", "citations", "queries", "suggestionHtml", "error", ...(version >= 2 ? ["provider", "warning"] : [])], ["enabled", "status", "sources", "citations", "queries"]);
       check(typeof v.search.enabled === "boolean" && ["pending", "searching", "completed", "not-used", "failed", "cancelled"].includes(v.search.status));
-      list(v.search.sources); list(v.search.citations); list(v.search.queries);
-      for (const s of v.search.sources) { fields(s, ["id", "url", "title"]); id(s.id); text(s.url, 32768); text(s.title); }
+      optional(v.search, "provider", p => check(p === "exa-mcp" || (version === 3 && p === "exa-api"))); optional(v.search, "warning", w => unicodeText(w, 1000));
+      const external = ["exa-mcp", "exa-api"].includes(v.search.provider);
+      list(v.search.sources, external ? 10 : 100000); list(v.search.citations); list(v.search.queries, external ? 1 : 100000);
+      let excerptCharacters = 0;
+      for (const s of v.search.sources) { fields(s, ["id", "url", "title", ...(version >= 2 ? ["excerpt"] : [])], ["id", "url", "title"]); id(s.id); text(s.url, external ? 2048 : 32768);
+        if (external) unicodeText(s.title, 300); else text(s.title);
+        optional(s, "excerpt", e => { unicodeText(e, 1500); excerptCharacters += Array.from(e as string).length; check(excerptCharacters <= 8000); }); }
       for (const c of v.search.citations) { fields(c, ["start", "end", "sourceIds"]); time(c.start); time(c.end); check(c.end >= c.start && c.end <= v.content.length); list(c.sourceIds); c.sourceIds.forEach(id); }
-      v.search.queries.forEach((q: unknown) => text(q)); optional(v.search, "error", text); optional(v.search, "suggestionHtml", text);
+      v.search.queries.forEach((q: unknown) => external ? unicodeText(q, 2000) : text(q)); optional(v.search, "error", text); optional(v.search, "suggestionHtml", text);
     }
     if (v.providerReplay) { fields(v.providerReplay, ["protocol", "scope", "content", "responses"], ["protocol", "scope", "content"]); check(v.providerReplay.protocol === "anthropic-native"); text(v.providerReplay.scope, 32768); list(v.providerReplay.content); v.providerReplay.content.forEach(object);
       if (v.providerReplay.responses) { list(v.providerReplay.responses); v.providerReplay.responses.forEach((r: unknown) => { list(r); r.forEach(object); }); } }
@@ -135,14 +161,14 @@ export async function validateDocument(raw: unknown): Promise<void> {
   for (const table of backupTables) { list(raw.rows[table]); const seen = new Set<string>(); for (const row of raw.rows[table]) { object(row);
     if (table === "cherryImports") cherryImportId(row.id); else id(row.id);
     check(!seen.has(row.id)); seen.add(row.id); } ids.set(table, seen); }
-  for (const a of raw.rows.assistants) { fields(a, ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig", "avatar", "defaultAvatar"], ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig"]); text(a.name, 4096); text(a.icon, 4096); number(a.sortOrder); model(a.defaultModelId); config(a.defaultConfig); optional(a, "avatar", avatar); optional(a, "defaultAvatar", v => check(isAssistantDefaultAvatar(v))); }
-  for (const c of raw.rows.conversations) { fields(c, ["id", "assistantId", "title", "titleNaming", "createdAt", "updatedAt", "settings", "creationConfig"], ["id", "assistantId", "title", "createdAt", "updatedAt", "settings"]); check(ids.get("assistants")!.has(c.assistantId)); text(c.title, 4096); time(c.createdAt); time(c.updatedAt); conversationConfig(c.settings); optional(c, "creationConfig", conversationConfig); if (c.titleNaming !== undefined) check(c.titleNaming === "manual"); }
+  for (const a of raw.rows.assistants) { fields(a, ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig", "avatar", "defaultAvatar"], ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig"]); text(a.name, 4096); text(a.icon, 4096); number(a.sortOrder); model(a.defaultModelId); config(a.defaultConfig, version); optional(a, "avatar", avatar); optional(a, "defaultAvatar", v => check(isAssistantDefaultAvatar(v))); }
+  for (const c of raw.rows.conversations) { fields(c, ["id", "assistantId", "title", "titleNaming", "createdAt", "updatedAt", "settings", "creationConfig"], ["id", "assistantId", "title", "createdAt", "updatedAt", "settings"]); check(ids.get("assistants")!.has(c.assistantId)); text(c.title, 4096); time(c.createdAt); time(c.updatedAt); conversationConfig(c.settings, version); optional(c, "creationConfig", c => conversationConfig(c, version)); if (c.titleNaming !== undefined) check(c.titleNaming === "manual"); }
   for (const c of raw.rows.chats) { fields(c, ["id", "updatedAt", "messages"]); check(ids.get("conversations")!.has(c.id)); time(c.updatedAt); list(c.messages); c.messages.forEach((m: unknown) => message(m)); const seen = new Set<string>(), present = new Set(c.messages.map((m: JsonRecord) => m.id)); for (const m of c.messages) { check(!seen.has(m.id) && (!m.replyToId || !present.has(m.replyToId) || seen.has(m.replyToId))); seen.add(m.id); } }
   check(raw.rows.workspace.length <= 1); for (const s of raw.rows.workspace) { fields(s, ["id", "activeAssistantId", "lastSelected"]); check(s.id === "selection" && ids.get("assistants")!.has(s.activeAssistantId)); object(s.lastSelected); for (const [a, c] of Object.entries(s.lastSelected)) check(ids.get("assistants")!.has(a) && (c === null || raw.rows.conversations.some((v: JsonRecord) => v.id === c && v.assistantId === a))); }
   for (const a of raw.rows.avatarLibrary) { fields(a, ["id", "name", "version", "avatar"]); text(a.name, 4096); id(a.version); avatar(a.avatar); }
   check(raw.rows.userAvatar.length <= 1); for (const u of raw.rows.userAvatar) { fields(u, ["id", "value"], ["id"]); check(u.id === "user"); optional(u, "value", avatar); }
   for (const m of raw.rows.cherryImports) { fields(m, ["id", "assistantId", "conversationIds"], ["id"]); check(("assistantId" in m) !== ("conversationIds" in m)); if (m.assistantId) id(m.assistantId); else { list(m.conversationIds); m.conversationIds.forEach(id); } }
-  for (const l of raw.rows.legacyConversationConfigs) { fields(l, ["id", "generationConfig", "lastUsedModelId"], ["id"]); optional(l, "generationConfig", config); optional(l, "lastUsedModelId", model); }
+  for (const l of raw.rows.legacyConversationConfigs) { fields(l, ["id", "generationConfig", "lastUsedModelId"], ["id"]); optional(l, "generationConfig", c => config(c, version)); optional(l, "lastUsedModelId", model); }
   fields(raw.preferences, [...preferenceKeys]);
   const appearance = raw.preferences[preferenceKeys[0]];
   if (appearance !== null) {

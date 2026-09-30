@@ -3,6 +3,7 @@ import { backupTables, type BackupFiles, type BackupRows } from "./types";
 import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
 import type { RestorePlan } from "./restorePlan";
 import { BackupRecoveryError } from "./errors";
+import { SEARCH_SETTINGS_KEY } from "../search/settings";
 
 export interface BackupJournal { id: "restore"; before: LocalSnapshot; references: string[]; phase: "staging" | "applying" }
 export interface BackupStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
@@ -20,7 +21,8 @@ export class BackupRepository {
     for (const t of backupTables) { await this.database.table(t).clear(); if (rows[t].length) await this.database.table(t).bulkPut(rows[t]); }
   }
   private preferences(values: Record<string, string | null>) {
-    for (const k of allPreferenceKeys) { const v = values[k]; if (v == null) this.storage.removeItem(k); else this.storage.setItem(k, v); }
+    // Older journals predate search settings and must not erase settings they never captured.
+    for (const k of allPreferenceKeys) { if (k === SEARCH_SETTINGS_KEY && !(k in values)) continue; const v = values[k]; if (v == null) this.storage.removeItem(k); else this.storage.setItem(k, v); }
   }
   async recover(files: BackupFiles): Promise<boolean> {
     const db = this.database, journal = await db.backupJournal.get("restore");

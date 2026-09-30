@@ -5,6 +5,7 @@ import type { StoredChatMessage } from "../../chat/repository";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { retryUser } from "../../chat/messageOperations";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
+import { readableSearchAnswer } from "../../search/citations";
 import type { RequestAttachment, SentAttachment } from "../../chat/attachments";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
 import { SentImageAttachment } from "./SentImageAttachment";
@@ -123,7 +124,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
   const copy = async (message: StoredChatMessage) => {
     setCopyingId(message.id);
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(readableSearchAnswer(message.content, message.search));
       setCopyFeedback((current) => ({ ...current, [message.id]: "已复制原始消息" }));
     } catch { setCopyFeedback((current) => ({ ...current, [message.id]: "复制失败，请检查剪贴板权限。" })); }
     finally { setCopyingId(undefined); }
@@ -193,7 +194,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
           </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
               : <span className="subtle-text">（无文本输出）</span>) : message.content ? <SafeMarkdown>{message.content}</SafeMarkdown> : null}</>}
-          {message.role === "assistant" && message.search && <SearchResults search={message.search} />}
+          {message.role === "assistant" && message.search && <SearchResults search={message.search} showCitationNotice={message.status !== "streaming"} />}
           {message.editedAt !== undefined && <p className="message-edited">已编辑</p>}
           {!!message.source?.unavailableAttachments?.length && <ul className="subtle-text" aria-label="未恢复的附件">
             {message.source.unavailableAttachments.map((name, index) => <li key={index}>附件未恢复：{name}</li>)}

@@ -23,6 +23,7 @@
     "js-tiktoken": "^1.0.21",
     "katex": "^0.16.47",
     "lowlight": "^3.3.0",
+    "micromark-util-decode-string": "2.0.1",
     "lucide-react": "^1.45.0",
     "openai": "^7.15.0",
     "pdfjs-dist": "^6.3.289",
@@ -31,7 +32,9 @@
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "remark-parse": "11.0.0",
+    "unified": "11.0.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -44,10 +47,8 @@
     "happy-dom": "^20.14.5",
     "micromark-extension-math": "^3.1.0",
     "micromark-util-types": "^2.0.2",
-    "remark-parse": "^11.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
-    "unified": "^11.0.5",
     "vite": "^8.0.16",
     "vitest": "^5.0.0"
   }

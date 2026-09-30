@@ -3,6 +3,7 @@ import { loadAppearancePreferences } from "../appearance/appearance";
 import { decode64 } from "./codec";
 import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
 import { backupTables, preferenceKeys, type BackupDocument, type BackupRows, type RestoreMode } from "./types";
+import { loadSearchConfiguration, SEARCH_SETTINGS_KEY, type SearchConfiguration } from "../search/settings";
 
 export interface RestorePlan { after: LocalSnapshot; writes: { reference: string; data: string }[]; conflicts: number; warnings: string[] }
 // Called only after document validation, in the exclusive maintenance workspace.
@@ -14,6 +15,27 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
   const warnings: string[] = [];
   const currentStorage = { getItem: (k: string) => before.preferences[k] ?? null, setItem: () => {} };
   const currentConnections = loadConnectionSettings(currentStorage);
+  if (document.version === 1 || !document.searchSettings) {
+    warnings.push("此备份不含网络搜索设置：保留本机搜索配置与 API Key；尚未配置时使用默认匿名配置，不自动开启或执行搜索。");
+  } else if (mode === "replace") {
+    const restoreProfile = (profile: { version: 1; baseUrl: string; numResults: number; apiKey?: string }, key: string) => ({ ...profile, apiKey: document.options.credentials ? profile.apiKey! : key });
+    const imported = document.searchSettings;
+    let configuration: SearchConfiguration;
+    if (imported.version === 2 && document.options.credentials) {
+      // A complete replacement can repair corrupt local data; nothing local is retained.
+      configuration = { version: 2, exaMcp: restoreProfile(imported.exaMcp, ""), exaApi: restoreProfile(imported.exaApi, "") };
+    } else {
+      const current = loadSearchConfiguration(currentStorage);
+      configuration = imported.version === 1
+        ? { ...current, exaMcp: restoreProfile(imported, current.exaMcp.apiKey) }
+        : { version: 2, exaMcp: restoreProfile(imported.exaMcp, current.exaMcp.apiKey), exaApi: restoreProfile(imported.exaApi, current.exaApi.apiKey) };
+    }
+    preferences[SEARCH_SETTINGS_KEY] = JSON.stringify(configuration);
+    warnings.push(document.options.credentials
+      ? "替换备份包含的网络搜索设置及对应搜索 API Key；恢复不会自动执行搜索。"
+      : "替换备份包含的网络搜索设置，保留本机对应搜索 API Key；恢复不会自动执行搜索。");
+    if (document.version === 2) warnings.push("此旧 v2 备份只包含 Exa MCP 配置；保留本机 Exa API 配置与 Key。");
+  } else warnings.push("保留本机全局网络搜索设置及搜索 API Key；恢复不会自动执行搜索。");
   const targetConnections: ConnectionSettingsState = structuredClone(currentConnections);
   const modelMap = new Map<string, string>();
   if (document.options.connections) {
@@ -60,6 +82,7 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
     const collect = (m: any) => { if (!messageIds.has(m.id)) messageIds.set(m.id, mode === "copy" ? crypto.randomUUID() : m.id); if (m.roundVersions) m.roundVersions.pairs.flat().forEach(collect); };
     chat.messages.forEach(collect);
     const remap = (m: any) => { m.id = messageIds.get(m.id); if (m.replyToId) m.replyToId = messageIds.get(m.replyToId) ?? null;
+      if (m.search && ["pending", "searching"].includes(m.search.status)) { m.search.status = "cancelled"; if (m.status === "complete") m.status = "incomplete"; }
       // Scoped provider replay is meaningful only with its original connection identity.
       if (mode === "copy" || !document.options.connections) delete m.providerReplay;
       if (m.roundVersions) m.roundVersions.pairs.flat().forEach(remap); };

@@ -1,4 +1,5 @@
-import { Info, Palette, Server, UserRound, Import } from "lucide-react";
+import { Info, Palette, Server, UserRound, Import, Globe } from "lucide-react";
+import { NetworkSearchSettings } from "./NetworkSearchSettings";
 import { DataImportSettings, type DataImportSettingsProps } from "./DataImportSettings";
 import { AvatarPreview } from "./AvatarSettings";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
@@ -17,7 +18,7 @@ import {
   type ConnectionSettingsProps,
 } from "./ConnectionSettings";
 
-export type SettingsSection = "connections" | "appearance" | "avatars" | "data" | "about";
+export type SettingsSection = "connections" | "search" | "appearance" | "avatars" | "data" | "about";
 
 export interface SettingsWorkspaceProps {
   activeSection: SettingsSection;
@@ -47,7 +48,7 @@ export function SettingsWorkspace({
       <header className="settings-header" data-tauri-drag-region>
         <div data-tauri-drag-region>
           <h1 data-tauri-drag-region>设置</h1>
-          <p className="muted-text" data-tauri-drag-region>管理连接、外观、头像、数据与应用信息</p>
+          <p className="muted-text" data-tauri-drag-region>管理连接、网络搜索、外观、头像、数据与应用信息</p>
         </div>
         <WindowControls />
       </header>
@@ -66,6 +67,12 @@ export function SettingsWorkspace({
               <strong>连接配置</strong>
               <small>协议、地址与模型</small>
             </span>
+          </button>
+          <button className="settings-navigation-button" aria-label="网络搜索"
+            aria-current={activeSection === "search" ? "page" : undefined}
+            onClick={() => onSectionChange("search")} type="button">
+            <Globe size={18} />
+            <span><strong>网络搜索</strong><small>Exa API / MCP 与搜索凭据</small></span>
           </button>
           <button
             className="settings-navigation-button"
@@ -109,6 +116,8 @@ export function SettingsWorkspace({
         >
           {activeSection === "connections" ? (
             <ConnectionSettings {...connection} />
+          ) : activeSection === "search" ? (
+            <NetworkSearchSettings />
           ) : activeSection === "appearance" ? (
             <AppearanceSettings {...appearance} />
           ) : activeSection === "data" ? (

@@ -6,6 +6,38 @@ import { expect, it } from "vitest";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 import { resizeSuggestionFrame, SearchResults } from "./SearchResults";
 
+it("shows external status, inert excerpts, warnings, and missing valid citations", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); const root = createRoot(host);
+  const external = { ...search, provider: "exa-mcp" as const, citations: [], warning: "部分来源已忽略", sources: [{ id: "one", title: "Example", url: "javascript:alert(1)", excerpt: "<script>unsafe</script>" }] };
+  try {
+    await act(async () => root.render(<SearchResults search={external} />));
+    expect(host.querySelector("summary")?.textContent).toBe("已检索 · 1 个来源");
+    expect(host.querySelector("button")!.disabled).toBe(true);
+    expect(host.querySelector("script")).toBeNull();
+    expect(host.querySelector(".search-source-excerpt")?.textContent).toBe("<script>unsafe</script>");
+    expect(host.textContent).toContain("部分来源已忽略"); expect(host.textContent).toContain("正文未提供有效引用");
+    await act(async () => root.render(<SearchResults search={{ ...external, citations: [{ start: 0, end: 2, sourceIds: ["one"] }] }} />));
+    expect(host.querySelector(".search-citation-notice")).toBeNull();
+    await act(async () => root.render(<SearchResults search={{ ...external, status: "searching", sources: [] }} />));
+    expect(host.textContent).toContain("正在搜索 · Exa MCP");
+    await act(async () => root.render(<SearchResults search={{ ...external, status: "failed", sources: [] }} />));
+    expect(host.textContent).toContain("搜索失败");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("labels API searches and preserves the same sources and citation notice", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<SearchResults search={{ ...search, provider: "exa-api", status: "searching", sources: [] }} />));
+    expect(host.textContent).toContain("正在搜索 · Exa API");
+    await act(async () => root.render(<SearchResults search={{ ...search, provider: "exa-api", citations: [] }} />));
+    expect(host.querySelector("summary")?.textContent).toBe("已检索 · 1 个来源");
+    expect(host.textContent).toContain("正文未提供有效引用");
+  } finally { await act(async () => root.unmount()); }
+});
+
 const search = { enabled: true, status: "completed" as const, sources: [{ id: "one", title: "Example", url: "https://example.com/source" }], citations: [{ start: 0, end: 6, sourceIds: ["one"] }], queries: ["example query"] };
 
 it("renders citation badges and a source footer", async () => {

@@ -4,6 +4,7 @@ import type { AvatarLibraryEntry } from "../avatar/library";
 import type { UserAvatar } from "../avatar/repository";
 import type { CherryImportRecord } from "../storage/database";
 import type { SessionConfig } from "../chat/sessionConfig";
+import type { SearchSettings } from "../search/settings";
 
 export const backupTables = ["assistants", "conversations", "chats", "workspace", "avatarLibrary", "userAvatar", "cherryImports", "legacyConversationConfigs"] as const;
 export type BackupTable = typeof backupTables[number];
@@ -22,15 +23,18 @@ export type BackupPreferences = Record<typeof preferenceKeys[number], string | n
 export interface BackupOptions { connections: boolean; credentials: boolean }
 export interface BackupExportOptions { encrypted: boolean }
 export interface BackupAsset { id: string; mime: string; data: string; size: number; sha256: string }
+export type BackupSearchProfile = Omit<SearchSettings, "apiKey"> & { apiKey?: string };
+export interface BackupSearchConfiguration { version: 2; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile }
 export interface BackupDocument {
   format: "ayase-studio-backup";
-  version: 1;
+  version: 1 | 2 | 3;
   createdAt: string;
   options: BackupOptions;
   // JSON data only. Avatar Blobs are encoded as {$blob: assetId, type: mime}.
   rows: Record<BackupTable, unknown[]>;
   preferences: BackupPreferences;
   connections: unknown | null;
+  searchSettings?: BackupSearchProfile | BackupSearchConfiguration;
   assets: BackupAsset[];
 }
 export interface BackupPreview {

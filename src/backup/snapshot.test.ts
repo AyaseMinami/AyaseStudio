@@ -6,6 +6,7 @@ import type { StoredChatMessage } from "../chat/repository";
 import { decodeBackup, encodeBackup, sha256 } from "./codec";
 import { createBackupDocument, type LocalSnapshot } from "./snapshot";
 import { backupTables, preferenceKeys, type BackupFiles } from "./types";
+import { SEARCH_SETTINGS_KEY } from "../search/settings";
 
 const syntheticKey = "synthetic-key-never-a-real-credential";
 const reference = "attachments/00000000-0000-4000-8000-000000000001.txt";
@@ -45,6 +46,49 @@ function snapshot(): LocalSnapshot {
 }
 
 describe("backup snapshot", () => {
+  it.each([false, true])("exports v3 search configuration with credentials=%s under the existing options contract", async credentials => {
+    const input = snapshot();
+    input.preferences[SEARCH_SETTINGS_KEY] = JSON.stringify({ version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "synthetic-search-key", numResults: 7 });
+    input.rows.assistants[0].defaultConfig = { ...defaultSessionConfig(), webSearch: true, webSearchProvider: "exa-mcp" };
+    input.rows.conversations[0].settings!.config.webSearchProvider = "native";
+    input.rows.conversations[0].creationConfig!.config.webSearchProvider = "exa-mcp";
+    input.rows.legacyConversationConfigs[0].generationConfig!.webSearchProvider = "native";
+    const answer = input.rows.chats[0].messages[1];
+    answer.search = { enabled: true, provider: "exa-mcp", status: "searching", queries: ["query"], warning: "warning", sources: [{ id: "s", title: "title", url: "https://example.invalid", excerpt: "excerpt" }], citations: [] };
+    Object.assign(answer.search, { apiKey: syntheticKey, headers: { secret: syntheticKey } });
+    Object.assign(answer.search.sources[0], { apiKey: syntheticKey });
+    const doc = await createBackupDocument(input, { connections: credentials, credentials }, files());
+    expect(doc.version).toBe(3);
+    expect(doc.searchSettings).toEqual({ version: 2,
+      exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 7, ...(credentials ? { apiKey: "synthetic-search-key" } : {}) },
+      exaApi: { version: 1, baseUrl: "https://api.exa.ai", numResults: 5, ...(credentials ? { apiKey: "" } : {}) } });
+    expect((doc.rows.assistants[0] as any).defaultConfig.webSearchProvider).toBe("exa-mcp");
+    expect((doc.rows.conversations[0] as any).settings.config.webSearchProvider).toBe("native");
+    expect((doc.rows.conversations[0] as any).creationConfig.config.webSearchProvider).toBe("exa-mcp");
+    expect((doc.rows.legacyConversationConfigs[0] as any).generationConfig.webSearchProvider).toBe("native");
+    expect((doc.rows.chats[0] as any).messages[1]).toMatchObject({ status: "incomplete", search: { provider: "exa-mcp", status: "cancelled", warning: "warning", sources: [{ excerpt: "excerpt" }] } });
+    expect(answer.search.status).toBe("searching");
+    const serialized = await encodeBackup(doc);
+    expect(serialized.includes("synthetic-search-key")).toBe(credentials);
+    expect(serialized).not.toContain("headers");
+    expect((await decodeBackup(serialized)).document).toEqual(doc);
+  });
+  it.each([false, true])("exports both independent profiles and keys with credentials=%s", async credentials => {
+    const input = snapshot();
+    const configuration = { version: 2, exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "synthetic-mcp-key", numResults: 7 }, exaApi: { version: 1, baseUrl: "https://api.exa.ai/", apiKey: "synthetic-api-search-key", numResults: 3 } };
+    input.preferences[SEARCH_SETTINGS_KEY] = JSON.stringify(configuration);
+    input.rows.conversations[0].settings!.config.webSearchProvider = "exa-api";
+    input.rows.chats[0].messages[1].search = { enabled: true, provider: "exa-api", status: "completed", queries: ["query"], sources: [{ id: "s", title: "source", url: "https://example.invalid", excerpt: "bounded" }], citations: [] };
+    const doc = await createBackupDocument(input, { connections: credentials, credentials }, files());
+    const expected = structuredClone(configuration) as any;
+    if (!credentials) { delete expected.exaMcp.apiKey; delete expected.exaApi.apiKey; }
+    expect(doc.searchSettings).toEqual(expected);
+    const serialized = await encodeBackup(doc);
+    expect(serialized.includes("synthetic-mcp-key")).toBe(credentials);
+    expect(serialized.includes("synthetic-api-search-key")).toBe(credentials);
+    expect((await decodeBackup(serialized)).document).toEqual(doc);
+    expect(input.preferences[SEARCH_SETTINGS_KEY]).toBe(JSON.stringify(configuration));
+  });
   it("exports every supported table, saved configuration and source marker without mutating the source", async () => {
     const input = snapshot();
     const before = structuredClone(input);

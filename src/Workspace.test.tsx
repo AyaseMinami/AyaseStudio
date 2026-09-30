@@ -91,7 +91,7 @@ describe("assistant workspace public behavior", () => {
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="切换模型"]')!;
     const tools = container.querySelector(".composer-tools")!;
     expect(tools.lastElementChild).toBe(trigger);
-    expect(trigger.previousElementSibling?.getAttribute("aria-label")).toBe("联网搜索");
+    expect(trigger.previousElementSibling?.querySelector("button")?.getAttribute("aria-label")).toBe("联网搜索：关闭");
     expect(container.querySelector(".conversation-navigation-toolbar .chat-model-trigger")).toBeNull();
     trigger.focus();
     await click("切换模型");
