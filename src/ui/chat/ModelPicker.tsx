@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Search, X } from "lucide-react";
-import type { ConnectionSettingsState } from "../../chat/settings";
+import { isChatConnection, type ConnectionSettingsState } from "../../chat/settings";
 import { getProtocolOption } from "../../chat/protocolOptions";
 
 export interface ModelPickerProps {
@@ -22,7 +22,7 @@ export function ModelPicker({ settings, selectedModelId, disabled, error, onSele
     return () => previous?.focus();
   }, []);
   const needle = query.trim().toLocaleLowerCase();
-  const groups = settings.providers.flatMap((provider) => provider.connections.map((connection) => ({
+  const groups = settings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).map((connection) => ({
     provider, connection,
     models: connection.models.filter((model) =>
       [provider.name, connection.name, getProtocolOption(connection.protocol).label, model.modelId, model.displayName ?? ""]
@@ -52,7 +52,7 @@ export function ModelPicker({ settings, selectedModelId, disabled, error, onSele
       </label>
       <p className="muted-text model-picker-hint">仅当前对话 · 自动保存，下次请求生效</p>
       {error && <p className="model-picker-error" role="alert">{error}</p>}
-      {selectedModelId && !settings.providers.some((p) => p.connections.some((c) => c.models.some((m) => m.id === selectedModelId))) &&
+      {selectedModelId && !settings.providers.some((p) => p.connections.filter(isChatConnection).some((c) => c.models.some((m) => m.id === selectedModelId))) &&
         <p className="model-picker-error" role="status">当前模型已失效，请重新选择。</p>}
       <div className="model-picker-results">
         {groups.map(({ provider, connection, models }) => <section key={connection.id} aria-label={`${provider.name} · ${connection.name}`}>

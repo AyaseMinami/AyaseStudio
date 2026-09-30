@@ -10,6 +10,10 @@ import { useChatSession } from "./chat/useChatSession";
 import { getThinkingSettings } from "./chat/thinking";
 import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
+import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
+import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
+import { getDrawingModels } from "./chat/settings";
+import { isDrawingProtocol } from "./chat/protocolOptions";
 import { ChatHeader } from "./ui/chat/ChatHeader";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
 import { useChatLayout } from "./ui/chat/useChatLayout";
@@ -25,7 +29,9 @@ function App() {
   const appearance = useAppearance();
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
+  const drawing = useDrawingWorkspace();
   const chat = useChatSession({
+    externalBusy: drawing.busy || drawing.closing,
     onConfigurationRequired: () => {
       setActiveSettingsSection("connections");
       setActivePage("settings");
@@ -36,10 +42,10 @@ function App() {
     : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 点击选择模型`;
 
   return (
-    <AppShell activePage={activePage} onPageChange={setActivePage} interactionDisabled={chat.backupPreparing}
-      background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} /></div>}>
+    <AppShell activePage={activePage} onPageChange={setActivePage} interactionDisabled={chat.backupPreparing || drawing.closing}
+      background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur} /></div>}>
       {appearance.backgroundDraft && <BackgroundFocusDialog
-        url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit}
+        url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur}
         error={appearance.backgroundError}
         onConfirm={(focus) => void appearance.confirmBackgroundFocus(focus)}
         onCancel={() => void appearance.cancelBackgroundFocus()} />}
@@ -90,11 +96,23 @@ function App() {
           onStop={chat.stopGeneration}
         />
         </ConversationNavigation>
+      ) : activePage === "drawing" ? (
+        <DrawingWorkspace draft={drawing.draft} onDraftChange={drawing.controller.setDraft}
+          models={getDrawingModels(chat.connectionSettings)} tasks={drawing.tasks} results={drawing.results}
+          selectedResultId={drawing.selectedResultId} previewUrl={drawing.previewUrl} previewError={drawing.previewError}
+          ready={drawing.ready && !chat.maintenanceBusy} busy={drawing.busy} error={drawing.error}
+          onGenerate={() => { if (!chat.maintenanceBusy) void drawing.controller.generate(chat.connectionSettings); }}
+          onCancel={drawing.controller.cancel} onSelectResult={drawing.controller.selectResult}
+          onExport={id => void drawing.controller.export(id)} onRetrySave={id => void drawing.controller.retrySave(id)}
+          onReuse={drawing.controller.reuse}
+          onConfigure={() => { setActiveSettingsSection("connections"); setActivePage("settings"); }} />
       ) : (
         <SettingsWorkspace
           dataImport={chat.dataImport}
-          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy}
-          backupError={chat.backupPreparationError}
+          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.hasData
+            || chat.connectionSettings.providers.some(provider => provider.connections.some(connection => isDrawingProtocol(connection.protocol)))}
+          backupError={drawing.hasData || chat.connectionSettings.providers.some(provider => provider.connections.some(connection => isDrawingProtocol(connection.protocol)))
+            ? "当前备份格式尚未包含绘图数据；为防止遗漏成果或覆盖配置，暂时禁止备份与恢复，等待 #93 扩展格式。" : chat.backupPreparationError}
           onBackup={() => { void chat.prepareBackup().then((prepared) => {
             if (!prepared) return;
             window.location.hash = "backup";
@@ -157,7 +175,7 @@ function App() {
           connection={{
             canSelectModel: !!chat.workspace.assistant && !chat.workspace.busy,
             connectionSettings: chat.connectionSettings,
-            isStreaming: chat.isAnyGenerating,
+            isStreaming: chat.isAnyGenerating || drawing.busy,
             streamPreview: chat.workspace.assistant?.defaultConfig.stream ?? true,
             modelCatalogs: chat.modelCatalogs,
             modelTests: chat.modelTests,
@@ -167,6 +185,7 @@ function App() {
             onCancelModelCatalogRefresh: chat.cancelModelCatalogRefresh,
             onCancelModelTest: chat.cancelModelTest,
             onConnectionChange: chat.updateConnection,
+            onConnectionMove: chat.moveConnection,
             onDeleteConnection: chat.deleteConnection,
             onDeleteModel: chat.deleteModel,
             onDeleteProvider: chat.deleteProvider,

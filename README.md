@@ -6,6 +6,8 @@
 
 ## 功能
 
+- **独立绘图**：Gemini 绘图与 OpenAI 兼容 Images 文生图；按协议选择比例／分辨率或尺寸／画质，自动保存、大图预览和 PNG 导出。具体模型和中转支持范围见 [绘图兼容说明](docs/ISSUE-85-IMPLEMENTATION.md)。
+
 - **多协议连接**：支持 OpenAI Chat Completions、OpenAI Responses、Gemini 和 Anthropic 原生协议；按供应商、连接、模型组织配置。
 - **对话与助手**：助手提供新对话预设，每个对话可独立设置模型、系统提示词和生成参数；支持并行生成、停止和自动命名。
 - **消息操作**：复制、编辑、重新生成、对话分支，以及最新一轮问答的版本切换。
@@ -65,7 +67,7 @@ cargo check --locked --manifest-path src-tauri/Cargo.toml
 npm.cmd run build:windows
 ```
 
-安装包输出目录：`src-tauri/target/release/bundle/nsis/`。构建成功不等于安装与升级验收通过，发布前仍需验证全新安装、覆盖升级和本地数据保留。
+安装包输出目录：`src-tauri/target/release/bundle/nsis/`。每次成功打包会保留 Tauri 标准文件，并额外生成带本机日期时间后缀的安装包副本（如 `_20260930-205336.exe`），避免后续增量构建覆盖旧包。构建成功不等于安装与升级验收通过，发布前仍需验证全新安装、覆盖升级和本地数据保留。
 
 自动测试使用模拟响应，不调用真实模型。真实 API 探针的配置与费用说明见[开发指南](docs/DEVELOPMENT.md)；请勿提交密钥或 `.env.probe.local`。
 

@@ -93,6 +93,7 @@ const sharedProps = {
     onCancelModelCatalogRefresh: () => undefined,
     onCancelModelTest: () => undefined,
     onConnectionChange: () => undefined,
+    onConnectionMove: () => undefined,
     onDeleteConnection: () => undefined,
     onDeleteModel: () => undefined,
     onDeleteProvider: () => undefined,

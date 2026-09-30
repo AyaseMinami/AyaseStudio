@@ -1,5 +1,23 @@
 # Ayase Studio Architecture
 
+### Background blur rendering (#96)
+
+`BackgroundImage` accepts a blur radius in logical CSS pixels and keeps the existing `backgroundViewport` geometry independent of it. A layout-width observer converts the radius into SVG user units, excluding the fixed-preview stage transform. Nonzero blur samples the original image plus eight explicitly extended outer pixel strips/corners, applies an SVG Gaussian filter, and clips the result to the original image bounds. Explicit padding avoids relying on Chromium support for `edgeMode`; transparent source pixels retain their alpha. Outer background containers clip to the viewport. Zero blur bypasses the filter and padding. No image bytes, persisted focus/zoom, native permissions, or transport contracts change.
+
+## Independent drawing module (#83 / #84)
+
+#85 extends this module with `openai-images`, a dedicated Images generations adapter and explicit runtime dispatch. Shared service configuration includes both drawing protocols while `ChatProtocol` stays unchanged. `DrawingParameters` is a discriminated union; drafts retain independent Gemini and OpenAI option groups, and old drafts default to automatic OpenAI values. No database schema rewrite or new queue is introduced. Settings and dispatch share the OpenAI endpoint resolver; model catalogs reuse only the matching read-only client after drawing HTTPS validation. Both drawing protocol configurations are protected by the pre-#93 backup gate. See [#85 contracts and validation](ISSUE-85-IMPLEMENTATION.md).
+
+The user confirmed drawing as the second business module beside chat, with shared provider/connection/model settings but separate protocol targets, drafts and task ownership. Drawing does not belong to an Assistant or Conversation. Concurrent chat/drawing is part of integration acceptance; image exchange is deferred to the existing #91. The approved #84 slice now implements Gemini single-image generation; the broader #83 queue/reference/export proposals remain future scope.
+
+`src/drawing` owns a root-mounted controller, Gemini image transport, repository interface and transient preview. Navigating pages unmounts panels, not the controller. Shared `ServiceProtocol` adds `gemini-image`; `ChatProtocol` and chat target queries remain chat-only. Drawing drafts select their own configured model ID. A submission freezes parameters and a runtime-only Key, registers the task before dispatch, and makes one request without retries or fallback. Cancellation before dispatch is cancelled; possibly sent cancellation, network failure and HTTP 5xx are unknown. Saving becomes uncancellable local work. Failures remain visible on the generation page and preserve the prior preview.
+
+Database version 7 adds `drawingDrafts`, `drawingTasks`, `drawingResults` without rewriting prior tables. `DexieDrawingRepository.complete` atomically registers all files/results and the completed task. Native `drawing.rs` owns immutable originals under `drawing/<task UUID>/`, image validation and ordinary PNG export. Before writing originals it durably publishes a bounded pending receipt with fixed file UUIDs and SHA-256; a complete receipt can publish the manifest after a crash. Matching local retries fill only absent files. Restart repairs receipts and DB registrations; a sent task without a receipt becomes unknown and is never resent. Incomplete local bytes remain save-failed. No cleanup/GC is introduced. File synchronization and reparse-point checks follow the existing host boundary; arbitrary hostile external-process races and Windows directory-entry survival after sudden power loss are not guaranteed.
+
+Returned images awaiting disk persistence remain in memory for explicit local-save retry. Close preparation freezes new drawing commands and flushes drafts, waits for local saving or stops the request. Unsaved pixels require a separate explicit loss confirmation; refusal restores the editing gate. Blob previews belong to selected results and release URLs on changes/unmount. Ordinary export decodes/re-encodes PNG pixels without hidden generation metadata and cannot overwrite private app resources. Until #93, both normal UI and direct `BackupRepository.snapshot/restore` reject maintenance when drawing data or drawing configuration exists, preventing silent omission or configuration replacement; existing restore-journal bootstrap recovery still runs first.
+
+[The #83 specification](ISSUE-83-DRAWING-SPEC.md) records confirmed choices and reviewable proposals: a separate image-generation transport, application-owned queue (default concurrency 1, maximum 4), repository-owned durable drafts/tasks/results, immutable private image references, local result commit recovery, metadata-safe export and backup maintenance coordination. Results are saved automatically; ordinary export omits generation parameters. Restart restores data with dispatch paused, and possibly sent tasks are never retried automatically. Detailed lifecycle rules and budgets remain proposals until user acceptance; these planned contracts do not supersede current chat behavior.
+
 ## Object action menus (#74)
 
 `src/ui/ActionMenu.tsx` owns the shared portal, viewport clamping, enabled-item keyboard navigation and dismissal/focus behavior. `useActionMenu<T>` stores only a local target ID/type, anchor and opener; owners derive menu actions from the latest workspace/settings snapshot on every render. Opening broadcasts the document-local `ayase:open-action-menu` event with a React owner ID, causing other hook instances to clear their transient menu state without restoring focus. No menu state or event is persisted or sent outside the WebView.
@@ -27,6 +45,8 @@ Export exposes only one default-off encryption switch and always includes connec
 Restore checks new managed paths are absent, journals the prior database/preferences and all new references, writes/syncs new files, atomically commits tables plus journal phase, then applies supported preferences. Journal deletion is the cross-store commit point. Precommit errors/restart restore old database/preferences before removing exact reserved files; failed recovery keeps the gate closed. Old files are never overwritten and successful restore defers old-resource cleanup to existing owners. The native module shares attachment/background mutexes, canonical reference rules and image validation; it rejects existing links/junctions. File dialogs and atomic backup save contain only the already-encoded envelope. See [format and operation contract](AYASE-BACKUP.md) for budgets, conflict policy, missing references, source records and credential boundaries. Transport/provider contracts are unchanged.
 
 ## Cherry chat backup import (#77)
+
+Legacy empty topics use their unique assistant-list membership when topic metadata retains a stale `assistantId`, with a preview warning even if the referenced assistant still exists. Duplicate topic membership and existing nonempty topic/message ownership conflicts remain errors; this exception neither drops topics nor changes source IDs.
 
 `src/import/cherryMapping.ts` maps allowlisted native chat fields to an import plan, preserving every supported answer path as an independent conversation. `cherryImport.ts` stages and verifies files through the shared attachment lifecycle before `cherryRepository.ts` atomically commits assistants, conversations, chats and source markers. Database version 5 adds `cherryImports`; existing records and workspace selection remain intact. Failed precommit work discards only newly staged files. Postcommit cleanup failures retain committed data and report warnings. Source IDs, timestamps and unavailable attachment names are local provenance, never provider configuration.
 
@@ -202,7 +222,9 @@ Tauri 是宿主，不是界面控件库。Panel、主题和布局属于 React �
 
 ## Current project structure
 
-供应商顺序直接沿用配置记录中 `providers` 数组的顺序保存；供应商标题的拖动手柄和浮动菜单“上移 / 下移”共用 `moveProvider`。拖动以目标分组上下半区决定插入前后，并显示对应边缘的插入线；只调整供应商顺序，不改变连接归属、内部顺序、当前模型或编辑状态，无新增存储字段和迁移。供应商与连接管理菜单沿用助手菜单的浮动样式和键盘导航，供应商额外提供排序；连接菜单仍仅重命名、删除。
+供应商顺序沿用配置记录中 `providers` 数组的顺序保存；连接顺序沿用其所属供应商的 `connections` 数组。供应商和连接的拖动及菜单“上移 / 下移”分别共用 `moveProvider`、`moveConnection`，命令均受共享配置忙碌保护。`moveConnection` 拒绝跨供应商、缺失及原位操作，不改变连接归属、对象 ID、字段、模型或当前选择，无新增存储字段和迁移。
+
+`useConnectionTreeDrag` 只拥有连接配置树的瞬时指针手势与插入目标。把手移动 6px 后激活，名称长按 400ms 后激活；未到长按时限即移动取消候选。根据目标供应商标题或连接行的上下半区显示插入线，列表边缘自动滚动；松手再次验证目标并交给配置命令持久化。Escape、失焦、隐藏、resize、指针取消、源项消失和生成开始取消手势。已激活手势的释放点击被拦截，不改变查看、展开、模型编辑或默认模型；卸载清理计时器、帧、指针捕获与监听。供应商与连接菜单共用既有键盘导航，均提供排序；连接另有编辑、重命名和删除。
 
 Issue #26 的连接配置采用左侧供应商 → 连接分级导航、右侧连接详情两栏。导航分组折叠与当前连接选择独立；导航和详情分别滚动，模型列表不另设纵向滚动层。接口配置可手动折叠，模型管理位于折叠区域之外；只读请求地址详情默认折叠，URL 校验错误仍显示在输入框附近。菜单提供供应商及连接重命名、删除，名称沿用失焦保存，地址与密钥沿用即时保存，模型编辑仍显式提交。布局状态仅在当前页面内存中保存，不增加存储或迁移；设置页模型选择仍作用于助手的新对话默认模型。
 

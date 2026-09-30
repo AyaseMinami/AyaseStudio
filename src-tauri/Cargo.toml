@@ -27,6 +27,7 @@ tauri-plugin-opener = "2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+sha2 = "0.10"
 tempfile = "3"
 zip = { version = "2.4", default-features = false, features = ["deflate"] }
 rusqlite = { version = "0.37", features = ["bundled"] }

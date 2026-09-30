@@ -4,12 +4,29 @@ import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
 import type { RestorePlan } from "./restorePlan";
 import { BackupRecoveryError } from "./errors";
 import { SEARCH_SETTINGS_KEY } from "../search/settings";
+import { connectionSettingsStorageKey } from "../chat/settings";
+import { isDrawingProtocol } from "../chat/protocolOptions";
+
+export const drawingBackupBlockedMessage = "当前备份格式尚未包含绘图数据；为防止遗漏成果或覆盖配置，暂时禁止备份与恢复，等待 #93 扩展格式。";
 
 export interface BackupJournal { id: "restore"; before: LocalSnapshot; references: string[]; phase: "staging" | "applying" }
 export interface BackupStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
 export class BackupRepository {
   constructor(readonly database = new AyaseDatabase("AyaseStudio"), private storage: BackupStorage = localStorage) {}
+  private async assertDrawingAbsent(): Promise<void> {
+    const db = this.database;
+    const hasData = await db.transaction("r", [db.drawingDrafts, db.drawingTasks, db.drawingResults], async () =>
+      (await db.drawingDrafts.count()) > 0 || (await db.drawingTasks.count()) > 0 || (await db.drawingResults.count()) > 0);
+    let configured = false;
+    try {
+      const settings = JSON.parse(this.storage.getItem(connectionSettingsStorageKey) ?? "null");
+      configured = settings?.providers?.some((provider: { connections?: { protocol?: string }[] }) =>
+        provider.connections?.some(connection => isDrawingProtocol(connection.protocol))) === true;
+    } catch { throw new Error("连接配置读取失败，无法安全进入数据维护。"); }
+    if (hasData || configured) throw new Error(drawingBackupBlockedMessage);
+  }
   async snapshot(): Promise<LocalSnapshot> {
+    await this.assertDrawingAbsent();
     const db = this.database;
     return db.transaction("r", backupTables.map(t => db.table(t)), async () => {
       const preferences = Object.fromEntries(allPreferenceKeys.map(k => [k, this.storage.getItem(k)]));
@@ -35,6 +52,7 @@ export class BackupRepository {
     return true;
   }
   async restore(plan: RestorePlan, before: LocalSnapshot, files: BackupFiles): Promise<void> {
+    await this.assertDrawingAbsent();
     const db = this.database;
     if (await db.backupJournal.get("restore")) throw new Error("上次恢复尚未回滚，请重启或重试恢复整理。");
     // A UUID collision must fail before any journal-owned deletion can be scheduled.

@@ -54,6 +54,12 @@ function changeRange(input: HTMLInputElement, value: string) {
 }
 
 describe("AppearanceSettings", () => {
+  it.each([0, 16, 32])("changes blur to %ipx without adding a preview zoom", async (blur) => {
+    await render({ backgroundBlur: blur, backgroundFit: "contain", backgroundFocus: { x: .3, y: .7, zoom: 1.5 } });
+    const preview = host!.querySelector<HTMLElement>(".appearance-background-preview")!;
+    expect(preview.style.getPropertyValue("--appearance-background-blur")).toBe(`${blur}px`);
+    expect(preview.style.getPropertyValue("--appearance-background-scale")).toBe("");
+  });
   it("offers seven named presets alongside four theme buttons", async () => {
     const { handlers } = await render({ colorPreset: "reading", themeMode: "dark", resolvedTheme: "dark" });
     const modes = host!.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');

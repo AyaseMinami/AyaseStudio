@@ -3,6 +3,7 @@ import { copyAssistantConfig, readConversationConfig } from "../../chat/conversa
 import type { useConversationWorkspace } from "../../chat/useConversationWorkspace";
 import type { Conversation } from "../../chat/workspace";
 import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settings";
+import { isChatConnection } from "../../chat/settings";
 import { validateRequestConfig } from "../../chat/requestMapping";
 import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 import { SessionConfigPanel } from "./SessionConfigPanel";
@@ -41,7 +42,7 @@ export function ConversationSettings({ workspace, conversation, settings, onClos
       }}>
         <option value="">未选择模型</option>
         {draft.modelId && !target && <option value={draft.modelId}>原模型已失效，请重新选择</option>}
-        {settings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) =>
+        {settings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) =>
           <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
       </select>
       {!target && <p role="status" className="session-config-error">{draft.modelId ? "模型引用已失效，不会自动切换到其他模型。" : "尚未选择模型。"}请选择模型或恢复助手默认值后再发送。</p>}

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:windows": "tauri build --bundles nsis",
+    "build:windows": "tauri build --bundles nsis && node scripts/archive-nsis-installer.mjs",
     "test": "vitest run --testTimeout 20000",
     "test:watch": "vitest",
     "probe:live": "vitest run --config vitest.live.config.ts",

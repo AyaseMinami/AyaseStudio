@@ -4,11 +4,30 @@ import type { ChatProtocol } from "./types";
 import {
   normalizeBaseUrl,
   resolveGenerationEndpoint,
+  resolveImageGenerationEndpoint,
   resolveModelCatalogEndpoint,
   UrlResolutionError,
 } from "./urlResolution";
 
 describe("protocol-aware URL resolution", () => {
+  it("resolves drawing to the native non-streaming HTTPS endpoint with a trimmed encoded model", () => {
+    expect(resolveImageGenerationEndpoint(" https://relay.example.com/custom/v1beta/// ", "  image/model ?#  "))
+      .toBe("https://relay.example.com/custom/v1beta/models/image%2Fmodel%20%3F%23:generateContent");
+    expect(normalizeBaseUrl("gemini-image", "https://relay.example.com///")).toBe("https://relay.example.com");
+    expect(resolveModelCatalogEndpoint("gemini-image", "https://relay.example.com").resolvedEndpoint)
+      .toBe("https://relay.example.com/v1beta/models");
+  });
+
+  it.each([
+    ["http://localhost:1234", "image", "invalid-scheme"],
+    ["http://relay.example.com", "image", "invalid-scheme"],
+    ["https://name:password@relay.example.com", "image", "userinfo"],
+    ["https://relay.example.com?key=secret", "image", "query"],
+    ["https://relay.example.com#fragment", "image", "fragment"],
+    ["https://relay.example.com", "  ", "missing-model"],
+  ])("rejects invalid drawing endpoint %s with model %s", (base, model, code) => {
+    expect(() => resolveImageGenerationEndpoint(base, model)).toThrow(expect.objectContaining({ code }));
+  });
   it.each([
     ["openai-chat", "  https://relay.example.com///  ", "https://relay.example.com/v1", "https://relay.example.com/v1/chat/completions"],
     ["openai-responses", "https://relay.example.com/v1//", "https://relay.example.com/v1", "https://relay.example.com/v1/responses"],

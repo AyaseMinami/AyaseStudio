@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { backgroundViewport, centerBackgroundFocus, normalizeBackgroundFocus, type BackgroundFocus } from "../../appearance/backgroundFocus";
 import "./backgroundFocus.css";
@@ -7,6 +7,7 @@ export interface BackgroundImageProps {
   url: string | null;
   focus: BackgroundFocus | null;
   fit: "cover" | "contain";
+  blur?: number;
   className?: string;
   aspectRatio?: number;
   onError?(): void;
@@ -31,11 +32,13 @@ export function useViewportAspectRatio(): number {
   return ratio;
 }
 
-export function BackgroundImage({ url, focus, fit, className, aspectRatio, onError }: BackgroundImageProps) {
+export function BackgroundImage({ url, focus, fit, blur = 0, className, aspectRatio, onError }: BackgroundImageProps) {
   const failure = useRef(onError);
   failure.current = onError;
   const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
-  const clipId = useId().replace(/:/g, "");
+  const filterId = useId().replace(/:/g, "");
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [renderWidth, setRenderWidth] = useState(0);
   const viewportRatio = useViewportAspectRatio();
 
   useEffect(() => {
@@ -47,12 +50,40 @@ export function BackgroundImage({ url, focus, fit, className, aspectRatio, onErr
     return () => { image.onload = null; image.onerror = null; };
   }, [url]);
 
+  useLayoutEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || blur <= 0) return;
+    // Layout width excludes the preview stage's transform, preserving its 1080p blur scale.
+    const update = () => setRenderWidth(svg.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, [dimensions, blur, url]);
+
   if (!url) return null;
   if (!dimensions || dimensions.url !== url) return null;
   const ratio = aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : viewportRatio;
   const { x, y, width, height } = backgroundViewport(dimensions.width, dimensions.height, ratio, normalizeBackgroundFocus(focus) ?? centerBackgroundFocus, fit);
-  return <svg aria-hidden="true" className={`background-image ${className ?? ""}`} viewBox={`${x} ${y} ${width} ${height}`} preserveAspectRatio={fit === "cover" ? "xMidYMid slice" : "xMidYMid meet"}>
-    <defs><clipPath id={clipId}><rect x={x} y={y} width={width} height={height} /></clipPath></defs>
-    <image href={url} x="0" y="0" width={dimensions.width} height={dimensions.height} clipPath={`url(#${clipId})`} preserveAspectRatio="none" />
+  const deviation = renderWidth > 0 ? Math.max(0, blur) * width / renderWidth : 0;
+  const padding = Math.ceil(deviation * 3) + 1;
+  const imageWidth = dimensions.width;
+  const imageHeight = dimensions.height;
+  // Repeat the outermost pixel strips explicitly: Chromium does not reliably
+  // implement feGaussianBlur's edgeMode. Padding supplies blur samples without
+  // scaling the picture; clipping after filtering preserves contain/empty areas.
+  const columns = [[-padding, padding, 0, 1], [0, imageWidth, 0, imageWidth], [imageWidth, padding, imageWidth - 1, 1]];
+  const rows = [[-padding, padding, 0, 1], [0, imageHeight, 0, imageHeight], [imageHeight, padding, imageHeight - 1, 1]];
+  const source = <image href={url} x="0" y="0" width={imageWidth} height={imageHeight} preserveAspectRatio="none" />;
+  return <svg ref={svgRef} aria-hidden="true" className={`background-image ${className ?? ""}`} viewBox={`${x} ${y} ${width} ${height}`} preserveAspectRatio={fit === "cover" ? "xMidYMid slice" : "xMidYMid meet"}>
+    {blur > 0 && <defs><clipPath id={`${filterId}-clip`}><rect width={imageWidth} height={imageHeight} /></clipPath>
+    <filter id={filterId} filterUnits="userSpaceOnUse" x={-padding} y={-padding} width={imageWidth + padding * 2} height={imageHeight + padding * 2} colorInterpolationFilters="sRGB">
+      <feGaussianBlur stdDeviation={deviation} edgeMode="duplicate" />
+    </filter></defs>}
+    {blur > 0 ? <g clipPath={`url(#${filterId}-clip)`}><g filter={`url(#${filterId})`}>
+      {source}
+      {rows.flatMap(([destY, destHeight, sourceY, sourceHeight], row) => columns.map(([destX, destWidth, sourceX, sourceWidth], column) => row === 1 && column === 1 ? null :
+        <svg key={`${row}-${column}`} x={destX} y={destY} width={destWidth} height={destHeight} viewBox={`${sourceX} ${sourceY} ${sourceWidth} ${sourceHeight}`} preserveAspectRatio="none" overflow="hidden">{source}</svg>))}
+    </g></g> : source}
   </svg>;
 }

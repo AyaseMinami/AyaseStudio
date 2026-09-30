@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatSession } from "./useChatSession";
 import { createChatRepository, type StoredChatMessage } from "./repository";
 import { SessionStore } from "./sessionStore";
-import { saveConnectionSettings } from "./settings";
+import { loadConnectionSettings, saveConnectionSettings } from "./settings";
 import type { ChatEvent, ChatRequest, ChatTransport } from "./types";
 
 const runtime = vi.hoisted(() => ({
@@ -52,6 +52,10 @@ describe("parallel conversation generation", () => {
   let root: ReturnType<typeof createRoot>;
   let container: HTMLDivElement;
   let session: ReturnType<typeof useChatSession>;
+  function Probe({ externalBusy = false }: { externalBusy?: boolean }) {
+    session = useChatSession({ onConfigurationRequired: () => undefined, externalBusy });
+    return null;
+  }
 
   async function wait(predicate: () => boolean) {
     for (let index = 0; index < 100 && !predicate(); index++) {
@@ -122,7 +126,6 @@ describe("parallel conversation generation", () => {
     }] });
     await repo.initializeWorkspace("model", ["model"]);
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-    function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
     await act(async () => root.render(<Probe />));
     await wait(() => session.isHydrated);
     await act(async () => { await session.workspace.execute({ type: "create-conversation", id: "other", assistantId: "default" }); });
@@ -133,6 +136,125 @@ describe("parallel conversation generation", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+  });
+
+  it("persists connection moves without changing selection and blocks them while drawing is busy", async () => {
+    let secondId = "";
+    await act(async () => { secondId = session.addConnection("provider", "Second", "openai-chat"); });
+    const selected = {
+      active: session.connectionSettings.activeModelId,
+      assistant: session.workspace.assistant?.defaultModelId,
+      conversation: session.workspace.effective.modelId,
+    };
+    await act(async () => session.moveConnection(secondId, "connection", "before"));
+    expect(session.connectionSettings.providers[0].connections.map((item) => item.id)).toEqual([secondId, "connection"]);
+    expect(loadConnectionSettings()).toEqual(session.connectionSettings);
+    expect({
+      active: session.connectionSettings.activeModelId,
+      assistant: session.workspace.assistant?.defaultModelId,
+      conversation: session.workspace.effective.modelId,
+    }).toEqual(selected);
+    await act(async () => root.render(<Probe externalBusy />));
+    const before = session.connectionSettings;
+    await act(async () => session.moveConnection(secondId, "connection", "after"));
+    expect(session.connectionSettings).toBe(before);
+    await act(async () => root.render(<Probe />));
+    await act(async () => session.moveConnection(secondId, "connection", "after"));
+    expect(session.connectionSettings.providers[0].connections.map((item) => item.id)).toEqual(["connection", secondId]);
+  });
+
+  it("blocks connection moves during background chat generation and permits them after completion", async () => {
+    let secondId = "";
+    await act(async () => { secondId = session.addConnection("provider", "Second", "openai-chat"); });
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.setDraft("Synthetic question"));
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    await select("other");
+    expect(session.isGenerating).toBe(false);
+    const before = session.connectionSettings;
+    await act(async () => session.moveConnection(secondId, "connection", "before"));
+    expect(session.connectionSettings).toBe(before);
+    await act(async () => {
+      requests[0].push({ type: "completed", finishReason: "stop" });
+      requests[0].finish();
+      await sending;
+    });
+    await act(async () => session.moveConnection(secondId, "connection", "before"));
+    expect(session.connectionSettings.providers[0].connections.map((item) => item.id)).toEqual([secondId, "connection"]);
+  });
+
+  it("keeps drawing models out of assistant and conversation defaults and skips chat availability requests", async () => {
+    let drawingId = "";
+    let imageId = "";
+    await act(async () => { drawingId = session.addConnection("provider", "Drawing", "gemini-image"); });
+    await act(async () => {
+      session.updateConnection(drawingId, "baseUrl", "https://images.example");
+      session.updateConnection(drawingId, "apiKey", "synthetic-image-key");
+      imageId = session.addModel(drawingId, "image/example");
+    });
+    const previousDefault = session.workspace.assistant?.defaultModelId;
+    const previousModel = session.workspace.effective.modelId;
+    let selected: boolean | undefined;
+    await act(async () => {
+      session.setActiveModel(imageId);
+      selected = await session.setConversationModel(imageId);
+      await session.runModelTest(drawingId, imageId);
+    });
+    expect(selected).toBe(false);
+    expect(session.workspace.assistant?.defaultModelId).toBe(previousDefault);
+    expect(session.workspace.effective.modelId).toBe(previousModel);
+    expect(session.modelTests[imageId]).toMatchObject({ status: "failed", error: { message: "绘图模型请在绘图页生成图片验证。" } });
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    const list = vi.fn(async () => [{ id: "image/example" }]);
+    runtime.createRuntimeModelCatalogClient.mockResolvedValue({ list });
+    await act(async () => { await session.refreshModelCatalog(drawingId); });
+    expect(runtime.createRuntimeModelCatalogClient).toHaveBeenCalledExactlyOnceWith("gemini-native");
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: "https://images.example", apiKey: "synthetic-image-key" }));
+  });
+
+  it("locks shared configuration and maintenance actions while drawing is busy without reporting chat generation", async () => {
+    await act(async () => root.render(<Probe externalBusy />));
+    expect(session.isAnyGenerating).toBe(false);
+    expect(session.backupDisabled).toBe(true);
+    expect(session.dataImport.disabled).toBe(true);
+    const before = structuredClone(session.connectionSettings.providers);
+    await act(async () => {
+      session.updateConnection("connection", "baseUrl", "https://changed.example");
+      session.updateModel("model", "modelId", "changed");
+      session.deleteModel("model");
+      session.deleteConnection("connection");
+      session.deleteProvider("provider");
+      session.renameProvider("provider", "Changed");
+      session.addConnection("provider", "Changed", "gemini-image");
+      session.addModel("connection", "changed");
+      session.addProvider("gemini");
+      await session.runModelTest("connection", "model");
+      await session.refreshModelCatalog("connection");
+    });
+    expect(session.connectionSettings.providers).toEqual(before);
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(runtime.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+    expect(await session.prepareBackup()).toBe(false);
+    await expect(session.dataImport.selectBackup()).rejects.toThrow("请先等待当前操作完成");
+  });
+
+  it.each(["http://localhost:1234", "http://images.example"])("rejects a drawing catalog callback for %s before creating a client", async (baseUrl) => {
+    let drawingId = "";
+    await act(async () => { drawingId = session.addConnection("provider", "Drawing", "gemini-image"); });
+    await act(async () => {
+      session.updateConnection(drawingId, "baseUrl", baseUrl);
+      session.updateConnection(drawingId, "apiKey", "synthetic-image-key");
+    });
+    const list = vi.fn(async () => [{ id: "image/example" }]);
+    runtime.createRuntimeModelCatalogClient.mockResolvedValue({ list });
+    await act(async () => { await session.refreshModelCatalog(drawingId); });
+    expect(session.modelCatalogs[drawingId]).toMatchObject({ status: "error", error: "绘图 Base URL 只支持 HTTPS 地址。" });
+    expect(runtime.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
   });
 
   it("does not overwrite a newly edited recalled draft when an originating send commits in the background", async () => {

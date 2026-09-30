@@ -1,5 +1,15 @@
 # Ayase Studio v0.1 Plan
 
+## Beta drawing scope #23 / #83 (2026-09-30)
+
+2026-10-01 用户授权 #85 OpenAI 兼容 Images 文生图，并要求核对 GPT／Gemini 当前尺寸与分辨率文档。本地实现共享配置、按协议隔离的参数、Base64 单请求生成及既有保存／预览闭环；新版选项和具体兼容边界见 [#85 实施记录](ISSUE-85-IMPLEMENTATION.md)。#86 参考图和其他后续范围不因此提前纳入；真实服务、远端交付与 Issue 关闭仍分别验收。
+
+User approval now includes implementing #84 directly (2026-10-01). The local slice adds the production navigation/page, independent Gemini drawing configuration, single text-to-image task, cancellation, durable private saving/recovery, automatic large preview, plain PNG export and parameter reuse. It introduces drawing database v7 and explicit old-backup maintenance protection until #93. References, batching/concurrency, full gallery management, presets, parameter export and chat exchange remain subsequent Issues. Local implementation/test evidence is recorded in [#84 implementation](ISSUE-84-IMPLEMENTATION.md); no commit, push, Issue closure or live-provider acceptance is implied.
+
+The user confirmed an independent drawing module as the second business workspace, sharing the service-settings entry but isolating chat/drawing protocols, models, parameters and data. Same-prompt batches use one image request per task, with global concurrency 1–4 (default 1). Results/parameters and drafts/reference images persist locally; ordinary export omits generation metadata. Restart leaves queued work paused until the user continues it, and never resends possibly dispatched tasks automatically.
+
+The first independent drawing Beta includes #84–#90, #93 and #94. Existing #91 owns later explicit chat exchange; #92 PNG metadata compatibility also remains later. #93 and #94 therefore no longer require #91 for the independent release. Remote issue bodies still describe the earlier dependency set and have not been changed. See [#83 scope, interaction and data specification](ISSUE-83-DRAWING-SPEC.md) and [offline interaction sketch](design/drawing-workspace-83.html). Detailed proposals await user review; #83 does not implement generation or mark remote acceptance.
+
 ## Custom context menus #74 scope revision (2026-09-30)
 
 The user revised #74 to suppress default WebView context menus throughout the application while retaining native editing menus in inputs, textareas and editable text. Only assistant rows, conversation rows, provider rows and connection rows (tree and provider overview) receive custom object menus. Message actions remain in their existing buttons; blank list areas do not open a menu. Existing business operations, generation guards and deletion confirmations remain authoritative. This supersedes the original issue's message-menu direction and adds provider/connection menus. The user has tested and accepted the result and authorized syncing the remote issue to this scope, committing, pushing and closing it. Current interaction rules are recorded in [UI-DESIGN.md](UI-DESIGN.md).

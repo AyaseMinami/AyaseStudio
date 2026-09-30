@@ -143,10 +143,10 @@ export function BackgroundLibraryDialog({ entries, currentReference, busy, onPre
     else onClose();
   }
   return <dialog ref={dialog} className={`background-library-dialog${editingFocus ? " background-library-focus-view" : ""}`} aria-labelledby={editingFocus ? "background-focus-title" : "background-library-title"}
-    style={editingFocus && selectedEdit ? { "--appearance-background-mask": String(selectedEdit.mask / 100), "--appearance-background-blur": `${selectedEdit.blur}px`, "--appearance-background-scale": String(1 + selectedEdit.blur / 100) } as CSSProperties : undefined}
+    style={editingFocus && selectedEdit ? { "--appearance-background-mask": String(selectedEdit.mask / 100), "--appearance-background-blur": `${selectedEdit.blur}px` } as CSSProperties : undefined}
     onCancel={(event) => { event.preventDefault(); escape(); }} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape") { event.preventDefault(); escape(); } }}>
     {editingFocus && selectedEdit && previewResource ? <BackgroundFocusEditor key={selectedEdit.reference}
-      url={previewResource.url} focus={selectedEdit.focus} fit={selectedEdit.fit} confirmLabel="确认取景"
+      url={previewResource.url} focus={selectedEdit.focus} fit={selectedEdit.fit} blur={selectedEdit.blur} confirmLabel="确认取景"
       onConfirm={(focus) => { changeSelected({ focus }); setEditingFocus(false); }} onCancel={() => setEditingFocus(false)} /> : <>
     <header className="background-library-header"><h2 id="background-library-title">{replacement ? "替换背景图片" : draft ? "导入背景图片" : view?.type === "delete" ? "删除背景图片" : "选择背景"}</h2>
       <button type="button" className="settings-button" disabled={blocked} onClick={() => view ? cancelView() : onClose()}>{view ? "返回图库" : "关闭"}</button></header>

@@ -19,10 +19,10 @@ export function AppearanceChatPreview({ url, focus, fit, mask, blur, onImageErro
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const style = { "--appearance-background-mask": String(mask / 100), "--appearance-background-blur": `${blur}px`, "--appearance-background-scale": String(1 + blur / 100) } as CSSProperties;
+  const style = { "--appearance-background-mask": String(mask / 100), "--appearance-background-blur": `${blur}px` } as CSSProperties;
   return <div ref={previewRef} style={style} aria-label="聊天界面预览" className="appearance-background-preview" data-has-image={url ? "true" : undefined}>
     <div className="appearance-preview-stage" style={{ transform: `scale(${scale})` }}>
-      <div className="appearance-background-art"><BackgroundImage url={url} focus={focus} fit={fit} aspectRatio={16 / 9} onError={onImageError} /></div>{url && <div className="appearance-background-preview-mask" />}
+      <div className="appearance-background-art"><BackgroundImage url={url} focus={focus} fit={fit} blur={blur} aspectRatio={16 / 9} onError={onImageError} /></div>{url && <div className="appearance-background-preview-mask" />}
       <div className="appearance-preview-rail" aria-hidden="true"><strong>A</strong><span>聊天</span><span>设置</span></div>
       <div className="appearance-preview-titlebar"><span>☰</span><strong>今天的阅读笔记</strong><span>−　□　×</span></div>
       <div className="appearance-background-preview-content">

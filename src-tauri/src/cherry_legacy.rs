@@ -225,14 +225,20 @@ pub(crate) fn normalize(
             .unwrap_or(owner);
         let messages = array(t, "messages")?;
         if declared != *owner {
-            if assistant_ids.contains(declared)
+            // Empty topics have no message ownership to contradict their unique
+            // assistant-list membership. Their stored assistantId may be stale.
+            if (!messages.is_empty() && assistant_ids.contains(declared))
                 || !messages
                     .iter()
                     .all(|m| m.get("assistantId").and_then(Value::as_str) == Some(owner))
             {
                 return Err("cherry-conflicting-owner".into());
             }
-            warnings.push("已按助手列表与消息共同确认的归属修复过期的助手引用。".to_string());
+            warnings.push(if messages.is_empty() {
+                "已按助手列表中的唯一归属修复空对话的过期助手引用。".to_string()
+            } else {
+                "已按助手列表与消息共同确认的归属修复过期的助手引用。".to_string()
+            });
         }
         let mut out = Vec::new();
         for m in messages {
@@ -477,6 +483,46 @@ mod tests {
         let out = normalize(a, t, b).unwrap();
         assert!(out["topics"][0]["messages"][0]["parts"][0]["text"] == "Example");
         assert!(!out.to_string().contains("synthetic-not-imported"))
+    }
+    #[test]
+    fn empty_topic_uses_unique_assistant_list_owner_despite_stale_reference() {
+        let (mut a, mut t, _) = data();
+        a[0]["topics"][0]["assistantId"] = json!("previous");
+        a.push(json!({"id":"previous","name":"Previous","topics":[]}));
+        t[0]["messages"] = json!([]);
+        let out = normalize(a, t, vec![]).unwrap();
+        assert_eq!(out["topics"].as_array().unwrap().len(), 1);
+        assert_eq!(out["topics"][0]["assistantId"], "a");
+        assert_eq!(out["topics"][0]["title"], "Topic");
+        assert_eq!(out["topics"][0]["messages"], json!([]));
+        assert_eq!(out["warnings"].as_array().unwrap().len(), 1);
+    }
+    #[test]
+    fn empty_topic_with_multiple_list_owners_still_rejects() {
+        let (mut a, mut t, _) = data();
+        let mut other = a[0].clone();
+        other["id"] = json!("other");
+        a.push(other);
+        t[0]["messages"] = json!([]);
+        assert_eq!(
+            normalize(a, t, vec![]).unwrap_err(),
+            "cherry-conflicting-owner"
+        );
+    }
+    #[test]
+    fn nonempty_topic_with_conflicting_existing_owner_still_rejects() {
+        let (mut a, t, b) = data();
+        a[0]["topics"][0]["assistantId"] = json!("previous");
+        a.push(json!({"id":"previous","name":"Previous","topics":[]}));
+        assert_eq!(normalize(a, t, b).unwrap_err(), "cherry-conflicting-owner");
+    }
+    #[test]
+    fn message_owner_conflicts_still_reject() {
+        for field in ["assistantId", "topicId"] {
+            let (a, mut t, b) = data();
+            t[0]["messages"][0][field] = json!("other");
+            assert_eq!(normalize(a, t, b).unwrap_err(), "cherry-conflicting-owner");
+        }
     }
     #[test]
     fn missing_blocks_and_conflicting_owners_reject() {

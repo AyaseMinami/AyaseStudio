@@ -45,6 +45,7 @@ function makeProps(): ConnectionSettingsProps {
     onModelChange: vi.fn(),
     onProviderRename: vi.fn(),
     onProviderMove: vi.fn(),
+    onConnectionMove: vi.fn(),
     onRefreshModelCatalog: vi.fn(async () => undefined),
     onRunModelTest: vi.fn(async () => undefined),
     onSelectModel: vi.fn(),
@@ -52,6 +53,23 @@ function makeProps(): ConnectionSettingsProps {
 }
 
 describe("ConnectionSettings", () => {
+  it("previews Images generations and keeps its models away from chat actions", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    const connection = props.connectionSettings.providers[0].connections[0];
+    connection.protocol = "openai-images";
+    connection.models = [{ id: "image", modelId: "gpt-image-2.5-flare" }];
+    await render(props);
+    expect(container.textContent).toContain("OpenAI 绘图");
+    expect(container.textContent).toContain("https://relay.example.com/v1/images/generations");
+    expect(container.textContent).not.toContain("/chat/completions");
+    expect(container.querySelector('button[aria-label="测试模型 gpt-image-2.5-flare"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="选择模型 gpt-image-2.5-flare"]')).toBeNull();
+    expect(props.onRunModelTest).not.toHaveBeenCalled();
+    connection.baseUrl = "http://relay.example.com/v1";
+    await render(props);
+    expect(container.textContent).toContain("只支持 HTTPS");
+  });
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -65,6 +83,7 @@ describe("ConnectionSettings", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -100,6 +119,235 @@ describe("ConnectionSettings", () => {
       bubbles: true, cancelable: true, clientX: 120, clientY: 160,
     })));
   }
+
+  function pointer(target: EventTarget, type: string, y = 110, pointerId = 1): void {
+    target.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, button: 0, buttons: type === "pointerup" ? 0 : 1,
+      pointerId, isPrimary: true, clientX: 30, clientY: y,
+    }));
+  }
+
+  function hitRow(element: HTMLElement | null): void {
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(element);
+    if (element) vi.spyOn(element, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 40));
+  }
+
+  it("drags a provider from its handle without selecting or collapsing it", async () => {
+    const props = withSecondaryConnection();
+    props.connectionSettings.providers.push({ id: "provider-b", name: "另一供应商", connections: [] });
+    await render(props);
+    hitRow(button("示例供应商"));
+    vi.spyOn(button("示例供应商").closest(".connection-provider-row")!, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 100, 200, 40));
+    const source = button("拖动排序 另一供应商");
+    await act(async () => {
+      pointer(source, "pointerdown", 170);
+      pointer(window, "pointermove");
+    });
+    expect(container.querySelector('[data-sort-provider="provider-a"]')?.getAttribute("data-drop")).toBe("before");
+    await act(async () => {
+      pointer(window, "pointerup");
+      source.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    expect(props.onProviderMove).toHaveBeenCalledExactlyOnceWith("provider-b", "provider-a", "before");
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    expect(button("收起供应商 示例供应商").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("arms a connection name only after the hold delay and suppresses its release click", async () => {
+    vi.useFakeTimers();
+    const props = withSecondaryConnection();
+    await render(props);
+    hitRow(button("查看连接 主线路").closest<HTMLElement>("[data-sort-connection]"));
+    const source = button("查看连接 备用线路");
+    await act(async () => {
+      pointer(source, "pointerdown", 170);
+      vi.advanceTimersByTime(399);
+    });
+    expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(container.querySelector('[data-sorting="true"]')).not.toBeNull();
+    await act(async () => {
+      pointer(window, "pointermove");
+      pointer(window, "pointerup");
+      source.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    expect(props.onConnectionMove).toHaveBeenCalledExactlyOnceWith("connection-secondary", "connection-a", "before");
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+  });
+
+  it("keeps a short name click usable and cancels a hold when the pointer moves early", async () => {
+    vi.useFakeTimers();
+    const props = withSecondaryConnection();
+    await render(props);
+    const source = button("查看连接 备用线路");
+    await act(async () => {
+      pointer(source, "pointerdown");
+      vi.advanceTimersByTime(100);
+      pointer(window, "pointerup");
+      source.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      vi.advanceTimersByTime(500);
+    });
+    expect(source.getAttribute("aria-current")).toBe("true");
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
+    const original = button("查看连接 主线路");
+    await act(async () => {
+      pointer(original, "pointerdown");
+      pointer(window, "pointermove", 150);
+      vi.advanceTimersByTime(500);
+      pointer(window, "pointerup", 150);
+      original.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
+    expect(source.getAttribute("aria-current")).toBe("true");
+  });
+
+  it.each(["escape", "blur", "pointercancel"])("cancels an active long press on %s without selecting a row", async (reason) => {
+    vi.useFakeTimers();
+    const props = withSecondaryConnection();
+    await render(props);
+    hitRow(button("查看连接 主线路").closest<HTMLElement>("[data-sort-connection]"));
+    const source = button("查看连接 备用线路");
+    await act(async () => {
+      pointer(source, "pointerdown", 170);
+      vi.advanceTimersByTime(400);
+      pointer(window, "pointermove");
+      if (reason === "escape") window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      else if (reason === "blur") window.dispatchEvent(new Event("blur"));
+      else pointer(window, "pointercancel");
+      pointer(window, "pointerup");
+      if (reason !== "pointercancel") source.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+  });
+
+  it.each([100, 400])("cancels a pending or active hold when generation starts at %i ms", async (elapsed) => {
+    vi.useFakeTimers();
+    const props = withSecondaryConnection();
+    await render(props);
+    hitRow(button("查看连接 主线路").closest<HTMLElement>("[data-sort-connection]"));
+    await act(async () => { pointer(button("查看连接 备用线路"), "pointerdown", 170); vi.advanceTimersByTime(elapsed); });
+    props.isStreaming = true;
+    await render(props);
+    await act(async () => { vi.advanceTimersByTime(500); pointer(window, "pointermove"); pointer(window, "pointerup"); });
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+    expect(button("拖动排序连接 备用线路").disabled).toBe(true);
+  });
+
+  it("keeps unrelated buttons usable after blur and a release outside the WebView", async () => {
+    vi.useFakeTimers();
+    const props = withSecondaryConnection();
+    await render(props);
+    await act(async () => {
+      pointer(button("查看连接 备用线路"), "pointerdown");
+      vi.advanceTimersByTime(400);
+      window.dispatchEvent(new Event("blur"));
+    });
+    const disclosure = button("收起供应商 示例供应商");
+    await act(async () => {
+      pointer(disclosure, "pointerdown");
+      pointer(window, "pointerup");
+      disclosure.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
+  });
+
+  it("does not open a connection after Escape cancels a pending name hold", async () => {
+    vi.useFakeTimers();
+    const props = withSecondaryConnection();
+    await render(props);
+    const source = button("查看连接 备用线路");
+    await act(async () => {
+      pointer(source, "pointerdown");
+      vi.advanceTimersByTime(100);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      pointer(window, "pointerup");
+      source.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
+  });
+
+  it("rejects another provider, the source itself and drops outside the tree", async () => {
+    const props = withSecondaryConnection();
+    props.connectionSettings.providers.push({ id: "provider-b", name: "另一供应商", connections: [{
+      ...structuredClone(props.connectionSettings.providers[0].connections[0]), id: "other", name: "其他线路",
+    }] });
+    await render(props);
+    const hit = vi.spyOn(document, "elementFromPoint");
+    const source = button("拖动排序连接 备用线路");
+    for (const target of [button("查看连接 其他线路"), button("查看连接 备用线路"), null]) {
+      hit.mockReturnValue(target);
+      await act(async () => { pointer(source, "pointerdown", 170); pointer(window, "pointermove"); pointer(window, "pointerup"); });
+      expect(container.querySelector("[data-drop]")).toBeNull();
+    }
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
+    expect(props.onProviderMove).not.toHaveBeenCalled();
+  });
+
+  it("allows connections to move by keyboard menu without changing the selected connection", async () => {
+    const props = withSecondaryConnection();
+    await render(props);
+    await rightClick(button("查看连接 备用线路"));
+    expect(menuItem("下移连接 备用线路").disabled).toBe(true);
+    await act(async () => menuItem("上移连接 备用线路").click());
+    expect(props.onConnectionMove).toHaveBeenCalledExactlyOnceWith("connection-secondary", "connection-a", "before");
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+  });
+
+  it("scrolls near the tree edge during drag and stops after release", async () => {
+    vi.useFakeTimers();
+    const props = withSecondaryConnection();
+    await render(props);
+    const tree = container.querySelector<HTMLElement>(".connection-tree")!;
+    vi.spyOn(tree, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 80));
+    hitRow(button("查看连接 主线路").closest<HTMLElement>("[data-sort-connection]"));
+    await act(async () => { pointer(button("拖动排序连接 备用线路"), "pointerdown", 120); pointer(window, "pointermove", 179); vi.advanceTimersByTime(50); });
+    expect(tree.scrollTop).toBeGreaterThan(0);
+    await act(async () => pointer(window, "pointerup", 179));
+    const top = tree.scrollTop;
+    await act(async () => vi.advanceTimersByTime(100));
+    expect(tree.scrollTop).toBe(top);
+  });
+
+  it("shows a real drawing model endpoint and keeps it out of assistant defaults and chat tests", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    props.connectionSettings.activeModelId = null;
+    const connection = props.connectionSettings.providers[0].connections[0];
+    connection.protocol = "gemini-image";
+    connection.models = [{ id: "image", modelId: "image/model example", displayName: "Image" }];
+    await render(props);
+    expect(container.textContent).toContain("Gemini 绘图");
+    expect(container.textContent).toContain("https://relay.example.com/v1/v1beta/models/image%2Fmodel%20example:generateContent");
+    expect(container.textContent).toContain("绘图模型仅用于绘图页，请生成图片验证。");
+    expect(container.querySelector('button[aria-label="设为助手默认模型 image/model example"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="测试模型 image/model example"]')).toBeNull();
+    expect(container.textContent).not.toContain("streamGenerateContent");
+    await act(async () => button("编辑模型 image/model example").click());
+    container.querySelector<HTMLInputElement>('.model-edit-form input[name="modelId"]')!.value = "new-image-model";
+    await act(async () => container.querySelector('.model-edit-form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(props.onModelChange).toHaveBeenCalledWith("image", "modelId", "new-image-model");
+    expect(props.onSelectModel).not.toHaveBeenCalled();
+    expect(props.onRunModelTest).not.toHaveBeenCalled();
+  });
+
+  it("keeps an empty drawing connection preview free of placeholder model endpoints", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    props.connectionSettings.activeModelId = null;
+    props.connectionSettings.providers[0].connections[0].protocol = "gemini-image";
+    props.connectionSettings.providers[0].connections[0].models = [];
+    await render(props);
+    expect(container.textContent).toContain("添加模型后可预览绘图生成端点");
+    expect(container.textContent).not.toContain("generateContent");
+  });
 
   it.each(["right-click", "keyboard", "management button"])("closes supplier templates when %s opens an entity menu", async (entry) => {
     await render(makeProps());
@@ -220,7 +468,7 @@ describe("ConnectionSettings", () => {
     props.isStreaming = true;
     await render(props);
     const items = document.querySelectorAll<HTMLButtonElement>('.action-menu [role="menuitem"]');
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(5);
     expect([...items].every((item) => item.disabled)).toBe(true);
     await act(async () => menuItem("删除连接 备用线路").click());
     expect(confirm).not.toHaveBeenCalled();

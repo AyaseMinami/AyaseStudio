@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { groupDiscoveredModels } from "../../chat/modelGrouping";
-import { getProtocolOption, protocolOptions } from "../../chat/protocolOptions";
+import { getProtocolOption, isDrawingProtocol, protocolOptions } from "../../chat/protocolOptions";
 import {
   getActiveTarget,
   providerTemplates,
@@ -36,15 +36,18 @@ import type {
   ModelCatalogViewState,
   ModelTestViewState,
 } from "../../chat/useChatSession";
-import type { ChatProtocol } from "../../chat/types";
+import type { ServiceProtocol } from "../../chat/protocolOptions";
 import {
   normalizeBaseUrl,
   resolveGenerationEndpoint,
+  resolveImageGenerationEndpoint,
+  resolveOpenAIImagesEndpoint,
   UrlResolutionError,
 } from "../../chat/urlResolution";
 import "./ConnectionSettings.css";
 import { SettingsHelp } from "./SettingsHelp";
 import { ActionMenu, isContextMenuKey, isEditableContextTarget, useActionMenu, type ActionMenuItem } from "../ActionMenu";
+import { useConnectionTreeDrag } from "./useConnectionTreeDrag";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -56,7 +59,7 @@ export interface ConnectionSettingsProps {
   onAddConnection(
     providerId: string,
     name: string,
-    protocol: ChatProtocol,
+    protocol: ServiceProtocol,
     copyFromConnectionId?: string,
   ): string;
   onAddModel(
@@ -78,6 +81,7 @@ export interface ConnectionSettingsProps {
   onModelChange(modelId: string, field: ModelField, value: string): void;
   onProviderRename(providerId: string, name: string): void;
   onProviderMove(providerId: string, targetId: string, placement: "before" | "after"): void;
+  onConnectionMove(connectionId: string, targetId: string, placement: "before" | "after"): void;
   onRefreshModelCatalog(connectionId: string): Promise<void>;
   onRunModelTest(connectionId: string, modelId: string): Promise<void>;
   onSelectModel(modelId: string): void;
@@ -141,6 +145,12 @@ function generationPreview(
     return { error: "请填写 Base URL 后预览请求端点。" };
   }
   try {
+    if (isDrawingProtocol(connection.protocol)) {
+      const normalizedBaseUrl = normalizeBaseUrl(connection.protocol, connection.baseUrl);
+      return modelId ? { normalizedBaseUrl, resolvedEndpoint: connection.protocol === "openai-images"
+        ? resolveOpenAIImagesEndpoint(connection.baseUrl, modelId) : resolveImageGenerationEndpoint(connection.baseUrl, modelId) }
+        : { normalizedBaseUrl, note: "添加模型后可预览绘图生成端点；请在绘图页生成图片验证。" };
+    }
     if (connection.protocol === "gemini-native" && !modelId) {
       return {
         normalizedBaseUrl: normalizeBaseUrl(
@@ -254,6 +264,7 @@ export function ConnectionSettings({
   onModelChange,
   onProviderRename,
   onProviderMove,
+  onConnectionMove,
   onRefreshModelCatalog,
   onRunModelTest,
   onSelectModel,
@@ -269,8 +280,6 @@ export function ConnectionSettings({
   );
   const [isAddingConnection, setIsAddingConnection] = useState(false);
   const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => new Set());
-  const [draggedProviderId, setDraggedProviderId] = useState<string | null>(null);
-  const [providerDrop, setProviderDrop] = useState<{ id: string; placement: "before" | "after" } | null>(null);
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
@@ -279,6 +288,14 @@ export function ConnectionSettings({
   const [formError, setFormError] = useState<string>();
   const [pendingFocus, setPendingFocus] = useState<PendingFocus | null>(null);
   const entityMenu = useActionMenu<SettingsMenuTarget>();
+  const treeDrag = useConnectionTreeDrag({
+    disabled: isStreaming,
+    onStart: entityMenu.close,
+    onMove: (item, targetId, placement) => {
+      if (item.kind === "provider") onProviderMove(item.id, targetId, placement);
+      else onConnectionMove(item.id, targetId, placement);
+    },
+  });
   const providerCreateRef = useRef<HTMLDetailsElement>(null);
   const catalogDialogRef = useRef<HTMLElement>(null);
   const catalogTriggerRef = useRef<HTMLButtonElement>(null);
@@ -475,7 +492,7 @@ export function ConnectionSettings({
     const form = event.currentTarget;
     const data = new FormData(form);
     const name = String(data.get("connectionName") ?? "").trim();
-    const protocol = data.get("protocol") as ChatProtocol | null;
+    const protocol = data.get("protocol") as ServiceProtocol | null;
     const copyFromConnectionId = String(data.get("copyFromConnectionId") ?? "");
     if (!name || !protocolOptions.some((option) => option.value === protocol)) {
       setFormError("请填写连接名称并选择协议。");
@@ -485,7 +502,7 @@ export function ConnectionSettings({
     const connectionId = onAddConnection(
       selectedProvider.id,
       name,
-      protocol as ChatProtocol,
+      protocol as ServiceProtocol,
       copyFromConnectionId || undefined,
     );
     setSelectedConnectionId(connectionId);
@@ -494,7 +511,7 @@ export function ConnectionSettings({
     form.reset();
   }
 
-  function handleProtocolChange(protocol: ChatProtocol): void {
+  function handleProtocolChange(protocol: ServiceProtocol): void {
     if (!selectedConnection || protocol === selectedConnection.protocol) return;
     if (
       selectedConnection.models.length > 0 &&
@@ -566,16 +583,21 @@ export function ConnectionSettings({
       onSelect: () => {
         if (!isStreaming) entityMenu.open({ ...menuTarget, renaming: true }, state.opener, { x: state.left, y: state.top });
       } });
-    if (menuTarget.kind === "provider") {
-      const index = connectionSettings.providers.findIndex((provider) => provider.id === menuTarget.id);
+    {
+      const items = menuConnection ? menuProvider.connections : connectionSettings.providers;
+      const index = items.findIndex((item) => item.id === menuTarget.id);
       for (const direction of [-1, 1] as const) {
-        const adjacent = connectionSettings.providers[index + direction];
+        const adjacent = items[index + direction];
         const label = direction === -1 ? "上移" : "下移";
         entityItems.push({ id: direction === -1 ? "move-up" : "move-down", label,
-          accessibleLabel: `${label}供应商 ${menuProvider.name}`,
+          accessibleLabel: `${label}${kind} ${menuEntity.name}`,
           icon: direction === -1 ? <ArrowUp size={15} /> : <ArrowDown size={15} />,
           disabled: isStreaming || !adjacent,
-          onSelect: () => { if (!isStreaming && adjacent) onProviderMove(menuProvider.id, adjacent.id, direction === -1 ? "before" : "after"); } });
+          onSelect: () => {
+            if (isStreaming || !adjacent) return;
+            const move = menuConnection ? onConnectionMove : onProviderMove;
+            move(menuEntity.id, adjacent.id, direction === -1 ? "before" : "after");
+          } });
       }
     }
     entityItems.push({ id: "delete", label: "删除", icon: <Trash2 size={14} />,
@@ -666,7 +688,7 @@ export function ConnectionSettings({
   }
 
   async function handleRunModelTest(model: ConfiguredModel): Promise<void> {
-    if (!selectedConnection) return;
+    if (!selectedConnection || isDrawingProtocol(selectedConnection.protocol)) return;
     if (
       !window.confirm(
         `测试 ${model.modelId} 会发送一条极短请求，可能产生少量 Token 和中转站费用。是否继续？`,
@@ -684,7 +706,8 @@ export function ConnectionSettings({
   }
 
   function renderModelRow(model: ConfiguredModel) {
-    const current = model.id === connectionSettings.activeModelId;
+    const drawing = isDrawingProtocol(selectedConnection?.protocol);
+    const current = !drawing && model.id === connectionSettings.activeModelId;
     const test = modelTests[model.id];
     const testSummary = modelTestSummary(test);
     return (
@@ -707,12 +730,12 @@ export function ConnectionSettings({
             {testSummary ? <small className={`model-test-summary model-test-${test?.status}`}>{testSummary}</small> : null}
           </div>
           <div className="model-row-actions">
-            <button type="button" className="icon-button" aria-label={`设为助手默认模型 ${model.modelId}`} title="设为助手默认模型（用于新建对话）" disabled={isStreaming || current || !canSelectModel} onClick={() => onSelectModel(model.id)}>
+            {!drawing && <button type="button" className="icon-button" aria-label={`设为助手默认模型 ${model.modelId}`} title="设为助手默认模型（用于新建对话）" disabled={isStreaming || current || !canSelectModel} onClick={() => onSelectModel(model.id)}>
               {current ? <Check size={15} /> : <Square size={14} />}
-            </button>
-            <button type="button" className="icon-button" aria-label={`${test?.status === "running" ? "取消测试" : "测试模型"} ${model.modelId}`} title={test?.status === "running" ? "取消测试" : "测试模型"} disabled={isStreaming} onClick={() => test?.status === "running" ? onCancelModelTest(model.id) : void handleRunModelTest(model)}>
+            </button>}
+            {!drawing && <button type="button" className="icon-button" aria-label={`${test?.status === "running" ? "取消测试" : "测试模型"} ${model.modelId}`} title={test?.status === "running" ? "取消测试" : "测试模型"} disabled={isStreaming} onClick={() => test?.status === "running" ? onCancelModelTest(model.id) : void handleRunModelTest(model)}>
               {test?.status === "running" ? <X size={15} /> : <Gauge size={15} />}
-            </button>
+            </button>}
             <button type="button" className="icon-button" aria-label={`编辑模型 ${model.modelId}`} title="编辑模型" disabled={isStreaming} onClick={() => beginModelEdit(model.id)}><Pencil size={14} /></button>
             <button type="button" className="icon-button danger-icon-button" aria-label={`删除模型 ${model.modelId}`} title="删除模型" disabled={isStreaming} onClick={() => handleDeleteModel(model)}><Trash2 size={14} /></button>
           </div>
@@ -731,7 +754,9 @@ export function ConnectionSettings({
           <p className="muted-text">管理连接与模型，设置助手的新对话默认模型。</p>
       </div>
         <div className="connection-settings-workbench">
-          <nav className="connection-tree" aria-label="供应商列表">
+          <nav className="connection-tree" aria-label="供应商列表" onClickCapture={treeDrag.suppressClick}
+            data-sorting={treeDrag.drag ? "true" : undefined}>
+            <span className="sr-only" role="status" aria-live="polite">{treeDrag.announcement}</span>
             <div className="connection-tree-heading">
               <h3>供应商</h3>
               <details ref={providerCreateRef} className="provider-create-menu" onToggle={(event) => { if (event.currentTarget.open) entityMenu.close(); }}>
@@ -751,42 +776,17 @@ export function ConnectionSettings({
             )}
             {connectionSettings.providers.map((provider) => {
               const expanded = !collapsedProviders.has(provider.id);
-              return <section key={provider.id} className="connection-tree-group"
-                data-dragging={draggedProviderId === provider.id || undefined}
-                data-drop={providerDrop?.id === provider.id ? providerDrop.placement : undefined}
-                onDragOver={(event) => {
-                  if (!draggedProviderId || draggedProviderId === provider.id || isStreaming) return;
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  setProviderDrop({ id: provider.id, placement: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after" });
-                }}
-                onDragLeave={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setProviderDrop(null);
-                }}
-                onDrop={(event) => {
-                  if (!draggedProviderId || isStreaming) return;
-                  event.preventDefault();
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  const placement = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
-                  onProviderMove(draggedProviderId, provider.id, placement);
-                  setDraggedProviderId(null);
-                  setProviderDrop(null);
-                }}>
+              const providerDrag = treeDrag.drag?.item.kind === "provider" ? treeDrag.drag : null;
+              return <section key={provider.id} className="connection-tree-group" data-sort-provider={provider.id}
+                data-dragging={providerDrag?.item.id === provider.id || undefined}
+                data-drop={providerDrag?.drop?.id === provider.id ? providerDrag.drop.placement : undefined}>
                 <div className="connection-tree-row connection-provider-row"
                   onContextMenu={(event) => openRowMenu(event, { kind: "provider", id: provider.id }, providerRowRefs.current.get(provider.id))}
                   onKeyDown={(event) => openKeyboardMenu(event, { kind: "provider", id: provider.id })}>
-                  <button type="button" className="provider-drag-handle" draggable={!isStreaming} disabled={isStreaming}
+                  <button type="button" className="provider-drag-handle" disabled={isStreaming}
                     aria-label={`拖动排序 ${provider.name}`} title="拖动排序，也可在菜单中上移或下移"
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("application/x-ayase-provider", provider.id);
-                      const group = event.currentTarget.closest(".connection-tree-group");
-                      if (group) event.dataTransfer.setDragImage(group, 12, 12);
-                      setDraggedProviderId(provider.id);
-                    }}
-                    onDragEnd={() => { setDraggedProviderId(null); setProviderDrop(null); }}>
-                    <GripVertical size={14} />
+                    onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name, true)}>
+                    <GripVertical size={14} aria-hidden="true" />
                   </button>
                   <button type="button" className="connection-tree-disclosure" aria-label={`${expanded ? "收起" : "展开"}供应商 ${provider.name}`}
                     aria-expanded={expanded} aria-controls={`provider-connections-${provider.id}`}
@@ -798,8 +798,11 @@ export function ConnectionSettings({
                     <ChevronDown size={15} />
                   </button>
                   <button type="button" className="connection-tree-provider" aria-label={provider.name}
+                    title="单击查看供应商，长按可拖动排序"
                     ref={(element) => { if (element) providerRowRefs.current.set(provider.id, element); else providerRowRefs.current.delete(provider.id); }}
                     aria-current={selectedProviderId === provider.id && !selectedConnectionId ? "true" : undefined}
+                    onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name, false)}
+                    onDragStart={(event) => event.preventDefault()}
                     onClick={() => { void selectProvider(provider.id); }}>
                     <span title={provider.name}>{provider.name}</span><small>{provider.connections.length}</small>
                   </button>
@@ -810,13 +813,25 @@ export function ConnectionSettings({
                 <div id={`provider-connections-${provider.id}`} className="connection-tree-children" hidden={!expanded}
                   role="group" aria-label={`${provider.name}的连接渠道列表`}>
                   {provider.connections.map((connection) => {
-                    return <div className="connection-tree-connection" key={connection.id}>
+                    const connectionDrag = treeDrag.drag?.item.kind === "connection" ? treeDrag.drag : null;
+                    return <div className="connection-tree-connection" key={connection.id}
+                      data-sort-connection={connection.id} data-sort-scope={provider.id}
+                      data-dragging={connectionDrag?.item.id === connection.id || undefined}
+                      data-drop={connectionDrag?.drop?.id === connection.id ? connectionDrag.drop.placement : undefined}>
                       <div className="connection-tree-row"
                         onContextMenu={(event) => openRowMenu(event, { kind: "connection", providerId: provider.id, id: connection.id }, connectionRowRefs.current.get(connection.id))}
                         onKeyDown={(event) => openKeyboardMenu(event, { kind: "connection", providerId: provider.id, id: connection.id })}>
+                        <button type="button" className="provider-drag-handle connection-drag-handle" disabled={isStreaming}
+                          aria-label={`拖动排序连接 ${connection.name}`} title="在当前供应商内拖动排序，也可在菜单中上移或下移"
+                          onPointerDown={(event) => treeDrag.begin(event, { kind: "connection", id: connection.id, providerId: provider.id }, connection.name, true)}>
+                          <GripVertical size={14} aria-hidden="true" />
+                        </button>
                         <button type="button" className="connection-tree-link" aria-label={`查看连接 ${connection.name}`}
+                          title="单击查看连接，长按可在当前供应商内拖动排序"
                           aria-current={selectedConnectionId === connection.id ? "true" : undefined}
                           ref={(element) => { if (element) connectionRowRefs.current.set(connection.id, element); else connectionRowRefs.current.delete(connection.id); }}
+                          onPointerDown={(event) => treeDrag.begin(event, { kind: "connection", id: connection.id, providerId: provider.id }, connection.name, false)}
+                          onDragStart={(event) => event.preventDefault()}
                           onClick={() => selectConnection(provider.id, connection.id)}>
                           <span title={connection.name}>{connection.name}</span>
                         </button>
@@ -905,7 +920,8 @@ export function ConnectionSettings({
               const connection = selectedConnection;
               const protocol = getProtocolOption(connection.protocol);
               const preview = generationPreview(connection,
-                activeTarget?.connection.id === connection.id ? activeTarget.model.modelId : undefined, streamPreview);
+                isDrawingProtocol(connection.protocol) ? connection.models[0]?.modelId :
+                  activeTarget?.connection.id === connection.id ? activeTarget.model.modelId : undefined, streamPreview);
               return <div key={connection.id} className="connection-detail-body">
                 <header className="connection-detail-heading">
                   <button className="connection-back-button" type="button"
@@ -930,7 +946,7 @@ export function ConnectionSettings({
                       </label>
                       <label className="field-label">协议类型
                         <select id="connection-protocol" className="field" value={connection.protocol} disabled={isStreaming}
-                          onChange={(event) => handleProtocolChange(event.target.value as ChatProtocol)}>
+                          onChange={(event) => handleProtocolChange(event.target.value as ServiceProtocol)}>
                           {protocolOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
                       </label>
@@ -959,9 +975,10 @@ export function ConnectionSettings({
                   </div>
                 </details>
                 <section className="connection-models" aria-label="模型管理">
-                  <header className="connection-model-heading"><h3>模型管理</h3><span className="count-badge">{connection.models.length}</span><SettingsHelp label="模型管理">{canSelectModel
+                  <header className="connection-model-heading"><h3>模型管理</h3><span className="count-badge">{connection.models.length}</span><SettingsHelp label="模型管理">{isDrawingProtocol(connection.protocol) ? "绘图模型仅用于绘图页，请生成图片验证；不会设为助手默认模型。" : canSelectModel
                     ? "选择模型用于助手的新对话。已有对话可在聊天顶部或对话设置中更换。"
                     : "请先加载或选择助手，再设置默认模型。"}</SettingsHelp></header>
+                  {isDrawingProtocol(connection.protocol) && <p className="muted-text">绘图模型仅用于绘图页，请生成图片验证。</p>}
 
                 <div className="model-toolbar">
                   <label className="search-field">
@@ -1152,6 +1169,7 @@ export function ConnectionSettings({
                 <button
                   type="button"
                   className="settings-button"
+                  disabled={isStreaming}
                   onClick={() => void onRefreshModelCatalog(selectedConnection.id)}
                 >
                   <RefreshCw size={15} />

@@ -9,6 +9,7 @@ import type { useConversationWorkspace } from "../../chat/useConversationWorkspa
 import { defaultSessionConfig, validateSessionConfig } from "../../chat/sessionConfig";
 import { validateRequestConfig } from "../../chat/requestMapping";
 import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settings";
+import { isChatConnection } from "../../chat/settings";
 import { DEFAULT_ASSISTANT_ID, type AssistantInput, type AssistantPreset, type WorkspaceCommand } from "../../chat/workspace";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
@@ -296,7 +297,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
           }}>
           <option value="">未选择模型</option>
           {dialog.input.defaultModelId && !editorTarget && <option value={dialog.input.defaultModelId}>原模型已失效，请重新选择</option>}
-          {settings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
+          {settings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
         </select>
         <div className="session-config-capabilities">
         <WebSearchControl config={dialog.input.defaultConfig} disabled={busy}

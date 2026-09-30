@@ -1,4 +1,5 @@
 mod background;
+mod drawing;
 mod attachments;
 mod ayase_backup;
 mod cherry_import;
@@ -64,6 +65,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            drawing::save_drawing_result,
+            drawing::recover_drawing_result,
+            drawing::read_drawing_result,
+            drawing::export_drawing_result,
             background::select_background_image,
             background::resolve_background_image,
             background::cleanup_background_images,

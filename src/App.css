@@ -86,7 +86,6 @@
   --appearance-background-fit: cover;
   --appearance-background-mask: 0.65;
   --appearance-background-blur: 0px;
-  --appearance-background-scale: 1;
   --sidebar-background-opacity: 1;
   --composer-background-opacity: 1;
   --message-bubble-opacity: 0.94;
@@ -229,8 +228,7 @@ textarea:disabled {
 .appearance-background-art {
   position: absolute;
   inset: 0;
-  filter: blur(var(--appearance-background-blur));
-  transform: scale(var(--appearance-background-scale));
+  overflow: hidden;
   pointer-events: none;
 }
 

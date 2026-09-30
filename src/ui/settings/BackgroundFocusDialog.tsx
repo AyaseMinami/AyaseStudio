@@ -7,6 +7,7 @@ interface BackgroundFocusDialogProps {
   url: string;
   focus: BackgroundFocus | null;
   fit: "cover" | "contain";
+  blur?: number;
   error?: string | null;
   confirmLabel?: string;
   onConfirm(focus: BackgroundFocus): void;
@@ -28,7 +29,7 @@ export function BackgroundFocusDialog(props: BackgroundFocusDialogProps) {
   return <dialog ref={dialog} className="background-crop-dialog" aria-labelledby="background-focus-title"><BackgroundFocusEditor {...props} /></dialog>;
 }
 
-export function BackgroundFocusEditor({ url, focus, fit, error, confirmLabel = "应用取景", onConfirm, onCancel }: BackgroundFocusDialogProps) {
+export function BackgroundFocusEditor({ url, focus, fit, blur = 0, error, confirmLabel = "应用取景", onConfirm, onCancel }: BackgroundFocusDialogProps) {
   const stage = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; focus: BackgroundFocus; bounds: { x: number; y: number; width: number; height: number } } | null>(null);
   const [draft, setDraft] = useState(() => normalizeBackgroundFocus(focus) ?? { ...centerBackgroundFocus });
@@ -91,7 +92,7 @@ export function BackgroundFocusEditor({ url, focus, fit, error, confirmLabel = "
       </div>
       <label className="background-crop-zoom">图片缩放 <input aria-label="图片缩放" type="range" min="25" max="400" step="1" value={Math.round((draft.zoom ?? 1) * 100)} onChange={(event) => { const zoom = Number(event.currentTarget.value) / 100; setDraft((current) => ({ ...current, zoom })); }} /><output>{Math.round((draft.zoom ?? 1) * 100)}%</output></label>
       <fieldset className="background-crop-fields"><legend>取景中心</legend>{([['x', '横向位置'], ['y', '纵向位置']] as const).map(([field, label]) => <label key={field}>{label}<input aria-label={label} type="number" step="1" value={Number((draft[field] * 100).toFixed(1))} onChange={(event) => { const value = event.currentTarget.valueAsNumber / 100; if (Number.isFinite(value)) setFocus(field === 'x' ? value : draft.x, field === 'y' ? value : draft.y); }} />%</label>)}</fieldset>
-      <section className="background-crop-preview" aria-label="当前窗口取景预览" style={{ aspectRatio: viewportRatio }}><div className="appearance-background-art"><BackgroundImage url={url} focus={draft} fit={fit} /></div><span className="background-crop-preview-mask" /><strong>当前窗口效果</strong></section>
+      <section className="background-crop-preview" aria-label="当前窗口取景预览" style={{ aspectRatio: viewportRatio }}><div className="appearance-background-art"><BackgroundImage url={url} focus={draft} fit={fit} blur={blur} /></div><span className="background-crop-preview-mask" /><strong>当前窗口效果</strong></section>
       <p className="field-hint">填充和适应决定基础图片大小，缩放与中心偏移在此基础上生效。超出原图的区域显示画布底色，不会自动吸附或限制在边缘内。</p>
       {error && <p className="notice notice-warning" role="alert">{error}</p>}
     </div>

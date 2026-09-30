@@ -10,10 +10,14 @@ import {
   deleteProvider,
   emptyConnectionSettings,
   getActiveTarget,
+  getActiveConnection,
+  getDrawingModels,
+  getDrawingTarget,
   loadConnectionSettings,
   previousConnectionSettingsStorageKey,
   renameProvider,
   moveProvider,
+  moveConnection,
   saveConnectionSettings,
   selectModel,
   updateConnection,
@@ -69,6 +73,33 @@ describe("connection settings", () => {
     storage = new MemoryStorage();
   });
 
+  it.each(["gemini-image", "openai-images"] as const)("persists %s while keeping drawing model selection independent of chat", protocol => {
+    let state = selectModel(configuredState(), "model-primary");
+    state = addConnection(state, "provider-relay", { id: "drawing", name: "绘图", protocol });
+    state = addModel(state, "drawing", { id: "image-model", modelId: "image/example", displayName: "Image" });
+    const unchanged = selectModel(state, "image-model");
+    expect(unchanged).toBe(state);
+    expect(getActiveConnection(state)?.protocol).toBe("openai-responses");
+    expect(getDrawingModels(state)).toEqual([{ id: "image-model", label: "Relay / 绘图 / Image", protocol }]);
+    expect(getDrawingTarget(state, "image-model")?.connection.protocol).toBe(protocol);
+    expect(getDrawingTarget(state, "model-primary")).toBeUndefined();
+    expect(getDrawingTarget(state, null)).toBeUndefined();
+    expect(getActiveTarget({ ...state, activeModelId: "image-model" })).toBeUndefined();
+    saveConnectionSettings(state, storage);
+    expect(loadConnectionSettings(storage)).toEqual(state);
+    saveConnectionSettings({ ...state, activeModelId: "image-model" }, storage);
+    expect(loadConnectionSettings(storage).activeModelId).toBeNull();
+    expect(loadConnectionSettings(storage).providers[0].connections[1].protocol).toBe(protocol);
+  });
+
+  it.each(["gemini-image", "openai-images"] as const)("clears the chat default when its connection changes to %s", protocol => {
+    const state = selectModel(configuredState(), "model-primary");
+    const changed = updateConnection(state, "connection-primary", "protocol", protocol);
+    expect(changed.activeModelId).toBeNull();
+    expect(getActiveTarget(changed)).toBeUndefined();
+    expect(getDrawingTarget(changed, "model-primary")?.model.modelId).toBe("gpt-example");
+  });
+
   it("persists provider order without changing connections or the selected target", () => {
     let state = configuredState();
     state = selectModel(state, "model-primary");
@@ -85,6 +116,52 @@ describe("connection settings", () => {
     expect(movedDown.providers.map((item) => item.id)).toEqual(["provider-relay", "b", "c"]);
     expect(moveProvider(state, "missing", "b", "before")).toBe(state);
     expect(moveProvider(state, "b", "missing", "before")).toBe(state);
+  });
+
+  it("moves connections in both directions within their provider and persists the active target", () => {
+    let state = selectModel(configuredState(), "model-primary");
+    state = addConnection(state, "provider-relay", { id: "second", name: "Second", protocol: "openai-chat" });
+    state = addConnection(state, "provider-relay", { id: "third", name: "Third", protocol: "gemini-image" });
+    state = createProviderFromTemplate(state, "custom", { providerId: "other", name: "Other" });
+    const active = getActiveTarget(state);
+    const moved = moveConnection(state, "third", "connection-primary", "before");
+    expect(moved.providers[0].connections.map((item) => item.id)).toEqual(["third", "connection-primary", "second"]);
+    expect(moved.providers[1]).toBe(state.providers[1]);
+    expect(moved.providers[0].connections).toEqual([
+      state.providers[0].connections[2], state.providers[0].connections[0], state.providers[0].connections[1],
+    ]);
+    moved.providers[0].connections.forEach((connection) => {
+      expect(connection).toBe(state.providers[0].connections.find((item) => item.id === connection.id));
+    });
+    expect(getActiveTarget(moved)?.provider.id).toBe(active?.provider.id);
+    expect(getActiveTarget(moved)?.connection).toBe(active?.connection);
+    expect(getActiveTarget(moved)?.model).toBe(active?.model);
+    const movedDown = moveConnection(moved, "connection-primary", "second", "after");
+    expect(movedDown.providers[0].connections.map((item) => item.id)).toEqual(["third", "second", "connection-primary"]);
+    expect(movedDown.activeModelId).toBe(state.activeModelId);
+    expect(getActiveTarget(movedDown)?.connection).toBe(active?.connection);
+    expect(getActiveTarget(movedDown)?.model).toBe(active?.model);
+    saveConnectionSettings(movedDown, storage);
+    const restored = loadConnectionSettings(storage);
+    expect(restored).toEqual(movedDown);
+    expect(getActiveTarget(restored)?.provider.id).toBe(active?.provider.id);
+    expect(getActiveTarget(restored)?.connection).toEqual(active?.connection);
+    expect(getActiveTarget(restored)?.model).toEqual(active?.model);
+    expect(state.providers[0].connections.map((item) => item.id)).toEqual(["connection-primary", "second", "third"]);
+  });
+
+  it("preserves state for missing, self, cross-provider and unchanged connection moves", () => {
+    let state = configuredState();
+    state = addConnection(state, "provider-relay", { id: "second", name: "Second", protocol: "openai-chat" });
+    state = createProviderFromTemplate(state, "custom", { providerId: "other", name: "Other" });
+    state = addConnection(state, "other", { id: "foreign", name: "Foreign", protocol: "openai-chat" });
+    expect(moveConnection(state, "missing", "second", "before")).toBe(state);
+    expect(moveConnection(state, "second", "missing", "after")).toBe(state);
+    expect(moveConnection(state, "second", "second", "before")).toBe(state);
+    expect(moveConnection(state, "connection-primary", "foreign", "after")).toBe(state);
+    expect(moveConnection(state, "foreign", "connection-primary", "before")).toBe(state);
+    expect(moveConnection(state, "connection-primary", "second", "before")).toBe(state);
+    expect(moveConnection(state, "second", "connection-primary", "after")).toBe(state);
   });
 
   it("creates ordinary editable provider groups with named connection templates", () => {

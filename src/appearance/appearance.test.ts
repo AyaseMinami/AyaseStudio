@@ -715,6 +715,7 @@ describe("appearance controller", () => {
     expect(harness.styleProperties.get("--appearance-background-blur")).toBe(
       "32px",
     );
+    expect(harness.styleProperties.get("--appearance-background-scale")).toBeUndefined();
     expect(JSON.parse(saved)).toMatchObject({
       backgroundFit: "contain",
       backgroundMask: 35,

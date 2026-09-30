@@ -254,6 +254,43 @@ fn format6_chromium_snapshot_matches_format5_and_restores_internal_file() {
 }
 
 #[test]
+fn format6_empty_topic_with_stale_existing_assistant_reference_previews() {
+    let mut entries = format6_entries();
+    let (mut assistants, mut topic, _, _) = data();
+    assistants[0]["topics"][0]["assistantId"] = json!("previous");
+    assistants.push(json!({"id":"previous","name":"Previous","topics":[]}));
+    topic["messages"] = json!([]);
+    let (key, value) = indexed_record(1, "t", &topic);
+    entries
+        .iter_mut()
+        .find(|(key, _)| key == &format!("{IDB}/000002.log"))
+        .unwrap()
+        .1
+        .extend_from_slice(&batch(1000, &[(key, Some(value))]));
+    let persisted = json!({"assistants":json!({"assistants":assistants}).to_string()}).to_string();
+    entries
+        .iter_mut()
+        .find(|(key, _)| key == &format!("{LOCAL}/000002.log"))
+        .unwrap()
+        .1
+        .extend_from_slice(&batch(
+            1000,
+            &[storage_record("persist:cherry-studio", &persisted)],
+        ));
+    let archive = zip(entries);
+    let preview = Session::open(archive.path()).unwrap().preview().unwrap();
+    assert_eq!(preview["topics"].as_array().unwrap().len(), 1);
+    assert_eq!(preview["topics"][0]["assistantId"], "a");
+    assert_eq!(preview["topics"][0]["messages"], json!([]));
+    assert!(preview["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| warning.as_str().unwrap().contains("空对话")));
+    assert!(!preview.to_string().contains(SECRET));
+}
+
+#[test]
 fn format6_missing_current_wal_or_corrupt_checksum_rejects() {
     for directory in [IDB, LOCAL] {
         let mut entries = format6_entries();

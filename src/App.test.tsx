@@ -24,6 +24,8 @@ import {
   type ConnectionSettingsState,
 } from "./chat/settings";
 import type { ChatRequest, ChatTransport } from "./chat/types";
+import { DexieDrawingRepository } from "./drawing/repository";
+import type { DrawingFile, DrawingImageInput, ImageGenerationTransport } from "./drawing/types";
 
 const runtimeMocks = vi.hoisted(() => ({
   createRuntimeChatTransport: vi.fn(),
@@ -31,6 +33,17 @@ const runtimeMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./chat/runtime", () => runtimeMocks);
+
+const drawingRuntimeMocks = vi.hoisted(() => ({
+  createRuntimeImageTransport: vi.fn(),
+  runtimeDrawingFiles: { save: vi.fn(), recover: vi.fn(), read: vi.fn(), export: vi.fn() },
+}));
+vi.mock("./drawing/runtime", () => drawingRuntimeMocks);
+
+const syntheticImage: DrawingImageInput = {
+  mime: "image/png",
+  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jYwAAAABJRU5ErkJggg==",
+};
 
 describe("App navigation", () => {
   let container: HTMLDivElement;
@@ -42,10 +55,16 @@ describe("App navigation", () => {
     await createChatRepository().load("current");
     const database = new Dexie("AyaseStudio");
     await database.open();
+    // Clear every table, including drawingDrafts, drawingTasks and drawingResults.
     await Promise.all(database.tables.map((table) => table.clear()));
     database.close();
     runtimeMocks.createRuntimeChatTransport.mockReset();
     runtimeMocks.createRuntimeModelCatalogClient.mockReset();
+    drawingRuntimeMocks.createRuntimeImageTransport.mockReset();
+    Object.values(drawingRuntimeMocks.runtimeDrawingFiles).forEach((mock) => mock.mockReset());
+    drawingRuntimeMocks.runtimeDrawingFiles.recover.mockResolvedValue(null);
+    drawingRuntimeMocks.runtimeDrawingFiles.read.mockResolvedValue(syntheticImage);
+    drawingRuntimeMocks.runtimeDrawingFiles.export.mockResolvedValue(true);
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -117,6 +136,120 @@ describe("App navigation", () => {
     });
   }
 
+  it("keeps drawing drafts separate from chat and disables generation without a selected model", async () => {
+    await renderApp();
+    await setDraft("聊天草稿");
+    const before = loadConnectionSettings();
+    await clickButton("绘图");
+    await waitFor(() => container.querySelector<HTMLSelectElement>("#drawing-model")?.disabled === false);
+    const prompt = container.querySelector<HTMLTextAreaElement>("#drawing-prompt");
+    expect(prompt).toBeInstanceOf(HTMLTextAreaElement);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(prompt, "绘图草稿");
+      prompt!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector(".drawing-preview-stage")).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(true);
+    await clickButton("聊天");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("聊天草稿");
+    await clickButton("绘图");
+    expect(container.querySelector<HTMLTextAreaElement>("#drawing-prompt")?.value).toBe("绘图草稿");
+    const configure = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find(button => button.textContent?.trim() === "前往设置");
+    expect(configure).toBeDefined();
+    await act(async () => { configure!.click(); });
+    expect(container.querySelector(".settings-workspace")).not.toBeNull();
+    await clickButton("绘图");
+    expect(container.querySelector<HTMLTextAreaElement>("#drawing-prompt")?.value).toBe("绘图草稿");
+    expect(loadConnectionSettings()).toEqual(before);
+    expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(runtimeMocks.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+    expect(drawingRuntimeMocks.createRuntimeImageTransport).not.toHaveBeenCalled();
+  });
+
+  it("keeps one drawing request running across chat navigation and automatically previews its saved result", async () => {
+    const settings: ConnectionSettingsState = {
+      version: 3, activeModelId: "chat-model",
+      providers: [{ id: "synthetic-provider", name: "合成服务", connections: [
+        { id: "chat-connection", name: "聊天连接", protocol: "openai-chat", baseUrl: "https://synthetic.example.invalid/v1",
+          apiKey: "synthetic-chat-key", models: [{ id: "chat-model", modelId: "synthetic-chat", displayName: "聊天测试模型" }] },
+        { id: "image-connection", name: "绘图连接", protocol: "gemini-image", baseUrl: "https://synthetic.example.invalid",
+          apiKey: "synthetic-image-key", models: [{ id: "image-model", modelId: "synthetic-image", displayName: "绘图测试模型" }] },
+      ] }],
+    };
+    saveConnectionSettings(settings);
+    let finishGeneration!: (images: DrawingImageInput[]) => void;
+    let finishSave!: (files: DrawingFile[]) => void;
+    const generation = new Promise<DrawingImageInput[]>((resolve) => { finishGeneration = resolve; });
+    const save = new Promise<DrawingFile[]>((resolve) => { finishSave = resolve; });
+    const generate = vi.fn(() => generation);
+    drawingRuntimeMocks.createRuntimeImageTransport.mockResolvedValue({ generate } satisfies ImageGenerationTransport);
+    drawingRuntimeMocks.runtimeDrawingFiles.save.mockReturnValue(save);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:https://synthetic.example/one-pixel");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    await renderApp();
+    await setDraft("保留的聊天草稿");
+    expect(getButton("切换模型").textContent).toContain("聊天测试模型");
+    await clickButton("绘图");
+    await waitFor(() => container.querySelector<HTMLSelectElement>("#drawing-model")?.disabled === false);
+    expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(true);
+    await act(async () => {
+      const select = container.querySelector<HTMLSelectElement>("#drawing-model")!;
+      select.value = "image-model";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await setPanelText("#drawing-prompt", "合成湖泊图像");
+    expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(false);
+    await act(async () => container.querySelector<HTMLButtonElement>("#drawing-generate")!.click());
+    await waitFor(() => generate.mock.calls.length === 1);
+    expect(container.querySelector("#drawing-generate")?.textContent).toContain("生成中");
+    expect(drawingRuntimeMocks.createRuntimeImageTransport).toHaveBeenCalledOnce();
+
+    await clickButton("聊天");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留的聊天草稿");
+    expect(getButton("切换模型").textContent).toContain("聊天测试模型");
+    expect(loadConnectionSettings()).toEqual(settings);
+    await clickButton("绘图");
+    expect(container.querySelector<HTMLTextAreaElement>("#drawing-prompt")?.value).toBe("合成湖泊图像");
+    expect(container.querySelector<HTMLSelectElement>("#drawing-model")?.value).toBe("image-model");
+    expect(container.querySelector("#drawing-generate")?.textContent).toContain("生成中");
+    expect(generate).toHaveBeenCalledOnce();
+    expect(drawingRuntimeMocks.createRuntimeImageTransport).toHaveBeenCalledOnce();
+
+    await act(async () => finishGeneration([syntheticImage]));
+    await waitFor(() => drawingRuntimeMocks.runtimeDrawingFiles.save.mock.calls.length === 1);
+    expect(container.querySelector("#drawing-generate")?.textContent).toContain("正在保存");
+    expect(container.textContent).not.toContain("取消生成");
+    const taskId: string = drawingRuntimeMocks.runtimeDrawingFiles.save.mock.calls[0][0];
+    const file: DrawingFile = { id: "synthetic-result", reference: `drawing/${taskId}/image.png`,
+      mime: "image/png", size: 67, width: 1, height: 1 };
+    expect(drawingRuntimeMocks.runtimeDrawingFiles.save).toHaveBeenCalledWith(taskId, [syntheticImage]);
+    await act(async () => finishSave([file]));
+    await waitFor(() => container.querySelector(".drawing-preview-stage img") !== null);
+    expect(container.querySelector(".drawing-preview-stage img")?.getAttribute("src")).toBe("blob:https://synthetic.example/one-pixel");
+    const saved = await new DexieDrawingRepository().load();
+    expect(saved.tasks).toHaveLength(1);
+    expect(saved.tasks[0].status).toBe("completed");
+    expect(saved.results).toHaveLength(1);
+    expect(saved.results[0]).toMatchObject({ ...file, taskId, parameters: { prompt: "合成湖泊图像", configuredModelId: "image-model" } });
+    expect(saved.draft?.modelId).toBe("image-model");
+    expect(JSON.stringify(saved)).not.toContain("synthetic-image-key");
+    await clickButtonWithText("导出图片");
+    await waitFor(() => drawingRuntimeMocks.runtimeDrawingFiles.export.mock.calls.length === 1);
+    expect(drawingRuntimeMocks.runtimeDrawingFiles.export).toHaveBeenCalledWith(file.reference);
+
+    await clickButton("聊天");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留的聊天草稿");
+    expect(getButton("切换模型").textContent).toContain("聊天测试模型");
+    await clickButton("绘图");
+    expect(container.querySelector(".drawing-preview-stage img")).not.toBeNull();
+    expect(generate).toHaveBeenCalledOnce();
+    expect(drawingRuntimeMocks.runtimeDrawingFiles.read).toHaveBeenCalledOnce();
+    expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(runtimeMocks.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+  });
+
   it("reorders only provider groups through drag and menu actions, retaining the selected connection", async () => {
     saveConnectionSettings({
       version: 3, activeModelId: "model-a",
@@ -131,15 +264,17 @@ describe("App navigation", () => {
     await renderApp();
     await clickButton("设置");
     const handle = getButton("拖动排序 C");
-    const target = getButton("A").closest(".connection-tree-group")!;
-    const transfer = new DataTransfer();
-    Object.assign(transfer, { setDragImage: vi.fn() });
-    const dragStart = new Event("dragstart", { bubbles: true });
-    Object.assign(dragStart, { dataTransfer: transfer });
-    const drop = new Event("drop", { bubbles: true });
-    Object.assign(drop, { dataTransfer: transfer, clientY: -1 });
-    await act(async () => handle.dispatchEvent(dragStart));
-    await act(async () => target.dispatchEvent(drop));
+    const target = getButton("A");
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
+    vi.spyOn(target.closest(".connection-provider-row")!, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 100, 200, 40));
+    const pointer = (type: string, clientY: number) => new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, button: 0,
+      clientX: 30, clientY,
+    });
+    await act(async () => handle.dispatchEvent(pointer("pointerdown", 170)));
+    await act(async () => window.dispatchEvent(pointer("pointermove", 110)));
+    await act(async () => window.dispatchEvent(pointer("pointerup", 110)));
     expect(loadConnectionSettings().providers.map((item) => item.id)).toEqual(["c", "a", "b"]);
     expect(getButton("查看连接 线路 a").getAttribute("aria-current")).toBe("true");
     await act(async () => container.querySelector<HTMLElement>('button[aria-label="管理供应商 C"]')!.click());
@@ -148,6 +283,35 @@ describe("App navigation", () => {
     await clickButton("下移供应商 C");
     expect(loadConnectionSettings().providers.map((item) => item.id)).toEqual(["a", "c", "b"]);
     expect(getButton("查看连接 线路 a").getAttribute("aria-current")).toBe("true");
+    expect(loadConnectionSettings().activeModelId).toBe("model-a");
+  });
+
+  it("persists connection dragging and menu ordering while retaining active details and model", async () => {
+    saveConnectionSettings({
+      version: 3, activeModelId: "model-a", providers: [{ id: "provider", name: "合成供应商", connections:
+        ["a", "b", "c"].map((id) => ({ id, name: `合成线路 ${id}`, protocol: "openai-chat",
+          baseUrl: "https://synthetic.invalid", apiKey: "", models: [{ id: `model-${id}`, modelId: `upstream-${id}` }],
+        })),
+      }],
+    });
+    await renderApp();
+    await clickButton("设置");
+    const target = getButton("查看连接 合成线路 a").closest<HTMLElement>("[data-sort-connection]")!;
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 40));
+    const pointer = (type: string, clientY: number) => new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, button: 0, clientX: 30, clientY,
+    });
+    await act(async () => getButton("拖动排序连接 合成线路 c").dispatchEvent(pointer("pointerdown", 170)));
+    await act(async () => window.dispatchEvent(pointer("pointermove", 110)));
+    await act(async () => window.dispatchEvent(pointer("pointerup", 110)));
+    expect(loadConnectionSettings().providers[0].connections.map((item) => item.id)).toEqual(["c", "a", "b"]);
+    expect(getButton("查看连接 合成线路 a").getAttribute("aria-current")).toBe("true");
+    await clickButton("管理连接 合成线路 c");
+    expect(getButton("上移连接 合成线路 c").disabled).toBe(true);
+    await clickButton("下移连接 合成线路 c");
+    expect(loadConnectionSettings().providers[0].connections.map((item) => item.id)).toEqual(["a", "c", "b"]);
+    expect(getButton("查看连接 合成线路 a").getAttribute("aria-current")).toBe("true");
     expect(loadConnectionSettings().activeModelId).toBe("model-a");
   });
 

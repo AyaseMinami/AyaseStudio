@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { MessageSquare, Settings } from "lucide-react";
+import { Image, MessageSquare, Settings } from "lucide-react";
 import appIcon from "../../assets/branding/ayase-icon.svg";
 
-export type AppPage = "chat" | "settings";
+export type AppPage = "chat" | "drawing" | "settings";
 
 export function AppShell({
   activePage,
@@ -34,6 +34,16 @@ export function AppShell({
           >
             <MessageSquare size={19} />
             <span>聊天</span>
+          </button>
+          <button
+            className="app-navigation-button"
+            aria-label="绘图"
+            aria-current={activePage === "drawing" ? "page" : undefined}
+            onClick={() => onPageChange("drawing")}
+            type="button"
+          >
+            <Image size={19} />
+            <span>绘图</span>
           </button>
           <button
             className="app-navigation-button app-navigation-settings"

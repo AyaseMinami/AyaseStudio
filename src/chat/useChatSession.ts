@@ -50,17 +50,19 @@ import {
   deleteProvider,
   getActiveTarget,
   getConnection,
+  isChatConnection,
   loadConnectionSettings,
   providerTemplates,
   renameProvider,
   moveProvider,
+  moveConnection,
   saveConnectionSettings,
-  selectModel,
   updateConnection,
   updateModel,
   type ConnectionField,
   type ModelField,
   type ProviderTemplateId,
+  type ServiceProtocol,
 } from "./settings";
 import type { ChatProtocol } from "./types";
 import {
@@ -128,8 +130,10 @@ function replaceAssistant(
 
 export function useChatSession({
   onConfigurationRequired,
+  externalBusy = false,
 }: {
   onConfigurationRequired(): void;
+  externalBusy?: boolean;
 }) {
   const [connectionSettings, setConnectionSettings] = useState(
     loadConnectionSettings,
@@ -142,8 +146,11 @@ export function useChatSession({
   const cherryBusyRef = useRef(false);
   const cherryToken = useRef<string | undefined>(undefined);
   const generatingConversationIds = useSyncExternalStore(generationTasks.subscribe, generationTasks.getSnapshot);
+  const externalBusyRef = useRef(externalBusy);
+  externalBusyRef.current = externalBusy;
+  const sharedSettingsBusy = () => externalBusyRef.current || generationTasks.getSnapshot().size > 0;
   const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
-    connectionSettings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments);
+    connectionSettings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments);
   const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
   const sessionConfig = workspace.effective.config;
   const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
@@ -264,13 +271,14 @@ export function useChatSession({
   );
 
   function addProviderFromTemplate(templateId: ProviderTemplateId): string {
+    if (sharedSettingsBusy()) return "";
     const providerId = newId();
     const template = providerTemplates.find(
       (candidate) => candidate.id === templateId,
     )!;
     const connectionIds = Object.fromEntries(
       template.connections.map(({ protocol }) => [protocol, newId()]),
-    ) as Partial<Record<ChatProtocol, string>>;
+    ) as Partial<Record<ServiceProtocol, string>>;
     setConnectionSettings((current) =>
       createProviderFromTemplate(current, templateId, {
         providerId,
@@ -287,9 +295,10 @@ export function useChatSession({
   function addProviderConnection(
     providerId: string,
     name: string,
-    protocol: ChatProtocol,
+    protocol: ServiceProtocol,
     copyFromConnectionId?: string,
   ): string {
+    if (sharedSettingsBusy()) return "";
     const connectionId = newId();
     setConnectionSettings((current) =>
       addConnection(current, providerId, {
@@ -307,6 +316,7 @@ export function useChatSession({
     field: ConnectionField,
     value: string,
   ): void {
+    if (sharedSettingsBusy()) return;
     if (field === "protocol" || field === "baseUrl" || field === "apiKey") {
       invalidateCatalogRequest(connectionId);
       setModelCatalogs((current) => {
@@ -343,6 +353,7 @@ export function useChatSession({
     modelId: string,
     displayName?: string,
   ): string {
+    if (sharedSettingsBusy()) return "";
     const id = newId();
     setConnectionSettings((current) =>
       addModel(current, connectionId, { id, modelId, displayName }),
@@ -355,6 +366,7 @@ export function useChatSession({
     field: ModelField,
     value: string,
   ): void {
+    if (sharedSettingsBusy()) return;
     if (field === "modelId") {
       invalidateModelTestRequest(modelId);
       setModelTests((current) => {
@@ -371,7 +383,7 @@ export function useChatSession({
   }
 
   function setActiveModel(modelId: string): void {
-    const target = getActiveTarget(selectModel(connectionSettings, modelId));
+    const target = getActiveTarget({ ...connectionSettings, activeModelId: modelId });
     if (!workspace.assistant || !target) return;
     const previous = getActiveTarget({ ...connectionSettings, activeModelId: workspace.assistant.defaultModelId });
     void workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input: { ...workspace.assistant,
@@ -387,6 +399,7 @@ export function useChatSession({
   }
 
   function removeModel(modelId: string): void {
+    if (sharedSettingsBusy()) return;
     invalidateModelTestRequest(modelId);
     setModelTests((current) => {
       if (!(modelId in current)) {
@@ -399,6 +412,7 @@ export function useChatSession({
   }
 
   function removeConnection(connectionId: string): void {
+    if (sharedSettingsBusy()) return;
     invalidateCatalogRequest(connectionId);
     const affectedModelIds = new Set(
       getConnection(connectionSettings, connectionId)?.models.map(
@@ -414,6 +428,7 @@ export function useChatSession({
   }
 
   function removeProvider(providerId: string): void {
+    if (sharedSettingsBusy()) return;
     const provider = connectionSettings.providers.find(
       (candidate) => candidate.id === providerId,
     );
@@ -427,17 +442,24 @@ export function useChatSession({
   }
 
   function updateProviderName(providerId: string, name: string): void {
+    if (sharedSettingsBusy()) return;
     setConnectionSettings((current) =>
       renameProvider(current, providerId, name),
     );
   }
 
   function moveProviderGroup(providerId: string, targetId: string, placement: "before" | "after"): void {
-    if (generationTasks.getSnapshot().size) return;
+    if (sharedSettingsBusy()) return;
     setConnectionSettings((current) => moveProvider(current, providerId, targetId, placement));
   }
 
+  function moveConnectionChannel(connectionId: string, targetId: string, placement: "before" | "after"): void {
+    if (sharedSettingsBusy()) return;
+    setConnectionSettings((current) => moveConnection(current, connectionId, targetId, placement));
+  }
+
   async function refreshModelCatalog(connectionId: string): Promise<void> {
+    if (sharedSettingsBusy()) return;
     const connection = getConnection(connectionSettings, connectionId);
     const existing = modelCatalogs[connectionId];
     if (!connection?.baseUrl.trim() || !connection.apiKey.trim()) {
@@ -452,6 +474,7 @@ export function useChatSession({
       return;
     }
     try {
+      // Validate drawing HTTPS before reusing a matching read-only model catalog client.
       resolveModelCatalogEndpoint(connection.protocol, connection.baseUrl);
     } catch (error) {
       if (!(error instanceof UrlResolutionError)) throw error;
@@ -477,7 +500,8 @@ export function useChatSession({
       },
     }));
     try {
-      const client = await createRuntimeModelCatalogClient(connection.protocol);
+      const client = await createRuntimeModelCatalogClient(connection.protocol === "gemini-image" ? "gemini-native"
+        : connection.protocol === "openai-images" ? "openai-chat" : connection.protocol);
       const models = await client.list({
         baseUrl: connection.baseUrl,
         apiKey: connection.apiKey,
@@ -529,7 +553,15 @@ export function useChatSession({
     connectionId: string,
     configuredModelId: string,
   ): Promise<void> {
+    if (sharedSettingsBusy()) return;
     const connection = getConnection(connectionSettings, connectionId);
+    if (connection && !isChatConnection(connection)) {
+      setModelTests((current) => ({ ...current, [configuredModelId]: {
+        status: "failed", totalMs: 0,
+        error: { kind: "protocol", message: "绘图模型请在绘图页生成图片验证。", retryable: false },
+      } }));
+      return;
+    }
     const model = connection?.models.find(
       (candidate) => candidate.id === configuredModelId,
     );
@@ -1131,7 +1163,7 @@ export function useChatSession({
 
   async function prepareBackup(): Promise<boolean> {
     if (backupPreparingRef.current) return false;
-    const canPrepare = () => workspace.canSend() && generationTasks.getSnapshot().size === 0 &&
+    const canPrepare = () => !externalBusyRef.current && workspace.canSend() && generationTasks.getSnapshot().size === 0 &&
       !cherryBusyRef.current && imports.current.size === 0;
     if (!canPrepare()) {
       setBackupPreparationError("请等待当前对话操作完成后再进入备份。");
@@ -1154,14 +1186,15 @@ export function useChatSession({
   }
 
   return {
+    maintenanceBusy: backupPreparing || cherryBusy || workspace.busy,
     backupPreparing,
-    backupDisabled: !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing,
+    backupDisabled: externalBusy || !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing,
     backupPreparationError,
     prepareBackup,
     dataImport: {
-      disabled: !workspace.isReady || generatingConversationIds.size > 0 || cherryBusy || backupPreparing,
+      disabled: externalBusy || !workspace.isReady || generatingConversationIds.size > 0 || cherryBusy || backupPreparing,
       async selectBackup(): Promise<CherryBackup | null> {
-        if (!isTauri() || cherryBusyRef.current || backupPreparingRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
+        if (!isTauri() || externalBusyRef.current || generationTasks.getSnapshot().size > 0 || cherryBusyRef.current || backupPreparingRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
         const backup = await invoke<CherryBackup | null>("select_cherry_backup");
         if (backup) cherryToken.current = backup.token;
         return backup;
@@ -1172,7 +1205,7 @@ export function useChatSession({
       },
       existingSourceKeys: (keys: string[]) => cherryRepository.existingSourceKeys(keys),
       async importPlan(plan: CherryImportPlan, mode: "skip" | "copy") {
-        if (cherryBusyRef.current || backupPreparingRef.current || !workspace.canSend() || generationTasks.getSnapshot().size || !cherryToken.current) {
+        if (externalBusyRef.current || cherryBusyRef.current || backupPreparingRef.current || !workspace.canSend() || generationTasks.getSnapshot().size || !cherryToken.current) {
           throw new Error("请先等待当前操作完成，再导入聊天。");
         }
         cherryBusyRef.current = true; setCherryBusy(true);
@@ -1231,6 +1264,7 @@ export function useChatSession({
     refreshModelCatalog,
     renameProvider: updateProviderName,
     moveProvider: moveProviderGroup,
+    moveConnection: moveConnectionChannel,
     runModelTest,
     sendMessage: async (): Promise<void> => { await sendMessage(); },
     setDraft,

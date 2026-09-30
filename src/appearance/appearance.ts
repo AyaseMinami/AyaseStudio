@@ -585,7 +585,6 @@ function applyBackgroundVariables(
     "--appearance-background-blur",
     `${preferences.backgroundBlur}px`,
   );
-  target.style.setProperty("--appearance-background-scale", String(1 + preferences.backgroundBlur / 100));
   if (runtime.backgroundUrl) {
     target.style.setProperty(
       "--appearance-background-image",

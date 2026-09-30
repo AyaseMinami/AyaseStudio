@@ -1,5 +1,45 @@
 # Ayase Studio Development Guide
 
+## OpenAI Images #85 (2026-10-01)
+
+本地接入 `openai-images` 与当前官方 GPT／Gemini 尺寸选项；[实施记录](ISSUE-85-IMPLEMENTATION.md) 列明协议边界、模型限制和验证。定向测试：`npm.cmd test -- src/drawing src/ui/drawing src/chat/settings.test.ts src/chat/urlResolution.test.ts src/ui/settings/ConnectionSettings.test.tsx`，再运行默认代码检查。使用合成 Base64、HTTP 故障和原生文件 mock；不得为验证错误而发真实请求。浏览器隔离验收入口 `.drawing85.local/` 不读取真实数据或供应商凭据。原生网络与系统对话框必须与离线／浏览器／启动检查区分。
+
+## Provider and connection tree sorting #99 (2026-10-01)
+
+当前用户切片为连接配置页 1:2 双栏，以及供应商／连接的左侧把手和名称长按拖动；连接限定在所属供应商内排序。助手／聊天列表拖动仍待讨论，远端 Issue 未修改。
+
+最终定向检查 `npm.cmd test -- src/ui/settings/ConnectionSettings.test.tsx src/ui/settings/SettingsWorkspace.test.tsx src/App.test.tsx` 68 项通过；`npm.cmd test -- src/chat/settings.test.ts src/chat/useChatSession.concurrency.test.tsx -t moves` 4 项通过。覆盖手势激活与取消、误点击隔离、组内边界、原位、边缘滚动、菜单首尾、顺序保存与活动连接／模型保持，以及后台聊天和绘图忙碌保护。独立 Sol/high 只读审查发现的失焦缺少释放事件及候选长按取消后点击问题均已修复并复核，无本切片遗留发现。`cargo check --locked --manifest-path src-tauri/Cargo.toml` 与 `git diff --check` 通过。
+
+内置浏览器在隔离来源 `127.0.0.1:1486` 使用已有合成配置及无密钥供应商模板，以真实指针输入验证供应商／连接把手拖动、名称长按拖动、插入线、当前详情不切换、连接跨组拒绝、菜单换序及刷新持久化。1280px 与 600px 视口检查把手位置和横向溢出。未读取真实密钥、请求供应商或使用原生 UI 自动化；桌面主观效果仍由用户验收。
+
+本切片早期 TypeScript／Vite 构建通过。最后一次全量检查时，工作区并行绘图扩展导致 `openaiImages.test.ts` 引用当时尚未存在的模块，及 `settings.test.ts` 绘图模型选项旧断言未包含新增 `protocol`；1232 项通过、1 项断言失败、1 个测试文件加载失败。独立构建随后在并行绘图模型类型与新增 `openai-images` 协议的既有聊天预览调用处失败。此轮不将全量测试或最终构建记为通过，也不修改并行绘图实现来完成排序任务。
+
+## Background blur #96 (2026-10-01)
+
+用户报告外观预览调高模糊后背景整体放大。确定性回归先失败：32px 时仍输出额外缩放 `1.32`；修复后取消模糊与缩放绑定，改为共享图片内部模糊及外缘像素延展。初步浏览器验证发现直接删除 scale 会造成亮边，且仅设置 SVG `edgeMode` 未消除该亮边；显式延展八个边缘／角落采样区后亮边消失，原图尺寸与取景不变。
+
+最终 `npm.cmd run check` 通过 94 文件／1215 项测试、TypeScript 和 Vite 构建；`cargo check --locked --manifest-path src-tauri/Cargo.toml` 通过。保留既有大 chunk 提示。新增回归覆盖预览 0／16／32px、填充／适应、非中心取景与用户缩放、布局宽度变化后的模糊半径换算和 observer 清理。
+
+内置浏览器通过隔离合成图片页面 `.blur96.local/index.html` 检查真实预览组件及共享背景渲染路径：1280×900／720×520、浅深主题、cover／contain、0／16／32px 共 24 组，取景 viewBox 与背景边界不随模糊改变，背景无额外 transform，容器保持裁切。截图检查强模糊无原先泛白边缘、contain 留白和前景文字清晰；证据保留在忽略目录 `.blur96.local/`。未读取用户背景或凭据，未调用供应商。独立只读审查未发现遗留可操作缺陷。未进行原生 WebView2 视觉验收、极大图片压力测试或安装包验证；本次没有原生权限、窗口或主题首屏改动。面板局部毛玻璃已独立建立 [#98](https://github.com/AyaseMinami/AyaseStudio/issues/98)，#96 保持打开等待交付验收。
+
+## Gemini single-image implementation #84 (2026-10-01)
+
+用户认可 #83 常驻大图布局，并明确授权直接完成 #84。正式应用新增绘图入口与 Gemini 单张生成、任务状态／取消、自动私有保存、重启恢复、大图与历史切换、普通 PNG 导出及本地参数复用；完整实现范围见 [实施记录](ISSUE-84-IMPLEMENTATION.md)。参考图、批量调度及完整图库／备份属于后续任务。共享设置区分聊天／绘图；新增数据库 version 7，仅增加绘图表。绘图配置／数据存在时，旧备份的入口和底层 snapshot/restore 均明确阻断，直到 #93 扩展格式。
+
+最终 `npm.cmd run check` 通过 94 文件／1210 项测试、TypeScript 与 Vite 构建；`cargo test --locked --manifest-path src-tauri/Cargo.toml` 115 通过、1 ignored（其中 drawing 15 项）；`cargo check --locked` 与 `git diff --check` 通过。修正了旧 Cherry 迁移测试的最终数据库版本期待，以及 Vite 中已失效的 `@ts-expect-error`；保留既有构建大 chunk 提示。独立 Sol/high 审查发现并修复：保存失败退出静默丢图、原图先于成果清单的恢复缺口、生成页未显示本次失败，以及退出整理期间可再提交的竞态；最终复核无剩余可操作发现。
+
+内置浏览器用隔离 `localhost:1486` 验证实际 App 导航／共享设置／手动绘图模型配置、聊天选择器排除绘图模型、草稿及模型重载恢复、旧备份禁用提示。未填真实 Key、未点击模型目录或发起真实请求。独立合成接口／文件边界验证实际绘图组件及 controller：连续成功自动预览、历史切换同一窗口、失败保留旧图、保存失败后只重试本地写入（合成请求计数不增加），覆盖浅深主题、1040×760／720×520／600×740，页面无横向溢出。合成大图截图位于忽略目录 `.drawing-check.local/drawing84-desktop.png`；开发过程有验收入口 HMR 重新建 root 及 Vite 配置重启记录，重载后继续验证，不将这些临时 harness 提示视为正式应用错误。
+
+`npm.cmd run tauri dev -- --config .drawing-check.local/native-smoke.json --no-watch` 使用独立 application identifier 与本地前端完成最终编译、原生进程／窗口启动烟雾检查；随后仅停止此次隔离实例。未使用原生截图／桌面自动化。真实 Gemini／中转、真实 Tauri HTTP 请求、系统导出对话框、原生退出确认／窗口交互和实际关闭后重启仍待用户手动验收；确定性故障／模拟窗口事件和成功启动不能代替这些验收。原有安装包归档及同时出现的 Cherry 导入修改保持，未并作本需求修改；无 commit、push、远端 Issue 变更或 Release。
+
+## Drawing design review #83 (2026-09-30)
+
+后续用户按旧 GNBP UI 参考明确要求生成页常驻大图预览。草图已改为最新成功图自动显示、历史缩略图切换同一窗口、失败／取消保留上一张图，并提供当前预览图的直接复用／参考／导出入口；规格与 UI 约定已同步。脚本语法及离线 DOM 模拟通过空态、连续完成自动更新、历史切换不弹窗、后续成功回到最新图、失败保留及当前图参考／导出。当前 `file://` 页面被浏览器 URL 安全策略阻止自动化访问，未绕过；本次大图版本的浏览器视觉／响应式验收未完成，由用户刷新草图评审。下段浏览器记录和 `drawing83-sketch.jpg` 属于此前网格版本，不代表此次修改已取得视觉验收。
+
+本次交付 [独立绘图设计规格](ISSUE-83-DRAWING-SPEC.md) 与 [离线交互草图](design/drawing-workspace-83.html)，尚未修改生产模块、协议实现、数据库或原生宿主。用户已确认独立模块、共享设置、并发 1–4、自动保存及默认无参数导出、重启后手动继续未发送队列；具体候选细则和性能目标待整体评审。已有 #91 后置，远端未更新。
+
+文档相对链接、脚本语法、diff 检查通过；内置浏览器验证浅深／1040×760／720×520／600×740、队列／动态并发／模拟退出恢复／图库／参考引用／复用／导出说明及提交防重，无页面横向溢出及捕获到的 warn/error。独立 Sol/high 审查的草图重复入队与成果输入归属问题已修复并复核。具体范围及验证边界见规格末节，合成截图保存在忽略目录 `ui-review.local/drawing83-sketch.jpg`。草图的 500ms 忙碌模拟不是正式持久化防重方案；实际生图、文件操作、性能及原生重启没有在本次测试。文档任务不需要应用／Rust 构建；原有安装包归档修改保留。
+
 ## Custom context-menu verification #74 (2026-09-30)
 
 本次按用户修订范围完成四类列表的本地右键菜单与默认菜单屏蔽，范围见 [UI 约定](UI-DESIGN.md) 和 [计划](PLAN.md)。消息保留原按钮；输入框、编辑框及可编辑内容保留默认编辑菜单，Gemini 搜索建议 iframe 使用同一策略。共用 `ActionMenu` 及按目标 ID 派生的操作定义；不增加数据库、宿主权限或供应商请求。
@@ -45,6 +85,10 @@
 待人工验收：在原生设置 → 数据管理检查保存／选择窗口及取消；分别导出不含连接、含连接无密钥、含密钥三种备份，逐类核对助手、对话、候选消息、附件、头像、背景及偏好；在可丢弃数据上检查三种策略，特别是替换范围及密钥确认；检查真实桌面中断／重启后的日志恢复。真实用户数据、原生文件窗口、实际断电和窗口交互未由本轮浏览器或编译验收替代。
 
 ## Cherry import verification (#77)
+
+2026-09-30 空对话归属回归：两个获授权本地 1.9.13 格式 6 样例均在预览阶段复现 `cherry-conflicting-owner`；原因是空对话唯一属于某个助手列表，但元数据仍引用另一个现存助手。最小合成测试修复前失败；新增唯一归属恢复、重复归属拒绝、非空归属冲突拒绝、消息归属冲突拒绝及 Chromium ZIP 全流程回归。修复后两份原样例各解析出 7 个话题 / 37 条消息，通过临时本地桥接调用真实 TypeScript 映射及仓储，在 fake-indexeddb 隔离数据库中各导入 8 条分支对话 / 38 条消息，原始消息 ID 全部保留，再次导入跳过全部 8 条。分支展开会复制共有消息。未写入用户当前应用数据库，也未进行原生文件选择与安装版交互验收；私有投影文件及临时桥接测试已清理。
+
+本轮验证：导入相关前端 76 项、Rust 100 项测试通过（另 1 项私有样例测试默认忽略，已对两份授权样例单独执行）；Rust check 与 diff 检查通过，独立审查无可操作发现。`tauri dev` 使用独立应用标识和端口 1491 编译并启动原生进程，随后停止；只证明启动，不代表导入弹窗或原生交互通过。全量前端检查当时为 1153 通过 / 1 失败，失败属于工作区已有的绘图导航测试；单独生产构建被绘图组件新增必填属性尚未接入的 TypeScript 错误阻挡。未修改这些无关工作，也未打包或发布。
 
 The importer accepts only the pinned backup structures documented in [CHERRY-IMPORT.md](CHERRY-IMPORT.md). Local implementation, deterministic fixtures and acceptance boundaries are recorded in [ISSUE-77-IMPLEMENTATION.md](ISSUE-77-IMPLEMENTATION.md). Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml`, and `cargo check --locked --manifest-path src-tauri/Cargo.toml` before handoff. Native tests construct synthetic ZIP, Chromium and SQLite snapshots; the ignored private-sample comparison runs only with explicitly supplied local inputs, prints aggregate results, and never writes active application data. Do not add real backup content, credentials or source IDs to fixtures or documentation.
 
@@ -356,6 +400,9 @@ Tauri 打包使用 `src-tauri/icons` 中的 PNG、Windows `icon.ico` 和 macOS `
 当前 Alpha 阶段只发布 NSIS 安装程序（setup EXE），暂不发布 MSI。统一运行
 `npm.cmd run build:windows` 构建 NSIS 包，输出位于
 `src-tauri/target/release/bundle/nsis`。应用及安装包版本使用 `0.1.0-alpha.N`；
+每次成功打包会保留 Tauri 标准文件，并复制一份带本机日期时间后缀的安装包，
+例如 `Ayase Studio_0.1.0-alpha.3_x64-setup_20260930-205336.exe`；若同一秒重复打包，
+文件名会追加序号以保留每份产物。
 若内部临时测试 MSI，Tauri 要求 MSI 预发布标识为数字，因此 alpha 字符串版本不能用于 MSI。
 仓库默认 bundle target 与打包脚本均限制为 NSIS。
 `bundle.windows.nsis.installerIcon` 和 `uninstallerIcon` 显式指向 `icons/icon.ico`；
