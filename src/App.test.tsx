@@ -71,7 +71,7 @@ describe("App navigation", () => {
   }
 
   function getButton(label: string): HTMLButtonElement {
-    const button = container.querySelector<HTMLButtonElement>(
+    const button = document.querySelector<HTMLButtonElement>(
       `button[aria-label="${label}"]`,
     );
     expect(button).toBeInstanceOf(HTMLButtonElement);
@@ -113,7 +113,7 @@ describe("App navigation", () => {
 
   async function openConnectionMenu(name: string): Promise<void> {
     await act(async () => {
-      container.querySelector<HTMLElement>(`summary[aria-label="管理连接 ${name}"]`)!.click();
+      container.querySelector<HTMLElement>(`button[aria-label="管理连接 ${name}"]`)!.click();
     });
   }
 
@@ -142,9 +142,9 @@ describe("App navigation", () => {
     await act(async () => target.dispatchEvent(drop));
     expect(loadConnectionSettings().providers.map((item) => item.id)).toEqual(["c", "a", "b"]);
     expect(getButton("查看连接 线路 a").getAttribute("aria-current")).toBe("true");
-    await act(async () => container.querySelector<HTMLElement>('summary[aria-label="管理供应商 C"]')!.click());
+    await act(async () => container.querySelector<HTMLElement>('button[aria-label="管理供应商 C"]')!.click());
     expect(getButton("上移供应商 C").disabled).toBe(true);
-    expect(container.querySelector('[role="menu"]')?.classList.contains("assistant-menu")).toBe(true);
+    expect(document.querySelector('[role="menu"]')?.classList.contains("action-menu")).toBe(true);
     await clickButton("下移供应商 C");
     expect(loadConnectionSettings().providers.map((item) => item.id)).toEqual(["a", "c", "b"]);
     expect(getButton("查看连接 线路 a").getAttribute("aria-current")).toBe("true");
@@ -168,7 +168,7 @@ describe("App navigation", () => {
       return;
     }
     const button = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button"),
+      document.querySelectorAll<HTMLButtonElement>("button"),
     ).find((candidate) => candidate.textContent?.trim() === text);
     expect(button).toBeInstanceOf(HTMLButtonElement);
     await act(async () => button?.click());
@@ -667,7 +667,7 @@ describe("App navigation", () => {
     await clickButton("展开供应商 中转站 A");
     await openConnectionMenu("连接 1");
     await clickButtonWithText("重命名");
-    const rename = container.querySelector<HTMLInputElement>(".connection-entity-menu input")!;
+    const rename = document.querySelector<HTMLInputElement>(".connection-rename-form input")!;
     expect(rename).toBeInstanceOf(HTMLInputElement);
     expect(document.activeElement).toBe(rename);
     await act(async () => {

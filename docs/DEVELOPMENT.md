@@ -1,5 +1,15 @@
 # Ayase Studio Development Guide
 
+## Custom context-menu verification #74 (2026-09-30)
+
+本次按用户修订范围完成四类列表的本地右键菜单与默认菜单屏蔽，范围见 [UI 约定](UI-DESIGN.md) 和 [计划](PLAN.md)。消息保留原按钮；输入框、编辑框及可编辑内容保留默认编辑菜单，Gemini 搜索建议 iframe 使用同一策略。共用 `ActionMenu` 及按目标 ID 派生的操作定义；不增加数据库、宿主权限或供应商请求。
+
+最终 `npm.cmd run check` 通过 87 文件／1151 项测试、TypeScript 与 Vite 构建；`cargo check --locked --manifest-path src-tauri/Cargo.toml`、`git diff --check` 通过。仅保留既有大 chunk 构建提示。确定性回归覆盖不同菜单所有者互斥、实际未选中对象、默认助手保护、运行中删除保护、对话行内确认与焦点交接、当前状态禁用更新、删除／隐藏／切换后关闭、供应商模板菜单互斥、键盘与重命名 Tab 草稿保存、输入例外以及 iframe 监听绑定／清理。独立 Sol/high 审查发现并修复重命名 Tab 提前关闭问题，最终复核无剩余发现；iframe 补充也经过独立复核。
+
+浏览器以 `127.0.0.1:1494`、独立合成数据库 `Ayase-Context74-Synthetic-v2` 和禁止模型／目录／搜索请求的模拟边界验证实际组件。覆盖助手、对话、供应商、树与概览中的连接菜单；右键不切换当前对象、删除转到行内确认且取消不删除、连接编辑、重命名取消与键盘完成、浅深／自定义主题、1440×900／1040×760／600×740、四角定位和无页面横向溢出。检查到主页面正文与 iframe 正文的 contextmenu 已取消，而主页面和 iframe 文本框事件未取消；输入 Ctrl+A 保留选区。实施截图保存在忽略目录 `ui-review.local/context74-menu.png`。
+
+`npm.cmd run tauri dev -- --config ui-review.local/context74-tauri.json --no-watch` 使用独立 identifier 与上述模拟页面完成编译及进程／窗口启动烟雾检查，随后仅停止本次验收实例；已有安装版进程保留。未使用原生截图或桌面 UI 自动化，浏览器检查和成功启动不代表原生编辑菜单的交互验收。用户随后反馈“效果不错，我测试了”，确认本需求通过并授权提交、推送和关闭 #74；交付状态以 Git 与 Issue 的实际记录为准。未读取真实凭据、调用供应商或打包发布；已有安装包归档相关修改保留在工作区，不并入本需求提交。
+
 ## Exa API / MCP external search #80 (2026-09-30)
 
 后续用户修订为独立 Exa API（必填 Key）与 Exa MCP（Key 选填）。新增直接 API 适配器、两套配置迁移与四模式选择，备份 document v3 仍读取 v1/v2；接口见 [PROTOCOLS.md](PROTOCOLS.md)，当前行为见 [实现记录](ISSUE-80-IMPLEMENTATION.md)。以下 1049 项记录为首次 MCP-only 实现快照。

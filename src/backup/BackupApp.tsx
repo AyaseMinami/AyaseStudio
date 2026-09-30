@@ -4,9 +4,11 @@ import { startup } from "../appearance/bootstrap";
 import { applyBrowserInitialAppearance } from "../appearance/browser";
 import { BackupWorkspace } from "../ui/settings/BackupWorkspace";
 import { recoverBackupAtStartup, createBackupApi } from "./runtime";
+import { useDefaultContextMenuPolicy } from "../ui/ActionMenu";
 
 const backupApi = createBackupApi();
 export function BackupApp() {
+  useDefaultContextMenuPolicy();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
   useEffect(() => { let alive = true; void startup.then(() => { if (alive) setReady(true); }, () => { if (alive) setError(true); }); return () => { alive = false; }; }, []);

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
 import {
   Check,
   ArrowUp,
@@ -44,6 +44,7 @@ import {
 } from "../../chat/urlResolution";
 import "./ConnectionSettings.css";
 import { SettingsHelp } from "./SettingsHelp";
+import { ActionMenu, isContextMenuKey, isEditableContextTarget, useActionMenu, type ActionMenuItem } from "../ActionMenu";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -107,6 +108,11 @@ type PendingFocus =
   | { kind: "provider"; id: string }
   | { kind: "connection"; id: string }
   | { kind: "model"; id: string };
+
+type SettingsMenuTarget = (
+  | { kind: "provider"; id: string }
+  | { kind: "connection"; id: string; providerId: string }
+) & { renaming?: boolean };
 
 function connectionHost(baseUrl: string): string {
   if (!baseUrl.trim()) {
@@ -188,110 +194,18 @@ function configuredModelGroups(models: ConfiguredModel[]) {
   }));
 }
 
-function EntityActions({ kind, name, disabled, onRename, onDelete, onMove, canMoveUp, canMoveDown }: {
+function EntityActions({ kind, name, disabled, open, onOpen }: {
   kind: "供应商" | "连接";
   name: string;
   disabled: boolean;
-  onRename(name: string): void;
-  onDelete(): void;
-  onMove?(direction: -1 | 1): void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
+  open: boolean;
+  onOpen(opener: HTMLElement): void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const container = useRef<HTMLDetailsElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLInputElement>(null);
-  function close() { setOpen(false); setRenaming(false); }
-  function saveName() {
-    const value = input.current?.value.trim();
-    if (value && value !== name) onRename(value);
-    else if (input.current) input.current.value = name;
-  }
-  function dismiss() {
-    input.current?.blur();
-    close();
-    container.current?.querySelector("summary")?.focus({ preventScroll: true });
-  }
-  useLayoutEffect(() => {
-    if (!open || !menu.current) return;
-    const anchor = container.current?.querySelector("summary")?.getBoundingClientRect();
-    if (!anchor) return;
-    const popup = menu.current;
-    popup.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - popup.offsetWidth - 8))}px`;
-    popup.style.top = `${Math.max(8, Math.min(anchor.bottom + 4, window.innerHeight - popup.offsetHeight - 8))}px`;
-    popup.querySelector<HTMLElement>("input:not(:disabled), button:not(:disabled)")?.focus();
-  }, [open, renaming]);
-  useEffect(() => {
-    if (!open) return;
-    function outside(event: PointerEvent) {
-      if (!container.current?.contains(event.target as Node)) {
-        input.current?.blur();
-        close();
-      }
-    }
-    function scrolled(event: Event) {
-      if (!menu.current?.contains(event.target as Node)) dismiss();
-    }
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("scroll", scrolled, true);
-    window.addEventListener("resize", dismiss);
-    window.addEventListener("blur", close);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("scroll", scrolled, true);
-      window.removeEventListener("resize", dismiss);
-      window.removeEventListener("blur", close);
-    };
-  }, [open]);
-  return <details ref={container} className="connection-entity-actions" open={open}
-    onBlur={(event) => {
-      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) close();
-    }}
-    onKeyDown={(event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      dismiss();
-    }}>
-    <summary className="icon-button" aria-label={`管理${kind} ${name}`} aria-expanded={open} aria-haspopup={renaming ? "dialog" : "menu"}
-      aria-disabled={disabled} onClick={(event) => {
-        event.preventDefault();
-        if (!disabled) { setOpen(!open); setRenaming(false); }
-      }}><MoreHorizontal size={16} /></summary>
-    {open && <div ref={menu} className="assistant-menu connection-entity-menu" role={renaming ? "dialog" : "menu"}
-      aria-label={`${name}的管理菜单`} onKeyDown={(event) => {
-        if (renaming) return;
-        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-        const target = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
-          : event.key === "ArrowDown" ? (index + 1) % buttons.length
-          : event.key === "ArrowUp" ? (index - 1 + buttons.length) % buttons.length : undefined;
-        if (target !== undefined) { event.preventDefault(); buttons[target]?.focus(); }
-      }}>
-      {renaming ? <form onSubmit={(event) => {
-        event.preventDefault(); saveName(); close(); container.current?.querySelector("summary")?.focus();
-      }}>
-        <label className="field-label">重命名{kind}
-          <input ref={input} className="compact-field" defaultValue={name} autoFocus required
-            disabled={disabled} />
-        </label>
-        <div className="connection-rename-footer">
-          <button type="button" className="settings-button" onClick={dismiss}>取消</button>
-          <button type="submit" className="settings-button" disabled={disabled}>完成</button>
-        </div>
-      </form> : <button type="button" role="menuitem" disabled={disabled} onClick={() => setRenaming(true)}><Pencil size={15} />重命名</button>}
-      {!renaming && onMove && <>
-        <button type="button" role="menuitem" disabled={disabled || !canMoveUp} aria-label={`上移供应商 ${name}`}
-          onClick={() => { dismiss(); onMove(-1); }}><ArrowUp size={15} />上移</button>
-        <button type="button" role="menuitem" disabled={disabled || !canMoveDown} aria-label={`下移供应商 ${name}`}
-          onClick={() => { dismiss(); onMove(1); }}><ArrowDown size={15} />下移</button>
-      </>}
-      {!renaming && <button type="button" role="menuitem" className="danger-icon-button" disabled={disabled}
-        aria-label={`删除${kind} ${name}`} onClick={() => { close(); onDelete(); }}><Trash2 size={14} />删除</button>}
-    </div>}
-  </details>;
+  return <button type="button" className="icon-button connection-entity-actions"
+    aria-label={`管理${kind} ${name}`} aria-expanded={open} aria-haspopup="menu"
+    disabled={disabled} onClick={(event) => onOpen(event.currentTarget)}>
+    <MoreHorizontal size={16} />
+  </button>;
 }
 
 function AddModelDialog({ disabled, error, onSubmit, onClose }: {
@@ -364,11 +278,14 @@ export function ConnectionSettings({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [formError, setFormError] = useState<string>();
   const [pendingFocus, setPendingFocus] = useState<PendingFocus | null>(null);
+  const entityMenu = useActionMenu<SettingsMenuTarget>();
+  const providerCreateRef = useRef<HTMLDetailsElement>(null);
   const catalogDialogRef = useRef<HTMLElement>(null);
   const catalogTriggerRef = useRef<HTMLButtonElement>(null);
   const providerAddConnectionRef = useRef<HTMLButtonElement>(null);
   const providerRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const connectionRowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const overviewRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const modelRowRefs = useRef(new Map<string, HTMLDivElement>());
 
   const selectedProvider = connectionSettings.providers.find(
@@ -380,6 +297,23 @@ export function ConnectionSettings({
   const catalog = selectedConnection
     ? (modelCatalogs[selectedConnection.id] ?? idleCatalog)
     : idleCatalog;
+
+  const menuTarget = entityMenu.state?.target;
+  const menuProvider = connectionSettings.providers.find((provider) =>
+    provider.id === (menuTarget?.kind === "connection" ? menuTarget.providerId : menuTarget?.id));
+  const menuConnection = menuTarget?.kind === "connection"
+    ? menuProvider?.connections.find((connection) => connection.id === menuTarget.id) : undefined;
+  const menuEntity = menuTarget?.kind === "provider" ? menuProvider : menuConnection;
+
+  useEffect(() => {
+    entityMenu.close();
+  }, [selectedProviderId, selectedConnectionId, collapsedProviders, isAddingConnection, isAddingModel,
+    editingModelId, catalogOpen, entityMenu.close]);
+
+  useEffect(() => {
+    if (entityMenu.state && (!menuEntity || !entityMenu.state.opener.isConnected ||
+      entityMenu.state.opener.closest('[hidden], [inert], [aria-hidden="true"]'))) entityMenu.close();
+  }, [connectionSettings, entityMenu.state, menuEntity, entityMenu.close]);
 
   useEffect(() => {
     if (
@@ -506,6 +440,7 @@ export function ConnectionSettings({
 
   function selectProvider(providerId: string): boolean {
     if (!confirmDiscardModelEdit()) return false;
+    entityMenu.close();
     setSelectedProviderId(providerId);
     setSelectedConnectionId(null);
     setIsAddingConnection(false);
@@ -521,6 +456,7 @@ export function ConnectionSettings({
   }
 
   function handleDeleteProvider(provider: ProviderGroup): void {
+    if (isStreaming) return;
     const modelCount = provider.connections.reduce((total, connection) => total + connection.models.length, 0);
     if (!window.confirm(`删除供应商“${provider.name}”以及其中 ${provider.connections.length} 条连接、${modelCount} 个模型？`)) return;
     onDeleteProvider(provider.id);
@@ -572,6 +508,7 @@ export function ConnectionSettings({
   }
 
   function handleDeleteConnection(provider: ProviderGroup, connection: ConnectionProfile): void {
+    if (isStreaming) return;
     if (!window.confirm(`删除连接“${connection.name}”以及其中 ${connection.models.length} 个模型？\n${getProtocolOption(connection.protocol).label} · ${connection.baseUrl || "未设置 Base URL"}`)) return;
     onDeleteConnection(connection.id);
     if (connection.id !== selectedConnectionId) {
@@ -588,9 +525,62 @@ export function ConnectionSettings({
 
   function selectConnection(providerId: string, connectionId: string): void {
     if (connectionId !== selectedConnectionId && !confirmDiscardModelEdit()) return;
+    entityMenu.close();
     setSelectedProviderId(providerId);
     setSelectedConnectionId(connectionId);
     setIsAddingConnection(false);
+  }
+
+  function openRowMenu(event: MouseEvent<HTMLElement>, target: SettingsMenuTarget, opener: HTMLElement | undefined): void {
+    if (isEditableContextTarget(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openEntityMenu(target, opener ?? event.currentTarget, { x: event.clientX, y: event.clientY });
+  }
+
+  function openKeyboardMenu(event: ReactKeyboardEvent<HTMLElement>, target: SettingsMenuTarget): void {
+    if (!isContextMenuKey(event) || isEditableContextTarget(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openEntityMenu(target, event.target instanceof HTMLElement ? event.target : event.currentTarget);
+  }
+
+  function openEntityMenu(target: SettingsMenuTarget, opener: HTMLElement, point?: { x: number; y: number }): void {
+    if (providerCreateRef.current) providerCreateRef.current.open = false;
+    entityMenu.open(target, opener, point);
+  }
+
+  function toggleEntityMenu(target: SettingsMenuTarget, opener: HTMLElement): void {
+    if (entityMenu.state?.opener === opener) entityMenu.close(true);
+    else openEntityMenu(target, opener);
+  }
+
+  const entityItems: ActionMenuItem[] = [];
+  if (menuTarget && menuEntity && menuProvider && entityMenu.state) {
+    const state = entityMenu.state;
+    const kind = menuTarget.kind === "provider" ? "供应商" : "连接";
+    if (menuConnection) entityItems.push({ id: "edit", label: "编辑", icon: <Pencil size={15} />,
+      accessibleLabel: `编辑连接 ${menuConnection.name}`, disabled: isStreaming,
+      onSelect: () => { if (!isStreaming) selectConnection(menuProvider.id, menuConnection.id); } });
+    entityItems.push({ id: "rename", label: "重命名", icon: <Pencil size={15} />, disabled: isStreaming,
+      onSelect: () => {
+        if (!isStreaming) entityMenu.open({ ...menuTarget, renaming: true }, state.opener, { x: state.left, y: state.top });
+      } });
+    if (menuTarget.kind === "provider") {
+      const index = connectionSettings.providers.findIndex((provider) => provider.id === menuTarget.id);
+      for (const direction of [-1, 1] as const) {
+        const adjacent = connectionSettings.providers[index + direction];
+        const label = direction === -1 ? "上移" : "下移";
+        entityItems.push({ id: direction === -1 ? "move-up" : "move-down", label,
+          accessibleLabel: `${label}供应商 ${menuProvider.name}`,
+          icon: direction === -1 ? <ArrowUp size={15} /> : <ArrowDown size={15} />,
+          disabled: isStreaming || !adjacent,
+          onSelect: () => { if (!isStreaming && adjacent) onProviderMove(menuProvider.id, adjacent.id, direction === -1 ? "before" : "after"); } });
+      }
+    }
+    entityItems.push({ id: "delete", label: "删除", icon: <Trash2 size={14} />,
+      accessibleLabel: `删除${kind} ${menuEntity.name}`, disabled: isStreaming, danger: true, separatorBefore: true,
+      onSelect: () => menuConnection ? handleDeleteConnection(menuProvider, menuConnection) : handleDeleteProvider(menuProvider) });
   }
 
   function handleAddModel(event: FormEvent<HTMLFormElement>): void {
@@ -744,7 +734,7 @@ export function ConnectionSettings({
           <nav className="connection-tree" aria-label="供应商列表">
             <div className="connection-tree-heading">
               <h3>供应商</h3>
-              <details className="provider-create-menu">
+              <details ref={providerCreateRef} className="provider-create-menu" onToggle={(event) => { if (event.currentTarget.open) entityMenu.close(); }}>
                 <summary className="icon-button" aria-label="添加供应商" title="添加供应商"><Plus size={18} /></summary>
                 <div className="provider-template-menu" aria-label="供应商模板">
                   {providerTemplates.map((template) => <button key={template.id} type="button" disabled={isStreaming}
@@ -759,7 +749,7 @@ export function ConnectionSettings({
                 <span>还没有供应商，点击右上角加号添加。</span>
               </div>
             )}
-            {connectionSettings.providers.map((provider, index) => {
+            {connectionSettings.providers.map((provider) => {
               const expanded = !collapsedProviders.has(provider.id);
               return <section key={provider.id} className="connection-tree-group"
                 data-dragging={draggedProviderId === provider.id || undefined}
@@ -783,7 +773,9 @@ export function ConnectionSettings({
                   setDraggedProviderId(null);
                   setProviderDrop(null);
                 }}>
-                <div className="connection-tree-row connection-provider-row">
+                <div className="connection-tree-row connection-provider-row"
+                  onContextMenu={(event) => openRowMenu(event, { kind: "provider", id: provider.id }, providerRowRefs.current.get(provider.id))}
+                  onKeyDown={(event) => openKeyboardMenu(event, { kind: "provider", id: provider.id })}>
                   <button type="button" className="provider-drag-handle" draggable={!isStreaming} disabled={isStreaming}
                     aria-label={`拖动排序 ${provider.name}`} title="拖动排序，也可在菜单中上移或下移"
                     onDragStart={(event) => {
@@ -812,18 +804,16 @@ export function ConnectionSettings({
                     <span title={provider.name}>{provider.name}</span><small>{provider.connections.length}</small>
                   </button>
                   <EntityActions kind="供应商" name={provider.name} disabled={isStreaming}
-                    canMoveUp={index > 0} canMoveDown={index < connectionSettings.providers.length - 1}
-                    onMove={(direction) => {
-                      const target = connectionSettings.providers[index + direction];
-                      if (target) onProviderMove(provider.id, target.id, direction === -1 ? "before" : "after");
-                    }}
-                    onRename={(name) => onProviderRename(provider.id, name)} onDelete={() => handleDeleteProvider(provider)} />
+                    open={menuTarget?.kind === "provider" && menuTarget.id === provider.id}
+                    onOpen={(opener) => toggleEntityMenu({ kind: "provider", id: provider.id }, opener)} />
                 </div>
                 <div id={`provider-connections-${provider.id}`} className="connection-tree-children" hidden={!expanded}
                   role="group" aria-label={`${provider.name}的连接渠道列表`}>
                   {provider.connections.map((connection) => {
                     return <div className="connection-tree-connection" key={connection.id}>
-                      <div className="connection-tree-row">
+                      <div className="connection-tree-row"
+                        onContextMenu={(event) => openRowMenu(event, { kind: "connection", providerId: provider.id, id: connection.id }, connectionRowRefs.current.get(connection.id))}
+                        onKeyDown={(event) => openKeyboardMenu(event, { kind: "connection", providerId: provider.id, id: connection.id })}>
                         <button type="button" className="connection-tree-link" aria-label={`查看连接 ${connection.name}`}
                           aria-current={selectedConnectionId === connection.id ? "true" : undefined}
                           ref={(element) => { if (element) connectionRowRefs.current.set(connection.id, element); else connectionRowRefs.current.delete(connection.id); }}
@@ -831,8 +821,8 @@ export function ConnectionSettings({
                           <span title={connection.name}>{connection.name}</span>
                         </button>
                         <EntityActions kind="连接" name={connection.name} disabled={isStreaming}
-                          onRename={(name) => onConnectionChange(connection.id, "name", name)}
-                          onDelete={() => handleDeleteConnection(provider, connection)} />
+                          open={menuTarget?.kind === "connection" && menuTarget.id === connection.id}
+                          onOpen={(opener) => toggleEntityMenu({ kind: "connection", providerId: provider.id, id: connection.id }, opener)} />
                       </div>
                     </div>;
                   })}
@@ -1045,8 +1035,11 @@ export function ConnectionSettings({
                     </div>
                     <ul className="provider-connection-rows" aria-label={`${selectedProvider.name}的连接渠道`}>
                     {selectedProvider.connections.map((connection) => (
-                      <li key={connection.id} className="provider-connection-row">
+                      <li key={connection.id} className="provider-connection-row"
+                        onContextMenu={(event) => openRowMenu(event, { kind: "connection", providerId: selectedProvider.id, id: connection.id }, overviewRowRefs.current.get(connection.id))}
+                        onKeyDown={(event) => openKeyboardMenu(event, { kind: "connection", providerId: selectedProvider.id, id: connection.id })}>
                         <button className="provider-connection-link" type="button"
+                          ref={(element) => { if (element) overviewRowRefs.current.set(connection.id, element); else overviewRowRefs.current.delete(connection.id); }}
                           title={`编辑连接 ${connection.name}`}
                           onClick={() => selectConnection(selectedProvider.id, connection.id)}>
                           <span className="provider-connection-info">
@@ -1077,6 +1070,29 @@ export function ConnectionSettings({
             )}
           </section>
         </div>
+      {entityMenu.state && menuTarget && menuEntity && <ActionMenu state={entityMenu.state}
+        label={`${menuEntity.name}的管理菜单`} role={menuTarget.renaming ? "dialog" : "menu"}
+        items={menuTarget.renaming ? [] : entityItems} onClose={entityMenu.close}
+        note={isStreaming ? "生成期间无法修改连接配置。" : undefined}>
+        {menuTarget.renaming && <form className="connection-rename-form" onSubmit={(event) => {
+          event.preventDefault();
+          if (isStreaming) return;
+          const name = String(new FormData(event.currentTarget).get("name") ?? "").trim();
+          if (name && name !== menuEntity.name) {
+            if (menuTarget.kind === "provider") onProviderRename(menuTarget.id, name);
+            else onConnectionChange(menuTarget.id, "name", name);
+          }
+          entityMenu.close(true);
+        }}>
+          <label className="field-label">重命名{menuTarget.kind === "provider" ? "供应商" : "连接"}
+            <input name="name" className="compact-field" defaultValue={menuEntity.name} required disabled={isStreaming} />
+          </label>
+          <div className="connection-rename-footer">
+            <button type="button" className="settings-button" onClick={() => entityMenu.close(true)}>取消</button>
+            <button type="submit" className="settings-button" disabled={isStreaming}>完成</button>
+          </div>
+        </form>}
+      </ActionMenu>}
       {isAddingModel && selectedConnection && <AddModelDialog disabled={isStreaming} error={formError} onSubmit={handleAddModel}
         onClose={() => { setIsAddingModel(false); setFormError(undefined); }} />}
       {catalogOpen && selectedConnection ? (

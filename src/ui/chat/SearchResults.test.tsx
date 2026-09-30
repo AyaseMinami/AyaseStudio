@@ -68,6 +68,26 @@ it("uses a scriptless sandboxed suggestion document", async () => {
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
+it("binds and removes the global context policy in the suggestion iframe without disabling editing", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  let unmounted = false;
+  try {
+    await act(async () => root.render(<SearchResults search={{ ...search, suggestionHtml: "<p>Suggestion</p>" }} />));
+    const frame = host.querySelector("iframe")!, document = frame.contentDocument!;
+    const text = document.createElement("p"), editable = document.createElement("textarea");
+    document.body.append(text, editable);
+    await act(async () => frame.dispatchEvent(new Event("load")));
+    for (const [target, prevented] of [[text, true], [editable, false]] as const) {
+      const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+      target.dispatchEvent(event); expect(event.defaultPrevented).toBe(prevented);
+    }
+    await act(async () => root.unmount()); unmounted = true;
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    text.dispatchEvent(event); expect(event.defaultPrevented).toBe(false);
+  } finally { if (!unmounted) await act(async () => root.unmount()); host.remove(); }
+});
+
 it("sizes a suggestion iframe to its content instead of its current viewport", () => {
   const frame = document.createElement("iframe");
   frame.style.height = "150px";

@@ -1,5 +1,9 @@
 # Ayase Studio v0.1 Plan
 
+## Custom context menus #74 scope revision (2026-09-30)
+
+The user revised #74 to suppress default WebView context menus throughout the application while retaining native editing menus in inputs, textareas and editable text. Only assistant rows, conversation rows, provider rows and connection rows (tree and provider overview) receive custom object menus. Message actions remain in their existing buttons; blank list areas do not open a menu. Existing business operations, generation guards and deletion confirmations remain authoritative. This supersedes the original issue's message-menu direction and adds provider/connection menus. The user has tested and accepted the result and authorized syncing the remote issue to this scope, committing, pushing and closing it. Current interaction rules are recorded in [UI-DESIGN.md](UI-DESIGN.md).
+
 ## Exa external search #80 scope revision (2026-09-30)
 
 The user's later instruction splits external search into Exa API (required Key) and Exa MCP (optional Key), each with independent saved endpoint, credentials and result count. Conversation/assistant controls choose either explicitly; no automatic fallback. Legacy MCP settings remain MCP, existing native search remains native. Both share the bounded retrieval-to-answer pipeline and sources. New backups use document v3, with v1/v2 import compatibility and unchanged encryption envelope. This supersedes the earlier MCP-only scope without adding arbitrary MCP, OAuth, a tool runtime or autonomous research. See [implementation](ISSUE-80-IMPLEMENTATION.md).

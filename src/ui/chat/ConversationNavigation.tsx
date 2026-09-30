@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { AssistantAvatarEditor } from "./AssistantAvatarEditor";
 import { readAssistantDefaultAvatar } from "../../avatar/assistantDefaults";
-import { AssistantActions } from "./AssistantActions";
+import { ActionMenu, isContextMenuKey, isEditableContextTarget, useActionMenu, type ActionMenuItem } from "../ActionMenu";
 import { ConversationSettings } from "./ConversationSettings";
 import type { useConversationWorkspace } from "../../chat/useConversationWorkspace";
 import { defaultSessionConfig, validateSessionConfig } from "../../chat/sessionConfig";
@@ -51,6 +51,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const [dialog, setDialog] = useState<Dialog>();
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string>();
+  const menu = useActionMenu<{ kind: "assistant" | "conversation"; id: string }>();
   const pendingDeleteRef = useRef<HTMLLIElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -66,7 +67,18 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const { snapshot, conversation, busy, execute } = workspace;
   useEffect(() => {
     setPendingDelete(undefined);
+    menu.close();
   }, [snapshot?.selection.activeAssistantId, conversation?.id, navigationOpen, conversationPanelOpen, dialog, busy]);
+  useEffect(() => {
+    if (!menu.state) return;
+    const target = menu.state.target;
+    const exists = target.kind === "assistant" ? snapshot?.assistants.some((item) => item.id === target.id)
+      : snapshot?.conversations.some((item) => item.id === target.id);
+    if (!exists || !menu.state.opener.isConnected || menu.state.opener.closest('[inert], [hidden]')) {
+      menu.close();
+      toggleRef.current?.focus({ preventScroll: true });
+    }
+  }, [snapshot, menu.state, menu.close]);
   useEffect(() => {
     if (!pendingDelete) return;
     const cancel = () => setPendingDelete(undefined);
@@ -110,6 +122,48 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     await execute(command);
   }
 
+  function openContextMenu(target: { kind: "assistant" | "conversation"; id: string }, event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) {
+    if (isEditableContextTarget(event.target)) return;
+    const opener = event.currentTarget.querySelector<HTMLButtonElement>(".chat-navigation-select");
+    if (!opener) return;
+    event.preventDefault(); event.stopPropagation();
+    setPendingDelete(undefined);
+    menu.open(target, opener, "clientX" in event ? { x: event.clientX, y: event.clientY } : undefined);
+  }
+  const menuTarget = menu.state?.target;
+  const menuAssistant = menuTarget?.kind === "assistant" ? snapshot?.assistants.find((item) => item.id === menuTarget.id) : undefined;
+  const menuConversation = menuTarget?.kind === "conversation" ? snapshot?.conversations.find((item) => item.id === menuTarget.id) : undefined;
+  const menuItems: ActionMenuItem[] = [];
+  if (menuAssistant && snapshot) {
+    const index = snapshot.assistants.findIndex((item) => item.id === menuAssistant.id);
+    const count = snapshot.conversations.filter((item) => item.assistantId === menuAssistant.id).length;
+    const generating = snapshot.conversations.some((item) => item.assistantId === menuAssistant.id && generatingIds.has(item.id));
+    const defaultAssistant = menuAssistant.id === DEFAULT_ASSISTANT_ID;
+    menuItems.push(
+      { id: "edit", label: "编辑", accessibleLabel: `编辑助手 ${menuAssistant.name}`, icon: <Pencil size={15} />, disabled: busy, onSelect: () => editAssistant(menuAssistant) },
+      { id: "up", label: "上移", accessibleLabel: `上移助手 ${menuAssistant.name}`, icon: <ArrowUp size={15} />, disabled: busy || index === 0,
+        onSelect: () => { void execute({ type: "move-assistant", id: menuAssistant.id, direction: -1 }); } },
+      { id: "down", label: "下移", accessibleLabel: `下移助手 ${menuAssistant.name}`, icon: <ArrowDown size={15} />, disabled: busy || index === snapshot.assistants.length - 1,
+        onSelect: () => { void execute({ type: "move-assistant", id: menuAssistant.id, direction: 1 }); } },
+      { id: "delete", label: "删除", accessibleLabel: `删除助手 ${menuAssistant.name}`, icon: <Trash2 size={15} />, danger: true, separatorBefore: true,
+        disabled: busy || defaultAssistant || generating, description: defaultAssistant ? "默认助手不可删除" : generating ? "请先停止该助手下对话的生成并等待保存完成" : undefined,
+        onSelect: () => setDialog({ type: "delete-assistant", id: menuAssistant.id, name: menuAssistant.name, count, permanent: false }) },
+    );
+  } else if (menuConversation) {
+    menuItems.push(
+      { id: "edit", label: "编辑对话…", accessibleLabel: `编辑对话 ${menuConversation.title}`, icon: <Pencil size={15} />, disabled: busy,
+        onSelect: () => setDialog({ type: "conversation", id: menuConversation.id }) },
+      { id: "delete", label: "删除对话", accessibleLabel: `删除对话 ${menuConversation.title}`, icon: <Trash2 size={15} />, danger: true, separatorBefore: true,
+        disabled: busy || generatingIds.has(menuConversation.id), description: generatingIds.has(menuConversation.id) ? "请先停止该对话的生成并等待保存完成" : undefined,
+        onSelect: () => {
+          setPendingDelete(menuConversation.id);
+          const row = [...(navigationRef.current?.querySelectorAll<HTMLElement>("[data-conversation-id]") ?? [])]
+            .find((item) => item.dataset.conversationId === menuConversation.id);
+          row?.querySelector<HTMLButtonElement>(".conversation-delete-button")?.focus({ preventScroll: true });
+        } },
+    );
+  }
+
   return <div ref={navigationRef} className="conversation-workspace" onKeyDown={(event) => {
     if (event.key !== "Escape" || event.defaultPrevented || dialog || !navigationOpen) return;
     event.preventDefault();
@@ -145,20 +199,30 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表" data-open={navigationOpen} inert={!navigationOpen} aria-hidden={!navigationOpen}>
         <div className="chat-navigation-heading"><h2>助手</h2></div>
         <button type="button" className="settings-button" disabled={busy || !snapshot} onClick={() => editAssistant()}><Plus size={15} />新建助手</button>
-        <ul className="chat-navigation-list">{snapshot?.assistants.map((assistant, index) => {
+        <ul className="chat-navigation-list">{snapshot?.assistants.map((assistant) => {
           const selected = assistant.id === selectedAssistant?.id;
           const expanded = selected && conversationPanelOpen;
           const count = snapshot.conversations.filter((item) => item.assistantId === assistant.id).length;
-          return <li className="chat-navigation-item assistant-branch" key={assistant.id}>
+          return <li className="chat-navigation-item assistant-branch" key={assistant.id}
+            onContextMenu={(event) => openContextMenu({ kind: "assistant", id: assistant.id }, event)}
+            onKeyDown={(event) => { if (isContextMenuKey(event)) openContextMenu({ kind: "assistant", id: assistant.id }, event); }}>
           <button type="button" className="chat-navigation-select assistant-branch-toggle" aria-label={assistant.name} aria-expanded={expanded} aria-controls={`assistant-conversations-${assistant.id}`} aria-pressed={selected} disabled={busy}
             onClick={() => void openAssistant(assistant.id)}>
             <AssistantAvatar className="assistant-branch-icon" avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} />
             <span className="assistant-branch-name" title={assistant.name}>{assistant.name}</span><span className="assistant-conversation-count" aria-hidden="true">({count})</span>
             <ChevronRight size={16} />
           </button>
-          <AssistantActions name={assistant.name} disabled={busy} canMoveUp={index > 0} canMoveDown={index < snapshot.assistants.length - 1}
-            onEdit={() => editAssistant(assistant)} onMove={(direction) => void execute({ type: "move-assistant", id: assistant.id, direction })}
-            onDelete={assistant.id === DEFAULT_ASSISTANT_ID ? undefined : () => setDialog({ type: "delete-assistant", id: assistant.id, name: assistant.name, count, permanent: false })} />
+          <div className="assistant-actions"><button className="assistant-menu-trigger" type="button" disabled={busy}
+            aria-label={`管理助手 ${assistant.name}`} title="管理助手" aria-haspopup="menu"
+            aria-expanded={menuTarget?.kind === "assistant" && menuTarget.id === assistant.id}
+            onClick={(event) => {
+              if (menuTarget?.kind === "assistant" && menuTarget.id === assistant.id) menu.close(true);
+              else { setPendingDelete(undefined); menu.open({ kind: "assistant", id: assistant.id }, event.currentTarget); }
+            }} onKeyDown={(event) => {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault(); setPendingDelete(undefined); menu.open({ kind: "assistant", id: assistant.id }, event.currentTarget);
+              }
+            }}><MoreHorizontal size={16} aria-hidden="true" /></button></div>
           </li>;
         })}</ul>
       </aside>
@@ -171,7 +235,9 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
             </div>
             <button className="settings-button new-conversation-button" type="button" disabled={busy} onClick={() => void openConversation({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}><Plus size={14} />新建对话</button>
             {conversations.length === 0 && <p className="muted-text assistant-conversations-empty">还没有对话</p>}
-            <ul className="chat-navigation-list">{conversations.map((item) => <li key={item.id} className="chat-navigation-item conversation-leaf"
+            <ul className="chat-navigation-list">{conversations.map((item) => <li key={item.id} className="chat-navigation-item conversation-leaf" data-conversation-id={item.id}
+              onContextMenu={(event) => openContextMenu({ kind: "conversation", id: item.id }, event)}
+              onKeyDown={(event) => { if (isContextMenuKey(event)) openContextMenu({ kind: "conversation", id: item.id }, event); }}
               ref={pendingDelete === item.id ? pendingDeleteRef : undefined}
               onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPendingDelete(undefined); }}>
           <button className="chat-navigation-select conversation-leaf-select" type="button" aria-pressed={item.id === conversation?.id} disabled={busy} title={`${item.title}${generatingIds.has(item.id) ? " · 生成中" : ""}`}
@@ -183,7 +249,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
                 setPendingDelete(undefined);
               }}>取消</button>
               : <button type="button" disabled={busy} title="编辑对话" aria-label={`编辑对话 ${item.title}`} onClick={() => setDialog({ type: "conversation", id: item.id })}><Pencil size={15} aria-hidden="true" /></button>}
-            <button className="conversation-delete-button" data-pending={pendingDelete === item.id} type="button" disabled={busy}
+            <button className="conversation-delete-button" data-pending={pendingDelete === item.id} type="button" disabled={busy || generatingIds.has(item.id)}
               title={pendingDelete === item.id ? "永久删除对话及全部消息，无法撤销" : "删除"}
               aria-label={`${pendingDelete === item.id ? "确认删除对话" : "删除对话"} ${item.title}`} onClick={() => {
                 if (pendingDelete !== item.id) setPendingDelete(item.id);
@@ -201,6 +267,9 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
         </>}
       </section>
     </div>
+    {menu.state && (menuAssistant || menuConversation) && <ActionMenu state={menu.state}
+      label={`${menuAssistant?.name ?? menuConversation?.title}的管理菜单`} items={menuItems}
+      note={menuAssistant?.id === DEFAULT_ASSISTANT_ID ? "默认助手不可删除" : undefined} onClose={menu.close} />}
     {editingConversation && <ConversationSettings key={editingConversation.id} workspace={workspace} conversation={editingConversation} settings={settings} onClose={close} />}
     {dialog?.type === "assistant" && <SessionConfigPanel presentation="modal" disabled={busy} title={dialog.existing ? "编辑助手" : "新建助手"} description="作为新对话的默认设置，已有对话保持不变。"
       config={dialog.input.defaultConfig} errors={editorErrors} protocol={editorTarget?.connection.protocol} model={editorTarget?.model.modelId ?? ""}

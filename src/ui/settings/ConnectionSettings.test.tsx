@@ -78,6 +78,195 @@ describe("ConnectionSettings", () => {
     return element as HTMLButtonElement;
   }
 
+  function menuItem(label: string): HTMLButtonElement {
+    const element = [...document.querySelectorAll<HTMLButtonElement>('.action-menu [role="menuitem"]')]
+      .find((item) => item.getAttribute("aria-label") === label || item.textContent === label);
+    expect(element).toBeInstanceOf(HTMLButtonElement);
+    return element!;
+  }
+
+  function withSecondaryConnection(): ConnectionSettingsProps {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    props.connectionSettings.providers[0].connections.push({
+      id: "connection-secondary", name: "备用线路", protocol: "anthropic-native",
+      baseUrl: "https://secondary.example.com", apiKey: "", models: [],
+    });
+    return props;
+  }
+
+  async function rightClick(element: HTMLElement): Promise<void> {
+    await act(async () => element.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true, clientX: 120, clientY: 160,
+    })));
+  }
+
+  it.each(["right-click", "keyboard", "management button"])("closes supplier templates when %s opens an entity menu", async (entry) => {
+    await render(makeProps());
+    const templates = container.querySelector<HTMLDetailsElement>(".provider-create-menu")!;
+    await act(async () => { templates.open = true; });
+    expect(templates.open).toBe(true);
+    if (entry === "right-click") await rightClick(button("示例供应商"));
+    else if (entry === "keyboard") await act(async () => button("示例供应商").dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true })));
+    else await act(async () => button("管理供应商 示例供应商").click());
+    expect(templates.open).toBe(false);
+    expect(document.querySelector('.action-menu')?.getAttribute("aria-label")).toBe("示例供应商的管理菜单");
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+  });
+
+  it("renames the right-clicked unselected tree connection without selecting it", async () => {
+    const props = withSecondaryConnection();
+    await render(props);
+    await rightClick(button("查看连接 备用线路").closest<HTMLElement>(".connection-tree-row")!);
+    expect(document.querySelector('.action-menu')?.getAttribute("aria-label")).toBe("备用线路的管理菜单");
+    expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe("https://relay.example.com/v1");
+    await act(async () => menuItem("重命名").click());
+    document.querySelector<HTMLInputElement>('.connection-rename-form input')!.value = "备用线路改名";
+    await act(async () => document.querySelector('.connection-rename-form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(props.onConnectionChange).toHaveBeenCalledExactlyOnceWith("connection-secondary", "name", "备用线路改名");
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    expect(props.onSelectModel).not.toHaveBeenCalled();
+  });
+
+  it("keeps the rename dialog and unsaved draft on Tab before saving the target connection", async () => {
+    const props = withSecondaryConnection();
+    await render(props);
+    await rightClick(button("查看连接 备用线路"));
+    await act(async () => menuItem("重命名").click());
+    const input = document.querySelector<HTMLInputElement>('.connection-rename-form input')!;
+    input.value = "键盘重命名备用线路";
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => input.dispatchEvent(tab));
+    expect(tab.defaultPrevented).toBe(false);
+    expect(document.querySelector('.action-menu[role="dialog"]')).not.toBeNull();
+    expect(document.querySelector<HTMLInputElement>('.connection-rename-form input')).toBe(input);
+    expect(input.value).toBe("键盘重命名备用线路");
+    expect(props.onConnectionChange).not.toHaveBeenCalled();
+    await act(async () => document.querySelector('.connection-rename-form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(props.onConnectionChange).toHaveBeenCalledExactlyOnceWith("connection-secondary", "name", "键盘重命名备用线路");
+    expect(document.querySelector('.action-menu')).toBeNull();
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+  });
+
+  it.each([
+    { key: "ContextMenu", shiftKey: false },
+    { key: "F10", shiftKey: true },
+  ])("opens the focused connection with $key and restores focus without selection", async (keys) => {
+    const props = withSecondaryConnection();
+    await render(props);
+    const row = button("查看连接 备用线路");
+    await act(async () => {
+      row.focus();
+      row.dispatchEvent(new KeyboardEvent("keydown", { ...keys, bubbles: true, cancelable: true }));
+    });
+    expect(document.activeElement).toBe(menuItem("编辑连接 备用线路"));
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('.action-menu')).toBeNull();
+    expect(document.activeElement).toBe(row);
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    expect(props.onSelectModel).not.toHaveBeenCalled();
+  });
+
+  it("opens overview rows without navigating and reuses their edit and delete actions", async () => {
+    const props = withSecondaryConnection();
+    const confirm = vi.fn(() => false);
+    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
+    await render(props);
+    await act(async () => button("示例供应商").click());
+    const row = container.querySelectorAll<HTMLElement>(".provider-connection-row")[1];
+    await rightClick(row);
+    expect(container.querySelectorAll(".provider-connection-row")).toHaveLength(2);
+    expect(container.querySelector("#base-url")).toBeNull();
+    await act(async () => menuItem("删除连接 备用线路").click());
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("https://secondary.example.com"));
+    expect(props.onDeleteConnection).not.toHaveBeenCalled();
+    await act(async () => {
+      row.querySelector<HTMLElement>(".provider-connection-link")!.focus();
+      row.querySelector<HTMLElement>(".provider-connection-link")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }));
+    });
+    await act(async () => menuItem("编辑连接 备用线路").click());
+    expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe("https://secondary.example.com");
+    expect(props.onSelectModel).not.toHaveBeenCalled();
+  });
+
+  it("uses the unselected provider and latest row data for move and deletion", async () => {
+    const props = withSecondaryConnection();
+    props.connectionSettings.providers.push({ id: "provider-b", name: "另一供应商", connections: [] });
+    const confirm = vi.fn(() => true);
+    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
+    await render(props);
+    await rightClick(button("另一供应商"));
+    expect(menuItem("下移供应商 另一供应商").disabled).toBe(true);
+    await act(async () => menuItem("上移供应商 另一供应商").click());
+    expect(props.onProviderMove).toHaveBeenCalledExactlyOnceWith("provider-b", "provider-a", "before");
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    await rightClick(button("另一供应商"));
+    props.connectionSettings = structuredClone(props.connectionSettings);
+    props.connectionSettings.providers[1].name = "最新供应商名称";
+    props.connectionSettings.providers[1].connections = [structuredClone(connectionSettings.providers[0].connections[0])];
+    await render(props);
+    await act(async () => menuItem("删除供应商 最新供应商名称").click());
+    expect(confirm).toHaveBeenCalledWith("删除供应商“最新供应商名称”以及其中 1 条连接、2 个模型？");
+    expect(props.onDeleteProvider).toHaveBeenCalledExactlyOnceWith("provider-b");
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+  });
+
+  it("keeps context actions disabled when generation starts while the menu is open", async () => {
+    const props = withSecondaryConnection();
+    const confirm = vi.fn(() => true);
+    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
+    await render(props);
+    await rightClick(button("查看连接 备用线路"));
+    props.isStreaming = true;
+    await render(props);
+    const items = document.querySelectorAll<HTMLButtonElement>('.action-menu [role="menuitem"]');
+    expect(items).toHaveLength(3);
+    expect([...items].every((item) => item.disabled)).toBe(true);
+    await act(async () => menuItem("删除连接 备用线路").click());
+    expect(confirm).not.toHaveBeenCalled();
+    expect(props.onDeleteConnection).not.toHaveBeenCalled();
+    expect(props.onConnectionChange).not.toHaveBeenCalled();
+  });
+
+  it("closes when its target disappears, is hidden, selection changes, or a dialog opens", async () => {
+    const props = withSecondaryConnection();
+    await render(props);
+    await rightClick(button("查看连接 备用线路"));
+    props.connectionSettings = structuredClone(props.connectionSettings);
+    props.connectionSettings.providers[0].connections.pop();
+    await render(props);
+    expect(document.querySelector('.action-menu')).toBeNull();
+    await rightClick(button("查看连接 主线路"));
+    await act(async () => button("收起供应商 示例供应商").click());
+    expect(document.querySelector('.action-menu')).toBeNull();
+    await rightClick(button("示例供应商"));
+    await act(async () => button("示例供应商").click());
+    expect(document.querySelector('.action-menu')).toBeNull();
+    await act(async () => button("查看连接 主线路").click());
+    await rightClick(button("示例供应商"));
+    await act(async () => button("手动添加模型").click());
+    expect(document.querySelector('.action-menu')).toBeNull();
+    expect(container.querySelector("dialog")?.open).toBe(true);
+  });
+
+  it("uses the existing unsaved-model confirmation when a menu edits another connection", async () => {
+    const props = withSecondaryConnection();
+    const confirm = vi.fn(() => false);
+    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
+    await render(props);
+    await act(async () => button("编辑模型 beta-model").click());
+    await rightClick(button("查看连接 备用线路"));
+    await act(async () => menuItem("编辑连接 备用线路").click());
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[aria-label="保存模型 beta-model"]')).not.toBeNull();
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+    confirm.mockReturnValue(true);
+    await rightClick(button("查看连接 备用线路"));
+    await act(async () => menuItem("编辑连接 备用线路").click());
+    expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe("https://secondary.example.com");
+    expect(props.onSelectModel).not.toHaveBeenCalled();
+  });
+
   it("keeps disclosure separate from supplier and connection detail selection", async () => {
     const props = makeProps();
     await render(props);
@@ -190,19 +379,19 @@ describe("ConnectionSettings", () => {
     const name = kind === "供应商" ? "示例供应商" : "主线路";
     const callback = kind === "供应商" ? props.onProviderRename : props.onConnectionChange;
     async function openRename() {
-      await act(async () => container.querySelector<HTMLElement>(`summary[aria-label="管理${kind} ${name}"]`)!.click());
-      await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === "重命名")!.click());
-      const input = container.querySelector<HTMLInputElement>('.connection-entity-menu input')!;
+      await act(async () => button(`管理${kind} ${name}`).click());
+      await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.action-menu [role="menuitem"]')].find((item) => item.textContent === "重命名")!.click());
+      const input = document.querySelector<HTMLInputElement>('.connection-rename-form input')!;
       input.value = "新名称";
-      expect(container.querySelector('.connection-entity-menu .danger-icon-button')).toBeNull();
+      expect(document.querySelector('.action-menu [role="menuitem"]')).toBeNull();
       return input;
     }
     await openRename();
-    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.connection-rename-footer button')].find((item) => item.textContent === "取消")!.click());
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.connection-rename-footer button')].find((item) => item.textContent === "取消")!.click());
     expect(callback).not.toHaveBeenCalled();
     await openRename();
     await act(async () => button("查看连接 主线路").focus());
-    expect(container.querySelector('.connection-entity-menu')).toBeNull();
+    expect(document.querySelector('.action-menu')).toBeNull();
     expect(callback).not.toHaveBeenCalled();
     await openRename();
     await act(async () => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
@@ -211,7 +400,7 @@ describe("ConnectionSettings", () => {
     await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(callback).not.toHaveBeenCalled();
     await openRename();
-    await act(async () => container.querySelector(' .connection-entity-menu form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await act(async () => document.querySelector('.connection-rename-form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(callback).toHaveBeenCalledTimes(1);
     if (kind === "供应商") expect(callback).toHaveBeenCalledWith("provider-a", "新名称");
     else expect(callback).toHaveBeenCalledWith("connection-a", "name", "新名称");

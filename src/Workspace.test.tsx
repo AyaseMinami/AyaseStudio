@@ -622,11 +622,71 @@ describe("assistant workspace public behavior", () => {
     await click("管理助手 默认助手");
     const defaultDelete = document.querySelector<HTMLButtonElement>('[aria-label="删除助手 默认助手"]');
     expect(defaultDelete?.disabled).toBe(true);
-    expect(document.querySelector('.assistant-menu-note')?.textContent).toBe("默认助手不可删除");
+    expect(document.querySelector('.action-menu-note')?.textContent).toBe("默认助手不可删除");
     await act(async () => defaultDelete!.click());
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => container.querySelector('.composer-input')?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
     expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("opens the actual unselected assistant by right click and keyboard without changing navigation", async () => {
+    await click("默认助手");
+    const row = container.querySelector('[aria-label="写作助手"]')!.closest("li")!;
+    await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 100, clientY: 120 })));
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe("对话 A");
+    expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe("写作助手的管理菜单");
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })));
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("写作助手");
+    expect(container.querySelector(".conversation-cascade-pane:not([inert])")).not.toBeNull();
+    await act(async () => row.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "F10", shiftKey: true })));
+    await click("编辑助手 写作助手");
+    expect(container.querySelector<HTMLInputElement>("#assistant-name")?.value).toBe("写作助手");
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe("对话 A");
+    await click("取消");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("写作助手");
+  });
+
+  it("hands right-click deletion to the target row's second confirmation without selecting that conversation", async () => {
+    await click("默认助手"); await click("新建对话");
+    await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="删除对话 对话 A"]')?.disabled === false);
+    const title = container.querySelector(".workspace-conversation-title")?.textContent;
+    const open = async () => {
+      const row = container.querySelector('[data-conversation-id="current"]')!;
+      await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+      await act(async () => document.querySelector<HTMLButtonElement>('[role="menu"] [aria-label="删除对话 对话 A"]')!.click());
+    };
+    await open();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("确认删除对话 对话 A");
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe(title);
+    expect((await repo.load("current"))).toBeDefined();
+    await click("取消删除对话 对话 A");
+    expect(container.querySelector('[aria-label="确认删除对话 对话 A"]')).toBeNull();
+    await open(); await click("确认删除对话 对话 A");
+    await wait(() => !container.querySelector('[data-conversation-id="current"]'));
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe(title);
+  });
+
+  it("disables deletion of a running conversation and its owning assistant in right-click menus", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
+      await gate; yield { type: "completed" };
+    } } satisfies ChatTransport);
+    await chooseAssistant("写作助手", "对话 B"); await fill(".composer-input", "synthetic generation"); await click("发送");
+    await wait(() => container.querySelector('[aria-label="停止生成"]') !== null);
+    try {
+      const conversationRow = container.querySelector('[data-conversation-id="b"]')!;
+      await act(async () => conversationRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+      expect(document.querySelector<HTMLButtonElement>('[role="menu"] [aria-label="删除对话 对话 B"]')?.disabled).toBe(true);
+      expect(document.querySelector<HTMLButtonElement>('[role="menu"] [aria-label="编辑对话 对话 B"]')?.disabled).toBe(false);
+      const assistantRow = container.querySelector('[aria-label="写作助手"]')!.closest("li")!;
+      await act(async () => assistantRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+      expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+      expect(document.querySelector<HTMLButtonElement>('[role="menu"] [aria-label="删除助手 写作助手"]')?.disabled).toBe(true);
+    } finally { await act(async () => release()); }
+    await wait(() => container.querySelector('[aria-label="发送"]') !== null);
   });
 
   it("keeps advanced JSON collapsed unless opened or invalid, without losing its draft", async () => {

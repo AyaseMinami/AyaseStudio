@@ -4,6 +4,7 @@ import { ChevronRight, Globe } from "lucide-react";
 import type { SearchRecord, SearchSource } from "../../chat/nativeSearch";
 import { openExternal, safeExternalUrl } from "../../chat/externalLinks";
 import "./SearchResults.css";
+import { bindDefaultContextMenuPolicy } from "../ActionMenu";
 
 function searchLabel(search: SearchRecord): string {
   if (search.provider === "exa-mcp" || search.provider === "exa-api") {
@@ -61,9 +62,10 @@ function GeminiSuggestion({ html }: { html: string }) {
     document.addEventListener("click", open, true);
     document.addEventListener("auxclick", open, true);
     document.addEventListener("submit", preventSubmit, true);
+    const unbindContextMenu = bindDefaultContextMenuPolicy(document);
     const observer = new ResizeObserver(resize);
     observer.observe(document.body); resize();
-    cleanup.current = () => { observer.disconnect(); document.removeEventListener("click", open, true); document.removeEventListener("auxclick", open, true); document.removeEventListener("submit", preventSubmit, true); };
+    cleanup.current = () => { observer.disconnect(); unbindContextMenu(); document.removeEventListener("click", open, true); document.removeEventListener("auxclick", open, true); document.removeEventListener("submit", preventSubmit, true); };
   };
   return <section className="gemini-suggestion" aria-label="搜索建议"><iframe ref={frame} title="Gemini 搜索建议" sandbox="allow-same-origin" srcDoc={srcDoc} onLoad={bindFrame} /></section>;
 }
