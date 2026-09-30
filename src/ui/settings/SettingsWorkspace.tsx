@@ -1,4 +1,5 @@
-import { Info, Palette, Server, UserRound } from "lucide-react";
+import { Info, Palette, Server, UserRound, Import } from "lucide-react";
+import { DataImportSettings, type DataImportSettingsProps } from "./DataImportSettings";
 import { AvatarPreview } from "./AvatarSettings";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
 import { AssistantAvatarDefaults } from "./AssistantAvatarDefaults";
@@ -15,13 +16,14 @@ import {
   type ConnectionSettingsProps,
 } from "./ConnectionSettings";
 
-export type SettingsSection = "connections" | "appearance" | "avatars" | "about";
+export type SettingsSection = "connections" | "appearance" | "avatars" | "data" | "about";
 
 export interface SettingsWorkspaceProps {
   activeSection: SettingsSection;
   appearance: AppearanceSettingsProps;
   avatar?: UserAvatarState;
   connection: ConnectionSettingsProps;
+  dataImport?: DataImportSettingsProps;
   onSectionChange(section: SettingsSection): void;
 }
 
@@ -30,6 +32,7 @@ export function SettingsWorkspace({
   appearance,
   avatar,
   connection,
+  dataImport,
   onSectionChange,
 }: SettingsWorkspaceProps) {
   return (
@@ -37,7 +40,7 @@ export function SettingsWorkspace({
       <header className="settings-header" data-tauri-drag-region>
         <div data-tauri-drag-region>
           <h1 data-tauri-drag-region>设置</h1>
-          <p className="muted-text" data-tauri-drag-region>管理连接、外观、头像与应用信息</p>
+          <p className="muted-text" data-tauri-drag-region>管理连接、外观、头像、数据与应用信息</p>
         </div>
         <WindowControls />
       </header>
@@ -76,6 +79,12 @@ export function SettingsWorkspace({
             <UserRound size={18} />
             <span><strong>头像</strong><small>用户头像与裁切</small></span>
           </button>
+          <button className="settings-navigation-button" aria-label="数据导入"
+            aria-current={activeSection === "data" ? "page" : undefined}
+            onClick={() => onSectionChange("data")} type="button">
+            <Import size={18} />
+            <span><strong>数据导入</strong><small>迁移本地聊天与附件</small></span>
+          </button>
           <button className="settings-navigation-button" aria-label="关于"
             aria-current={activeSection === "about" ? "page" : undefined}
             onClick={() => onSectionChange("about")} type="button">
@@ -95,6 +104,8 @@ export function SettingsWorkspace({
             <ConnectionSettings {...connection} />
           ) : activeSection === "appearance" ? (
             <AppearanceSettings {...appearance} />
+          ) : activeSection === "data" ? (
+            dataImport ? <DataImportSettings {...dataImport} /> : <p className="muted-text">请在桌面应用中导入聊天。</p>
           ) : activeSection === "avatars" ? (
             <section className="settings-page settings-workspace-page avatar-settings-page" aria-labelledby="avatar-settings-title">
               <header className="settings-page-heading"><h2 id="avatar-settings-title">头像</h2><p className="muted-text">管理用户头像与本地头像库。</p></header>

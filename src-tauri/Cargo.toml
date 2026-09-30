@@ -28,6 +28,12 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 tempfile = "3"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+leveldb-core = "=0.1.2"
+crc32c = "0.6"
+snap = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"

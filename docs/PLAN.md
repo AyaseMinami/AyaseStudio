@@ -1,5 +1,9 @@
 # Ayase Studio v0.1 Plan
 
+## Cherry chat backup import #77 (2026-09-30)
+
+Local chat-only import preserves assistant grouping, titles, messages, thinking and supported internal attachments. The user clarified that importing model/provider configuration is outside this task; imported chats have no Cherry model binding. Parallel replies and historical branches become independent conversations so all supported paths remain readable. Preview selection and skip/copy duplicate handling protect existing data; files are staged and verified before one atomic metadata commit. Supported pinned formats and remaining real-export/native interaction acceptance are documented in [CHERRY-IMPORT.md](CHERRY-IMPORT.md) and [ISSUE-77-IMPLEMENTATION.md](ISSUE-77-IMPLEMENTATION.md). The remote Issue remains unchanged.
+
 ## Built-in color presets #66 (2026-09-29)
 
 七套本地内置方案：晴蓝、纸页、青竹、海盐、鸢尾、蔷薇、琥珀，均包含浅深两组组件、画布及双方气泡颜色。按用户最新要求，顶部恢复跟随系统/浅色/深色/阅读四个并列按钮，下方保留七个配色缩略选项。阅读快捷应用浅色纸页，保留 `reading` ID 及既有浅色主要颜色；退出阅读恢复默认方案，其他状态切换明暗保留方案。

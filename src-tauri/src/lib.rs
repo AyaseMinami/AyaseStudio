@@ -1,5 +1,10 @@
 mod background;
 mod attachments;
+mod cherry_import;
+mod cherry_legacy;
+mod cherry_leveldb;
+mod cherry_sqlite;
+mod cherry_v8;
 #[cfg(desktop)]
 mod instance_lock;
 
@@ -66,6 +71,9 @@ pub fn run() {
             attachments::verify_sent_attachments,
             attachments::discard_uncommitted_attachments,
             attachments::cleanup_sent_attachments,
+            cherry_import::select_cherry_backup,
+            cherry_import::read_cherry_file,
+            cherry_import::close_cherry_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

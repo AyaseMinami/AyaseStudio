@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { GenerationTasks } from "./generationTasks";
 import { appendRoundVersion, withoutVersions } from "./roundVersions";
 import { summarizeConversationTitle } from "./conversationTitle";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { createCherryImportRepository } from "../import/cherryRepository";
+import { commitCherryImport } from "../import/cherryImport";
+import type { CherryBackup, CherryImportPlan } from "../import/cherryTypes";
 
 import type { DiscoveredModel } from "./modelCatalog";
 import { initialSearch, finishSearch, mergeSearch } from "./nativeSearch";
@@ -63,6 +66,7 @@ import {
 const chatRepository = createChatRepository();
 const attachmentStore = createTauriAttachmentStore();
 const attachmentLifecycle = new AttachmentLifecycle(attachmentStore, () => chatRepository.attachmentReferences());
+const cherryRepository = createCherryImportRepository();
 async function cleanupAttachments(): Promise<void> {
   if (!isTauri()) return;
   await attachmentLifecycle.cleanup();
@@ -125,6 +129,9 @@ export function useChatSession({
     loadConnectionSettings,
   );
   const [generationTasks] = useState(() => new GenerationTasks());
+  const [cherryBusy, setCherryBusy] = useState(false);
+  const cherryBusyRef = useRef(false);
+  const cherryToken = useRef<string | undefined>(undefined);
   const generatingConversationIds = useSyncExternalStore(generationTasks.subscribe, generationTasks.getSnapshot);
   const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
     connectionSettings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments);
@@ -614,6 +621,7 @@ export function useChatSession({
   }
 
   async function sendMessage(retryMessageId?: string, resumeMessageId?: string, editedContent?: string): Promise<true | undefined> {
+    if (cherryBusyRef.current) return;
     const resume = resumeMessageId ? messages.find((message) => message.id === resumeMessageId && message.status === "paused") : undefined;
     if (resumeMessageId && (!resume?.continuation || !resume.providerReplay || messages[messages.length - 1]?.id !== resume.id)) return;
     const originalUser = retryMessageId || resumeMessageId ? retryUser(messages, (retryMessageId ?? resumeMessageId)!) : undefined;
@@ -1051,6 +1059,35 @@ export function useChatSession({
   }
 
   return {
+    dataImport: {
+      disabled: !workspace.isReady || generatingConversationIds.size > 0 || cherryBusy,
+      async selectBackup(): Promise<CherryBackup | null> {
+        if (!isTauri() || cherryBusyRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
+        const backup = await invoke<CherryBackup | null>("select_cherry_backup");
+        if (backup) cherryToken.current = backup.token;
+        return backup;
+      },
+      async closeBackup(token: string): Promise<void> {
+        await invoke("close_cherry_backup", { token });
+        if (cherryToken.current === token) cherryToken.current = undefined;
+      },
+      existingSourceKeys: (keys: string[]) => cherryRepository.existingSourceKeys(keys),
+      async importPlan(plan: CherryImportPlan, mode: "skip" | "copy") {
+        if (cherryBusyRef.current || !workspace.canSend() || generationTasks.getSnapshot().size || !cherryToken.current) {
+          throw new Error("请先等待当前操作完成，再导入聊天。");
+        }
+        cherryBusyRef.current = true; setCherryBusy(true);
+        const token = cherryToken.current;
+        try {
+          const result = await commitCherryImport(plan, mode, cherryRepository, {
+            lifecycle: attachmentLifecycle, verify: attachmentStore.verify,
+            readFile: (key) => invoke<RequestAttachment | null>("read_cherry_file", { token, key }),
+          });
+          workspace.retry();
+          return result;
+        } finally { cherryBusyRef.current = false; setCherryBusy(false); }
+      },
+    },
     workspace,
     generatingConversationIds,
     isAnyGenerating: generatingConversationIds.size > 0,

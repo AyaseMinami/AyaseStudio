@@ -18,6 +18,7 @@ export type StoredMessageStatus =
   | "failed";
 
 export interface StoredChatMessage extends ChatMessage {
+  source?: { source: "cherry"; id: string; createdAt: number; unavailableAttachments?: string[] };
   roundVersions?: import("./roundVersions").RoundVersions;
   id: string;
   replyToId?: string | null;

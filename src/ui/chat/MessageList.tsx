@@ -195,6 +195,9 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
               : <span className="subtle-text">（无文本输出）</span>) : message.content ? <SafeMarkdown>{message.content}</SafeMarkdown> : null}</>}
           {message.role === "assistant" && message.search && <SearchResults search={message.search} />}
           {message.editedAt !== undefined && <p className="message-edited">已编辑</p>}
+          {!!message.source?.unavailableAttachments?.length && <ul className="subtle-text" aria-label="未恢复的附件">
+            {message.source.unavailableAttachments.map((name, index) => <li key={index}>附件未恢复：{name}</li>)}
+          </ul>}
           {!!message.attachments?.length && <>
             {message.attachments.some((item) => item.mimeType.startsWith("image/")) && onReadAttachment &&
               <div className={`sent-image-list ${message.attachments.filter((item) => item.mimeType.startsWith("image/")).length > 1 ? "sent-image-list-multiple" : ""}`}>

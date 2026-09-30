@@ -1,9 +1,13 @@
-import Dexie, { type EntityTable } from "dexie";
+import Dexie, { type EntityTable, type Table } from "dexie";
 import type { ChatSnapshot } from "../chat/repository";
 import type { SessionConfig } from "../chat/sessionConfig";
 import type { AssistantPreset, Conversation, WorkspaceSelection } from "../chat/workspace";
 import type { UserAvatar } from "../avatar/repository";
 import type { AvatarLibraryEntry } from "../avatar/library";
+
+export type CherryImportRecord =
+  | { id: string; conversationIds: string[] }
+  | { id: string; assistantId: string };
 
 export class AyaseDatabase extends Dexie {
   legacyConversationConfigs!: EntityTable<{ id: string; generationConfig?: SessionConfig; lastUsedModelId?: string | null }, "id">;
@@ -13,6 +17,7 @@ export class AyaseDatabase extends Dexie {
   workspace!: EntityTable<WorkspaceSelection, "id">;
   avatarLibrary!: EntityTable<AvatarLibraryEntry, "id">;
   userAvatar!: EntityTable<{ id: string; value?: UserAvatar }, "id">;
+  cherryImports!: Table<CherryImportRecord, string>;
 
   constructor(name: string) {
     super(name);
@@ -34,5 +39,6 @@ export class AyaseDatabase extends Dexie {
       await conversations.toCollection().modify((item) => { delete item.lastUsedModelId; });
     });
     this.version(4).stores({ avatarLibrary: "id", userAvatar: "id" });
+    this.version(5).stores({ cherryImports: "id" });
   }
 }

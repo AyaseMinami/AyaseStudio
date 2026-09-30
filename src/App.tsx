@@ -92,6 +92,7 @@ function App() {
         </ConversationNavigation>
       ) : (
         <SettingsWorkspace
+          dataImport={chat.dataImport}
           avatar={avatar}
           activeSection={activeSettingsSection}
           appearance={{

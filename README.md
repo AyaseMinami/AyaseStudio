@@ -70,6 +70,8 @@ npm.cmd run build:windows
 
 ## 文档与反馈
 
+- [Cherry 聊天导入指南](docs/CHERRY-IMPORT.md)：设置入口、支持格式、重复导入和附件限制。
+
 - [开发指南](docs/DEVELOPMENT.md)：环境、命令、数据迁移与验证。
 - [架构说明](docs/ARCHITECTURE.md)：模块边界、状态与持久化。
 - [协议说明](docs/PROTOCOLS.md)：地址解析、请求映射与兼容性约定。

@@ -1,5 +1,9 @@
 # Ayase Studio Development Guide
 
+## Cherry import verification (#77)
+
+The importer accepts only the pinned backup structures documented in [CHERRY-IMPORT.md](CHERRY-IMPORT.md). Local implementation, deterministic fixtures and acceptance boundaries are recorded in [ISSUE-77-IMPLEMENTATION.md](ISSUE-77-IMPLEMENTATION.md). Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml`, and `cargo check --locked --manifest-path src-tauri/Cargo.toml` before handoff. Native tests construct synthetic ZIP, Chromium and SQLite snapshots; the ignored private-sample comparison runs only with explicitly supplied local inputs, prints aggregate results, and never writes active application data. Do not add real backup content, credentials or source IDs to fixtures or documentation.
+
 ## Built-in color presets #66 (2026-09-29)
 
 阅读入口恢复：顶部恢复四个并列按钮，阅读快捷应用浅色纸页；退出阅读回到默认方案，其他配色保留独立明暗切换。新增进入/退出阅读回归，`npm.cmd run check` 通过 66 文件 / 683 测试及 TypeScript/Vite 构建，Cargo check 通过。内置浏览器隔离来源 `127.0.0.1:1486` 确认四项同排，键盘进入阅读同步选中纸页，退出至深色同步恢复晴蓝；截图 `ui-review.local/reading-restored.png`。未调用真实模型或原生文件接口，未重复原生启动；构建保留既有大 chunk 提示。

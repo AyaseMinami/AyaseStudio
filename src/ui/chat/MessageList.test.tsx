@@ -14,6 +14,20 @@ const messages: StoredChatMessage[] = [
   { id: "answer", role: "assistant", content: "Answer", status: "complete", replyToId: "user" },
 ];
 
+it("keeps imported missing attachment names visible as safe text", async () => {
+  const { host, root } = setup();
+  try {
+    await act(async () => root.render(<MessageList messages={[{
+      ...messages[0], source: { source: "cherry", id: "source-u", createdAt: 1,
+        unavailableAttachments: ["missing.pdf", "<img src=x onerror=alert(1)>.txt"] },
+    }]} />));
+    const missing = host.querySelector('[aria-label="未恢复的附件"]')!;
+    expect(missing.textContent).toContain("附件未恢复：missing.pdf");
+    expect(missing.textContent).toContain("<img src=x onerror=alert(1)>.txt");
+    expect(missing.querySelector("img")).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("shows only the start prompt and current assistant avatar in an empty chat", async () => {
   const { host, root } = setup();
   const makeUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:empty-avatar");

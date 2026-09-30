@@ -1,5 +1,11 @@
 # Ayase Studio Architecture
 
+## Cherry chat backup import (#77)
+
+`src/import/cherryMapping.ts` maps allowlisted native chat fields to an import plan, preserving every supported answer path as an independent conversation. `cherryImport.ts` stages and verifies files through the shared attachment lifecycle before `cherryRepository.ts` atomically commits assistants, conversations, chats and source markers. Database version 5 adds `cherryImports`; existing records and workspace selection remain intact. Failed precommit work discards only newly staged files. Postcommit cleanup failures retain committed data and report warnings. Source IDs, timestamps and unavailable attachment names are local provenance, never provider configuration.
+
+Tauri exposes session-token-scoped ZIP selection, file reading and release. The read-only parsers accept pinned format 5 JSON, format 6 Chromium storage (1.9.13), and format 7 SQLite (2.1.3 with 26 exact migration fingerprints). Format 6 never treats incidental SQLite as authoritative. The native boundary rejects unsafe archive paths, damaged snapshots and excessive allocation, returns only chat fields, and reads attachments only from identified internal entries. It does not execute imported code, migration SQL or tools, read external paths, or download URLs. Import creates neutral assistants with no model binding and never sends a request or names conversations automatically. The settings panel owns preview selection and duplicate mode; it does not access Dexie. See [migration guide](CHERRY-IMPORT.md) and [implementation evidence](ISSUE-77-IMPLEMENTATION.md) for support and acceptance boundaries.
+
 ## Input history (#64)
 
 `useConversationWorkspace` owns runtime-only input history within each conversation view: draft revision, caret selection, original draft, active candidate identity (message ID plus source text), and edited candidate copies. `inputHistory.ts` handles navigation and revision-guarded consumption against the current visible transcript; changed/deleted sources cannot overwrite modified unsent copies. Modified copies whose source disappeared remain temporary draft candidates, never persisted or restored to the transcript. Hidden round versions, assistants and attachment-only messages are not input history.
