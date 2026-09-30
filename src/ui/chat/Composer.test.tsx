@@ -228,3 +228,109 @@ it("sends on Enter or Ctrl+Enter and preserves composition and multiline input",
     expect(textarea.getAttribute("placeholder")).toContain("Ctrl+Enter");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it("expands the same draft and attachments, then restores the compact input", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const onSend = vi.fn();
+  const file = new File(["notes"], "notes.txt", { type: "text/plain" });
+  try {
+    await act(async () => root.render(<Composer draft={"first\nsecond"} draftSelection={{ start: 5, end: 5 }}
+      draftAttachments={[{ id: "a", name: file.name, mimeType: "text/plain", size: file.size, file }]}
+      isHydrated isGenerating={false} onDraftChange={() => {}} onSend={onSend} onStop={() => {}} />));
+    const textarea = host.querySelector("textarea")!;
+    const expand = host.querySelector<HTMLButtonElement>('[aria-label="展开输入框"]')!;
+    await act(async () => expand.click());
+    expect(host.querySelector(".composer-footer")?.classList.contains("is-expanded")).toBe(true);
+    expect(host.querySelector("textarea")).toBe(textarea);
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.value).toBe("first\nsecond");
+    expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([5, 5]);
+    expect(host.querySelector(".composer-attachment-name")?.textContent).toBe("notes.txt");
+    expect(host.querySelector('[aria-label="收起输入框"]')?.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true })));
+    expect(onSend).not.toHaveBeenCalled();
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })));
+    expect(onSend).toHaveBeenCalledOnce();
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect(host.querySelector(".composer-footer")?.classList.contains("is-expanded")).toBe(false);
+    expect(host.querySelector("textarea")).toBe(textarea);
+    expect(host.querySelector('[aria-label="展开输入框"]')?.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="展开输入框"]')!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="收起输入框"]')!.click());
+    expect(textarea.value).toBe("first\nsecond");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("starts at half height and resizes from the upper edge by pointer or keyboard", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Composer draft="draft" isHydrated isGenerating={false}
+      onDraftChange={() => {}} onSend={() => {}} onStop={() => {}} />));
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="展开输入框"]')!.click());
+    const footer = host.querySelector<HTMLElement>(".composer-footer")!;
+    const edge = host.querySelector<HTMLElement>('[aria-label="调整输入框高度"]')!;
+    expect(footer.style.height).toBe("50%");
+    expect(edge.getAttribute("role")).toBe("separator");
+    expect(edge.parentElement).toBe(host.querySelector(".composer-frame"));
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue({ height: 800 } as DOMRect);
+    vi.spyOn(footer, "getBoundingClientRect").mockReturnValue({ height: 400 } as DOMRect);
+    Object.defineProperty(edge, "setPointerCapture", { value: vi.fn() });
+    await act(async () => {
+      edge.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientY: 400, button: 0 }));
+      edge.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientY: 300 }));
+    });
+    expect(footer.style.height).toBe("62.5%");
+    expect(edge.getAttribute("aria-valuenow")).toBe("63");
+    await act(async () => {
+      edge.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }));
+      edge.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientY: 100 }));
+    });
+    expect(footer.style.height).toBe("62.5%");
+    await act(async () => edge.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" })));
+    expect(footer.style.height).toBe("59.5%");
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="收起输入框"]')!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="展开输入框"]')!.click());
+    expect(footer.style.height).toBe("50%");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("turns a compact drag into the expanded state and collapses to the original height", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Composer draft="keep draft" isHydrated isGenerating={false}
+      onDraftChange={() => {}} onSend={() => {}} onStop={() => {}} />));
+    const footer = host.querySelector<HTMLElement>(".composer-footer")!;
+    const edge = host.querySelector<HTMLElement>('[aria-label="调整输入框高度"]')!;
+    expect(edge.parentElement).toBe(host.querySelector(".composer-frame"));
+    expect(footer.style.height).toBe("");
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue({ height: 800 } as DOMRect);
+    vi.spyOn(footer, "getBoundingClientRect").mockReturnValue({ height: 120 } as DOMRect);
+    Object.defineProperty(edge, "setPointerCapture", { value: vi.fn() });
+    await act(async () => edge.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 2, clientY: 400, button: 0 })));
+    expect(host.querySelector('[aria-label="展开输入框"]')).not.toBeNull();
+    await act(async () => {
+      edge.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 2, clientY: 300 }));
+      edge.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 2 }));
+    });
+    expect(footer.style.height).toBe("27.5%");
+    expect(footer.classList.contains("is-expanded")).toBe(true);
+    expect(host.querySelector('[aria-label="收起输入框"]')).not.toBeNull();
+    await act(async () => edge.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" })));
+    expect(footer.style.height).toBe("24.5%");
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="收起输入框"]')!.click());
+    expect(footer.style.height).toBe("");
+    expect(footer.classList.contains("is-expanded")).toBe(false);
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="展开输入框"]')!.click());
+    expect(footer.style.height).toBe("50%");
+    expect(host.querySelector("textarea")?.value).toBe("keep draft");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

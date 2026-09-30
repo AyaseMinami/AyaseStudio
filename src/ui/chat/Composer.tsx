@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { FileImage, FileText, Paperclip, Send, Square, X } from "lucide-react";
+import { FileImage, FileText, Maximize2, Minimize2, Paperclip, Send, Square, X } from "lucide-react";
 import { attachmentAccept, materializeDraftAttachment, type DraftAttachment } from "../../chat/attachments";
 import type { ChatProtocol } from "../../chat/types";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
@@ -58,6 +58,8 @@ export function Composer({
 }: ComposerProps) {
   const picker = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const footer = useRef<HTMLElement>(null);
+  const resizeStart = useRef<{ pointerId: number; y: number; height: number; parentHeight: number; expanded: boolean }>(null);
   const historySelectionPending = useRef(false);
   const caretAffinity = useRef<TextareaCaretAffinity | undefined>(undefined);
   useLayoutEffect(() => {
@@ -69,12 +71,27 @@ export function Composer({
   useLayoutEffect(() => { historySelectionPending.current = false; });
   const pasteSequence = useRef({ stamp: "", count: 0 });
   const [preview, setPreview] = useState<{ id: string; opener: HTMLElement }>();
+  const [expanded, setExpanded] = useState(false);
+  const [expandedHeight, setExpandedHeight] = useState(50);
   const previewItem = preview && draftAttachments.find((item) => item.id === preview.id);
   useEffect(() => { if (preview && !previewItem) setPreview(undefined); }, [preview, previewItem]);
   const canSend = !isGenerating && isHydrated && !attachmentBusy && !attachmentBlockReason &&
     (!!draft.trim() || draftAttachments.length > 0);
+  function resizeTo(height: number, parentHeight: number, expandedMode: boolean): void {
+    if (parentHeight <= 0) return;
+    const max = Math.max(0, parentHeight - 48);
+    const min = Math.min(expandedMode ? 192 : 120, max);
+    const next = Math.min(max, Math.max(min, height));
+    setExpandedHeight(100 * next / parentHeight);
+    setExpanded(true);
+  }
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
     historySelectionPending.current = false;
+    if (event.key === "Escape" && expanded && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+      event.preventDefault();
+      setExpanded(false);
+      return;
+    }
     if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat || event.altKey) return;
     if ((event.key === "ArrowUp" || event.key === "ArrowDown") && isHydrated &&
       !event.shiftKey && !event.ctrlKey && !event.metaKey && onBrowseHistory) {
@@ -97,7 +114,8 @@ export function Composer({
   }
 
   return (
-    <footer className="composer-footer">
+    <footer ref={footer} className={`composer-footer${expanded ? " is-expanded" : ""}`}
+      style={expanded ? { height: `${expandedHeight}%` } : undefined}>
       <div className="composer-width">
         {error && (
           <div className="error-banner composer-error" role="alert">
@@ -105,6 +123,48 @@ export function Composer({
           </div>
         )}
         <div className="composer-frame">
+          <div className="composer-resize-handle" role="separator" tabIndex={0}
+            aria-label="调整输入框高度" aria-orientation="horizontal"
+            aria-valuemin={expanded ? 0 : 120} aria-valuemax={expanded ? 100 : 10000}
+            aria-valuenow={expanded ? Math.round(expandedHeight) : 120}
+            aria-valuetext={expanded ? `${Math.round(expandedHeight)}%` : "默认高度"}
+            title="拖动输入框上边框或按上下方向键调整高度"
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              const parentHeight = footer.current?.parentElement?.getBoundingClientRect().height ?? 0;
+              if (!parentHeight) return;
+              resizeStart.current = {
+                pointerId: event.pointerId, y: event.clientY,
+                height: footer.current?.getBoundingClientRect().height ?? parentHeight / 2,
+                parentHeight, expanded,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              event.preventDefault();
+            }}
+            onPointerMove={(event) => {
+              const start = resizeStart.current;
+              if (start?.pointerId === event.pointerId && event.clientY !== start.y)
+                resizeTo(start.height + start.y - event.clientY, start.parentHeight, start.expanded);
+            }}
+            onPointerUp={(event) => {
+              if (resizeStart.current?.pointerId === event.pointerId) resizeStart.current = null;
+            }}
+            onPointerCancel={() => { resizeStart.current = null; }}
+            onLostPointerCapture={() => { resizeStart.current = null; }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && expanded) {
+                event.preventDefault();
+                setExpanded(false);
+                input.current?.focus();
+                return;
+              }
+              if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+              const parentHeight = footer.current?.parentElement?.getBoundingClientRect().height ?? 0;
+              const currentHeight = expanded ? parentHeight * expandedHeight / 100
+                : footer.current?.getBoundingClientRect().height ?? 0;
+              resizeTo(currentHeight + (event.key === "ArrowUp" ? 24 : -24), parentHeight, expanded);
+              event.preventDefault();
+            }} />
           <input ref={picker} type="file" multiple hidden
             accept={attachmentAccept()} aria-label="选择附件"
             onChange={(event) => {
@@ -183,6 +243,17 @@ export function Composer({
               disabled={!isHydrated}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
             {thinkingControl}
+            <button className="composer-tool-button" type="button"
+              aria-label={expanded ? "收起输入框" : "展开输入框"}
+              aria-expanded={expanded}
+              title={expanded ? "收起输入框（Esc）" : "展开输入框"}
+              onClick={() => {
+                if (!expanded) setExpandedHeight(50);
+                setExpanded(!expanded);
+                input.current?.focus();
+              }}>
+              {expanded ? <Minimize2 size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+            </button>
             {searchControl}
             {modelControl}
             </div>
