@@ -20,7 +20,7 @@ const TOTAL_LIMIT: usize = 64 * 1024 * 1024;
 const PIXEL_LIMIT: u64 = 32_000_000;
 const IMAGE_COUNT: usize = 8;
 const MANIFEST_LIMIT: usize = 16 * 1024;
-static DRAWING_FILES: Mutex<()> = Mutex::new(());
+pub(crate) static DRAWING_FILES: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, PartialEq, Eq)]
 enum Error {

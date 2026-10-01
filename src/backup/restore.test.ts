@@ -55,6 +55,7 @@ async function setup() {
   const before = state(), store = storage(before.preferences);
   for (const t of backupTables) if (before.rows[t].length) await db.table(t).bulkPut(before.rows[t]);
   const repository = new BackupRepository(db, store);
+  before.drawing = { draft: undefined, presets: [], targets: [] };
   const saved = new Map<string, string>();
   const files: BackupFiles = { read: async r => saved.get(r)!, assertAvailable: vi.fn(async () => {}), write: vi.fn(async (r, data) => { saved.set(r, data); }), remove: vi.fn(async refs => { for (const r of refs) saved.delete(r); }) };
   return { db, before, store, repository, saved, files };
@@ -333,7 +334,8 @@ describe("multi-store restore journal", () => {
     vi.mocked(test.files.write).mockImplementation(async (r, data) => { test.saved.set(r, data); throw Error("partial"); });
     vi.mocked(test.files.remove).mockRejectedValueOnce(Error("locked file"));
     await expect(test.repository.restore(plan, test.before, test.files)).rejects.toThrow("回滚尚未完成");
-    expect(await test.db.backupJournal.count()).toBe(1); expect(await test.repository.snapshot()).toEqual(test.before);
+    expect(await test.db.backupJournal.count()).toBe(1); await expect(test.repository.snapshot()).rejects.toThrow("回滚尚未完成");
+    expect(await test.db.chats.toArray()).toEqual(test.before.rows.chats);
     expect(await test.repository.recover(test.files)).toBe(true); expect(test.saved.size).toBe(0);
   });
   it("journal creation failure performs no data or file writes", async () => {

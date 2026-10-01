@@ -313,7 +313,7 @@ describe("connection settings", () => {
           apiKey: "gemini-key",
           model: "gemini-example",
         },
-        "anthropic-native": { baseUrl: 42, apiKey: "bad", model: "bad" },
+        "anthropic-native": { baseUrl: "", apiKey: "", model: "" },
       }),
     );
 
@@ -329,7 +329,7 @@ describe("connection settings", () => {
     expect(migrated.activeModelId).toBe("legacy-model-openai-chat");
   });
 
-  it("sanitizes corrupt v3 records without inventing an active model", () => {
+  it("rejects ambiguous or unsupported v3 entries without overwriting the original configuration", () => {
     storage.setItem(
       connectionSettingsStorageKey,
       JSON.stringify({
@@ -366,13 +366,9 @@ describe("connection settings", () => {
       }),
     );
 
-    const repaired = loadConnectionSettings(storage);
-    expect(repaired.providers[0]?.connections).toHaveLength(2);
-    expect(repaired.providers[0]?.connections[0]?.models).toEqual([
-      { id: "model-one", modelId: "claude-example" },
-    ]);
-    expect(repaired.providers[0]?.connections[1]?.models).toHaveLength(1);
-    expect(repaired.activeModelId).toBeNull();
+    const original = storage.getItem(connectionSettingsStorageKey);
+    expect(() => loadConnectionSettings(storage)).toThrow();
+    expect(storage.getItem(connectionSettingsStorageKey)).toBe(original);
   });
 
   it("keeps browsing data but clears an active model when its ancestry is deleted", () => {

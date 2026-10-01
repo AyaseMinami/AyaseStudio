@@ -1,6 +1,8 @@
 import { getProtocolOption, isDrawingProtocol, protocolOptions, type ServiceProtocol } from "./protocolOptions";
 import type { ChatProtocol } from "./types";
 import type { DrawingModelOption, DrawingProtocol } from "../drawing/types";
+import { dataCheck, dataRecord, backupFields, migrateData, type DataMigration } from "../storage/dataContract";
+import { dataPolicies } from "../storage/dataPolicies";
 export type { ServiceProtocol } from "./protocolOptions";
 
 export interface ConfiguredModel {
@@ -477,8 +479,15 @@ function parseLegacyProfile(value: unknown): LegacyProviderProfile | undefined {
 }
 
 function migrateLegacy(value: unknown): ConnectionSettingsState {
-  if (!isRecord(value)) {
-    return emptyConnectionSettings;
+  if (value === undefined) return structuredClone(emptyConnectionSettings);
+  dataRecord(value);
+  dataCheck(Object.keys(value).every(key => ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"].includes(key)),
+    "旧连接配置包含不支持的协议；原数据未被修改，请升级应用。");
+  for (const profile of Object.values(value)) {
+    dataRecord(profile);
+    dataCheck(Object.keys(profile).every(key => ["baseUrl", "apiKey", "model"].includes(key))
+      && ["baseUrl", "apiKey", "model"].every(key => typeof profile[key] === "string"),
+    "旧连接配置结构无法安全迁移；原数据未被修改。");
   }
 
   const connections = protocolOptions.filter((option) => !isDrawingProtocol(option.value)).flatMap(({ value: protocol, label }) => {
@@ -501,7 +510,7 @@ function migrateLegacy(value: unknown): ConnectionSettingsState {
     ];
   });
   if (connections.length === 0) {
-    return emptyConnectionSettings;
+    return structuredClone(emptyConnectionSettings);
   }
   const firstModelId = connections.flatMap((connection) => connection.models)[0]?.id;
   return {
@@ -521,28 +530,74 @@ function parseStoredJson(storage: SettingsStorage, key: string): unknown {
   try {
     return JSON.parse(serialized) as unknown;
   } catch {
-    return undefined;
+    throw new Error("连接配置已损坏；原数据未被修改，请修复后重试。");
   }
 }
 
 export function loadConnectionSettings(
   storage: SettingsStorage = localStorage,
 ): ConnectionSettingsState {
-  const current = parseVersionThree(
-    parseStoredJson(storage, connectionSettingsStorageKey),
-  );
-  if (current) {
-    return current;
-  }
-  const previous = migrateVersionTwo(
-    parseStoredJson(storage, previousConnectionSettingsStorageKey),
-  );
-  if (previous) {
-    return previous;
-  }
+  const current = parseStoredJson(storage, connectionSettingsStorageKey);
+  if (current !== undefined) return readConnectionSettingsData(current);
+  const previous = parseStoredJson(storage, previousConnectionSettingsStorageKey);
+  if (previous !== undefined) return readConnectionSettingsData(previous);
   return migrateLegacy(
     parseStoredJson(storage, legacyProviderProfilesStorageKey),
   );
+}
+
+export const connectionDataMigration: DataMigration = {
+  version: 3, oldestVersion: 2,
+  migrations: { 2: value => {
+    assertConnectionStructure(value, 2);
+    const migrated = migrateVersionTwo(value);
+    dataCheck(migrated, "连接配置迁移失败；原数据未被修改。");
+    return migrated as unknown as Record<string, unknown>;
+  } },
+};
+
+export function readConnectionSettingsData(raw: unknown): ConnectionSettingsState {
+  const value = migrateData(raw, connectionDataMigration);
+  assertConnectionStructure(value, 3);
+  const parsed = parseVersionThree(value);
+  dataCheck(parsed, "连接配置结构不受支持；原数据未被修改。");
+  return parsed;
+}
+
+function assertConnectionStructure(raw: unknown, version: 2 | 3): void {
+  function record(value: unknown, allowed: string[], required = allowed): asserts value is Record<string, any> {
+    dataRecord(value);
+    dataCheck(Object.keys(value).every(key => allowed.includes(key)) && required.every(key => key in value),
+      "连接配置含不支持的字段或结构；原数据未被修改，请升级应用或修复数据。");
+  }
+  record(raw, version === 3 ? backupFields(dataPolicies.connections) : ["version", "providers", "activeConnectionId"], ["version", "providers"]);
+  dataCheck(Array.isArray(raw.providers));
+  const ids = new Set<string>();
+  function unique(value: unknown) {
+    dataCheck(typeof value === "string" && value.trim().length > 0 && !ids.has(value)); ids.add(value);
+  }
+  for (const provider of raw.providers) {
+    record(provider, backupFields(dataPolicies.provider)); unique(provider.id);
+    dataCheck(typeof provider.name === "string" && provider.name.trim() && Array.isArray(provider.connections));
+    for (const connection of provider.connections) {
+      record(connection, version === 3 ? backupFields(dataPolicies.connection, true) : ["id", "protocol", "baseUrl", "apiKey", "model"]);
+      unique(connection.id);
+      dataCheck(isProtocol(connection.protocol) && (version === 3 || !isDrawingProtocol(connection.protocol)),
+        "连接协议不受支持；原数据未被修改，请升级应用。");
+      dataCheck(typeof connection.baseUrl === "string" && typeof connection.apiKey === "string");
+      if (version === 2) { dataCheck(typeof connection.model === "string"); continue; }
+      dataCheck(typeof connection.name === "string" && connection.name.trim() && Array.isArray(connection.models));
+      const actualIds = new Set<string>();
+      for (const model of connection.models) {
+        record(model, backupFields(dataPolicies.model), ["id", "modelId"]); unique(model.id);
+        dataCheck(typeof model.modelId === "string" && model.modelId.trim() && !actualIds.has(model.modelId.trim()));
+        actualIds.add(model.modelId.trim());
+        dataCheck(model.displayName === undefined || typeof model.displayName === "string");
+      }
+    }
+  }
+  dataCheck(version === 3 ? raw.activeModelId === undefined || raw.activeModelId === null || typeof raw.activeModelId === "string"
+    : raw.activeConnectionId === undefined || raw.activeConnectionId === null || typeof raw.activeConnectionId === "string");
 }
 
 export function saveConnectionSettings(

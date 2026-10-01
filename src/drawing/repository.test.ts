@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AyaseDatabase } from "../storage/database";
 import { DexieDrawingRepository } from "./repository";
 import { initialDrawingDraft, type DrawingTask } from "./types";
-import { BackupRepository, drawingBackupBlockedMessage } from "../backup/repository";
+import { BackupRepository } from "../backup/repository";
 import { connectionSettingsStorageKey } from "../chat/settings";
 
 describe("durable drawing repository and backup maintenance gate", () => {
@@ -34,13 +34,13 @@ describe("durable drawing repository and backup maintenance gate", () => {
     const task = { ...queuedTask("finished"), status: "completed" as const };
     const result = { id: "r", taskId: task.id, createdAt: task.createdAt, parameters: task.parameters,
       reference: "drawing/finished/r.png", mime: "image/png", size: 1, width: 1, height: 1 };
-    const draft = { ...initialDrawingDraft, references: [{ ...result, name: "synthetic.png" }] };
+    const draft = { ...initialDrawingDraft, references: [{ id: "r", reference: "drawing/01234567-89ab-4cde-8fab-0123456789ab/11234567-89ab-4cde-8fab-0123456789ab.png", mime: "image/png", size: 1, width: 1, height: 1, name: "synthetic.png" }] };
     await repository.saveDraft(draft); await repository.enqueue([task]);
     await repository.complete(task, [result, { ...result, id: "keep" }]);
     await repository.removeResults(["r", "missing"]); db.close();
     const reopened = new AyaseDatabase(name), saved = await new DexieDrawingRepository(reopened).load();
     expect(saved.results.map(result => result.id)).toEqual(["keep"]);
-    expect(saved.tasks).toEqual([expect.objectContaining(task)]); expect(saved.draft).toEqual(draft);
+    expect(saved.tasks).toEqual([expect.objectContaining(task)]); expect(saved.draft).toMatchObject(draft);
     await reopened.delete();
   });
   it("assigns durable FIFO order atomically across batches, concurrent submissions and reopen", async () => {
@@ -87,16 +87,19 @@ describe("durable drawing repository and backup maintenance gate", () => {
     expect(await reopened.chats.get("preserved")).toBeDefined();
     await reopened.delete();
   });
-  it.each(["draft", "task", "result", "configuration", "openai-configuration"])("blocks legacy backup with drawing %s even through the direct backup API", async category => {
+  it.each(["draft", "task", "result", "configuration", "openai-configuration"])("captures drawing %s without exporting raw drawing rows", async category => {
     const db = new AyaseDatabase(`drawing-backup-${crypto.randomUUID()}`), values = new Map<string, string>();
     const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
     if (category === "draft") await db.drawingDrafts.put(initialDrawingDraft);
-    if (category === "task") await db.table("drawingTasks").put({ id: "t" });
-    if (category === "result") await db.table("drawingResults").put({ id: "r" });
+    if (category === "task") await db.drawingTasks.put({ ...queuedTask("t"), status: "completed" });
+    if (category === "result") await db.drawingResults.put({ id: "r", taskId: "t", parameters: queuedTask("t").parameters, createdAt: "2026-10-01", reference: "drawing/t/r.png", mime: "image/png", size: 1, width: 1, height: 1 });
     if (category === "configuration") values.set(connectionSettingsStorageKey, JSON.stringify({ providers: [{ connections: [{ protocol: "gemini-image" }] }] }));
     if (category === "openai-configuration") values.set(connectionSettingsStorageKey, JSON.stringify({ providers: [{ connections: [{ protocol: "openai-images" }] }] }));
     const repository = new BackupRepository(db, storage);
-    await expect(repository.snapshot()).rejects.toThrow(drawingBackupBlockedMessage);
+    const snapshot = await repository.snapshot();
+    expect(snapshot.drawing).toBeDefined();
+    expect(snapshot.rows).not.toHaveProperty("drawingTasks");
+    expect(snapshot.rows).not.toHaveProperty("drawingResults");
     expect(await db.backupJournal.count()).toBe(0);
     await db.delete();
   });

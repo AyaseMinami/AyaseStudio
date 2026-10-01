@@ -1,4 +1,5 @@
 import { AyaseDatabase } from "../storage/database";
+import { readDrawingPromptPresetData } from "./settingsData";
 
 export interface DrawingPromptPreset {
   id: string;
@@ -26,7 +27,7 @@ export class DexieDrawingPresetRepository implements DrawingPresetRepository {
   constructor(private readonly database = new AyaseDatabase("AyaseStudio")) {}
 
   async load(): Promise<DrawingPromptPreset[]> {
-    const presets = await this.database.drawingPromptPresets.toArray();
+    const presets = (await this.database.drawingPromptPresets.toArray()).map(readDrawingPromptPresetData);
     return presets.sort((a, b) => a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1
       : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   }

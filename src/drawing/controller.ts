@@ -531,7 +531,7 @@ export class DrawingController {
     });
   }
   updateSettings = (settings: ConnectionSettingsState): void => { this.settings = settings; this.pump(); };
-  pause = (): void => { this.publish({ paused: true }); };
+  pause = (): void => { if (!this.state.closing) this.publish({ paused: true }); };
   resume = (): void => {
     if (!this.state.ready || this.state.closing) return;
     const pending = this.state.tasks.filter(unfinished);
@@ -677,6 +677,7 @@ export class DrawingController {
     return operation;
   }
   cancel = (id?: string): void => {
+    if (this.state.closing) return;
     if (!id && this.state.submitting) this.submissionCancelled = true;
     for (const [taskId, active] of this.active) if ((!id || id === taskId) && !active.saving) active.controller.abort();
     for (const task of this.state.tasks.filter(task => (!id || task.id === id) && task.status === "queued" && !this.active.has(task.id))) {
@@ -691,6 +692,24 @@ export class DrawingController {
     }
   };
   hasUnsavedImages(): boolean { return this.unsaved.size > 0; }
+  private maintenancePaused?: boolean;
+  /** Synchronous command fence; queued work stays queued and no request is aborted. */
+  async prepareMaintenance(): Promise<void> {
+    if (!this.state.ready || this.state.closing || this.active.size) throw new Error("请等待绘图请求和本地保存结束，或先在任务页明确取消请求。");
+    this.maintenancePaused = this.state.paused;
+    this.publish({ closing: true, paused: true });
+    try {
+      await this.submission;
+      await Promise.all([...this.operations]);
+      await this.flush();
+      if (this.hasUnsavedImages()) throw new Error("仍有只保存在内存的绘图图片，请先重试本地保存；进入备份会重新加载工作区。");
+    } catch (error) { this.cancelMaintenance(); throw error; }
+  }
+  cancelMaintenance = (): void => {
+    if (this.maintenancePaused === undefined) return;
+    const paused = this.maintenancePaused; this.maintenancePaused = undefined;
+    this.publish({ closing: false, paused }); this.pump();
+  };
   async settleForClose(): Promise<void> {
     this.publish({ closing: true, paused: true });
     // In-flight submission remains queued; closing never discards it.

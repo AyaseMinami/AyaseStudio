@@ -1,59 +1,71 @@
 import { loadAppearancePreferences } from "../appearance/appearance";
-import { connectionSettingsStorageKey, loadConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
+import { loadConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
 import { bytesToBase64 } from "../chat/attachments";
 import { check, decode64, sha256 } from "./codec";
 import { backupTables, preferenceKeys, type BackupAsset, type BackupDocument, type BackupFiles, type BackupOptions, type BackupPreferences, type BackupRows } from "./types";
 import { managedReference } from "./validation";
-import { loadSearchConfiguration, SEARCH_SETTINGS_KEY } from "../search/settings";
+import { loadSearchConfiguration } from "../search/settings";
+import { DATA_COMPATIBILITY_KEY, currentModuleVersions, persistentPreferences } from "../storage/dataRegistry";
+import { dataPolicies } from "../storage/dataPolicies";
+import { backupFields } from "../storage/dataContract";
+import { readSessionConfigData } from "../chat/sessionConfig";
+import { readConversationConfigData } from "../chat/conversationConfig";
+import { validateFilteredParameters } from "./compatibility";
+import type { DrawingDraft } from "../drawing/types";
+import type { DrawingPromptPreset } from "../drawing/presets";
+import { projectDrawingSettings, readDrawingPromptPresetData } from "../drawing/settingsData";
 
-export const allPreferenceKeys = [...preferenceKeys, connectionSettingsStorageKey, SEARCH_SETTINGS_KEY] as const;
-export interface LocalSnapshot { rows: BackupRows; preferences: Record<string, string | null> }
+export const allPreferenceKeys = Object.keys(persistentPreferences);
+/** drawing is private rollback state; it must never be copied into portable rows. */
+export interface LocalSnapshot { rows: BackupRows; preferences: Record<string, string | null>;
+  drawing?: { draft?: DrawingDraft; presets: DrawingPromptPreset[]; targets?: { modelId: string; providerId: string; connectionId: string; protocol: string; baseUrl: string; upstreamModelId: string }[] } }
 export function pick(value: Record<string, any>, fields: string[]): Record<string, any> {
   return Object.fromEntries(fields.filter(k => value[k] !== undefined).map(k => [k, value[k]]));
 }
 function session(v: Record<string, any>) {
-  const result = pick(v, ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson", "webSearch", "webSearchProvider", "geminiThinking", "thinking", "invalidStoredConfig"]);
-  for (const key of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) result[key] = pick(v[key], ["mode", "value"]);
+  readSessionConfigData(v);
+  const result = pick(v, backupFields(dataPolicies.session));
+  for (const key of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) result[key] = pick(v[key], backupFields(dataPolicies.numeric));
   result.customJson = pick(v.customJson, ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"]);
-  if (v.geminiThinking) result.geminiThinking = pick(v.geminiThinking, ["choice", "budget", "includeSummary"]);
-  if (v.thinking) result.thinking = Object.fromEntries(["openai-chat", "openai-responses", "anthropic-native"].filter(k => v.thinking[k]).map(k => [k, pick(v.thinking[k], ["choice", "budget", "includeSummary", "effort"])]));
-  return result;
+  if (v.geminiThinking) result.geminiThinking = pick(v.geminiThinking, backupFields(dataPolicies.geminiThinking));
+  if (v.thinking) result.thinking = Object.fromEntries(["openai-chat", "openai-responses", "anthropic-native"].filter(k => v.thinking[k]).map(k => [k, pick(v.thinking[k], backupFields(dataPolicies.thinking))]));
+  return readSessionConfigData(result);
 }
-function settings(v: Record<string, any>) { return { modelId: v.modelId, config: session(v.config) }; }
-function avatar(v: Record<string, any>) { return { original: v.original, thumbnail: v.thumbnail, crop: pick(v.crop, ["x", "y", "zoom"]), ...(v.source ? { source: pick(v.source, ["resourceId", "version"]) } : {}) }; }
+function settings(v: Record<string, any>) { readConversationConfigData(v); return { ...pick(v, backupFields(dataPolicies.conversationConfig)), config: session(v.config) }; }
+function avatar(v: Record<string, any>) { return { ...pick(v, backupFields(dataPolicies.avatar)), crop: pick(v.crop, backupFields(dataPolicies.crop)), ...(v.source ? { source: pick(v.source, backupFields(dataPolicies.avatarSource)) } : {}) }; }
 function message(v: Record<string, any>, pair = false): Record<string, any> {
-  const result = pick(v, ["id", "role", "content", "status", "replyToId", "editedAt", "thinkingSummary"]);
+  const result = pick(v, backupFields(dataPolicies.messages).filter(key => !["source", "attachments", "search", "providerReplay", "roundVersions"].includes(key)));
   if (["streaming", "paused"].includes(result.status)) result.status = "incomplete";
-  if (v.source) result.source = pick(v.source, ["source", "id", "createdAt", "unavailableAttachments"]);
-  if (v.attachments) result.attachments = v.attachments.map((a: Record<string, any>) => pick(a, ["reference", "name", "mimeType", "size"]));
+  if (v.source) result.source = pick(v.source, backupFields(dataPolicies.messageSource));
+  if (v.attachments) result.attachments = v.attachments.map((a: Record<string, any>) => pick(a, backupFields(dataPolicies.attachment)));
   if (v.search) {
-    result.search = { ...pick(v.search, ["enabled", "status", "queries", "suggestionHtml", "error", "provider", "warning"]),
-      sources: v.search.sources.map((s: Record<string, any>) => pick(s, ["id", "url", "title", "excerpt"])), citations: v.search.citations.map((c: Record<string, any>) => pick(c, ["start", "end", "sourceIds"])) };
+    result.search = { ...pick(v.search, backupFields(dataPolicies.searchRecord).filter(key => !["sources", "citations"].includes(key))),
+      sources: v.search.sources.map((s: Record<string, any>) => pick(s, backupFields(dataPolicies.searchSource))), citations: v.search.citations.map((c: Record<string, any>) => pick(c, backupFields(dataPolicies.citation))) };
     if (["pending", "searching"].includes(result.search.status)) {
       result.search.status = "cancelled";
       if (result.status === "complete") result.status = "incomplete";
     }
   }
-  if (v.providerReplay) result.providerReplay = pick(v.providerReplay, ["protocol", "scope", "content", "responses"]);
-  if (!pair && v.roundVersions) result.roundVersions = { selected: v.roundVersions.selected, pairs: v.roundVersions.pairs.map((p: Record<string, any>[]) => p.map(m => message(m, true))) };
+  if (v.providerReplay) result.providerReplay = pick(v.providerReplay, backupFields(dataPolicies.replay));
+  if (!pair && v.roundVersions) result.roundVersions = { ...pick(v.roundVersions, backupFields(dataPolicies.roundVersions)), pairs: v.roundVersions.pairs.map((p: Record<string, any>[]) => p.map(m => message(m, true))) };
   return result;
 }
 export function exportConnections(state: ConnectionSettingsState, credentials: boolean) {
-  return { version: 3, activeModelId: state.activeModelId, providers: state.providers.map(p => ({ id: p.id, name: p.name,
-    connections: p.connections.map(c => ({ id: c.id, name: c.name, protocol: c.protocol, baseUrl: c.baseUrl,
-      ...(credentials ? { apiKey: c.apiKey } : {}), models: c.models.map(m => ({ id: m.id, modelId: m.modelId, ...(m.displayName !== undefined ? { displayName: m.displayName } : {}) })) })) })) };
+  return { ...pick(state, backupFields(dataPolicies.connections)), providers: state.providers.map(p => ({ ...pick(p, backupFields(dataPolicies.provider)),
+    connections: p.connections.map(c => ({ ...pick(c, backupFields(dataPolicies.connection, credentials)),
+      models: c.models.map(m => pick(m, backupFields(dataPolicies.model))) })) })) };
 }
 export async function createBackupDocument(snapshot: LocalSnapshot, options: BackupOptions, files: BackupFiles): Promise<BackupDocument> {
   check(typeof options.connections === "boolean" && typeof options.credentials === "boolean" && (!options.credentials || options.connections));
   const rows: Record<string, unknown[]> = {};
-  rows.assistants = snapshot.rows.assistants.map(a => ({ ...pick(a, ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultAvatar"]), defaultConfig: session(a.defaultConfig), ...(a.avatar ? { avatar: avatar(a.avatar) } : {}) }));
-  rows.conversations = snapshot.rows.conversations.map(c => ({ ...pick(c, ["id", "assistantId", "title", "createdAt", "updatedAt", "sortOrder"]), titleNaming: "manual", settings: settings(c.settings!), ...(c.creationConfig ? { creationConfig: settings(c.creationConfig) } : {}) }));
-  rows.chats = snapshot.rows.chats.map(c => ({ ...pick(c, ["id", "updatedAt"]), messages: c.messages.map(m => message(m)) }));
-  rows.workspace = snapshot.rows.workspace.map(s => pick(s, ["id", "activeAssistantId", "lastSelected"]));
-  rows.avatarLibrary = snapshot.rows.avatarLibrary.map(a => ({ ...pick(a, ["id", "name", "version"]), avatar: avatar(a.avatar) }));
-  rows.userAvatar = snapshot.rows.userAvatar.map(a => ({ id: a.id, ...(a.value ? { value: avatar(a.value) } : {}) }));
-  rows.cherryImports = snapshot.rows.cherryImports.map(m => pick(m, ["id", "assistantId", "conversationIds"]));
-  rows.legacyConversationConfigs = snapshot.rows.legacyConversationConfigs.map(l => ({ ...pick(l, ["id", "lastUsedModelId"]), ...(l.generationConfig ? { generationConfig: session(l.generationConfig) } : {}) }));
+  rows.assistants = snapshot.rows.assistants.map(a => ({ ...pick(a, backupFields(dataPolicies.assistants)), defaultConfig: session(a.defaultConfig), ...(a.avatar ? { avatar: avatar(a.avatar) } : {}) }));
+  rows.conversations = snapshot.rows.conversations.map(c => ({ ...pick(c, backupFields(dataPolicies.conversations)), titleNaming: "manual", settings: settings(c.settings!), ...(c.creationConfig ? { creationConfig: settings(c.creationConfig) } : {}) }));
+  rows.chats = snapshot.rows.chats.map(c => ({ ...pick(c, backupFields(dataPolicies.chats)), messages: c.messages.map(m => message(m)) }));
+  rows.workspace = snapshot.rows.workspace.map(s => pick(s, backupFields(dataPolicies.workspace)));
+  rows.avatarLibrary = snapshot.rows.avatarLibrary.map(a => ({ ...pick(a, backupFields(dataPolicies.avatarLibrary)), avatar: avatar(a.avatar) }));
+  rows.userAvatar = snapshot.rows.userAvatar.map(a => ({ ...pick(a, backupFields(dataPolicies.userAvatar)), ...(a.value ? { value: avatar(a.value) } : {}) }));
+  rows.cherryImports = snapshot.rows.cherryImports.map(m => pick(m, backupFields(dataPolicies.cherryImports)));
+  rows.legacyConversationConfigs = snapshot.rows.legacyConversationConfigs.map(l => ({ ...pick(l, backupFields(dataPolicies.legacyConversationConfigs)), ...(l.generationConfig ? { generationConfig: session(l.generationConfig) } : {}) }));
   const storage = { getItem: (key: string) => snapshot.preferences[key] ?? null, setItem: () => {} };
   const preferences = Object.fromEntries(preferenceKeys.map(k => [k, snapshot.preferences[k]])) as BackupPreferences;
   // Normalize legacy appearance through its documented migration, never copy raw storage.
@@ -98,9 +110,15 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
     const asset = await addAsset(ref, mime, data); if (metadata.size !== undefined) check(asset.size === metadata.size, "附件内容与记录大小不一致。");
   }
   const configuration = loadSearchConfiguration(storage);
-  const profileFields = ["version", "baseUrl", "numResults", ...(options.credentials ? ["apiKey"] : [])];
+  const profileFields = backupFields(dataPolicies.searchProfile, options.credentials);
   const searchSettings = { version: 2, exaMcp: pick(configuration.exaMcp, profileFields), exaApi: pick(configuration.exaApi, profileFields) } as BackupDocument["searchSettings"];
-  return { format: "ayase-studio-backup", version: 3, createdAt: new Date().toISOString(), options: { connections: options.connections, credentials: options.credentials },
+  const encodedReport = snapshot.preferences[DATA_COMPATIBILITY_KEY];
+  const filteredParameters: unknown = encodedReport ? JSON.parse(encodedReport) : [];
+  validateFilteredParameters(filteredParameters);
+  const drawing = { settings: projectDrawingSettings(snapshot.drawing?.draft), presets: (snapshot.drawing?.presets ?? []).map(readDrawingPromptPresetData) };
+  return { format: "ayase-studio-backup", version: 5, createdAt: new Date().toISOString(), options: { connections: options.connections, credentials: options.credentials },
     rows: encoded as Record<typeof backupTables[number], unknown[]>, preferences,
-    connections: options.connections ? exportConnections(loadConnectionSettings(storage), options.credentials) : null, searchSettings, assets };
+    connections: options.connections ? exportConnections(loadConnectionSettings(storage), options.credentials) : null, searchSettings, assets,
+    drawing, compatibility: { minimumReaderVersion: 5, requiredCapabilities: [], modules: currentModuleVersions(drawing),
+      ...(filteredParameters.length ? { filteredParameters } : {}) } };
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import App from "../App";
-import { startup } from "../appearance/bootstrap";
+import { startup, verifyStartupConfiguration } from "../appearance/bootstrap";
 import { applyBrowserInitialAppearance } from "../appearance/browser";
 import { BackupWorkspace } from "../ui/settings/BackupWorkspace";
 import { recoverBackupAtStartup, createBackupApi } from "./runtime";
@@ -14,12 +14,13 @@ export function BackupApp() {
   useEffect(() => { let alive = true; void startup.then(() => { if (alive) setReady(true); }, () => { if (alive) setError(true); }); return () => { alive = false; }; }, []);
   async function retry() {
     setError(false);
-    try { await recoverBackupAtStartup(); applyBrowserInitialAppearance(); setReady(true); }
+    try { await recoverBackupAtStartup(); verifyStartupConfiguration(); applyBrowserInitialAppearance(); setReady(true); }
     catch { setError(true); }
   }
   if (!ready) return <main className="settings-page"><p role={error ? "alert" : "status"}>{error
-    ? "上次数据恢复尚未完成回滚。请重试整理；在完成前无法编辑应用数据。" : "正在检查本地数据一致性…"}</p>
-    {error && <button type="button" className="settings-button" onClick={() => void retry()}>重试整理</button>}</main>;
+    ? "本地配置无法安全读取，或上次恢复尚未完成回滚。原数据已保留，请升级应用或修复后重试；在完成前无法编辑应用数据。" : "正在检查本地数据一致性…"}</p>
+    {error && <><button type="button" className="settings-button" onClick={() => void retry()}>重试整理</button>
+      <button type="button" className="settings-button" onClick={() => { window.location.hash = "backup"; window.location.reload(); }}>恢复 Ayase 备份</button></>}</main>;
   if (window.location.hash === "#backup") return <BackupWorkspace api={backupApi} onExit={() => { window.location.hash = "data"; window.location.reload(); }} />;
   return <App />;
 }

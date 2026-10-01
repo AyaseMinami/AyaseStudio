@@ -445,6 +445,9 @@ pub async fn assert_ayase_resources_available(
 #[tauri::command]
 pub async fn ayase_backup_fence() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _drawing = crate::drawing::DRAWING_FILES
+            .lock()
+            .map_err(|_| Error::Storage.code())?;
         let _attachments = crate::attachments::FILE_OPERATIONS
             .lock()
             .map_err(|_| Error::Storage.code())?;

@@ -1,5 +1,21 @@
 # Ayase Studio v0.1 Plan
 
+## Persistent data contracts #105 (2026-10-01)
+
+用户授权本地实现统一模块数据注册、实际类型字段策略、纯迁移、备份 v4 兼容声明和限定参数降级，并将这些规则写入未来开发合同。当前注册覆盖 13 张表／8 个偏好键；连接 v2 → v3、搜索 v1 → v2 及会话读取共享迁移基础。工作区非法结构在事务写入前拒绝。新备份保持信封／加密 v1，历史文档 v1/v2/v3 严格读取；只过滤兼容未来会话的声明可选参数，报告路径并保留再次导出可能丢失参数的警告，不改写原文件。
+
+开发者须随数据变化同步注册、嵌套字段策略与真实投影、迁移／默认政策、确定性测试和独立 Sol/high 审查，无需用户提醒。静态检查不保证任意动态键或语义迁移，旧客户端也不会因此自动支持新格式。详见 [持续开发合同](DATA-CONTRACTS.md) 和 [本地实施／验证记录](ISSUE-105-IMPLEMENTATION.md)。
+
+#93 已本地接入 `drawingSettings`／`drawingPresets`，使用独立字段投影和维护协调取代旧绘图范围禁用规则；#105 的 v4 基础历史保持，新导出由 #93 升为 v5。范围不包括自动草稿提示词、参考图、任务／结果历史或图片；旧 #83 全图库备份提案由最新决定明确取代。#105 接入和确定性跨版本样例已补齐，剩余实际原生接受项与 #94 压力独立验收。用户随后授权提交推送本项及必要基础代码、关闭 #93；#105 和 #94 保持打开，交付结果见 #93 评论。
+
+## Drawing settings and explicit preset backup #93 (2026-10-01)
+
+用户授权本地规划及实施，本地代码门禁、定向回归和独立 Sol/high 审查已完成。新导出文档 v5／信封 v1，严格保留旧 v1–v4 合同及 v4 原七模块集合。`drawing.settings`、`drawing.presets` 独立可选并匹配模块声明；新导出包含两类，预设为空与类别缺失语义不同。设置投影不带 prompt／references，显式预设保持正文空白及同名不同 ID。绘图读入口共享克隆、默认与结构验证，不新增 schema 或 OpenAI 尺寸文本字段长度限制，生成尺寸由 transport 校验。
+
+合并／副本保留本机设置；替换只应用包含的绘图类别，补丁更新设置但保留当前 prompt／references，旧包或缺失类别不清空绘图。原始当前草稿／预设仅参与私有恢复日志与原子提交；旧日志未捕获时跳过对应类别。历史、图片及未决本地保存日志保留，目标变化按冻结的供应商／连接 ID、协议／地址／实际上游模型 ID 报告，恢复不发请求、不操作绘图文件。正常入口同步封锁聊天／绘图并排空既有操作；活动请求／自动命名需先完成或明确取消，仅内存图片拒绝重载，queued 项保留。原生绘图文件锁加入启动恢复围栏，备份回滚先于绘图初始化和 GC。
+
+已完成隔离数据及模拟文件／请求的恢复、回滚、兼容、维护和预算回归、本地代码门禁及独立 Sol/high 审查。隔离内置浏览器通过实际 Dexie 恢复验证提示词保留、未来参数过滤警告和再次导出；隔离 Tauri 编译／启动确认进程。隔离浏览器浅色宽窗口与深色／自定义主题窄窗口视觉验收已完成，截图已检查且无横向溢出；原生文件窗口和真实关闭重启单列为 #94 人工接受项，真实供应商待另行授权。具体运行范围与证据见 [#93 记录](ISSUE-93-IMPLEMENTATION.md)；完整图库压力仍由 #94 承担，本地实现不代表交付／Issue 关闭。
+
 ## List sorting #99 (2026-10-01)
 
 用户授权继续完成助手／聊天拖动排序。供应商与连接配置树的既有切片保持；新增两类导航列表的把手／名称长按、插入提示、边缘滚动、取消与误点击隔离、菜单上下移和独立持久化。聊天首次实际手动换序后固定同助手顺序，新建聊天置顶；工作区与备份保存顺序。实现与验证见 [开发指南](DEVELOPMENT.md#list-sorting-99-2026-10-01)。实施检查后用户已授权提交、推送及关闭 #99；实际交付状态以 [Issue 评论](https://github.com/AyaseMinami/AyaseStudio/issues/99) 为准，原生关闭重启验收边界保持。
@@ -8,7 +24,7 @@
 
 ## Drawing prompt presets and parameter reuse #90 (2026-10-01)
 
-Local implementation adds pure-text name/content presets in database v8, explicit CRUD and save-as, direct text-only application, and task prompt copying/full parameter reuse through the existing result reuse path. It keeps per-protocol controls and ordered input references independent, reports invalid targets/missing files and never generates implicitly. The pre-#93 backup gate includes presets; PNG parameter export remains #89, old PNG import remains #92, and drawing/chat exchange remains #91. See [#90 implementation and verification](ISSUE-90-IMPLEMENTATION.md); local work does not imply Git delivery or remote acceptance.
+Local implementation adds pure-text name/content presets in database v8, explicit CRUD and save-as, direct text-only application, and task prompt copying/full parameter reuse through the existing result reuse path. It keeps per-protocol controls and ordered input references independent, reports invalid targets/missing files and never generates implicitly. The historical pre-#93 backup gate included presets and is superseded by #93's projection and maintenance coordination; PNG parameter export remains #89, old PNG import remains #92, and drawing/chat exchange remains #91. See [#90 implementation and verification](ISSUE-90-IMPLEMENTATION.md); local work does not imply Git delivery or remote acceptance.
 
 ## Beta drawing scope #23 / #83 (2026-09-30)
 

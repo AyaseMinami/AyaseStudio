@@ -356,7 +356,7 @@ describe("assistant workspace public behavior", () => {
       models: [{ id: "model-a", modelId: "gpt-5" }, { id: "model-b", modelId: "gpt-5.6-sol" }],
     }] }] });
     root = createRoot(container); await act(async () => root.render(<App />));
-    await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
+    await wait(() => container.querySelector<HTMLButtonElement>('button[aria-label="思考设置"]')?.disabled === false);
     await click("思考设置");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="minimal"]')!.click());
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);

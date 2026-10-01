@@ -61,7 +61,7 @@ describe("backup snapshot", () => {
     invalid.rows.conversations[0].sortOrder = "invalid";
     await expect(encodeBackup(invalid)).rejects.toThrow();
   });
-  it.each([false, true])("exports v3 search configuration with credentials=%s under the existing options contract", async credentials => {
+  it.each([false, true])("exports v5 with unchanged search/credential semantics, credentials=%s", async credentials => {
     const input = snapshot();
     input.preferences[SEARCH_SETTINGS_KEY] = JSON.stringify({ version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "synthetic-search-key", numResults: 7 });
     input.rows.assistants[0].defaultConfig = { ...defaultSessionConfig(), webSearch: true, webSearchProvider: "exa-mcp" };
@@ -73,7 +73,7 @@ describe("backup snapshot", () => {
     Object.assign(answer.search, { apiKey: syntheticKey, headers: { secret: syntheticKey } });
     Object.assign(answer.search.sources[0], { apiKey: syntheticKey });
     const doc = await createBackupDocument(input, { connections: credentials, credentials }, files());
-    expect(doc.version).toBe(3);
+    expect(doc.version).toBe(5);
     expect(doc.searchSettings).toEqual({ version: 2,
       exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 7, ...(credentials ? { apiKey: "synthetic-search-key" } : {}) },
       exaApi: { version: 1, baseUrl: "https://api.exa.ai", numResults: 5, ...(credentials ? { apiKey: "" } : {}) } });
@@ -140,17 +140,10 @@ describe("backup snapshot", () => {
   it("exports connection metadata without keys and strips injected non-allowlisted fields throughout saved rows", async () => {
     const input = snapshot();
     const state = connections();
-    Object.assign(state, { apiKey: syntheticKey });
-    Object.assign(state.providers[0], { apiKey: syntheticKey });
-    Object.assign(state.providers[0].connections[0].models[0], { apiKey: syntheticKey });
     input.preferences[connectionSettingsStorageKey] = JSON.stringify(state);
     input.preferences["unknown-secret-store"] = syntheticKey;
     Object.assign(input.rows.assistants[0], { apiKey: syntheticKey });
-    Object.assign(input.rows.assistants[0].defaultConfig, { apiKey: syntheticKey });
-    Object.assign(input.rows.assistants[0].defaultConfig.temperature, { apiKey: syntheticKey });
-    Object.assign(input.rows.assistants[0].defaultConfig.customJson, { apiKey: syntheticKey });
     Object.assign(input.rows.conversations[0], { apiKey: syntheticKey, sourcePath });
-    Object.assign(input.rows.conversations[0].settings!, { apiKey: syntheticKey });
     Object.assign(input.rows.chats[0], { apiKey: syntheticKey });
     Object.assign(input.rows.chats[0].messages[0], { apiKey: syntheticKey, sourcePath, continuation: { apiKey: syntheticKey, responseId: "synthetic-response" } });
     Object.assign(input.rows.chats[0].messages[0].source!, { apiKey: syntheticKey, sourcePath });

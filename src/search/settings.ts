@@ -26,14 +26,19 @@ export function defaultSearchConfiguration(): SearchConfiguration {
 
 export function validateSearchConfiguration(raw: unknown): SearchConfiguration {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("网络搜索配置格式无效。");
-  const value = raw as Record<string, unknown>;
-  // Legacy single-service data remains MCP; reading never activates API or writes storage.
-  if (value.version === 1) return { ...defaultSearchConfiguration(), exaMcp: validateSearchSettings(value) };
+  const value = migrateData(raw, searchDataMigration);
+  // The legacy conversion already validates its MCP profile; retain the untouched API default.
+  if ((raw as Record<string, unknown>).version === 1) return value as unknown as SearchConfiguration;
   if (value.version !== 2 || Object.keys(value).some(key => !["version", "exaMcp", "exaApi"].includes(key))) {
     throw new Error("网络搜索配置版本或字段不受支持。");
   }
   return { version: 2, exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi) };
 }
+
+export const searchDataMigration: DataMigration = {
+  version: 2, oldestVersion: 1,
+  migrations: { 1: value => ({ ...defaultSearchConfiguration(), exaMcp: validateSearchSettings(value) }) },
+};
 
 export function searchSettingsFor(config: SearchConfiguration, provider: ExternalSearchProvider): SearchSettings {
   return provider === "exa-api" ? config.exaApi : config.exaMcp;
@@ -103,3 +108,4 @@ export function validateSearchQuery(text: string): string {
   if (Array.from(query).length > 2000) throw new Error("搜索问题不能超过 2000 个字符，请缩短后重试。");
   return query;
 }
+import { migrateData, type DataMigration } from "../storage/dataContract";

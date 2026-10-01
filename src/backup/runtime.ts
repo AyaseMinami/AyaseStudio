@@ -2,8 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { BackupRepository } from "./repository";
 import { createBackupDocument } from "./snapshot";
 import { createRestorePlan } from "./restorePlan";
-import { check, decodeBackup, decode64, encodeBackup } from "./codec";
-import { validateDocument } from "./validation";
+import { check, decodeBackup, decode64, encodeBackup, readBackupDocument } from "./codec";
 import { decodeAvatar } from "../avatar/image";
 import type { BackupDocument, BackupFiles, BackupPreview, RestoreMode } from "./types";
 import type { BackupWorkspaceApi } from "../ui/settings/BackupWorkspace";
@@ -36,8 +35,7 @@ export function createBackupApi(repository = new BackupRepository(), files = nat
   }
   async function plan(preview: BackupPreview, mode: RestoreMode) {
     check(["merge", "copy", "replace"].includes(mode));
-    const document = structuredClone(preview.document);
-    await validateDocument(document);
+    const document = await readBackupDocument(preview.document);
     await images(document);
     const before = await repository.snapshot();
     return { before, plan: createRestorePlan(document, before, mode) };

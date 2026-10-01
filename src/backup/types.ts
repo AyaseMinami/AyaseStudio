@@ -5,8 +5,13 @@ import type { UserAvatar } from "../avatar/repository";
 import type { CherryImportRecord } from "../storage/database";
 import type { SessionConfig } from "../chat/sessionConfig";
 import type { SearchSettings } from "../search/settings";
+import type { DataVersion } from "../storage/dataContract";
+import type { DrawingPromptPreset } from "../drawing/presets";
+import type { DrawingSettingsData } from "../drawing/settingsData";
 
 export const backupTables = ["assistants", "conversations", "chats", "workspace", "avatarLibrary", "userAvatar", "cherryImports", "legacyConversationConfigs"] as const;
+/** These tables are projected into dedicated portable areas, never exported as raw rows. */
+export const projectedBackupTables = ["drawingDrafts", "drawingPromptPresets"] as const;
 export type BackupTable = typeof backupTables[number];
 export interface BackupRows {
   assistants: AssistantPreset[];
@@ -27,7 +32,7 @@ export type BackupSearchProfile = Omit<SearchSettings, "apiKey"> & { apiKey?: st
 export interface BackupSearchConfiguration { version: 2; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile }
 export interface BackupDocument {
   format: "ayase-studio-backup";
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4 | 5;
   createdAt: string;
   options: BackupOptions;
   // JSON data only. Avatar Blobs are encoded as {$blob: assetId, type: mime}.
@@ -36,6 +41,15 @@ export interface BackupDocument {
   connections: unknown | null;
   searchSettings?: BackupSearchProfile | BackupSearchConfiguration;
   assets: BackupAsset[];
+  compatibility?: BackupCompatibility;
+  drawing?: { settings?: DrawingSettingsData; presets?: DrawingPromptPreset[] };
+}
+export interface BackupCompatibility {
+  minimumReaderVersion: 4 | 5;
+  requiredCapabilities: string[];
+  modules: Record<string, DataVersion>;
+  /** Paths only, never discarded values. Persisted to keep later export warnings honest. */
+  filteredParameters?: string[];
 }
 export interface BackupPreview {
   document: BackupDocument;

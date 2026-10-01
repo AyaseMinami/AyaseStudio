@@ -1,8 +1,26 @@
 # Ayase Studio Development Guide
 
+## Persistent data development #105 (2026-10-01)
+
+Follow [DATA-CONTRACTS.md](DATA-CONTRACTS.md) as part of every persistent-data feature, without waiting for a user reminder. Register tables and preference keys (including exclusions and legacy sources), bind exhaustive field/nested policies to actual persisted types and real export projections, and define module versions, minimum readers, capabilities, migration steps and missing-field defaults. Local and backup reads reuse the pure migration seam; invalid structure must fail before writes and preserve original data. Future optional-parameter filtering is limited to declared session and drawing-setting areas; unknown protocols, credentials, references, preset structure and outer structure remain strict.
+
+`npm.cmd run check:data-contracts` runs deterministic checker regressions and TypeScript AST registration inspection; it is included in `npm.cmd run check`. The current registry covers 13 tables and 8 preference keys. Arbitrarily computed runtime storage keys are outside guaranteed static coverage and need explicit registration/review/tests. Type coverage cannot replace nested policies, semantic/resource validation or independent review. Changes to data format, migrations, cross-module protocols, security or release gates require independent Sol/high review.
+
+Add synthetic regression cases proportional to the change: old/current/skipped/repeated versions, approved defaults, invalid data with zero writes, compatible optional filtering and strict refusal boundaries, retained path reports, re-export warnings, and transaction/journal rollback. Never clear real WebView data or read real credentials to simulate upgrades. #93 exports backup document v5 with envelope v1; historical v1–v4 retain original contracts, including v4's seven-module set. Drawing settings/presets are `projected`, with separate `projectedBackupTables` inventory backed by real field policies; raw local rollback snapshots are private. #105 drawing integration and deterministic cross-version examples are supplied; remaining actual native acceptance and #94 pressure work are separate. [The #105 implementation record](ISSUE-105-IMPLEMENTATION.md) and [#93 implementation record](ISSUE-93-IMPLEMENTATION.md) track verification; older entries below retain historical test counts, format versions and pre-#93 gates.
+
+## Drawing settings and explicit preset backup #93 (2026-10-01)
+
+Local implementation adds optional, independently declared `drawing.settings` and `drawing.presets` with matching module stamps; new exports include both and add no Dexie schema version. Local draft/settings/preset reads share clone-based defaults and strict validation before task recovery. OpenAI size remains editable text without a new per-field length limit; transport validates generation dimensions. Preset bodies retain whitespace and duplicate names remain independent by ID. Merge/copy preserve local settings; replacement applies only present categories, patches current settings while keeping prompt/references, and missing old modules never clear drawing. Tasks, results, images and native pending-save receipts stay local. Restore planning maps drawing targets, reports retained history frozen provider/connection ID, protocol/address/upstream-model changes, and never adds drawing file writes.
+
+Before normal App reload, synchronous chat/drawing command gates drain queued writes, all loaded chat stores, drawing drafts/presets and reference/export/delete/save operations. Active requests and automatic naming must finish or be explicitly cancelled at their existing entry; maintenance never auto-aborts. Memory-only unsaved images refuse reload. Queued jobs survive; failed preparation releases gates and restores prior pause state. Native backup startup includes the drawing file mutex before recovery, business roots and GC. Cold maintenance preserves stale historical running markers for later ordinary drawing initialization. Backup journal rollback precedes drawing's own receipt recovery; old journals without drawing snapshots leave that scope alone.
+
+Focused synthetic verification should cover `drawing/settingsData.test.ts`, `drawing/repository.test.ts`, `drawing/controller.maintenance.test.ts`, `backup/drawingPresets.test.ts`, `backup/drawingIntegration.test.ts`, snapshot/compatibility/restore/runtime tests and App maintenance entry. Use isolated databases and mocked files/requests to exercise all strategies, old/missing categories, repeated imports, write failures and restart rollback with zero provider dispatch and zero drawing file read/write/delete. Record large text-preset/parameter processing time and available memory metrics under the existing 8 MiB text, 80 MiB document and 128 MiB file budgets; refuse over-budget input explicitly. Full-gallery pressure belongs to #94.
+
+Local verification is complete for `npm.cmd run check` (Node/checker tests, frontend tests, TypeScript and Vite), Rust tests, `cargo check --locked --manifest-path src-tauri/Cargo.toml`, scoped regressions after follow-up changes and Git diff checks. Independent Sol/high review cleared material findings, including frozen provider/connection identity checks. The isolated in-app browser used actual Dexie restore to verify retained prompt, future-parameter warnings and re-export; isolated Tauri compilation/startup verified the process. Exact run scopes and evidence are in [the #93 implementation record](ISSUE-93-IMPLEMENTATION.md). Isolated browser visual acceptance is complete at 1280×900 in light theme and 720×900 in dark/custom theme, with screenshots reviewed and no horizontal overflow; native file dialogs and actual close/restart are separate #94 manual acceptance, and real providers remain unauthorized. Local implementation is not commit/push, Issue closure or native interaction acceptance.
+
 ## Drawing prompt presets #90
 
-Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and Git diff checks. Preset CRUD, reopen persistence, v7-to-v8 preservation and five-field allowlisting are covered by `drawing/presets.test.ts`; controller integration covers direct text-only application, frozen queued inputs, close waiting, write failures, history/cross-protocol isolation, invalid models, missing references and zero provider dispatch. `ui/drawing/DrawingPresets.test.tsx` covers editor cancellation, focus, explicit update/save-as/delete, failures and duplicate submission; workspace tests cover task actions. `backup/drawingPresets.test.ts` verifies that a preset-only database blocks legacy snapshot/restore before writes. Browser acceptance must use an isolated origin/database and synthetic files/transport, with provider counters staying zero. See [#90 evidence and acceptance boundaries](ISSUE-90-IMPLEMENTATION.md).
+Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and Git diff checks. Preset CRUD, reopen persistence, v7-to-v8 preservation and five-field allowlisting are covered by `drawing/presets.test.ts`; controller integration covers direct text-only application, frozen queued inputs, close waiting, write failures, history/cross-protocol isolation, invalid models, missing references and zero provider dispatch. `ui/drawing/DrawingPresets.test.tsx` covers editor cancellation, focus, explicit update/save-as/delete, failures and duplicate submission; workspace tests cover task actions. The historical #90 preset-only backup ban is superseded by #93: `backup/drawingPresets.test.ts` now covers projection with a preset-only database. Browser acceptance must use an isolated origin/database and synthetic files/transport, with provider counters staying zero. See [#90 evidence and acceptance boundaries](ISSUE-90-IMPLEMENTATION.md).
 
 ## Drawing gallery #89
 
@@ -579,6 +597,7 @@ Issue #15 的定向回归：`npm.cmd test -- src/chat/SafeMarkdown.test.tsx src/
 | Unit and integration tests | `npm.cmd test` |
 | Test watch mode | `npm.cmd run test:watch` |
 | TypeScript and Vite build | `npm.cmd run build` |
+| Persistent data registry and checker regressions | `npm.cmd run check:data-contracts` |
 | Frontend check bundle | `npm.cmd run check` |
 | Rust compile check | `cargo check --manifest-path src-tauri/Cargo.toml` |
 | Production desktop bundle | `npm.cmd run tauri build` |
@@ -616,6 +635,7 @@ npm.cmd run tauri dev
 - [Architecture and project structure](ARCHITECTURE.md)
 - [v0.1 plan](PLAN.md)
 - [Protocol compatibility contract](PROTOCOLS.md)
+- [Persistent data contracts](DATA-CONTRACTS.md)
 
 ## Conversation configuration and deterministic checks
 

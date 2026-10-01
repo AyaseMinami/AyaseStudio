@@ -6,6 +6,10 @@ import { isThinkingSettings } from "../chat/thinking";
 import { isGeminiThinkingSettings } from "../chat/geminiThinking";
 import { loadAppearancePreferences } from "../appearance/appearance";
 import { validateSearchConfiguration, validateSearchSettings } from "../search/settings";
+import { dataPolicies } from "../storage/dataPolicies";
+import { backupFields } from "../storage/dataContract";
+import { validateBackupCompatibility } from "./compatibility";
+import { readDrawingPromptPresetData, readDrawingSettingsData } from "../drawing/settingsData";
 
 export const managedReference = /^(attachments\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp|pdf|txt|md|docx|xlsx|pptx)|backgrounds\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp))$/;
 export type JsonRecord = Record<string, any>; // Untrusted values are checked before access at every boundary below.
@@ -33,42 +37,42 @@ function time(value: unknown) { number(value); check(Number.isSafeInteger(value)
 function list(value: unknown, max = 100000): asserts value is any[] { check(Array.isArray(value) && value.length <= max); }
 function optional(value: JsonRecord, key: string, validator: (value: unknown) => void) { if (key in value) validator(value[key]); }
 function model(value: unknown) { if (value !== null) id(value); }
-function config(value: unknown, version: 1 | 2 | 3) {
-  fields(value, ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson", "webSearch", ...(version >= 2 ? ["webSearchProvider"] : []), "geminiThinking", "thinking", "invalidStoredConfig"],
+function config(value: unknown, version: 1 | 2 | 3 | 4 | 5) {
+  fields(value, backupFields(dataPolicies.session).filter(key => version >= 2 || key !== "webSearchProvider"),
     ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson"]);
   check(value.version === 1 && typeof value.dualSamplingConfirmed === "boolean"); text(value.systemInstruction);
-  for (const k of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) { fields(value[k], ["mode", "value"], ["mode"]); check(["auto", "custom"].includes(value[k].mode)); if (value[k].mode === "custom") text(value[k].value, 100); }
+  for (const k of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) { fields(value[k], backupFields(dataPolicies.numeric), ["mode"]); check(["auto", "custom"].includes(value[k].mode)); if (value[k].mode === "custom") text(value[k].value, 100); }
   fields(value.customJson, ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"]);
   Object.values(value.customJson).forEach(v => text(v));
   optional(value, "webSearch", v => check(typeof v === "boolean"));
-  optional(value, "webSearchProvider", v => check(["native", "exa-mcp", ...(version === 3 ? ["exa-api"] : [])].includes(v as string)));
+  optional(value, "webSearchProvider", v => check(["native", "exa-mcp", ...(version >= 3 ? ["exa-api"] : [])].includes(v as string)));
   optional(value, "invalidStoredConfig", text);
   // Thinking is plain option data, never connection configuration or runtime requests.
-  if (value.geminiThinking !== undefined) { fields(value.geminiThinking, ["choice", "budget", "includeSummary"]); check(isGeminiThinkingSettings(value.geminiThinking)); }
+  if (value.geminiThinking !== undefined) { fields(value.geminiThinking, backupFields(dataPolicies.geminiThinking)); check(isGeminiThinkingSettings(value.geminiThinking)); }
   if (value.thinking !== undefined) { fields(value.thinking, ["openai-chat", "openai-responses", "anthropic-native"], []);
-    for (const v of Object.values(value.thinking)) { fields(v, ["choice", "budget", "includeSummary", "effort"], ["choice", "budget", "includeSummary"]); check(isThinkingSettings(v)); } }
+    for (const v of Object.values(value.thinking)) { fields(v, backupFields(dataPolicies.thinking), ["choice", "budget", "includeSummary"]); check(isThinkingSettings(v)); } }
   // Invalid saved numeric text remains editable, rather than silently replaced.
   const errors = validateSessionConfig(value as SessionConfig);
   check(!errors.systemInstruction && !errors.stream && !errors.customJson);
 }
-function conversationConfig(v: unknown, version: 1 | 2 | 3) { fields(v, ["modelId", "config"]); model(v.modelId); config(v.config, version); }
-export function validateConnections(value: unknown, credentials: boolean) {
-  fields(value, ["version", "providers", "activeModelId"]); check(value.version === 3); model(value.activeModelId); list(value.providers, 5000);
+function conversationConfig(v: unknown, version: 1 | 2 | 3 | 4 | 5) { fields(v, backupFields(dataPolicies.conversationConfig)); model(v.modelId); config(v.config, version); }
+export function validateConnections(value: unknown, credentials: boolean, drawing = false) {
+  fields(value, backupFields(dataPolicies.connections)); check(value.version === 3); model(value.activeModelId); list(value.providers, 5000);
   const ids = new Set<string>(), models = new Set<string>();
   const unique = (v: unknown) => { id(v); check(!ids.has(v)); ids.add(v); };
   for (const p of value.providers) {
-    fields(p, ["id", "name", "connections"]); unique(p.id); text(p.name, 4096); check(p.name.trim()); list(p.connections, 5000);
+    fields(p, backupFields(dataPolicies.provider)); unique(p.id); text(p.name, 4096); check(p.name.trim()); list(p.connections, 5000);
     for (const c of p.connections) {
-      fields(c, ["id", "name", "protocol", "baseUrl", "models", ...(credentials ? ["apiKey"] : [])]);
-      unique(c.id); text(c.name, 4096); check(c.name.trim()); text(c.baseUrl, 32768); check(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"].includes(c.protocol));
+      fields(c, backupFields(dataPolicies.connection, credentials));
+      unique(c.id); text(c.name, 4096); check(c.name.trim()); text(c.baseUrl, 32768); check(["openai-chat", "openai-responses", "gemini-native", "anthropic-native", ...(drawing ? ["gemini-image", "openai-images"] : [])].includes(c.protocol));
       if (credentials) text(c.apiKey, 65536);
       list(c.models, 5000); const actual = new Set<string>();
-      for (const m of c.models) { fields(m, ["id", "modelId", "displayName"], ["id", "modelId"]); unique(m.id); models.add(m.id); text(m.modelId, 4096); check(m.modelId.trim() && !actual.has(m.modelId)); actual.add(m.modelId); optional(m, "displayName", v => text(v, 4096)); }
+      for (const m of c.models) { fields(m, backupFields(dataPolicies.model), ["id", "modelId"]); unique(m.id); models.add(m.id); text(m.modelId, 4096); check(m.modelId.trim() && !actual.has(m.modelId)); actual.add(m.modelId); optional(m, "displayName", v => text(v, 4096)); }
     }
   }
   check(value.activeModelId === null || models.has(value.activeModelId));
 }
-export async function validateDocument(raw: unknown): Promise<void> {
+export function checkDocumentBudget(raw: unknown): void {
   // This explicit visitor bounds recursion, aggregate object count, text and metadata before walking semantic data.
   let nodes = 0, metadata = 0;
   function budget(v: unknown, depth: number, assetData = false) {
@@ -79,17 +83,34 @@ export async function validateDocument(raw: unknown): Promise<void> {
     check(typeof v === "object");
     for (const [k, item] of Object.entries(v!)) { check(!["__proto__", "prototype", "constructor"].includes(k)); budget(item, depth + 1, k === "data" && depth === 2); }
   }
+  budget(raw, 0);
+}
+export async function validateDocument(raw: unknown): Promise<void> {
+  checkDocumentBudget(raw);
   object(raw);
-  check(raw.format === "ayase-studio-backup" && [1, 2, 3].includes(raw.version), "不支持此备份版本。");
-  const version = raw.version as 1 | 2 | 3;
+  check(raw.format === "ayase-studio-backup" && [1, 2, 3, 4, 5].includes(raw.version), "不支持此备份版本，请升级应用。");
+  const version = raw.version as 1 | 2 | 3 | 4 | 5;
   const required = ["format", "version", "createdAt", "options", "rows", "preferences", "connections", "assets"];
-  fields(raw, [...required, ...(version >= 2 ? ["searchSettings"] : [])], required);
+  fields(raw, [...required, ...(version >= 2 ? ["searchSettings"] : []), ...(version >= 4 ? ["compatibility"] : []), ...(version === 5 ? ["drawing"] : [])], [...required, ...(version >= 4 ? ["compatibility"] : [])]);
+  if (raw.drawing !== undefined) {
+    fields(raw.drawing, ["settings", "presets"], []);
+    check(Object.keys(raw.drawing).length > 0);
+    if (raw.drawing.settings !== undefined) readDrawingSettingsData(raw.drawing.settings);
+    if (raw.drawing.presets !== undefined) {
+      list(raw.drawing.presets);
+      const ids = new Set<string>();
+      for (const preset of raw.drawing.presets) {
+        const p = readDrawingPromptPresetData(preset); check(!ids.has(p.id)); ids.add(p.id);
+      }
+    }
+  }
+  if (version >= 4) validateBackupCompatibility(raw.compatibility, version, raw.drawing);
   text(raw.createdAt, 64); check(Number.isFinite(Date.parse(raw.createdAt)));
   fields(raw.options, ["connections", "credentials"]); check(typeof raw.options.connections === "boolean" && typeof raw.options.credentials === "boolean" && (!raw.options.credentials || raw.options.connections));
   const credentials = raw.options.credentials;
-  list(raw.assets, 2000); budget(raw, 0);
+  list(raw.assets, 2000);
   function searchProfile(value: unknown) {
-    fields(value, ["version", "baseUrl", "numResults", ...(credentials ? ["apiKey"] : [])]);
+    fields(value, backupFields(dataPolicies.searchProfile, credentials));
     text(value.baseUrl, 2048);
     if (credentials) text(value.apiKey, 4096);
     return validateSearchSettings({ ...value, apiKey: credentials ? value.apiKey : "" });
@@ -97,7 +118,7 @@ export async function validateDocument(raw: unknown): Promise<void> {
   if (raw.searchSettings !== undefined) {
     if (version === 2) searchProfile(raw.searchSettings);
     else {
-      fields(raw.searchSettings, ["version", "exaMcp", "exaApi"]); check(raw.searchSettings.version === 2);
+      fields(raw.searchSettings, backupFields(dataPolicies.search)); check(raw.searchSettings.version === 2);
       validateSearchConfiguration({ version: 2, exaMcp: searchProfile(raw.searchSettings.exaMcp), exaApi: searchProfile(raw.searchSettings.exaApi) });
     }
   }
@@ -126,35 +147,35 @@ export async function validateDocument(raw: unknown): Promise<void> {
   const used = new Set<string>();
   function resource(v: unknown, prefix: string) { id(v); check(v.startsWith(prefix) && assets.has(v)); used.add(v); }
   function avatar(v: unknown) {
-    fields(v, ["original", "thumbnail", "crop", "source"], ["original", "thumbnail", "crop"]);
+    fields(v, backupFields(dataPolicies.avatar), ["original", "thumbnail", "crop"]);
     for (const k of ["original", "thumbnail"]) { fields(v[k], ["$blob", "type"]); resource(v[k].$blob, "blob:"); check(v[k].type === assets.get(v[k].$blob)?.mime); }
-    fields(v.crop, ["x", "y", "zoom"]); number(v.crop.x); number(v.crop.y); number(v.crop.zoom);
+    fields(v.crop, backupFields(dataPolicies.crop)); number(v.crop.x); number(v.crop.y); number(v.crop.zoom);
     check(v.crop.x >= 0 && v.crop.x <= 1 && v.crop.y >= 0 && v.crop.y <= 1 && v.crop.zoom >= 1 && v.crop.zoom <= 4);
-    if (v.source) { fields(v.source, ["resourceId", "version"]); id(v.source.resourceId); id(v.source.version); }
+    if (v.source) { fields(v.source, backupFields(dataPolicies.avatarSource)); id(v.source.resourceId); id(v.source.version); }
   }
   let messageCount = 0;
   function message(v: unknown, pair = false) {
-    fields(v, ["id", "role", "content", "status", "replyToId", "editedAt", "thinkingSummary", "attachments", "source", "search", "providerReplay", ...(!pair ? ["roundVersions"] : [])], ["id", "role", "content", "status"]);
+    fields(v, backupFields(dataPolicies.messages).filter(key => !pair || key !== "roundVersions"), ["id", "role", "content", "status"]);
     id(v.id); check(++messageCount <= 100000 && ["system", "user", "assistant"].includes(v.role)); text(v.content);
     check(["complete", "incomplete", "aborted", "failed"].includes(v.status)); optional(v, "replyToId", model); optional(v, "editedAt", time); optional(v, "thinkingSummary", text);
-    if (v.source) { fields(v.source, ["source", "id", "createdAt", "unavailableAttachments"], ["source", "id", "createdAt"]); check(v.source.source === "cherry"); id(v.source.id); time(v.source.createdAt);
+    if (v.source) { fields(v.source, backupFields(dataPolicies.messageSource), ["source", "id", "createdAt"]); check(v.source.source === "cherry"); id(v.source.id); time(v.source.createdAt);
       if (v.source.unavailableAttachments) { list(v.source.unavailableAttachments, 2000); v.source.unavailableAttachments.forEach((n: unknown) => { text(n, 4096); check(!/[\\/\p{Cc}]/u.test(n)); }); } }
-    if (v.attachments) { list(v.attachments, 2000); for (const a of v.attachments) { fields(a, ["reference", "name", "size", "mimeType"]); resource(a.reference, "attachments/"); text(a.name, 4096); check(a.name && !/[\\/\p{Cc}]/u.test(a.name)); check(a.size === assets.get(a.reference)?.size && a.mimeType === assets.get(a.reference)?.mime); } }
-    if (v.search) { fields(v.search, ["enabled", "status", "sources", "citations", "queries", "suggestionHtml", "error", ...(version >= 2 ? ["provider", "warning"] : [])], ["enabled", "status", "sources", "citations", "queries"]);
+    if (v.attachments) { list(v.attachments, 2000); for (const a of v.attachments) { fields(a, backupFields(dataPolicies.attachment)); resource(a.reference, "attachments/"); text(a.name, 4096); check(a.name && !/[\\/\p{Cc}]/u.test(a.name)); check(a.size === assets.get(a.reference)?.size && a.mimeType === assets.get(a.reference)?.mime); } }
+    if (v.search) { fields(v.search, backupFields(dataPolicies.searchRecord).filter(key => version >= 2 || !["provider", "warning"].includes(key)), ["enabled", "status", "sources", "citations", "queries"]);
       check(typeof v.search.enabled === "boolean" && ["pending", "searching", "completed", "not-used", "failed", "cancelled"].includes(v.search.status));
-      optional(v.search, "provider", p => check(p === "exa-mcp" || (version === 3 && p === "exa-api"))); optional(v.search, "warning", w => unicodeText(w, 1000));
+      optional(v.search, "provider", p => check(p === "exa-mcp" || (version >= 3 && p === "exa-api"))); optional(v.search, "warning", w => unicodeText(w, 1000));
       const external = ["exa-mcp", "exa-api"].includes(v.search.provider);
       list(v.search.sources, external ? 10 : 100000); list(v.search.citations); list(v.search.queries, external ? 1 : 100000);
       let excerptCharacters = 0;
-      for (const s of v.search.sources) { fields(s, ["id", "url", "title", ...(version >= 2 ? ["excerpt"] : [])], ["id", "url", "title"]); id(s.id); text(s.url, external ? 2048 : 32768);
+      for (const s of v.search.sources) { fields(s, backupFields(dataPolicies.searchSource).filter(key => version >= 2 || key !== "excerpt"), ["id", "url", "title"]); id(s.id); text(s.url, external ? 2048 : 32768);
         if (external) unicodeText(s.title, 300); else text(s.title);
         optional(s, "excerpt", e => { unicodeText(e, 1500); excerptCharacters += Array.from(e as string).length; check(excerptCharacters <= 8000); }); }
-      for (const c of v.search.citations) { fields(c, ["start", "end", "sourceIds"]); time(c.start); time(c.end); check(c.end >= c.start && c.end <= v.content.length); list(c.sourceIds); c.sourceIds.forEach(id); }
+      for (const c of v.search.citations) { fields(c, backupFields(dataPolicies.citation)); time(c.start); time(c.end); check(c.end >= c.start && c.end <= v.content.length); list(c.sourceIds); c.sourceIds.forEach(id); }
       v.search.queries.forEach((q: unknown) => external ? unicodeText(q, 2000) : text(q)); optional(v.search, "error", text); optional(v.search, "suggestionHtml", text);
     }
-    if (v.providerReplay) { fields(v.providerReplay, ["protocol", "scope", "content", "responses"], ["protocol", "scope", "content"]); check(v.providerReplay.protocol === "anthropic-native"); text(v.providerReplay.scope, 32768); list(v.providerReplay.content); v.providerReplay.content.forEach(object);
+    if (v.providerReplay) { fields(v.providerReplay, backupFields(dataPolicies.replay), ["protocol", "scope", "content"]); check(v.providerReplay.protocol === "anthropic-native"); text(v.providerReplay.scope, 32768); list(v.providerReplay.content); v.providerReplay.content.forEach(object);
       if (v.providerReplay.responses) { list(v.providerReplay.responses); v.providerReplay.responses.forEach((r: unknown) => { list(r); r.forEach(object); }); } }
-    if (v.roundVersions) { fields(v.roundVersions, ["selected", "pairs"]); list(v.roundVersions.pairs, 1000); time(v.roundVersions.selected); check(v.roundVersions.pairs.length && v.roundVersions.selected < v.roundVersions.pairs.length);
+    if (v.roundVersions) { fields(v.roundVersions, backupFields(dataPolicies.roundVersions)); list(v.roundVersions.pairs, 1000); time(v.roundVersions.selected); check(v.roundVersions.pairs.length && v.roundVersions.selected < v.roundVersions.pairs.length);
       for (const p of v.roundVersions.pairs) { list(p, 2); check(p.length === 2); p.forEach((m: unknown) => message(m, true)); check(p[0].role === "user" && p[1].role === "assistant" && p[1].replyToId === p[0].id); } }
   }
   fields(raw.rows, [...backupTables]); const ids = new Map<string, Set<string>>();
@@ -181,5 +202,5 @@ export async function validateDocument(raw: unknown): Promise<void> {
   check([null, "narrow", "wide"].includes(raw.preferences[preferenceKeys[1]]));
   check(raw.preferences[preferenceKeys[2]] === null || isAssistantDefaultAvatar(raw.preferences[preferenceKeys[2]]));
   check(used.size === assets.size, "备份包含未引用的资源。");
-  if (raw.options.connections) validateConnections(raw.connections, raw.options.credentials); else check(raw.connections === null);
+  if (raw.options.connections) validateConnections(raw.connections, raw.options.credentials, version === 5); else check(raw.connections === null);
 }

@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackupPreview } from "../../backup/types";
 import { BackupWorkspace, type BackupWorkspaceApi } from "./BackupWorkspace";
+import { currentModuleVersions } from "../../storage/dataRegistry";
+import { DataContractError } from "../../storage/dataContract";
 
 let host: HTMLDivElement | undefined;
 let root: ReturnType<typeof createRoot> | undefined;
@@ -59,6 +61,25 @@ async function type(text: string, value: string) {
 }
 
 describe("BackupWorkspace", () => {
+  it("shows parameter loss on import, restore results and reexport, without rendering discarded values", async () => {
+    const valid = preview(false, false); valid.document.version = 4;
+    valid.document.compatibility = { minimumReaderVersion: 4, requiredCapabilities: [], modules: currentModuleVersions(),
+      filteredParameters: ["rows.assistants[0].defaultConfig.futureParameter"] };
+    await render({ inspect: vi.fn().mockResolvedValue(valid), exportBackup: vi.fn().mockResolvedValue({ saved: true, preview: valid }) });
+    await click("选择备份文件");
+    expect(host!.querySelector('[aria-label="参数兼容提示"]')?.textContent).toContain("再次保存或导出可能丢失");
+    expect(host!.querySelector("summary")?.textContent).toBe("查看过滤参数");
+    await toggle("我已确认导入策略"); await click("确认导入");
+    expect(host!.querySelector('[aria-label="恢复结果"]')?.textContent).toContain("保留原始备份文件");
+    await click("导出备份");
+    expect(host!.querySelector('[aria-label="导出结果"]')?.textContent).toContain("可能丢失");
+  });
+  it("explains incompatible required capabilities without enabling restore", async () => {
+    await render({ inspect: vi.fn().mockRejectedValue(new DataContractError("数据要求本程序不支持的能力，请升级应用。")) });
+    await click("选择备份文件");
+    expect(host!.querySelector('[role="alert"]')?.textContent).toContain("请升级应用");
+    expect(host!.querySelector('[aria-label="已校验的备份预览"]')).toBeNull();
+  });
   it("counts a search-only credential and requires replacement key confirmation", async () => {
     const valid = preview(true, false);
     valid.document.version = 2;
@@ -103,7 +124,9 @@ describe("BackupWorkspace", () => {
     expect(host!.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(host!.querySelector('[role="switch"]')!.getAttribute("aria-checked")).toBe("false");
     expect(host!.textContent).toContain("不上传备份");
-    expect(host!.textContent).toContain("不包含运行时草稿、缓存或派生背景缩略图");
+    expect(host!.textContent).toContain("显式保存的绘图提示词预设与绘图设置");
+    expect(host!.textContent).toContain("绘图自动草稿提示词、任务历史和图片");
+    expect(host!.textContent).toContain("聊天未发送草稿、缓存及派生背景缩略图不纳入");
     expect(host!.textContent).toContain("连接配置和 API Key");
     await click("导出备份");
     expect(api.exportBackup).toHaveBeenCalledWith({ encrypted: false }, "", "");

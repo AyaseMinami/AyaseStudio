@@ -22,7 +22,7 @@ function emptyView(): ConversationView {
 }
 
 export function useConversationWorkspace(repository: WorkspaceRepository, legacyModelId: string | null,
-  validModelIds: string[], isGenerating: (id: string) => boolean, cleanupAttachments?: () => Promise<void>) {
+  validModelIds: string[], isGenerating: (id: string) => boolean, cleanupAttachments?: () => Promise<void>, maintenanceLocked: () => boolean = () => false) {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot>();
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string>();
@@ -61,7 +61,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   }
 
   function initialize(): void {
-    if (pending.current) return;
+    if (pending.current || maintenanceLocked()) return;
     pending.current++;
     setBusy(true);
     setLoadError(undefined);
@@ -87,7 +87,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   }, []);
 
   async function execute(command: WorkspaceCommand): Promise<boolean> {
-    if (!snapshotRef.current) return false;
+    if (!snapshotRef.current || maintenanceLocked()) return false;
     const action = structuredClone(command);
     pending.current++;
     setBusy(true);
@@ -148,9 +148,10 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   // Share the write ordering with navigation, but never hold global busy for a background title.
   async function updateAutomaticTitle(command: Extract<WorkspaceCommand,
     { type: "start-conversation-title" | "finish-conversation-title" }>) {
+    if (maintenanceLocked()) return undefined;
     let conversation: WorkspaceSnapshot["conversations"][number] | undefined;
     const next = queue.current.catch(() => undefined).then(async () => {
-      if (!alive.current) return;
+      if (!alive.current || maintenanceLocked()) return;
       const updated = await repository.execute(command);
       snapshotRef.current = updated;
       if (alive.current) setSnapshot(updated);
@@ -174,7 +175,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   const id = conversation?.id;
   const view = (id && views.current.get(id)) || fallback.current;
   function setField<K extends keyof ConversationView>(field: K, value: SetStateAction<ConversationView[K]>): void {
-    if (!id) return;
+    if (!id || maintenanceLocked()) return;
     const current = views.current.get(id);
     if (!current) return;
     const next = typeof value === "function" ? (value as (old: ConversationView[K]) => ConversationView[K])(current[field]) : value;
@@ -185,7 +186,8 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   return {
     snapshot, conversation, assistant, effective, view, busy, loadError, operationError, execute, updateAutomaticTitle, retry: initialize,
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
-    canSend: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
+    isSettled: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
+    canSend: () => !maintenanceLocked() && pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,
     flushSessionWrites: async () => {
       await queue.current;

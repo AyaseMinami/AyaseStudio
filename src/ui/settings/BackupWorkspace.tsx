@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { encryptedBackup } from "../../backup/codec";
 import type { BackupExportOptions, BackupPreview, RestoreMode } from "../../backup/types";
 import { BackupRecoveryError } from "../../backup/errors";
+import { compatibilityWarnings } from "../../backup/compatibility";
+import { DataContractError } from "../../storage/dataContract";
 import "./BackupWorkspace.css";
 
 export interface BackupWorkspaceApi {
@@ -26,7 +28,8 @@ function keyCount(preview: BackupPreview) {
 }
 
 function PreviewSummary({ preview }: { preview: BackupPreview }) {
-  return <dl className="backup-summary">
+  const warnings = compatibilityWarnings(preview.document.compatibility);
+  return <><dl className="backup-summary">
     <div><dt>备份版本</dt><dd>{preview.document.version}</dd></div>
     <div><dt>助手</dt><dd>{preview.counts.assistants}</dd></div>
     <div><dt>对话</dt><dd>{preview.counts.conversations}</dd></div>
@@ -39,13 +42,18 @@ function PreviewSummary({ preview }: { preview: BackupPreview }) {
       : "不包含（旧备份），保留本机搜索设置与 Key"}</dd></div>
     <div><dt>API Key</dt><dd>{preview.document.options.credentials ? `包含 · ${keyCount(preview)} 个` : "不包含"}</dd></div>
     <div><dt>加密</dt><dd>{preview.encrypted ? "已加密" : "未加密"}</dd></div>
-  </dl>;
+    <div><dt>绘图提示词预设</dt><dd>{preview.document.drawing?.presets !== undefined ? `包含 · ${preview.document.drawing.presets.length} 个` : "不包含，保留本机预设"}</dd></div>
+    <div><dt>绘图设置</dt><dd>{preview.document.drawing?.settings !== undefined ? "包含（仅替换策略应用）" : "不包含，保留本机设置"}</dd></div>
+  </dl>{warnings.length > 0 && <div aria-label="参数兼容提示">
+    <p className="backup-warning">{warnings[0]}</p>
+    <details><summary>查看过滤参数</summary><ul>{warnings.slice(1).map(path => <li key={path}>{path}</li>)}</ul></details>
+  </div>}<p className="backup-warning">绘图备份只包含显式保存的提示词预设和设置。自动草稿提示词、任务历史和绘图图片不随包携带；恢复保留本机这些数据。参考图需自行选择。</p></>;
 }
 
 const strategies: Record<RestoreMode, { label: string; description: string }> = {
-  merge: { label: "合并（默认）", description: "保留现有冲突对象、连接、API Key、全局设置、网络搜索设置和用户头像；仅追加新助手、对话、连接和资源库条目。备份中的 API Key 仅写入新增连接。" },
-  copy: { label: "另存副本", description: "为导入的助手、对话、供应商、连接、模型及资源库条目分配新 ID；保留现有全局设置、网络搜索设置、用户头像和当前选择。备份中的 API Key 仅写入新增连接。" },
-  replace: { label: "替换", description: "替换备份支持的数据表、应用偏好、背景引用和用户头像。包含连接时替换连接配置；包含网络搜索设置时应用该设置。包含 API Key 时还会覆盖现有密钥，须单独确认。" },
+  merge: { label: "合并（默认）", description: "保留现有冲突对象、连接、API Key、全局设置、网络搜索设置和用户头像；仅追加新助手、对话、连接、资源库条目及新 ID 绘图预设，保留本机绘图设置。备份中的 API Key 仅写入新增连接。" },
+  copy: { label: "另存副本", description: "为导入的助手、对话、供应商、连接、模型、资源库条目及绘图预设分配新 ID；保留现有全局设置、绘图设置、网络搜索设置、用户头像和当前选择。备份中的 API Key 仅写入新增连接。" },
+  replace: { label: "替换", description: "替换备份支持的数据表、应用偏好、背景引用和用户头像；绘图预设和设置仅替换包中实际包含的类别，保留自动草稿提示词、参考图及任务成果。包含连接时替换连接配置；包含网络搜索设置时应用该设置。包含 API Key 时还会覆盖现有密钥，须单独确认。" },
 };
 
 export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onExit(): void }) {
@@ -77,6 +85,7 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
     try { await action(); }
     catch (caught) { if (mounted.current) {
       if (caught instanceof BackupRecoveryError) { setRecoveryLocked(true); setError(caught.message); }
+      else if (caught instanceof DataContractError) setError(caught.message);
       else setError(failure);
     } }
     finally { operation.current = false; if (mounted.current) setBusy(false); }
@@ -121,7 +130,7 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
       </nav>
       <section className="settings-card backup-card" inert={recoveryLocked || undefined} aria-labelledby={`${modeName}-export`}>
         <h2 id={`${modeName}-export`}>导出 Ayase 备份</h2>
-        <p className="muted-text">包含助手、对话、消息、保存的附件、头像快照与背景原图、应用偏好、Exa API 与 Exa MCP 搜索设置、连接配置和 API Key。不包含运行时草稿、缓存或派生背景缩略图。新版备份需使用支持版本 3 的 Ayase 恢复。</p>
+        <p className="muted-text">包含助手、对话、消息、保存的附件、头像快照与背景原图、应用偏好、Exa API 与 Exa MCP 搜索设置、连接配置和 API Key，以及显式保存的绘图提示词预设与绘图设置。绘图自动草稿提示词、任务历史和图片、聊天未发送草稿、缓存及派生背景缩略图不纳入。新版备份需使用支持版本 5 的 Ayase 恢复；旧版备份仍可读取。</p>
         <div className="backup-encryption">
           <span id={`${modeName}-encryption`}>加密备份</span>
           <button type="button" role="switch" aria-labelledby={`${modeName}-encryption`} aria-checked={encrypted} className="backup-switch" disabled={busy} onClick={() => {

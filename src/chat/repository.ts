@@ -2,11 +2,11 @@ import { AyaseDatabase } from "../storage/database";
 import { resolveAvatarSource, withoutAvatarSource } from "../avatar/repository";
 import { retainedRoundMessages, selectRoundVersion, withoutVersions } from "./roundVersions";
 import { titleFromText } from "./conversationTitle";
-import { copyAssistantConfig, resolveConversationConfig } from "./conversationConfig";
+import { copyAssistantConfig, resolveConversationConfig, assertLegacyOverrides, readConversationConfigData } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
 
 import type { ChatMessage } from "./types";
-import { defaultSessionConfig, restoreSessionConfig, type SessionConfig } from "./sessionConfig";
+import { defaultSessionConfig, restoreSessionConfig, readSessionConfigData, type SessionConfig } from "./sessionConfig";
 import { DEFAULT_ASSISTANT_ID, orderedConversations, placeItem, type AssistantPreset, type WorkspaceCommand, type WorkspaceSelection, type WorkspaceSnapshot } from "./workspace";
 
 export type StoredMessageStatus =
@@ -123,6 +123,21 @@ class DexieChatRepository implements WorkspaceRepository {
       const valid = new Set(validModelIds);
       const modelId = legacyModelId && valid.has(legacyModelId) ? legacyModelId : null;
       const previous = await db.workspace.get("selection");
+      // Reject unsupported data before initialization can publish defaults or repair any rows.
+      // The enclosing transaction also rolls back any later migration/selection failure.
+      for (const assistant of await db.assistants.toArray()) readSessionConfigData(assistant.defaultConfig);
+      for (const conversation of await db.conversations.toArray()) {
+        if (conversation.settings !== undefined) readConversationConfigData(conversation.settings);
+        if (conversation.creationConfig !== undefined) readConversationConfigData(conversation.creationConfig);
+        if (conversation.overrides !== undefined) {
+          assertLegacyOverrides(conversation.overrides);
+          const assistant = await db.assistants.get(conversation.assistantId);
+          readSessionConfigData(resolveConversationConfig(assistant, conversation.overrides).config);
+        }
+      }
+      for (const legacy of await db.legacyConversationConfigs.toArray()) {
+        if (legacy.generationConfig !== undefined) readSessionConfigData(legacy.generationConfig);
+      }
       if (!await db.assistants.get(DEFAULT_ASSISTANT_ID)) {
         await db.assistants.put({ id: DEFAULT_ASSISTANT_ID, name: "默认助手", icon: "", sortOrder: 0,
           defaultModelId: previous ? null : modelId,

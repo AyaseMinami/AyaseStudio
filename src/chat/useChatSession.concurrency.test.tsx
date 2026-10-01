@@ -97,6 +97,9 @@ describe("parallel conversation generation", () => {
       await prepare;
     });
     expect(result).toBe(true);
+    expect(session.backupDisabled).toBe(true);
+    await act(async () => { expect(await session.workspace.execute({ type: "select", assistantId: "default", conversationId: "current" })).toBe(false); });
+    await act(async () => { session.cancelBackupPreparation(); });
     expect(session.backupDisabled).toBe(false);
     expect((await repo.load("current"))?.messages).toEqual([]);
   });

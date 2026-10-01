@@ -13,7 +13,6 @@ import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
 import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
 import { getDrawingModels } from "./chat/settings";
-import { isDrawingProtocol } from "./chat/protocolOptions";
 import { ChatHeader } from "./ui/chat/ChatHeader";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
 import { useChatLayout } from "./ui/chat/useChatLayout";
@@ -30,8 +29,10 @@ function App() {
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
   const drawing = useDrawingWorkspace(activePage === "drawing");
+  const [backupError, setBackupError] = useState<string>();
   const chat = useChatSession({
     externalBusy: drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued") || drawing.closing,
+    externalMaintenanceBusy: () => drawing.controller.getSnapshot().busy,
     onConfigurationRequired: () => {
       setActiveSettingsSection("connections");
       setActivePage("settings");
@@ -127,15 +128,21 @@ function App() {
       ) : (
         <SettingsWorkspace
           dataImport={chat.dataImport}
-          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.hasData || drawing.presetsBusy
-            || chat.connectionSettings.providers.some(provider => provider.connections.some(connection => isDrawingProtocol(connection.protocol)))}
-          backupError={drawing.hasData || chat.connectionSettings.providers.some(provider => provider.connections.some(connection => isDrawingProtocol(connection.protocol)))
-            ? "当前备份格式尚未包含绘图数据；为防止遗漏成果或覆盖配置，暂时禁止备份与恢复，等待 #93 扩展格式。" : chat.backupPreparationError}
-          onBackup={() => { void chat.prepareBackup().then((prepared) => {
-            if (!prepared) return;
-            window.location.hash = "backup";
-            window.location.reload();
-          }); }}
+          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.closing}
+          backupError={backupError ?? chat.backupPreparationError}
+          onBackup={() => {
+            setBackupError(undefined);
+            const drawingPrepared = drawing.controller.prepareMaintenance();
+            const chatPrepared = chat.prepareBackup();
+            void Promise.allSettled([drawingPrepared, chatPrepared]).then(([drawResult, chatResult]) => {
+              if (drawResult.status === "fulfilled" && chatResult.status === "fulfilled" && chatResult.value) {
+                window.location.hash = "backup"; window.location.reload();
+              } else {
+                drawing.controller.cancelMaintenance(); chat.cancelBackupPreparation();
+                if (drawResult.status === "rejected") setBackupError(drawResult.reason instanceof Error ? drawResult.reason.message : "绘图维护准备失败，请重试。");
+              }
+            });
+          }}
           avatar={avatar}
           activeSection={activeSettingsSection}
           appearance={{

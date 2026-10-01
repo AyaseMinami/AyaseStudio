@@ -1,5 +1,6 @@
 import { AyaseDatabase } from "../storage/database";
 import type { DrawingDraft, DrawingTask, DrawingResult } from "./types";
+import { readDrawingDraftData } from "./settingsData";
 
 export interface DrawingSnapshot { draft?: DrawingDraft; tasks: DrawingTask[]; results: DrawingResult[] }
 export interface DrawingRepository {
@@ -16,10 +17,11 @@ export class DexieDrawingRepository implements DrawingRepository {
   constructor(private readonly database = new AyaseDatabase("AyaseStudio")) {}
   load(): Promise<DrawingSnapshot> {
     const db = this.database;
-    return db.transaction("r", [db.drawingDrafts, db.drawingTasks, db.drawingResults], async () => ({
-      draft: await db.drawingDrafts.get("current"), tasks: await db.drawingTasks.toArray(),
-      results: await db.drawingResults.toArray(),
-    }));
+    return db.transaction("r", [db.drawingDrafts, db.drawingTasks, db.drawingResults], async () => {
+      const raw = await db.drawingDrafts.get("current");
+      const draft = raw === undefined ? undefined : readDrawingDraftData(raw);
+      return { draft, tasks: await db.drawingTasks.toArray(), results: await db.drawingResults.toArray() };
+    });
   }
   async saveDraft(draft: DrawingDraft): Promise<void> { await this.database.drawingDrafts.put(draft); }
   async saveTask(task: DrawingTask): Promise<void> {

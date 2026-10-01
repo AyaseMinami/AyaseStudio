@@ -39,7 +39,7 @@ it.each([false, true])("exports and restores full connections and credentials wi
   const exported = await test.api.exportBackup({ encrypted }, password, password);
   expect(exported.preview.encrypted).toBe(encrypted);
   expect(exported.preview.document.options).toEqual({ connections: true, credentials: true });
-  expect(exported.preview.document.version).toBe(3);
+  expect(exported.preview.document.version).toBe(5);
   expect(exported.preview.document.searchSettings).toMatchObject({ version: 2, exaMcp: { apiKey: "synthetic-runtime-search-key" }, exaApi: { apiKey: "" } });
   const saved = vi.mocked(invoke).mock.calls[0]!;
   expect(saved[0]).toBe("save_ayase_backup");
@@ -57,16 +57,16 @@ it.each([false, true])("exports and restores full connections and credentials wi
 it("preserves recovery failure and locks subsequent actions even when the journal cannot be read", async () => {
   const test = await setup(), failure = new BackupRecoveryError();
   vi.spyOn(test.repository, "restore").mockRejectedValue(failure);
-  const read = vi.spyOn(test.database.backupJournal, "get").mockRejectedValue(new Error("synthetic unavailable database"));
+  const read = vi.spyOn(test.database.backupJournal, "get").mockResolvedValueOnce(undefined).mockRejectedValue(new Error("synthetic unavailable database"));
   await expect(test.api.restore(test.preview, "replace")).rejects.toBe(failure);
-  expect(read).not.toHaveBeenCalled();
+  expect(read).toHaveBeenCalledTimes(1); // Snapshot preflight only; typed failures do not attempt another read.
   await expect(test.api.inspect(test.serialized, "")).rejects.toThrow("回滚");
   await expect(test.api.selectBackup()).rejects.toThrow("回滚");
 });
 it("fails closed with the typed recovery error when an ordinary failure cannot be checked against the journal", async () => {
   const test = await setup();
   vi.spyOn(test.repository, "restore").mockRejectedValue(new Error("synthetic write failure"));
-  vi.spyOn(test.database.backupJournal, "get").mockRejectedValue(new Error("synthetic unavailable database"));
+  vi.spyOn(test.database.backupJournal, "get").mockResolvedValueOnce(undefined).mockRejectedValue(new Error("synthetic unavailable database"));
   await expect(test.api.restore(test.preview, "replace")).rejects.toBeInstanceOf(BackupRecoveryError);
   await expect(test.api.conflicts(test.preview, "copy")).rejects.toThrow("回滚");
 });

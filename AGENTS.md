@@ -8,6 +8,7 @@ Use `README.md` for orientation and read the references relevant to the task:
 
 - `docs/DEVELOPMENT.md`: environment, commands, and verification.
 - `docs/ARCHITECTURE.md`: module boundaries, state ownership, persistence, and security.
+- [docs/DATA-CONTRACTS.md](docs/DATA-CONTRACTS.md): mandatory persistence registration, field policies, migrations, backup compatibility, and acceptance boundaries.
 - [docs/UI-DESIGN.md](docs/UI-DESIGN.md): read before UI work; visual conventions, implementation locations, and confirmed versus pending design details.
 - `docs/PLAN.md`: feature scope and acceptance criteria.
 - `docs/PROTOCOLS.md`: transport, URL, streaming, and provider work.
@@ -43,6 +44,16 @@ Complete authorized local edits and relevant checks without asking again for rou
 - Render model output with `SafeMarkdown`. Raw HTML rendering, `rehype-raw`, and equivalent bypasses are prohibited.
 - OpenAI Responses uses local history with `store: false` unless an approved issue changes that contract.
 - Prefer deep modules with small interfaces. Do not introduce pass-through abstractions for hypothetical future variants.
+
+## Persistent data changes
+
+Apply [the data contract rules](docs/DATA-CONTRACTS.md) whenever adding or changing a persisted table, preference, field, nested record, resource reference or backup module. This is part of implementing the feature; do not wait for a user reminder.
+
+- Register every Dexie table and persistent preference in `src/storage/dataRegistry.ts`, including intentional exclusions and legacy sources. Update exhaustive `FieldPolicy<T>` declarations in `src/storage/dataPolicies.ts` against the actual persisted TypeScript records and nested records; use those policies in the real backup projections.
+- Decide and document module versions, minimum readers, required capabilities, migration steps, missing-field defaults, credential handling, resource ownership and backup disposition. Preserve unknown or invalid original data; unsupported structure must fail before durable writes instead of silently resetting it.
+- Reuse the pure clone-based migration seam for local reads and backup reads. Do not infer semantic conversions, silently change protocols/targets, or filter unknown security, credential or reference fields as optional parameters.
+- Add deterministic coverage for old/current versions, repeated and skipped-version migrations, defaults, unsupported structure with zero writes, parameter filtering reports, re-export warnings and rollback as relevant. Run `npm.cmd run check:data-contracts` (also included in `npm.cmd run check`); static inspection does not prove coverage of arbitrary dynamically computed keys.
+- Data-format, cross-module, migration, security or release-gate changes require independent `comprehensive_reviewer` or equivalent Sol/high review. Keep #93 integration, cross-version examples and #94 pressure/native acceptance distinct; local implementation is not Issue closure.
 
 ## Product boundaries
 

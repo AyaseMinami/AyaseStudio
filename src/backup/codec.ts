@@ -1,6 +1,7 @@
 import { bytesToBase64 } from "../chat/attachments";
 import type { BackupDocument, BackupPreview } from "./types";
-import { validateDocument } from "./validation";
+import { checkDocumentBudget, validateDocument } from "./validation";
+import { normalizeCompatibleParameters } from "./compatibility";
 
 export const MAX_BACKUP_FILE = 128 * 1024 * 1024;
 export const MAX_PAYLOAD = 80 * 1024 * 1024;
@@ -27,7 +28,7 @@ async function key(password: string, salt: Uint8Array<ArrayBuffer>) {
     { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 export async function encodeBackup(document: BackupDocument, encrypted = false, password = "", confirmation = ""): Promise<string> {
-  await validateDocument(document);
+  document = await readBackupDocument(document);
   check(typeof encrypted === "boolean");
   if (encrypted) check(password === confirmation, "两次输入的密码不一致。");
   const bytes = encoder.encode(JSON.stringify(document));
@@ -78,10 +79,22 @@ export async function decodeBackup(serialized: string, password = ""): Promise<B
   check(bytes.length <= MAX_PAYLOAD && await sha256(bytes) === container.sha256, "备份完整性校验失败。");
   let document;
   try { document = JSON.parse(container.document); } catch { throw new Error("备份内容损坏。"); }
-  await validateDocument(document);
+  document = await readBackupDocument(document);
   const counts = { assistants: document.rows.assistants.length, conversations: document.rows.conversations.length,
-    messages: document.rows.chats.reduce((n: number, c: { messages: { roundVersions?: { pairs: unknown[] } }[] }) => n + c.messages.reduce((count, m) => count + 1 + (m.roundVersions ? (m.roundVersions.pairs.length - 1) * 2 : 0), 0), 0),
+    messages: document.rows.chats.reduce<number>((n, row) => {
+      const c = row as { messages: { roundVersions?: { pairs: unknown[] } }[] };
+      return n + c.messages.reduce((count, m) => count + 1 + (m.roundVersions ? (m.roundVersions.pairs.length - 1) * 2 : 0), 0);
+    }, 0),
     avatars: document.rows.avatarLibrary.length, files: document.assets.length,
-    connections: document.connections?.providers.reduce((n: number, p: { connections: unknown[] }) => n + p.connections.length, 0) ?? 0 };
+    connections: (document.connections as { providers: { connections: unknown[] }[] } | null)?.providers.reduce((n, p) => n + p.connections.length, 0) ?? 0 };
   return { document, encrypted, counts };
+}
+
+export async function readBackupDocument(raw: unknown): Promise<BackupDocument> {
+  // Bound the original input before stripping unknown values or allocating its private copy.
+  checkDocumentBudget(raw);
+  const document = structuredClone(raw);
+  normalizeCompatibleParameters(document);
+  await validateDocument(document);
+  return document as BackupDocument;
 }

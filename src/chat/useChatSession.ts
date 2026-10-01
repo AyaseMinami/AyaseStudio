@@ -131,9 +131,11 @@ function replaceAssistant(
 export function useChatSession({
   onConfigurationRequired,
   externalBusy = false,
+  externalMaintenanceBusy,
 }: {
   onConfigurationRequired(): void;
   externalBusy?: boolean;
+  externalMaintenanceBusy?: () => boolean;
 }) {
   const [connectionSettings, setConnectionSettings] = useState(
     loadConnectionSettings,
@@ -141,6 +143,7 @@ export function useChatSession({
   const [generationTasks] = useState(() => new GenerationTasks());
   const [cherryBusy, setCherryBusy] = useState(false);
   const [backupPreparing, setBackupPreparing] = useState(false);
+  const [titleBusy, setTitleBusy] = useState(false);
   const backupPreparingRef = useRef(false);
   const [backupPreparationError, setBackupPreparationError] = useState<string>();
   const cherryBusyRef = useRef(false);
@@ -148,9 +151,12 @@ export function useChatSession({
   const generatingConversationIds = useSyncExternalStore(generationTasks.subscribe, generationTasks.getSnapshot);
   const externalBusyRef = useRef(externalBusy);
   externalBusyRef.current = externalBusy;
-  const sharedSettingsBusy = () => externalBusyRef.current || generationTasks.getSnapshot().size > 0;
+  const sharedSettingsBusy = () => backupPreparingRef.current || externalBusyRef.current || generationTasks.getSnapshot().size > 0;
+  const externalMaintenanceBusyRef = useRef(externalMaintenanceBusy);
+  externalMaintenanceBusyRef.current = externalMaintenanceBusy;
+  const maintenanceExternalBusy = () => externalMaintenanceBusyRef.current?.() ?? externalBusyRef.current;
   const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
-    connectionSettings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments);
+    connectionSettings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments, () => backupPreparingRef.current);
   const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
   const sessionConfig = workspace.effective.config;
   const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
@@ -915,6 +921,7 @@ export function useChatSession({
         if (targetUser || messages.some((message) => message.role === "user")) return;
         const titleController = new AbortController();
         titleAbortControllers.current.add(titleController);
+        setTitleBusy(true);
         const timeout = setTimeout(() => titleController.abort(), 60_000);
         void (async () => {
           try {
@@ -937,6 +944,7 @@ export function useChatSession({
           finally {
             clearTimeout(timeout);
             titleAbortControllers.current.delete(titleController);
+            setTitleBusy(titleAbortControllers.current.size > 0);
           }
         })();
       }
@@ -1163,8 +1171,8 @@ export function useChatSession({
 
   async function prepareBackup(): Promise<boolean> {
     if (backupPreparingRef.current) return false;
-    const canPrepare = () => !externalBusyRef.current && workspace.canSend() && generationTasks.getSnapshot().size === 0 &&
-      !cherryBusyRef.current && imports.current.size === 0;
+    const canPrepare = () => !maintenanceExternalBusy() && workspace.isSettled() && generationTasks.getSnapshot().size === 0 &&
+      !cherryBusyRef.current && imports.current.size === 0 && testAbortControllers.current.size === 0 && catalogAbortControllers.current.size === 0 && titleAbortControllers.current.size === 0;
     if (!canPrepare()) {
       setBackupPreparationError("请等待当前对话操作完成后再进入备份。");
       return false;
@@ -1178,19 +1186,19 @@ export function useChatSession({
       return true;
     } catch {
       setBackupPreparationError("无法保存待写入的对话记录，备份尚未开始。请重试。");
+      cancelBackupPreparation();
       return false;
-    } finally {
-      backupPreparingRef.current = false;
-      setBackupPreparing(false);
     }
   }
+  function cancelBackupPreparation(): void { backupPreparingRef.current = false; setBackupPreparing(false); }
 
   return {
     maintenanceBusy: backupPreparing || cherryBusy || workspace.busy,
     backupPreparing,
-    backupDisabled: externalBusy || !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing,
+    backupDisabled: maintenanceExternalBusy() || !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing || titleBusy,
     backupPreparationError,
     prepareBackup,
+    cancelBackupPreparation,
     dataImport: {
       disabled: externalBusy || !workspace.isReady || generatingConversationIds.size > 0 || cherryBusy || backupPreparing,
       async selectBackup(): Promise<CherryBackup | null> {
