@@ -73,6 +73,7 @@ pub fn run() {
             drawing::read_drawing_result,
             drawing::read_drawing_thumbnail,
             drawing::export_drawing_result,
+            drawing::open_drawing_output_directory,
             drawing::import_drawing_reference,
             drawing::remove_drawing_references,
             background::select_background_image,

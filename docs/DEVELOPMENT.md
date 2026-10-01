@@ -1,5 +1,26 @@
 # Ayase Studio Development Guide
 
+## Drawing task/log surface simplification (2026-10-01)
+
+The latest user decision retains generation and a separate task/log page, removes the gallery page, and adds a homepage output-directory opener. Queue/results/reference persistence, backup exclusions and crash-recovery receipts remain unchanged. The opener has no frontend path argument and uses the host-chosen existing `drawing/` tree; its original UUID layout includes `references/` and recovery manifests. Browser checks mock this native boundary and do not verify Windows Explorer. Native checks include fixed-directory creation/preservation/collision/reparse-point tests, cargo check and an isolated Tauri startup smoke. Actual folder-window display remains manual acceptance.
+
+The task log shows known persisted milestones/status/diagnostics; it is not a newly persisted full event stream. Metadata still loads as a complete snapshot. Earlier #94 measurements and screenshots describe the earlier three-view revision and remain historical evidence. Reuse the isolated `scripts/drawing94` entry without credentials for two-view navigation, task/log contents, preview release, directory callback and wide/narrow light/dark checks.
+
+## Drawing integration acceptance #94 (2026-10-01)
+
+`DrawingWorkspace` 的任务／成果库／生成历史卡片每显示页 50 条，三者分别保存页码，删除后收敛到有效页；生成历史随外部选中成果跳到所在页，新完成成果保持可见。controller／repository 仍保留完整记录；全选、所选导出／删除及完成／失败历史清理跨页使用全部适用 ID，不增加参考图、等待队列或总记录上限。生成历史使用 memo 卡片，任务标题及任务／成果序号以 O(n) 映射预计算。所有绘图视图显示仅内存保存失败的任务／图片数和增长／退出风险，提示用户暂停或本地重试；不自动暂停、丢图或限定保留容量。
+
+新增 `src/drawing/integrationAcceptance.test.ts` 和 `chatIntegrationAcceptance.test.ts` 使用隔离 fake IndexedDB 与真实 controller／SessionStore 验证 199 项混合协议队列、并发 1→4→1、冷恢复、同时聊天、请求归属及失败／删除／迟到回调。`DrawingWorkspace.test.tsx` 核对三种 51 项分页、历史跨页选择／外部新成果跳页、跨页全量操作、删除后页码和内存风险提示。执行常规 `npm.cmd run check`、Rust 门禁及 diff 检查；实际性能数字和未完成接受项见 [#94 验收记录](ISSUE-94-ACCEPTANCE.md)，不能用历史切片通过替代本轮结果。
+
+本地合成入口为 [scripts/drawing94](../scripts/drawing94/acceptance.tsx)，不挂载普通 App 或读取正式数据库／设置／凭据；真实 adapter 使用注入 fetch，供应商请求始终模拟。浏览器文件边界模拟；原生使用独立应用 identifier／私有目录。入口分别为 `index.html`（图库／队列及备份）、`probe.html`（原字节参考图）、`memory.html`（持续写盘失败）；报告在忽略目录 `.drawing94.local/`。开发服务运行方式：
+
+```powershell
+npm.cmd exec tsc -- --noEmit -p scripts/drawing94/tsconfig.json
+npm.cmd exec vite -- --config scripts/drawing94/vite.config.ts
+```
+
+内置浏览器打开 `http://127.0.0.1:1495/scripts/drawing94/index.html`。服务关闭 HMR／文件监听，修改源码后必须重启服务。原生可使用 [native.config.json](../scripts/drawing94/native.config.json)／[native-probe.config.json](../scripts/drawing94/native-probe.config.json)，启动前核对隔离 identifier、devUrl 和目录；带 `autorun=1` 自动执行五轮合成压力，已存在的合成成果可能复用，必须按 `seedReport` 记录实际起点。JS 堆和进程 private／WS 都是采样结果，WS 共享页可能重复计数；开发模式／debug 测量不等于 Release 门禁、真实供应商兼容、系统文件窗口或实际关闭重启接受。
+
 ## Drawing protocol completion #101 (2026-10-01)
 
 Gemini 选项共享 `geminiOptions.ts` 校验，缺失时保持原默认；controller 冻结独立组，重启恢复写入之前预检全部历史新参数。`imageResponse.ts` 有界规范化服务响应 CR/LF 与严格图片 data-URL，不改变参考图原字节或供应商重试规则。新绘图设置模块 v2／最低读者 2；实际类型字段策略、备份投影和旧设置默认／未来参数边界同步。功能入口沿用现有控件，最终 UI 设计后置。

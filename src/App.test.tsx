@@ -36,6 +36,7 @@ vi.mock("./chat/runtime", () => runtimeMocks);
 
 const drawingRuntimeMocks = vi.hoisted(() => ({
   createRuntimeImageTransport: vi.fn(),
+  openDrawingOutputDirectory: vi.fn(async () => undefined),
   runtimeDrawingFiles: { save: vi.fn(), recover: vi.fn(), read: vi.fn(), export: vi.fn() },
 }));
 vi.mock("./drawing/runtime", () => drawingRuntimeMocks);

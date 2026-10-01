@@ -4,6 +4,12 @@ import { createGeminiImageTransport } from "./geminiImage";
 import { createOpenAIImagesTransport } from "./openaiImages";
 import { ImageGenerationError } from "./imageResponse";
 
+/** The host chooses the fixed drawing directory; callers cannot supply paths. */
+export async function openDrawingOutputDirectory(): Promise<void> {
+  if (!isTauri()) throw new Error("请在桌面应用中打开输出文件夹。");
+  await invoke<void>("open_drawing_output_directory");
+}
+
 export const runtimeDrawingFiles: DrawingFiles = {
   importReference: image => invoke<DrawingFile & { digest: string }>("import_drawing_reference", { image }),
   removeReferences: references => invoke<void>("remove_drawing_references", { references }),

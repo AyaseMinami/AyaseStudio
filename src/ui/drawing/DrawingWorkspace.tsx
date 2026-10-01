@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { WindowControls } from "../window/WindowControls";
 import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
 import { DrawingReferences } from "./DrawingReferences";
@@ -15,7 +15,26 @@ import "./DrawingWorkspace.css";
 export { initialDrawingDraft } from "../../drawing/types";
 export type { DrawingDraft } from "../../drawing/types";
 
-type DrawingView = "generate" | "tasks" | "library";
+type DrawingView = "generate" | "tasks";
+const recordsPerPage = 50;
+const HistoryItem = memo(function HistoryItem({ result, number, selected, onSelect, read }: {
+  result: DrawingResult; number: number; selected: boolean;
+  onSelect(id: string): void; read?: (reference: string) => Promise<DrawingImageInput>;
+}) {
+  return <button type="button" className="drawing-button" aria-label={`成果 ${number}`} aria-pressed={selected}
+    onClick={() => onSelect(result.id)}><DrawingResultThumbnail reference={result.reference}
+      label={`成果 ${number} 缩略图`} read={read} />成果 {number}</button>;
+});
+
+function RecordPagination({ page, count, onPage, label }: { page: number; count: number; onPage(page: number): void; label: string }) {
+  const pages = Math.ceil(count / recordsPerPage);
+  if (pages <= 1) return null;
+  return <nav className="drawing-pagination" aria-label={`${label}分页`}>
+    <button type="button" className="drawing-button" disabled={page === 0} onClick={() => onPage(page - 1)}>上一页</button>
+    <span className="drawing-muted" role="status">第 {page + 1} / {pages} 页 · 共 {count} 项</span>
+    <button type="button" className="drawing-button" disabled={page + 1 >= pages} onClick={() => onPage(page + 1)}>下一页</button>
+  </nav>;
+}
 type TaskConfirmation = {
   kind: "delete" | "regenerate" | "delete-results";
   selected: Array<{ id: string; signature: string }>;
@@ -91,6 +110,31 @@ function ResultDetails({ result }: { result: DrawingResult }) {
   </div>;
 }
 
+function TaskParameters({ task }: { task: DrawingTask }) {
+  const parameters = task.parameters;
+  return <div className="drawing-task-parameters">
+    <p className="drawing-task-prompt">{parameters.prompt}</p>
+    <p className="drawing-muted">模型：{parameters.modelName}（{parameters.modelId}） · 协议：{parameters.protocol}</p>
+    <p className="drawing-muted">{parameters.protocol === "openai-images"
+      ? `尺寸：${parameters.size} · 画质：${parameters.quality}`
+      : `宽高比：${parameters.aspectRatio} · 分辨率：${parameters.resolution}`}
+      {` · 参考图 ${parameters.references?.length ?? 0} 张`}</p>
+    {parameters.protocol === "gemini-image" && parameters.gemini && <p className="drawing-muted">
+      {`温度：${parameters.gemini.temperature ?? "模型默认"} · 安全阈值：${parameters.gemini.safetyThreshold ?? "服务默认"} · 输出：${parameters.gemini.outputMode === "image" ? "仅图片" : "文字＋图片"}`}
+    </p>}
+  </div>;
+}
+
+function TaskDiagnostic({ task }: { task: DrawingTask }) {
+  if (!task.diagnostic) return null;
+  return <details className="drawing-task-diagnosis drawing-muted">
+    <summary>诊断详情</summary>
+    <p>{diagnosisLabels[task.diagnostic.category] ?? "其他错误"}
+      {Number.isInteger(task.diagnostic.httpStatus) && task.diagnostic.httpStatus! >= 100 && task.diagnostic.httpStatus! <= 599
+        ? ` · HTTP 状态 ${task.diagnostic.httpStatus}` : ""}</p>
+  </details>;
+}
+
 function recoveryText(task: DrawingTask) {
   const recovery = task.recovery;
   if (!recovery) return "图片恢复状态尚未核实；删除后无法通过此任务重试本地保存。";
@@ -119,7 +163,7 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   onAddReferences, onRemoveReference, onMoveReference, onUseAsReference, readReference, referencesBusy,
   onClearReferences, readThumbnail, onDeleteResults, onExportResults, onCopyPrompt, onPreviewActive,
   presets = [], presetsBusy = false, onApplyPreset, onCreatePreset, onUpdatePreset, onDeletePreset,
-  onReuseTask, onCopyTaskPrompt,
+  onReuseTask, onCopyTaskPrompt, onOpenOutputDirectory,
   closing = false, notice }: {
   draft: DrawingDraft;
   onDraftChange(draft: DrawingDraft): void;
@@ -167,23 +211,37 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   onDeletePreset?(id: string): Promise<boolean>;
   onReuseTask?(id: string): void;
   onCopyTaskPrompt?(id: string): void;
+  onOpenOutputDirectory?(): Promise<void>;
   closing?: boolean;
   notice?: string | null;
 }) {
   const [view, setView] = useState<DrawingView>("generate");
+  const [taskSubview, setTaskSubview] = useState<"list" | "logs">("list");
+  const [taskPage, setTaskPage] = useState(0), [logPage, setLogPage] = useState(0), [historyPage, setHistoryPage] = useState(0);
+  const activeTaskPage = Math.min(taskPage, Math.max(0, Math.ceil(tasks.length / recordsPerPage) - 1));
+  const activeLogPage = Math.min(logPage, Math.max(0, Math.ceil(tasks.length / recordsPerPage) - 1));
+  const activeHistoryPage = Math.min(historyPage, Math.max(0, Math.ceil(results.length / recordsPerPage) - 1));
+  useEffect(() => { setTaskPage(activeTaskPage); }, [activeTaskPage]);
+  useEffect(() => { setLogPage(activeLogPage); }, [activeLogPage]);
+  useEffect(() => { setHistoryPage(activeHistoryPage); }, [activeHistoryPage]);
+  const resultNumbers = useMemo(() => new Map(results.map((result, index) => [result.id, results.length - index])), [results]);
+  const selectedHistoryPage = Math.floor(Math.max(0, results.length - (resultNumbers.get(selectedResultId ?? "") ?? results.length)) / recordsPerPage);
+  useEffect(() => { if (selectedResultId) setHistoryPage(selectedHistoryPage); }, [selectedResultId, selectedHistoryPage]);
+  const taskNumbers = useMemo(() => new Map(tasks.map((task, index) => [task.id, tasks.length - index])), [tasks]);
+  const memoryTasks = tasks.filter(task => task.status === "save-failed" && (task.recovery?.memory.length ?? 0) > 0);
+  const memoryImages = memoryTasks.reduce((total, task) => total + (task.recovery?.memory.length ?? 0), 0);
   const [confirmation, setConfirmation] = useState<TaskConfirmation | null>(null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [temperatureError, setTemperatureError] = useState(false);
   useEffect(() => { setTemperatureError(false); }, [draft.modelId, draft.gemini]);
-  const [selectedResults, setSelectedResults] = useState<string[]>([]);
+  const [openingDirectory, setOpeningDirectory] = useState(false);
+  const openingDirectoryRef = useRef(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
   useEffect(() => {
     onPreviewActive?.(view === "generate");
     return () => onPreviewActive?.(false);
   }, [view, onPreviewActive]);
-  useEffect(() => {
-    setSelectedResults(current => current.filter(id => results.some(result => result.id === id)));
-  }, [results]);
   const [now, setNow] = useState(Date.now);
   const liveElapsed = tasks.some(task => task.startedAt && !task.finishedAt && !terminal(task));
   useEffect(() => {
@@ -207,14 +265,14 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
     for (const key of Object.keys(next) as (keyof GeminiDrawingOptions)[]) if (next[key] === undefined) delete next[key];
     onDraftChange({ ...draft, gemini: next });
   };
-  const resultNumber = (id: string) => results.length - results.findIndex((result) => result.id === id);
+  const resultNumber = (id: string) => resultNumbers.get(id) ?? 0;
   const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy && (openai || !temperatureError);
   const canEditReferences = ready && !closing && !referencesBusy && !managementBusy && !confirmation && !presetDialogOpen;
   const managementAllowed = ready && !closing && !submitting && !managementBusy;
   const canManage = managementAllowed && !confirmation && !presetDialogOpen;
   const completedTasks = tasks.filter(task => task.status === "completed");
   const failedTasks = tasks.filter(task => terminal(task) && task.status !== "completed");
-  const taskNumber = (id: string) => tasks.length - tasks.findIndex(task => task.id === id);
+  const taskNumber = (id: string) => taskNumbers.get(id) ?? 0;
   const taskSignature = (task: DrawingTask) => `${taskNumber(task.id)}:${JSON.stringify(task)}`;
   const confirmationValid = Boolean(confirmation && managementAllowed
     && (confirmation.kind === "delete-results" ? onDeleteResults : confirmation.kind === "delete" ? onDeleteTasks : onRegenerate)
@@ -253,7 +311,6 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
     setConfirmation(null);
     if (confirmation.kind === "delete-results") {
       const ids = confirmation.selected.map(result => result.id);
-      setSelectedResults(current => current.filter(id => !ids.includes(id)));
       onDeleteResults?.(ids);
     } else if (confirmation.kind === "delete") onDeleteTasks?.(confirmation.selected.map(task => task.id));
     else onRegenerate?.(confirmation.selected[0].id);
@@ -266,12 +323,6 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
     setConfirmation({ kind: "delete-results", opener,
       selected: selected.map(result => ({ id: result.id, signature: JSON.stringify(result) })),
       text: `删除 ${selected.length} 张绘图成果（${selected.map(result => `成果 ${resultNumber(result.id)}`).join("、")}）？此操作无法撤销；已被草稿或任务引用的参考图仍会保留。` });
-  }
-
-  function exportSelected(withParameters: boolean) {
-    if (!canManage || !onExportResults || !selectedResults.length) return;
-    onExportResults(selectedResults, withParameters);
-    setSelectedResults([]);
   }
 
   function resultActions(result: DrawingResult) {
@@ -288,11 +339,6 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
       {onDeleteResults && <button type="button" className="drawing-button" disabled={!canManage}
         aria-label={`删除成果 ${resultNumber(result.id)}`} onClick={event => deleteResults([result.id], event.currentTarget)}>删除成果</button>}
     </div>;
-  }
-
-  function selectResult(id: string) {
-    onSelectResult(id);
-    setView("generate");
   }
 
   function reuseResult(id: string) {
@@ -326,8 +372,7 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
         <nav className="drawing-navigation" aria-label="绘图视图">
           {([
             ["generate", "生成"],
-            ["tasks", "任务"],
-            ["library", "成果库"],
+            ["tasks", "任务与日志"],
           ] as const).map(([id, label]) => (
             <button key={id} type="button" aria-current={view === id ? "page" : undefined}
               onClick={() => setView(id)}>{label}</button>
@@ -348,11 +393,25 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
           {hasCancellable && <p className="drawing-muted">已发出的请求取消后，服务端仍可能继续生成并计费。</p>}
         </div>
         {error && <p className="drawing-error" role="alert">{error}</p>}
+        {memoryTasks.length > 0 && <p className="drawing-error" role="alert" aria-label="未保存图片内存风险">
+          {memoryTasks.length} 项任务的 {memoryImages} 张图片仅保存在内存。保存失败时继续生成会增加内存占用，建议暂停队列并重试本地保存；退出可能丢失这些图片。
+        </p>}
         {notice && <p className="drawing-muted" role="status">{notice}</p>}
 
         {view === "generate" ? (
           <div className="drawing-layout">
             <section className="drawing-panel drawing-form" aria-label="绘图草稿">
+              {onOpenOutputDirectory && <button type="button" className="drawing-button" disabled={!ready || closing || openingDirectory}
+                onClick={async event => {
+                  if (event.detail > 1 || !ready || closing || openingDirectoryRef.current) return;
+                  openingDirectoryRef.current = true;
+                  setOpeningDirectory(true);
+                  setDirectoryError(null);
+                  try { await onOpenOutputDirectory(); }
+                  catch { setDirectoryError("无法打开输出文件夹，请稍后重试。"); }
+                  finally { openingDirectoryRef.current = false; setOpeningDirectory(false); }
+                }}>打开输出文件夹</button>}
+              {directoryError && <p className="drawing-error" role="alert">{directoryError}</p>}
               <div className="drawing-field">
                 <label className="drawing-label" htmlFor="drawing-model">绘图模型</label>
                 <div className="drawing-model">
@@ -490,58 +549,53 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 {onExportResults && <p className="drawing-muted">带参数 PNG 含提示词等生成参数，不含参考图原件，不保证可确定复现；分享前请确认内容。</p>}
               </div>}
               <h2 className="drawing-history-heading">生成历史</h2>
+              <RecordPagination page={activeHistoryPage} count={results.length} onPage={setHistoryPage} label="生成历史" />
               <div className="drawing-history" aria-label="生成历史">
-                {results.length ? results.map((result) => <button key={result.id} type="button"
-                  className="drawing-button" aria-label={`成果 ${resultNumber(result.id)}`} aria-pressed={result.id === selectedResultId}
-                  onClick={() => onSelectResult(result.id)}><DrawingResultThumbnail reference={result.reference}
-                    label={`成果 ${resultNumber(result.id)} 缩略图`} read={readThumbnail} />成果 {resultNumber(result.id)}</button>)
+                {results.length ? results.slice(activeHistoryPage * recordsPerPage, (activeHistoryPage + 1) * recordsPerPage).map((result) => <HistoryItem key={result.id} result={result} number={resultNumber(result.id)}
+                  selected={result.id === selectedResultId} onSelect={onSelectResult} read={readThumbnail} />)
                   : <p className="drawing-muted">暂无生成历史</p>}
               </div>
             </section>
           </div>
         ) : (
-          <section className="drawing-panel" aria-labelledby="drawing-view-title">
-            <h2 id="drawing-view-title">{view === "tasks" ? "任务" : "成果库"}</h2>
-            {view === "library" && (onDeleteResults || onExportResults) && <div className="drawing-library-management">
-              <div className="drawing-actions">
-                <button type="button" className="drawing-button" disabled={!canManage || !results.length}
-                  onClick={() => setSelectedResults(results.map(result => result.id))}>全选成果</button>
-                <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
-                  onClick={() => setSelectedResults([])}>取消选择</button>
-                <span className="drawing-muted" role="status">已选择 {selectedResults.length} 张</span>
-                {onExportResults && <>
-                  <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
-                    onClick={() => exportSelected(false)}>导出所选图片</button>
-                  <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
-                    onClick={() => exportSelected(true)}>导出所选带参数 PNG</button>
-                </>}
-                {onDeleteResults && <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
-                  onClick={event => deleteResults(selectedResults, event.currentTarget)}>删除所选成果</button>}
-              </div>
-              {onExportResults && <p className="drawing-muted">带参数 PNG 含提示词等生成参数，不含参考图原件，不保证可确定复现；分享前请确认内容。</p>}
-            </div>}
-            {view === "tasks" && onDeleteTasks && <div className="drawing-actions drawing-task-management">
+          <section className="drawing-panel drawing-task-page" aria-labelledby="drawing-view-title">
+            <nav className="drawing-task-subviews" aria-label="任务子视图">
+              <button type="button" className="drawing-button" aria-current={taskSubview === "list" ? "page" : undefined}
+                onClick={() => setTaskSubview("list")}>任务列表</button>
+              <button type="button" className="drawing-button" aria-current={taskSubview === "logs" ? "page" : undefined}
+                onClick={() => setTaskSubview("logs")}>任务日志</button>
+            </nav>
+            <div className="drawing-task-content">
+            <h2 id="drawing-view-title">{taskSubview === "list" ? "任务列表" : "任务日志"}</h2>
+            {taskSubview === "logs" && <p className="drawing-muted">显示每次生成的入队、开始、结束或最近状态，以及失败原因。</p>}
+            <RecordPagination page={taskSubview === "list" ? activeTaskPage : activeLogPage} count={tasks.length}
+              onPage={taskSubview === "list" ? setTaskPage : setLogPage} label={taskSubview === "list" ? "任务" : "任务日志"} />
+            {onDeleteTasks && <div className="drawing-actions drawing-task-management">
               <button type="button" className="drawing-button" disabled={!canManage || !completedTasks.length}
                 onClick={event => { if (event.detail <= 1) deleteTasks(completedTasks, event.currentTarget); }}>清空已完成历史</button>
               <button type="button" className="drawing-button" disabled={!canManage || !failedTasks.length}
                 onClick={event => { if (event.detail <= 1) deleteTasks(failedTasks, event.currentTarget); }}>清空失败历史</button>
             </div>}
-            {view === "tasks" && tasks.length ? <div className="drawing-records">
-              {tasks.map((task) => <article className="drawing-record" key={task.id}>
-                <div className="drawing-section-heading"><h3>任务 {tasks.length - tasks.findIndex((item) => item.id === task.id)}</h3>
+            {tasks.length ? <div className="drawing-records">
+              {tasks.slice((taskSubview === "list" ? activeTaskPage : activeLogPage) * recordsPerPage,
+                ((taskSubview === "list" ? activeTaskPage : activeLogPage) + 1) * recordsPerPage).map((task) => <article className="drawing-record drawing-task-record" key={task.id}>
+                <div className="drawing-section-heading"><h3>任务 {taskNumber(task.id)}</h3>
                   <span className="drawing-muted">{taskLabels[task.status]}</span></div>
-                <p>{task.parameters.prompt}</p>
-                <p className="drawing-muted">{task.parameters.modelName}</p>
+                {taskSubview === "list" ? <TaskParameters task={task} /> : <ol className="drawing-task-log drawing-muted">
+                  <li>入队：<time dateTime={task.createdAt}>{task.createdAt}</time></li>
+                  {task.startedAt && <li>开始执行：<time dateTime={task.startedAt}>{task.startedAt}</time></li>}
+                  {task.finishedAt && <li>{terminal(task) && task.finishedAt === task.updatedAt ? `结束 · ${taskLabels[task.status]}` : "执行结束"}：<time dateTime={task.finishedAt}>{task.finishedAt}</time></li>}
+                  {(!terminal(task) || !task.finishedAt || task.finishedAt !== task.updatedAt)
+                    && <li>最近状态 · {taskLabels[task.status]}：<time dateTime={task.updatedAt}>{task.updatedAt}</time></li>}
+                </ol>}
                 {task.sourceTaskId && <p className="drawing-muted">{tasks.some(source => source.id === task.sourceTaskId)
                   ? `重新生成自任务 ${taskNumber(task.sourceTaskId)}` : "重新生成的任务（来源历史已删除）"}</p>}
+                {taskSubview === "list" && <p className="drawing-muted">入队时间：<time dateTime={task.createdAt}>{task.createdAt}</time>
+                  {" · 最近状态时间："}<time dateTime={task.updatedAt}>{task.updatedAt}</time>
+                  {task.finishedAt && <> · 执行结束时间：<time dateTime={task.finishedAt}>{task.finishedAt}</time></>}</p>}
                 <p className="drawing-muted">执行耗时 {elapsed(task, now)}</p>
-                {task.error && <p className="drawing-error" role="alert">{task.error}</p>}
-                {task.diagnostic && <details className="drawing-task-diagnosis drawing-muted">
-                  <summary>诊断详情</summary>
-                  <p>{diagnosisLabels[task.diagnostic.category] ?? "其他错误"}
-                    {Number.isInteger(task.diagnostic.httpStatus) && task.diagnostic.httpStatus! >= 100 && task.diagnostic.httpStatus! <= 599
-                      ? ` · HTTP 状态 ${task.diagnostic.httpStatus}` : ""}</p>
-                </details>}
+                {task.error && <p className="drawing-error" role="alert">{task.diagnostic ? diagnosisLabels[task.diagnostic.category] ?? "任务处理失败，请查看状态并重试适用操作。" : "任务处理失败，请查看状态并重试适用操作。"}</p>}
+                <TaskDiagnostic task={task} />
                 {task.status === "unknown" && <p className="drawing-muted">请求可能已经发出，不会自动重发。</p>}
                 {task.status === "save-failed" && <p className="drawing-muted drawing-task-recovery">{recoveryText(task)}</p>}
                 <div className="drawing-actions">
@@ -566,23 +620,10 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                   onClick={event => { if (event.detail <= 1) deleteTasks([task], event.currentTarget); }}>删除历史</button>}
                 </div>
               </article>)}
-            </div> : view === "library" && results.length ? <div className="drawing-library">
-              {results.map((result) => <article className="drawing-record" key={result.id}>
-                <div className="drawing-section-heading"><h3>成果 {resultNumber(result.id)}</h3>
-                  {(onDeleteResults || onExportResults) && <label className="drawing-result-select">
-                    <input type="checkbox" aria-label={`选择成果 ${resultNumber(result.id)}`} disabled={!canManage}
-                      checked={selectedResults.includes(result.id)} onChange={event => setSelectedResults(current => event.target.checked
-                        ? [...current, result.id] : current.filter(id => id !== result.id))} />选择</label>}
-                </div>
-                <button type="button" className="drawing-button drawing-library-preview" aria-label={`查看成果 ${resultNumber(result.id)}`}
-                  onClick={() => selectResult(result.id)}><DrawingResultThumbnail reference={result.reference}
-                    label={`成果 ${resultNumber(result.id)} 缩略图`} read={readThumbnail} /><span>查看</span></button>
-                <ResultDetails result={result} />
-                {resultActions(result)}
-              </article>)}
             </div> : <div className="drawing-empty drawing-view-empty">
-              <p>{view === "tasks" ? "暂无绘图任务" : "暂无绘图成果"}</p>
+              <p>{taskSubview === "list" ? "暂无绘图任务" : "暂无任务日志"}</p>
             </div>}
+            </div>
           </section>
         )}
       </div>

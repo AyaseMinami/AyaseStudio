@@ -49,6 +49,205 @@ function button(text: string) {
   return result;
 }
 
+it("opens the output directory once while pending and reports sanitized failure", async () => {
+  let rejectOpen!: (reason: Error) => void;
+  const onOpenOutputDirectory = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectOpen = reject; }));
+  const options = { ...props(), onOpenOutputDirectory };
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  expect(host.querySelector('[aria-label="绘图视图"]')?.textContent).toBe("生成任务与日志");
+  for (const text of ["成果库", "全选成果", "导出所选图片", "删除所选成果"]) expect(host.textContent).not.toContain(text);
+  await act(async () => { button("打开输出文件夹").click(); button("打开输出文件夹").click(); });
+  expect(onOpenOutputDirectory).toHaveBeenCalledOnce();
+  expect(button("打开输出文件夹").disabled).toBe(true);
+  await act(async () => rejectOpen(new Error("C:\\private\\machine https://secret.example sk-private-key")));
+  expect(button("打开输出文件夹").disabled).toBe(false);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("无法打开输出文件夹，请稍后重试。");
+  for (const text of ["private", "secret.example", "sk-private-key"]) expect(host.textContent).not.toContain(text);
+  onOpenOutputDirectory.mockImplementation(async () => undefined);
+  await act(async () => button("打开输出文件夹").click());
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(onOpenOutputDirectory).toHaveBeenCalledTimes(2);
+  await act(async () => button("打开输出文件夹").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 })));
+  expect(onOpenOutputDirectory).toHaveBeenCalledTimes(2);
+  for (const state of [{ ready: false }, { closing: true }]) {
+    await act(async () => root.render(<DrawingWorkspace {...options} {...state} />));
+    expect(button("打开输出文件夹").disabled).toBe(true);
+  }
+});
+
+it("shows immutable submitted parameters after draft edits without exposing resource or connection addresses", async () => {
+  const options = props();
+  const submitted: DrawingTask = { ...task, parameters: { ...parameters, references: [{ ...result, name: "private-reference.png" }] } };
+  const original = structuredClone(submitted);
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[submitted]}
+    draft={{ ...initialDrawingDraft, prompt: "下一张的新提示词", modelId: "changed-model", aspectRatio: "1:1", resolution: "4K" }} />));
+  await act(async () => button("任务与日志").click());
+  for (const text of [parameters.prompt, parameters.modelName, parameters.modelId, parameters.protocol, "宽高比：16:9", "分辨率：2K", "参考图 1 张", task.createdAt])
+    expect(host.textContent).toContain(text);
+  for (const text of ["下一张的新提示词", "changed-model", "宽高比：1:1", parameters.baseUrl, result.reference, "private-reference.png"])
+    expect(host.textContent).not.toContain(text);
+  expect(submitted).toEqual(original);
+  const openaiTask: DrawingTask = { ...task, parameters: { ...parameters, protocol: "openai-images", size: "1536x1024", quality: "high" } };
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[openaiTask]} />));
+  expect(host.textContent).toContain("尺寸：1536x1024 · 画质：high");
+});
+
+it("shows only known durable log times and allowlisted diagnostics, with independent pagination and preview release", async () => {
+  const onPreviewActive = vi.fn(), readThumbnail = vi.fn(async () => ({ mime: "image/png", data: "AQ==" }));
+  const options = { ...props(), onPreviewActive, readThumbnail };
+  const completed: DrawingTask = { ...task, status: "failed", startedAt: "2026-09-30T00:00:10Z", finishedAt: "2026-09-30T00:01:00Z",
+    updatedAt: "2026-09-30T00:01:30Z", error: "https://private.example C:\\private\\path sk-private-key",
+    diagnostic: { category: "rate-limited", httpStatus: 429 } };
+  const tasks = [completed, ...Array.from({ length: 50 }, (_, index) => ({ ...task, id: `log-${index}` }))];
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={tasks} results={[result]} selectedResultId={result.id} previewUrl="blob:preview" />));
+  expect(onPreviewActive).toHaveBeenLastCalledWith(true);
+  await act(async () => button("任务与日志").click());
+  expect(onPreviewActive).toHaveBeenLastCalledWith(false);
+  expect(host.querySelectorAll("img")).toHaveLength(0);
+  await act(async () => button("下一页").click());
+  expect(host.querySelectorAll(".drawing-record")).toHaveLength(1);
+  const thumbnailCalls = readThumbnail.mock.calls.length;
+  await act(async () => button("任务日志").click());
+  expect(host.querySelectorAll(".drawing-record")).toHaveLength(50);
+  const firstLog = host.querySelector(".drawing-task-log")!;
+  expect([...firstLog.querySelectorAll("time")].map(time => time.dateTime)).toEqual([completed.createdAt, completed.startedAt, completed.finishedAt, completed.updatedAt]);
+  expect(firstLog.textContent).toContain(`执行结束：${completed.finishedAt}`);
+  expect(firstLog.textContent).toContain(`最近状态 · 生成失败：${completed.updatedAt}`);
+  expect(host.querySelectorAll(".drawing-task-log")[1].textContent).toContain("最近状态 · 生成中");
+  expect(host.querySelectorAll(".drawing-task-log")[1].textContent).not.toContain("开始执行");
+  expect(host.textContent).toContain("显示每次生成的入队、开始、结束或最近状态，以及失败原因。");
+  expect(host.textContent).toContain("请求过于频繁 · HTTP 状态 429");
+  for (const text of [completed.error!, parameters.baseUrl, result.reference, "rate-limited"]) expect(host.textContent).not.toContain(text);
+  expect(host.querySelectorAll("img")).toHaveLength(0);
+  expect(readThumbnail).toHaveBeenCalledTimes(thumbnailCalls);
+  await act(async () => button("下一页").click());
+  expect(host.querySelectorAll(".drawing-record")).toHaveLength(1);
+  await act(async () => button("任务列表").click());
+  expect(host.querySelector('[aria-label="任务分页"]')?.textContent).toContain("第 2 / 2 页");
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={tasks.slice(0, 49)} />));
+  expect(host.querySelectorAll(".drawing-record")).toHaveLength(49);
+  await act(async () => button("任务日志").click());
+  expect(host.querySelectorAll(".drawing-record")).toHaveLength(49);
+  expect(host.querySelector('[aria-label="任务日志分页"]')).toBeNull();
+  expect(options.onGenerate).not.toHaveBeenCalled();
+});
+
+it("keeps retry-save status times distinct from the original execution end through successive failures", async () => {
+  const options = props();
+  const originalEnd = "2026-09-30T00:01:00Z";
+  const failed: DrawingTask = { ...task, status: "save-failed", startedAt: "2026-09-30T00:00:10Z", finishedAt: originalEnd, updatedAt: originalEnd };
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[failed]} />));
+  await act(async () => button("任务与日志").click());
+  await act(async () => button("任务日志").click());
+  const log = () => host.querySelector(".drawing-task-log")!;
+  expect(log().textContent).toContain(`结束 · 保存失败：${originalEnd}`);
+
+  const retrying: DrawingTask = { ...failed, status: "saving", updatedAt: "2026-09-30T00:05:00Z" };
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[retrying]} />));
+  expect(log().textContent).toContain(`执行结束：${originalEnd}`);
+  expect(log().textContent).toContain(`最近状态 · 正在保存：${retrying.updatedAt}`);
+  expect(log().textContent).not.toContain("结束 · 正在保存");
+  expect(button("删除历史").disabled).toBe(true);
+  await act(async () => button("任务列表").click());
+  expect(host.textContent).toContain(`最近状态时间：${retrying.updatedAt}`);
+  expect(host.textContent).toContain(`执行结束时间：${originalEnd}`);
+
+  const failedAgain: DrawingTask = { ...retrying, status: "save-failed", updatedAt: "2026-09-30T00:05:20Z" };
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[failedAgain]} />));
+  expect(host.textContent).toContain(`最近状态时间：${failedAgain.updatedAt}`);
+  await act(async () => button("任务日志").click());
+  expect(log().textContent).toContain(`执行结束：${originalEnd}`);
+  expect(log().textContent).toContain(`最近状态 · 保存失败：${failedAgain.updatedAt}`);
+  expect(log().textContent).not.toContain(`结束 · 保存失败：${originalEnd}`);
+  expect(button("重试本地保存").disabled).toBe(false);
+  expect(options.onGenerate).not.toHaveBeenCalled();
+});
+
+it("preserves preview single-result deletion confirmation and both export modes", async () => {
+  const options = { ...props(), onDeleteResults: vi.fn(), onExportResults: vi.fn(), onCopyPrompt: vi.fn() };
+  await act(async () => root.render(<DrawingWorkspace {...options} results={[result]} selectedResultId={result.id} />));
+  await act(async () => button("复制提示词").click());
+  expect(options.onCopyPrompt).toHaveBeenCalledExactlyOnceWith(result.id);
+  await act(async () => button("导出带参数 PNG").click());
+  expect(options.onExportResults).toHaveBeenCalledExactlyOnceWith([result.id], true);
+  await act(async () => button("删除成果").click());
+  expect(options.onDeleteResults).not.toHaveBeenCalled();
+  await act(async () => button("取消").click());
+  expect(options.onDeleteResults).not.toHaveBeenCalled();
+  await act(async () => button("删除成果").click());
+  await act(async () => button("确认删除成果").click());
+  expect(options.onDeleteResults).toHaveBeenCalledExactlyOnceWith([result.id]);
+});
+
+it("pages generation history, follows a newly selected result and clamps after deletion without dispatching", async () => {
+  const options = { ...props(), onExportResults: vi.fn(), onDeleteResults: vi.fn() };
+  const results = Array.from({ length: 51 }, (_, index) => ({ ...result, id: `history-${index}` }));
+  const original = structuredClone(results);
+  await act(async () => root.render(<DrawingWorkspace {...options} results={results} selectedResultId={results[0].id} />));
+  expect(host.querySelectorAll(".drawing-history > button")).toHaveLength(50);
+  expect(host.querySelector('[aria-label="生成历史分页"]')?.textContent).toContain("第 1 / 2 页 · 共 51 项");
+  expect(host.querySelector('.drawing-history [aria-label="成果 51"]')).not.toBeNull();
+  expect(host.querySelector('.drawing-history [aria-label="成果 1"]')).toBeNull();
+  await act(async () => button("下一页").click());
+  expect(host.querySelectorAll(".drawing-history > button")).toHaveLength(1);
+  await act(async () => button("成果 1").click());
+  expect(options.onSelectResult).toHaveBeenCalledExactlyOnceWith(results[50].id);
+  await act(async () => root.render(<DrawingWorkspace {...options} results={results} selectedResultId={results[50].id} />));
+  expect(host.querySelector('.drawing-history [aria-label="成果 1"]')?.getAttribute("aria-pressed")).toBe("true");
+
+  const newest = { ...result, id: "newly-completed-history" };
+  const grown = [newest, ...results];
+  await act(async () => root.render(<DrawingWorkspace {...options} results={grown} selectedResultId={newest.id} />));
+  expect(host.querySelector('[aria-label="生成历史分页"]')?.textContent).toContain("第 1 / 2 页 · 共 52 项");
+  expect(host.querySelectorAll(".drawing-history > button")).toHaveLength(50);
+  expect(host.querySelector('.drawing-history [aria-label="成果 52"]')?.getAttribute("aria-pressed")).toBe("true");
+  await act(async () => button("下一页").click());
+  expect(host.querySelectorAll(".drawing-history > button")).toHaveLength(2);
+  const remaining = grown.slice(0, 50);
+  await act(async () => root.render(<DrawingWorkspace {...options} results={remaining} selectedResultId={newest.id} />));
+  expect(host.querySelector('[aria-label="生成历史分页"]')).toBeNull();
+  expect(host.querySelectorAll(".drawing-history > button")).toHaveLength(50);
+  expect(host.querySelector('.drawing-history [aria-label="成果 50"]')?.getAttribute("aria-pressed")).toBe("true");
+
+  expect(host.textContent).not.toContain("成果库");
+  expect(host.textContent).not.toContain("全选成果");
+  expect(results).toEqual(original);
+  expect(grown).toHaveLength(52);
+  expect(options.onSelectResult).toHaveBeenCalledOnce();
+  expect(options.onGenerate).not.toHaveBeenCalled();
+  expect(options.onRegenerate).not.toHaveBeenCalled();
+  expect(options.onDeleteResults).not.toHaveBeenCalled();
+});
+
+it("pages task display without limiting cleanup candidates or changing task numbering", async () => {
+  const options = props();
+  const tasks = Array.from({ length: 51 }, (_, index) => ({ ...task, id: `paged-task-${index}`, status: "completed" as const }));
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={tasks} />));
+  await act(async () => button("任务与日志").click());
+  expect(host.querySelectorAll(".drawing-record")).toHaveLength(50);
+  await act(async () => button("下一页").click());
+  expect(host.querySelectorAll(".drawing-record")).toHaveLength(1);
+  expect(host.querySelector('[aria-label="删除任务 1 历史"]')).not.toBeNull();
+  await act(async () => button("清空已完成历史").click());
+  await act(async () => button("确认删除历史").click());
+  expect(options.onDeleteTasks).toHaveBeenCalledWith(tasks.map(item => item.id));
+});
+
+it("reports accumulating memory-only failed saves in every view and clears the warning after durable recovery", async () => {
+  const options = props();
+  const failed = { ...task, status: "save-failed" as const, recovery: { total: 2, durable: [0], memory: [1], lost: [] } };
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[failed]} />));
+  expect(host.querySelector('[aria-label="未保存图片内存风险"]')?.textContent).toContain("1 项任务的 1 张图片仅保存在内存");
+  expect(host.textContent).toContain("继续生成会增加内存占用");
+  await act(async () => button("任务与日志").click());
+  expect(host.querySelector('[aria-label="未保存图片内存风险"]')).not.toBeNull();
+  await act(async () => button("任务日志").click());
+  expect(host.querySelector('[aria-label="未保存图片内存风险"]')).not.toBeNull();
+  expect(options.onPause).not.toHaveBeenCalled();
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[{ ...failed, recovery: { ...failed.recovery, durable: [0, 1], memory: [] } }]} />));
+  expect(host.querySelector('[aria-label="未保存图片内存风险"]')).toBeNull();
+});
+
 it("edits optional Gemini controls, rejects invalid temperature and preserves options across protocol switches", async () => {
   const options = props(), drafts: DrawingDraft[] = [];
   function Harness() {
@@ -109,10 +308,10 @@ it("shows presets only with complete handlers, allows editing during generation 
 it("copies task prompts and reuses task parameters by returning to generation without generating", async () => {
   const options = props(), onReuseTask = vi.fn(), onCopyTaskPrompt = vi.fn();
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[task]} onReuseTask={onReuseTask} onCopyTaskPrompt={onCopyTaskPrompt} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   await act(async () => button("复制任务 1 提示词").click());
   expect(onCopyTaskPrompt).toHaveBeenCalledExactlyOnceWith(task.id);
-  expect(button("任务").getAttribute("aria-current")).toBe("page");
+  expect(button("任务与日志").getAttribute("aria-current")).toBe("page");
   await act(async () => button("复用任务 1 参数").click());
   expect(onReuseTask).toHaveBeenCalledExactlyOnceWith(task.id);
   expect(button("生成").getAttribute("aria-current")).toBe("page");
@@ -136,7 +335,7 @@ it("switches protocol fields, preserves both drafts and offers current sizes/qua
   await change(host.querySelectorAll("select")[1], "custom");
   expect(host.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe("1536x864");
   await change(host.querySelectorAll("select")[2], "max");
-  await act(async () => button("任务").click()); await act(async () => button("生成").click());
+  await act(async () => button("任务与日志").click()); await act(async () => button("生成").click());
   expect(host.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe("1536x864");
   await change(host.querySelectorAll("select")[0], "configured-image-model");
   expect([...host.querySelectorAll("select")].map(select => select.value)).toEqual(["configured-image-model", "1:8", "512"]);
@@ -182,11 +381,11 @@ it("updates the independent controlled draft and retains values when switching v
   expect(options.onDraftChange).toHaveBeenLastCalledWith({
     id: "current", prompt: "清晨的山谷湖泊", aspectRatio: "16:9", resolution: "2K", modelId: "configured-image-model",
   });
-  await act(async () => button("任务").click());
-  expect(button("任务").getAttribute("aria-current")).toBe("page");
+  await act(async () => button("任务与日志").click());
+  expect(button("任务与日志").getAttribute("aria-current")).toBe("page");
   expect(host.textContent).toContain("暂无绘图任务");
-  await act(async () => button("成果库").click());
-  expect(host.textContent).toContain("暂无绘图成果");
+  await act(async () => button("任务日志").click());
+  expect(host.textContent).toContain("暂无任务日志");
   await act(async () => button("生成").click());
   expect(host.querySelector("textarea")?.value).toBe("清晨的山谷湖泊");
   expect([...host.querySelectorAll("select")].map((item) => item.value)).toEqual(["configured-image-model", "16:9", "2K"]);
@@ -262,7 +461,7 @@ it("saves batch count, concurrency and completion sound in the controlled draft 
   await change(concurrency, "2");
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   expect(options.onDraftChange).toHaveBeenLastCalledWith({ ...initialDrawingDraft, count: 3, concurrency: 2, completionSound: false });
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   await act(async () => button("生成").click());
   expect([...host.querySelectorAll<HTMLInputElement>('input[type="number"]')].map(input => input.value)).toEqual(["3", "2"]);
   expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
@@ -283,7 +482,7 @@ it("keeps queue controls and counts across views, and targets cancellation by ta
   expect(status()).toBe("队列运行中 · 等待 1 · 准备 1 · 生成 1 · 保存 1 · 已结束 5");
   await act(async () => button("暂停队列").click());
   expect(options.onPause).toHaveBeenCalledOnce();
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   expect(host.querySelectorAll('button[aria-label^="取消任务"]')).toHaveLength(3);
   for (const label of ["取消排队", "取消准备", "取消生成"]) await act(async () => button(label).click());
   expect(options.onCancel.mock.calls).toEqual([["queued"], ["preparing"], [task.id]]);
@@ -292,7 +491,7 @@ it("keeps queue controls and counts across views, and targets cancellation by ta
   expect(status()).toContain("队列已暂停");
   await act(async () => button("继续队列").click());
   expect(options.onResume).toHaveBeenCalledOnce();
-  await act(async () => button("成果库").click());
+  await act(async () => button("任务日志").click());
   expect(status()).toContain("已结束 5");
   expect(button("继续队列")).toBeDefined();
 });
@@ -305,7 +504,7 @@ it("measures elapsed execution from start time and freezes it at each terminal f
   const completed: DrawingTask = { ...task, id: "finished", status: "completed", startedAt: "2026-10-01T00:00:00Z", finishedAt: "2026-10-01T00:01:03Z" };
   const queued: DrawingTask = { ...task, id: "queued", status: "queued" };
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[running, completed, queued]} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   const times = () => [...host.querySelectorAll(".drawing-record")].map(record => record.textContent);
   expect(times()[0]).toContain("执行耗时 0:05");
   expect(times()[1]).toContain("执行耗时 1:03");
@@ -336,11 +535,10 @@ it("renders one controlled large preview and routes history, export and reuse ca
   expect(options.onExport).toHaveBeenCalledWith(result.id);
   await act(async () => button("复用参数").click());
   expect(options.onReuse).toHaveBeenCalledWith(result.id);
-  await act(async () => button("成果库").click());
+  await act(async () => button("任务与日志").click());
   expect(host.querySelectorAll("img")).toHaveLength(0);
-  await act(async () => button("查看成果 2").click());
-  expect(options.onSelectResult).toHaveBeenLastCalledWith(second.id);
-  expect(button("生成").getAttribute("aria-current")).toBe("page");
+  await act(async () => button("任务日志").click());
+  expect(host.querySelectorAll("img")).toHaveLength(0);
 });
 
 it("shows unknown and local-save failure states without resubmitting generation", async () => {
@@ -348,11 +546,11 @@ it("shows unknown and local-save failure states without resubmitting generation"
   const unknown = { ...task, id: "task-unknown", status: "unknown" as const };
   const saveFailed = { ...task, id: "task-save", status: "save-failed" as const, error: "本地保存失败 <script>unsafe</script>" };
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[unknown, saveFailed]} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   expect(host.textContent).toContain("结果未知");
   expect(host.textContent).toContain("请求可能已经发出，不会自动重发。");
   expect(host.querySelector("script")).toBeNull();
-  expect(host.textContent).toContain(saveFailed.error);
+  expect(host.textContent).not.toContain(saveFailed.error);
   await act(async () => button("重试本地保存").click());
   expect(options.onRetrySave).toHaveBeenCalledWith(saveFailed.id);
   expect(options.onGenerate).not.toHaveBeenCalled();
@@ -439,16 +637,16 @@ it("numbers references and allows view, reorder and removal during generation wi
   expect(options.onDraftChange).not.toHaveBeenCalled();
 });
 
-it("routes preview and library reference actions without changing draft options or automatically generating", async () => {
+it("routes preview reference actions without changing draft options or automatically generating", async () => {
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} results={[result]} selectedResultId={result.id}
     previewUrl="blob:synthetic-result" busy tasks={[task]} />));
   await act(async () => button("作为参考图").click());
   expect(options.onUseAsReference).toHaveBeenCalledExactlyOnceWith(result.id);
-  await act(async () => button("成果库").click());
-  await act(async () => button("作为参考图").click());
-  expect(options.onUseAsReference).toHaveBeenCalledTimes(2);
-  expect(button("成果库").getAttribute("aria-current")).toBe("page");
+  await act(async () => button("任务与日志").click());
+  await act(async () => button("任务日志").click());
+  expect(host.querySelector('button[aria-label^="查看成果"]')).toBeNull();
+  expect(options.onUseAsReference).toHaveBeenCalledOnce();
   expect(options.onGenerate).not.toHaveBeenCalled();
   expect(options.onDraftChange).not.toHaveBeenCalled();
   expect(options.onReuse).not.toHaveBeenCalled();
@@ -458,7 +656,7 @@ it("cancels history deletion without changing tasks, saved results or the contro
   const options = props();
   const completed: DrawingTask = { ...task, status: "completed" };
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[completed]} results={[result]} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   await act(async () => button("删除历史").click());
   expect(host.querySelector('[role="dialog"]')?.textContent).toContain("已保存成果始终保留");
   await act(async () => button("取消").click());
@@ -468,7 +666,7 @@ it("cancels history deletion without changing tasks, saved results or the contro
   await act(async () => button("删除历史").click());
   await act(async () => button("确认删除历史").click());
   expect(options.onDeleteTasks).toHaveBeenCalledExactlyOnceWith([completed.id]);
-  await act(async () => button("成果库").click());
+  await act(async () => button("生成").click());
   expect(host.textContent).toContain("成果 1");
 });
 
@@ -481,7 +679,7 @@ it("aggregates unknown and save-failed warnings for bulk history clearing with e
     { ...task, id: "completed", status: "completed" }, { ...task, id: "saving", status: "saving" },
   ];
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={tasks} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   await act(async () => button("清空失败历史").click());
   const warning = host.querySelector('[role="dialog"]')!.textContent!;
   for (const text of ["删除 4 条", "不会取消远端生成或计费", "已暂存图片 1、3", "仅在内存的图片 2", "已丢失图片 4", "无法恢复", "可用性尚未核实", "已保存成果始终保留"])
@@ -502,7 +700,7 @@ it("keeps deletion disabled for active tasks and blocks all management while bus
     ...task, id: `active-${index}`, status: status as DrawingTask["status"],
   }));
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={tasks} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   const deleteButtons = [...host.querySelectorAll<HTMLButtonElement>('button[aria-label^="删除任务"]')];
   expect(deleteButtons).toHaveLength(5);
   expect(deleteButtons.every(button => button.disabled)).toBe(true);
@@ -524,7 +722,7 @@ it("offers batch cancellation once per batch and ignores repeat double-click act
     { ...task, batchId: "batch-one" }, { ...task, id: "saving", status: "saving", batchId: "batch-two" },
   ];
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={tasks} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   const batches = [...host.querySelectorAll<HTMLButtonElement>('button[aria-label$="所在批次"]')];
   expect(batches).toHaveLength(2);
   expect(batches[0].disabled).toBe(false);
@@ -546,7 +744,7 @@ it("offers batch cancellation once per batch and ignores repeat double-click act
 it("requires duplicate billing confirmation for unknown regeneration without resubmitting after cancellation", async () => {
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[{ ...task, status: "unknown" }]} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   await act(async () => button("重新生成").click());
   expect(host.querySelector('[role="dialog"]')?.textContent).toContain("重复计费");
   await act(async () => button("取消").click());
@@ -566,7 +764,7 @@ it("shows safe human diagnostic details and recovery options without exposing ra
     { ...task, id: "save", status: "save-failed", recovery: { total: 3, durable: [0], memory: [1], lost: [2] } },
   ];
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={tasks} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   expect(host.querySelectorAll("details summary")).toHaveLength(2);
   for (const text of ["请求过于频繁", "HTTP 状态 429", "模型或连接配置不可用", "可重试本地保存", "退出或删除任务后丢失", "无法恢复"])
     expect(host.textContent).toContain(text);
@@ -578,7 +776,7 @@ it("shows safe human diagnostic details and recovery options without exposing ra
 it("contains keyboard focus in the confirmation and restores its opener after Escape", async () => {
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[{ ...task, status: "completed" }]} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   const opener = button("删除历史");
   opener.focus();
   await act(async () => opener.click());
@@ -606,7 +804,7 @@ it("invalidates deletion confirmation when selected recovery data or task eligib
   const options = props();
   const original: DrawingTask = { ...task, status: "save-failed", recovery: { total: 1, durable: [0], memory: [], lost: [] } };
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[original]} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   await act(async () => button("清空失败历史").click());
   expect(button("确认删除历史").disabled).toBe(false);
   const changed = { ...original, recovery: { total: 1, durable: [], memory: [], lost: [0] } };
@@ -629,7 +827,7 @@ it("blocks unknown regeneration confirmation if its selected task changes or man
   const options = props();
   const unknown: DrawingTask = { ...task, status: "unknown" };
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[unknown]} />));
-  await act(async () => button("任务").click());
+  await act(async () => button("任务与日志").click());
   await act(async () => button("重新生成").click());
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[unknown]} managementBusy />));
   expect(button("确认新建任务").disabled).toBe(true);

@@ -67,7 +67,7 @@ it("loads only visible thumbnails and releases URLs when hidden, changed or unmo
   expect(URL.revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:thumbnail");
   expect(host.querySelectorAll("img")).toHaveLength(1);
   await visibility(true);
-  await click("任务");
+  await click("任务与日志");
   expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
   expect(entry.disconnect).toHaveBeenCalledOnce();
 });
@@ -93,7 +93,7 @@ it("releases late thumbnail reads without creating a URL after leaving the view"
   const pending = new Promise<{ mime: string; data: string }>(done => { resolve = done; });
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} results={[result]} readThumbnail={() => pending} />));
-  await click("任务");
+  await click("任务与日志");
   await act(async () => resolve({ mime: "image/png", data: "AQ==" }));
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
@@ -130,7 +130,8 @@ it("activates the root preview only on the generate view and releases it on unmo
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} />));
   expect(options.onPreviewActive).toHaveBeenLastCalledWith(true);
-  await click("成果库"); expect(options.onPreviewActive).toHaveBeenLastCalledWith(false);
+  await click("任务与日志"); expect(options.onPreviewActive).toHaveBeenLastCalledWith(false);
+  await click("任务日志"); expect(options.onPreviewActive).toHaveBeenLastCalledWith(false);
   await click("生成"); expect(options.onPreviewActive).toHaveBeenLastCalledWith(true);
   await act(async () => root.render(<div />)); expect(options.onPreviewActive).toHaveBeenLastCalledWith(false);
 });
@@ -147,30 +148,31 @@ it("shows safe snapshot details and explicit parameter export while keeping plai
   await click("复制提示词"); expect(options.onCopyPrompt).toHaveBeenCalledExactlyOnceWith(result.id);
 });
 
-it("exports exact selected results in both modes and clears selection", async () => {
+it("exports only the viewed history result without inventory selection controls", async () => {
   const options = props();
-  await act(async () => root.render(<DrawingWorkspace {...options} />)); await click("成果库");
-  await act(async () => host.querySelector<HTMLInputElement>('[aria-label="选择成果 1"]')!.click());
-  await click("导出所选图片"); expect(options.onExportResults).toHaveBeenLastCalledWith([second.id], false);
-  expect(host.textContent).toContain("已选择 0 张");
-  await click("全选成果"); await click("导出所选带参数 PNG");
-  expect(options.onExportResults).toHaveBeenLastCalledWith([result.id, second.id], true);
-  expect(host.textContent).toContain("已选择 0 张");
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="成果 1"]')!.click());
+  expect(options.onSelectResult).toHaveBeenCalledExactlyOnceWith(second.id);
+  await act(async () => root.render(<DrawingWorkspace {...options} selectedResultId={second.id} />));
+  await click("导出图片"); expect(options.onExport).toHaveBeenCalledExactlyOnceWith(second.id);
+  await click("导出带参数 PNG"); expect(options.onExportResults).toHaveBeenCalledExactlyOnceWith([second.id], true);
+  expect(host.textContent).not.toContain("全选成果");
+  expect(host.textContent).not.toContain("成果库");
+  expect(options.onGenerate).not.toHaveBeenCalled();
 });
 
 it("confirms exact result deletion, supports cancellation and traps focus", async () => {
   const options = props();
-  await act(async () => root.render(<DrawingWorkspace {...options} />)); await click("成果库"); await click("全选成果");
-  const opener = button("删除所选成果"); await click("删除所选成果");
-  expect(host.querySelector('[role="dialog"]')?.textContent).toContain("删除 2 张");
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  const opener = button("删除成果 2"); await click("删除成果 2");
+  expect(host.querySelector('[role="dialog"]')?.textContent).toContain("删除 1 张");
   expect(document.activeElement).toBe(button("取消"));
   await key(button("取消"), "Tab", true); expect(document.activeElement).toBe(button("确认删除成果"));
   await key(button("确认删除成果"), "Tab"); expect(document.activeElement).toBe(button("取消"));
   await key(button("取消"), "Escape"); expect(options.onDeleteResults).not.toHaveBeenCalled();
-  expect(document.activeElement).toBe(opener); expect(host.textContent).toContain("已选择 2 张");
-  await click("删除所选成果"); await click("确认删除成果");
-  expect(options.onDeleteResults).toHaveBeenCalledExactlyOnceWith([result.id, second.id]);
-  expect(host.textContent).toContain("已选择 0 张");
+  expect(document.activeElement).toBe(opener);
+  await click("删除成果 2"); await click("确认删除成果");
+  expect(options.onDeleteResults).toHaveBeenCalledExactlyOnceWith([result.id]);
   await click("删除成果 2"); await click("取消");
   expect(options.onDeleteResults).toHaveBeenCalledOnce();
 });
@@ -184,16 +186,17 @@ it("invalidates an open delete confirmation on changed result data and disables 
   for (const label of ["导出图片", "导出带参数 PNG", "复制提示词", "复用参数", "作为参考图", "删除成果 2"]) expect(button(label).disabled).toBe(true);
 });
 
-it("clears references with one callback while preserving the draft and prunes removed result selection", async () => {
+it("clears references with one callback while preserving the draft and handles a removed preview", async () => {
   const options = props();
   const reference = { ...result, id: "ref", name: "input.png" };
   const draft = { ...initialDrawingDraft, prompt: "下一幅图", references: [reference] };
   await act(async () => root.render(<DrawingWorkspace {...options} draft={draft} />)); await click("清空参考图");
   expect(options.onClearReferences).toHaveBeenCalledOnce(); expect(options.onDraftChange).not.toHaveBeenCalled();
-  await click("成果库"); await click("全选成果");
-  await act(async () => root.render(<DrawingWorkspace {...options} results={[second]} />));
-  expect(host.textContent).toContain("已选择 1 张"); await click("导出所选图片");
-  expect(options.onExportResults).toHaveBeenLastCalledWith([second.id], false);
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft} results={[second]} />));
+  expect(host.querySelector(".drawing-preview-stage img")).toBeNull();
+  expect(host.textContent).toContain("等待生成");
+  expect(options.onExportResults).not.toHaveBeenCalled();
+  expect(options.onGenerate).not.toHaveBeenCalled();
 });
 
 it("preserves unavailable reused OpenAI controls until an explicit model selection", async () => {

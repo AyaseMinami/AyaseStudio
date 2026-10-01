@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeImageTransport } from "./runtime";
+import { createRuntimeImageTransport, openDrawingOutputDirectory } from "./runtime";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
-vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: vi.fn(() => true), invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-http", () => ({ fetch: vi.fn() }));
 describe("native image transport", () => {
+  it("opens only the host-chosen directory without accepting or supplying a path", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    await openDrawingOutputDirectory();
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("open_drawing_output_directory");
+    vi.mocked(invoke).mockClear();
+    vi.mocked(isTauri).mockReturnValueOnce(false);
+    await expect(openDrawingOutputDirectory()).rejects.toThrow("桌面应用");
+    expect(invoke).not.toHaveBeenCalled();
+  });
   it.each(["gemini-image", "openai-images"] as const)("disables native redirect following for %s before sending the key header", async protocol => {
     vi.mocked(fetch).mockResolvedValue(new Response("", { status: 302 }));
     const transport = await createRuntimeImageTransport();

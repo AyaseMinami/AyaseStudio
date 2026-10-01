@@ -12,6 +12,7 @@ import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
 import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
+import { openDrawingOutputDirectory } from "./drawing/runtime";
 import { getDrawingModels } from "./chat/settings";
 import { ChatHeader } from "./ui/chat/ChatHeader";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
@@ -109,6 +110,7 @@ function App() {
           managementBusy={drawing.managementBusy} onCancelBatch={drawing.controller.cancelBatch}
           onRegenerate={id => void drawing.controller.regenerate(id)} onDeleteTasks={ids => void drawing.controller.deleteTasks(ids)}
           onExport={id => void drawing.controller.export(id)} onRetrySave={id => void drawing.controller.retrySave(id)}
+          onOpenOutputDirectory={openDrawingOutputDirectory}
           onReuse={id => void drawing.controller.reuse(id)}
           onReuseTask={id => void drawing.controller.reuseTask(id)}
           onCopyTaskPrompt={id => void drawing.controller.copyTaskPrompt(id)}

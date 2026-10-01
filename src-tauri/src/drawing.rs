@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 use uuid::{Uuid, Variant, Version};
 
 const IMAGE_LIMIT: usize = 32 * 1024 * 1024;
@@ -1010,6 +1011,38 @@ fn export_png_with_parameters(
 
 fn app_directory(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|_| Error::Storage.code())
+}
+
+// Reuse the actual originals directory, including existing task subdirectories.
+// Do not scan, duplicate images, change references or accept a frontend path.
+fn output_directory(root: &Path) -> Result<PathBuf, Error> {
+    let directory = root.join("drawing");
+    if inspect(&directory)?.is_some_and(|metadata| !metadata.is_dir()) {
+        return Err(Error::InvalidReference);
+    }
+    std::fs::create_dir_all(&directory).map_err(|_| Error::Storage)?;
+    if !inspect(&directory)?.is_some_and(|metadata| metadata.is_dir()) {
+        return Err(Error::InvalidReference);
+    }
+    let root = root.canonicalize().map_err(|_| Error::Storage)?;
+    let resolved = directory.canonicalize().map_err(|_| Error::Storage)?;
+    if resolved != root.join("drawing") {
+        return Err(Error::InvalidReference);
+    }
+    Ok(directory)
+}
+
+#[tauri::command]
+pub async fn open_drawing_output_directory(app: AppHandle) -> Result<(), String> {
+    let root = app_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let directory = {
+            let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+            output_directory(&root).map_err(|error| error.code())?
+        };
+        let path = directory.to_str().ok_or_else(|| Error::Storage.code())?;
+        app.opener().open_path(path, None::<&str>).map_err(|_| "drawing-open-directory".to_owned())
+    }).await.map_err(|_| Error::Storage.code())?
 }
 
 #[tauri::command]
@@ -2498,6 +2531,7 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(outside.path(), &linked).unwrap();
         let task = Uuid::new_v4().to_string();
+        assert_eq!(output_directory(root.path()).unwrap_err(), Error::InvalidReference);
         assert_eq!(
             save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap_err(),
             Error::InvalidReference
@@ -2522,5 +2556,28 @@ mod tests {
         assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
         #[cfg(windows)]
         std::fs::remove_dir(&linked).unwrap();
+    }
+
+    #[test]
+    fn output_directory_creates_only_the_fixed_directory_and_preserves_existing_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = output_directory(root.path()).unwrap();
+        assert_eq!(directory, root.path().join("drawing"));
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        let task = Uuid::new_v4().to_string();
+        let files = save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap();
+        let original = std::fs::read(root.path().join(&files[0].reference)).unwrap();
+        assert_eq!(output_directory(root.path()).unwrap(), directory);
+        assert_eq!(std::fs::read(root.path().join(&files[0].reference)).unwrap(), original);
+    }
+
+    #[test]
+    fn output_directory_refuses_a_file_in_place_of_the_directory_without_writes() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("drawing");
+        std::fs::write(&path, b"keep existing bytes").unwrap();
+        assert_eq!(output_directory(root.path()).unwrap_err(), Error::InvalidReference);
+        assert_eq!(std::fs::read(&path).unwrap(), b"keep existing bytes");
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
     }
 }
