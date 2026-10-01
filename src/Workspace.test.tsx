@@ -605,6 +605,31 @@ describe("assistant workspace public behavior", () => {
     expect(container.textContent).toContain("A partial finished");
   });
 
+  it("allows metadata sorting while another conversation generates and keeps its stream and selection", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let signal: AbortSignal | undefined;
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream(request: ChatRequest) {
+      signal = request.signal; yield { type: "text-delta", text: "Synthetic partial" }; await gate;
+      yield { type: "text-delta", text: " completed" }; yield { type: "completed" };
+    } } satisfies ChatTransport);
+    await chooseAssistant("写作助手", "对话 B"); await fill(".composer-input", "Generate B"); await click("发送");
+    await wait(() => container.textContent?.includes("Synthetic partial") === true);
+    try {
+      await chooseAssistant("默认助手", "对话 A");
+      await fill(".composer-input", "Keep A draft");
+      expect(container.querySelector<HTMLButtonElement>('[aria-label="拖动助手 写作助手"]')?.disabled).toBe(false);
+      await click("上移助手 写作助手");
+      await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="拖动助手 写作助手"]')?.disabled === false);
+      expect([...container.querySelectorAll(".assistant-branch-name")].map(item => item.textContent)).toEqual(["写作助手", "默认助手"]);
+      expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe("对话 A");
+      expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("Keep A draft");
+      expect(signal?.aborted).toBe(false);
+    } finally { await act(async () => release()); }
+    await wait(() => !container.querySelector(".background-generation"));
+    expect((await repo.load("b"))?.messages.slice(-1)[0]).toMatchObject({ content: "Synthetic partial completed", status: "complete" });
+  });
+
   it("opens assistant actions without navigating and supports keyboard dismissal and ordering", async () => {
     await click("默认助手");
     await click("管理助手 写作助手");
@@ -638,12 +663,104 @@ describe("assistant workspace public behavior", () => {
     await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })));
     expect(document.activeElement?.getAttribute("aria-label")).toBe("写作助手");
     expect(container.querySelector(".conversation-cascade-pane:not([inert])")).not.toBeNull();
-    await act(async () => row.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "F10", shiftKey: true })));
+    await act(async () => row.querySelector(".chat-navigation-select")!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "F10", shiftKey: true })));
     await click("编辑助手 写作助手");
     expect(container.querySelector<HTMLInputElement>("#assistant-name")?.value).toBe("写作助手");
     expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe("对话 A");
     await click("取消");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("写作助手");
+  });
+
+  it("sorts both navigation lists with drag handles, retains selection and draft, and reloads the saved order", async () => {
+    await click("默认助手"); await click("新建对话");
+    await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="拖动对话 对话 A"]')?.disabled === false);
+    const selected = selectedConversation(await repo.initializeWorkspace(null, ["model-a", "model-b"]))!;
+    await fill(".composer-input", "Keep my unsent draft");
+    const pointer = (target: EventTarget, type: string, y: number) => target.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: 41, isPrimary: true, button: 0, clientX: 25, clientY: y,
+    }));
+    const reorder = async (source: HTMLButtonElement, target: HTMLElement) => {
+      vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
+      vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ top: 50, height: 40 } as DOMRect);
+      await act(async () => { pointer(source, "pointerdown", 10); pointer(window, "pointermove", 60); });
+      expect(source.closest("li")?.getAttribute("data-dragging")).toBe("true");
+      expect(target.getAttribute("data-drop-placement")).toBe("before");
+      await act(async () => pointer(window, "pointerup", 60));
+      await wait(() => !source.disabled);
+    };
+    const currentRow = container.querySelector<HTMLElement>('[data-conversation-id="current"]')!;
+    const activeRow = container.querySelector<HTMLElement>(`[data-conversation-id="${selected.id}"]`)!;
+    await reorder(currentRow.querySelector<HTMLButtonElement>(".navigation-drag-handle")!, activeRow);
+    expect([...container.querySelectorAll(".conversation-leaf")].map(row => row.getAttribute("data-conversation-id"))).toEqual(["current", selected.id]);
+    await reorder(container.querySelector<HTMLButtonElement>('[aria-label="拖动助手 写作助手"]')!, container.querySelector<HTMLElement>('[data-navigation-sort-id="default"]')!);
+    expect([...container.querySelectorAll(".assistant-branch-name")].map(item => item.textContent)).toEqual(["写作助手", "默认助手"]);
+    expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("Keep my unsent draft");
+    expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-a");
+    const saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    expect(selectedConversation(saved)?.id).toBe(selected.id);
+    expect(saved.conversations.filter(item => item.assistantId === "default").map(item => item.id)).toEqual(["current", selected.id]);
+    expect(saved.conversations.find(item => item.id === "b")?.assistantId).toBe("writer");
+    await act(async () => root.unmount()); root = createRoot(container);
+    await act(async () => root.render(<App />));
+    await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="拖动助手 默认助手"]')?.disabled === false);
+    expect([...container.querySelectorAll(".assistant-branch-name")].map(item => item.textContent)).toEqual(["写作助手", "默认助手"]);
+    await click("默认助手");
+    expect([...container.querySelectorAll(".conversation-leaf")].map(row => row.getAttribute("data-conversation-id"))).toEqual(["current", selected.id]);
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+  });
+
+  it("opens handle menus with keyboard and moves only the target conversation without selecting it", async () => {
+    await click("默认助手"); await click("新建对话");
+    await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="拖动对话 对话 A"]')?.disabled === false);
+    const title = container.querySelector(".workspace-conversation-title")?.textContent;
+    const handle = container.querySelector<HTMLButtonElement>('[aria-label="拖动对话 对话 A"]')!;
+    handle.focus();
+    await act(async () => handle.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "F10", shiftKey: true })));
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="上移对话 对话 A"]')?.disabled).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="下移对话 对话 A"]')?.disabled).toBe(true);
+    await click("上移对话 对话 A");
+    await wait(() => !handle.disabled);
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe(title);
+    expect(container.querySelector('.sr-only[role="status"]')?.textContent).toBe("对话 A的顺序已保存。");
+    await act(async () => handle.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ContextMenu" })));
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="上移对话 对话 A"]')?.disabled).toBe(true);
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })));
+    expect(document.activeElement).toBe(handle);
+    expect(container.querySelector(".conversation-cascade-pane:not([inert])")).not.toBeNull();
+    expect((await repo.initializeWorkspace(null, ["model-a", "model-b"])).conversations.find(item => item.id === "b")?.assistantId).toBe("writer");
+  });
+
+  it("cancels drag with Escape without closing navigation, rejects cross-list drops, and keeps action buttons separate", async () => {
+    await click("默认助手");
+    const source = container.querySelector<HTMLButtonElement>('[aria-label="拖动对话 对话 A"]')!;
+    const assistant = container.querySelector<HTMLElement>('[data-navigation-sort-id="writer"]')!;
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(assistant);
+    const pointer = (target: EventTarget, type: string) => target.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: 44, isPrimary: true, button: 0, clientX: 20, clientY: type === "pointerdown" ? 10 : 80,
+    }));
+    await click("删除对话 对话 A");
+    await act(async () => { pointer(source, "pointerdown"); pointer(window, "pointermove"); });
+    expect(container.querySelector('[aria-label="确认删除对话 对话 A"]')).toBeNull();
+    expect(source.closest("li")?.getAttribute("data-dragging")).toBe("true");
+    expect(assistant.getAttribute("data-drop-placement")).toBeNull();
+    await act(async () => source.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" })));
+    expect(container.querySelector(".conversation-cascade-pane:not([inert])")).not.toBeNull();
+    expect(source.closest("li")?.getAttribute("data-dragging")).toBeNull();
+    await act(async () => pointer(window, "pointerup"));
+    await act(async () => { pointer(source, "pointerdown"); pointer(window, "pointermove"); pointer(window, "pointerup"); });
+    const unchanged = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
+    expect(unchanged.conversations.find(item => item.id === "current")?.assistantId).toBe("default");
+    expect(unchanged.conversations.find(item => item.id === "b")?.assistantId).toBe("writer");
+    await act(async () => pointer(container.querySelector('[aria-label="编辑对话 对话 A"]')!, "pointerdown"));
+    expect(container.querySelector('[data-dragging="true"]')).toBeNull();
+    await click("编辑对话 对话 A");
+    await act(async () => { pointer(source, "pointerdown"); pointer(window, "pointermove"); });
+    expect(container.querySelector('[data-dragging="true"]')).toBeNull();
+    await click("取消");
+    await click("管理助手 写作助手");
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(container.querySelector(".workspace-conversation-title")?.textContent).toBe("对话 A");
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
   });
 
   it("hands right-click deletion to the target row's second confirmation without selecting that conversation", async () => {

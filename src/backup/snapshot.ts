@@ -47,7 +47,7 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
   check(typeof options.connections === "boolean" && typeof options.credentials === "boolean" && (!options.credentials || options.connections));
   const rows: Record<string, unknown[]> = {};
   rows.assistants = snapshot.rows.assistants.map(a => ({ ...pick(a, ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultAvatar"]), defaultConfig: session(a.defaultConfig), ...(a.avatar ? { avatar: avatar(a.avatar) } : {}) }));
-  rows.conversations = snapshot.rows.conversations.map(c => ({ ...pick(c, ["id", "assistantId", "title", "createdAt", "updatedAt"]), titleNaming: "manual", settings: settings(c.settings!), ...(c.creationConfig ? { creationConfig: settings(c.creationConfig) } : {}) }));
+  rows.conversations = snapshot.rows.conversations.map(c => ({ ...pick(c, ["id", "assistantId", "title", "createdAt", "updatedAt", "sortOrder"]), titleNaming: "manual", settings: settings(c.settings!), ...(c.creationConfig ? { creationConfig: settings(c.creationConfig) } : {}) }));
   rows.chats = snapshot.rows.chats.map(c => ({ ...pick(c, ["id", "updatedAt"]), messages: c.messages.map(m => message(m)) }));
   rows.workspace = snapshot.rows.workspace.map(s => pick(s, ["id", "activeAssistantId", "lastSelected"]));
   rows.avatarLibrary = snapshot.rows.avatarLibrary.map(a => ({ ...pick(a, ["id", "name", "version"]), avatar: avatar(a.avatar) }));

@@ -1,5 +1,9 @@
 # Ayase Studio v0.1 Plan
 
+## List sorting #99 (2026-10-01)
+
+用户授权继续完成助手／聊天拖动排序。供应商与连接配置树的既有切片保持；新增两类导航列表的把手／名称长按、插入提示、边缘滚动、取消与误点击隔离、菜单上下移和独立持久化。聊天首次实际手动换序后固定同助手顺序，新建聊天置顶；工作区与备份保存顺序。实现与验证见 [开发指南](DEVELOPMENT.md#list-sorting-99-2026-10-01)。实施检查后用户已授权提交、推送及关闭 #99；实际交付状态以 [Issue 评论](https://github.com/AyaseMinami/AyaseStudio/issues/99) 为准，原生关闭重启验收边界保持。
+
 #87 queue is locally implemented: batches 1–99, persistent FIFO, concurrency 1–4, pause/resume, cancellation and conservative restart recovery. [#87 implementation](ISSUE-87-IMPLEMENTATION.md) records the initial subset; [#88 lifecycle implementation](ISSUE-88-IMPLEMENTATION.md) adds batch cancellation, regeneration/source deduplication, terminal history cleanup, local recovery inventory and sanitized diagnostics. Native interaction and #94 pressure acceptance remain separate. No remote delivery or issue closure is implied.
 
 ## Beta drawing scope #23 / #83 (2026-09-30)

@@ -14,6 +14,7 @@ import { encodeBackup, decodeBackup } from "./codec";
 import { createBackupDocument } from "./snapshot";
 import { createChatRepository } from "../chat/repository";
 import { SEARCH_SETTINGS_KEY } from "../search/settings";
+import { object } from "./validation";
 
 const databases: AyaseDatabase[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const db of databases.splice(0)) await db.delete(); });
@@ -66,6 +67,15 @@ async function assetDocument() {
   return doc;
 }
 describe("restore conflict strategies", () => {
+  it.each(["replace", "copy"] as const)("preserves manual conversation ranks during %s", mode => {
+    const doc = document(), before = state();
+    object(doc.rows.conversations[0]);
+    doc.rows.conversations[0].sortOrder = 4;
+    const plan = createRestorePlan(doc, before, mode);
+    const restored = plan.after.rows.conversations.find(c => c.title === "current" && (mode === "replace" || c.id !== "chat"));
+    expect(restored?.sortOrder).toBe(4);
+    expect(restored?.assistantId).toBe(plan.after.rows.assistants.find(a => a.name === "backup")?.id);
+  });
   it.each(["merge", "copy", "replace"] as const)("v3 %s isolates API/MCP configs and preserves corresponding excluded keys", async mode => {
     const before = state(), current = searchConfiguration(); before.preferences[SEARCH_SETTINGS_KEY] = JSON.stringify(current);
     for (const credentials of [false, true]) {

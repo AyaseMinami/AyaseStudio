@@ -22,7 +22,13 @@ Queue regressions: `src/drawing/queue.test.ts`, `controller.test.ts`, `repositor
 
 本地接入 `openai-images` 与当前官方 GPT／Gemini 尺寸选项；[实施记录](ISSUE-85-IMPLEMENTATION.md) 列明协议边界、模型限制和验证。定向测试：`npm.cmd test -- src/drawing src/ui/drawing src/chat/settings.test.ts src/chat/urlResolution.test.ts src/ui/settings/ConnectionSettings.test.tsx`，再运行默认代码检查。使用合成 Base64、HTTP 故障和原生文件 mock；不得为验证错误而发真实请求。浏览器隔离验收入口 `.drawing85.local/` 不读取真实数据或供应商凭据。原生网络与系统对话框必须与离线／浏览器／启动检查区分。
 
-## Provider and connection tree sorting #99 (2026-10-01)
+## List sorting #99 (2026-10-01)
+
+续作补齐助手／聊天列表拖动和菜单上下移：`src/Workspace.test.tsx` 与 `src/ui/chat/useNavigationListDrag.test.tsx` 覆盖真实 repository 换序／重挂载、选中模型／草稿保持、手势取消／跨列表／首尾及误点击隔离；`src/chat/workspace.test.ts` 覆盖旧最近更新时间排序、原位不冻结、手动顺序、消息活动／重载／新建、同助手边界、助手排序和迁移。备份 snapshot／restore 测试覆盖可选排序字段及旧记录兼容。供应商／连接的原有定向用例继续执行。最终检查和浏览器验收详见 [#99 实施记录](ISSUE-99-IMPLEMENTATION.md)。
+
+最终全量 99 文件／1454 项测试、TypeScript、生产构建与 `cargo check --locked` 通过；独立审查无遗留发现。内置浏览器完成隔离真实指针／键盘换序、重载、取消、跨列表、窄屏滚动和浅深主题检查。桌面实际关闭重启仍待手动验收。以下历史切片失败记录不代表当前检查状态。
+
+以下为昨晚供应商／连接切片的历史验收，助手／聊天待讨论及当时构建阻碍由续作最终结果取代：
 
 当前用户切片为连接配置页 1:2 双栏，以及供应商／连接的左侧把手和名称长按拖动；连接限定在所属供应商内排序。助手／聊天列表拖动仍待讨论，远端 Issue 未修改。
 

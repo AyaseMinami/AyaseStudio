@@ -7,6 +7,7 @@ import { decodeBackup, encodeBackup, sha256 } from "./codec";
 import { createBackupDocument, type LocalSnapshot } from "./snapshot";
 import { backupTables, preferenceKeys, type BackupFiles } from "./types";
 import { SEARCH_SETTINGS_KEY } from "../search/settings";
+import { object } from "./validation";
 
 const syntheticKey = "synthetic-key-never-a-real-credential";
 const reference = "attachments/00000000-0000-4000-8000-000000000001.txt";
@@ -46,6 +47,20 @@ function snapshot(): LocalSnapshot {
 }
 
 describe("backup snapshot", () => {
+  it("round-trips optional manual chat ranks and keeps legacy unranked backups valid", async () => {
+    const input = snapshot();
+    input.rows.conversations[0].sortOrder = 2;
+    const document = await createBackupDocument(input, { connections: false, credentials: false }, files());
+    const restored = await decodeBackup(await encodeBackup(document));
+    expect(restored.document.rows.conversations[0]).toMatchObject({ sortOrder: 2 });
+    delete input.rows.conversations[0].sortOrder;
+    const legacy = await createBackupDocument(input, { connections: false, credentials: false }, files());
+    expect((await decodeBackup(await encodeBackup(legacy))).document.rows.conversations[0]).not.toHaveProperty("sortOrder");
+    const invalid = structuredClone(document);
+    object(invalid.rows.conversations[0]);
+    invalid.rows.conversations[0].sortOrder = "invalid";
+    await expect(encodeBackup(invalid)).rejects.toThrow();
+  });
   it.each([false, true])("exports v3 search configuration with credentials=%s under the existing options contract", async credentials => {
     const input = snapshot();
     input.preferences[SEARCH_SETTINGS_KEY] = JSON.stringify({ version: 1, baseUrl: "https://mcp.exa.ai/mcp", apiKey: "synthetic-search-key", numResults: 7 });
