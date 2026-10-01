@@ -1,6 +1,22 @@
 # Protocol Compatibility Contract
 
+## Drawing lifecycle and diagnostics (#88)
+
+The durable `dispatching` marker covers the possible-send boundary. Abort ends local waiting, including transports that settle late; it does not prove remote cancellation. Only explicit regeneration can create a new provider request, retaining source identity and deduplicating active replacements. Local recovery inventories and indexed missing-image repair never call providers. HTTP failures retain only category and numeric status, never raw response bodies, credentials or machine paths. Request parameter mapping is unchanged. See [lifecycle contract](ISSUE-88-IMPLEMENTATION.md).
+
+## Drawing queue dispatch (#87)
+
+Queue entries freeze protocol, target IDs, actual model, validated Base URL, parameters and ordered private reference descriptors. Dispatch resolves the same target again, blocks changed/missing targets, reads images only inside its slot, and freezes the current Key only in memory. A durable possible-send marker precedes transport invocation. No automatic retry/fallback requests are introduced; local-save retry never invokes transport. Adapter formats remain unchanged. See [queue contract](ISSUE-87-IMPLEMENTATION.md).
+
 ## Planned drawing protocol boundary (#83)
+
+### Requirements audit follow-up (2026-10-01; not implemented)
+
+Tracked by [#101](https://github.com/AyaseMinami/AyaseStudio/issues/101); part of the independent Beta integration gate #94.
+
+User-requested optional Gemini parameters follow official temperature guidance: [Gemini 3](https://ai.google.dev/gemini-api/docs/generate-content/gemini-3#temperature) recommends default 1.0, while [GenerationConfig](https://ai.google.dev/api/generate-content#generationconfig) permits 0–2 with model-dependent defaults. Plan automatic/omitted temperature and explicit advanced override, not fixed GNBP 0.9. Safety thresholds and IMAGE versus TEXT+IMAGE are separate options, defaulting to omitted thresholds and current TEXT+IMAGE. Freeze choices per task; absent old fields keep current defaults. No automatic probe/fallback.
+
+The 32,000-character limit is documented for OpenAI [generations](https://developers.openai.com/api/reference/resources/images/methods/generate) and [edits](https://developers.openai.com/api/reference/resources/images/methods/edit), not established for Gemini. Correct Gemini's borrowed limit and test Unicode counting. GNBP single-object data.b64_json and bounded Base64 whitespace/data-URL normalization are explicit compatibility cases to add with synthetic fixtures. Current code is unchanged; output budgets, TLS, no URL downloads/retries and original reference bytes remain in force.
 
 ### Implemented reference-image inputs (#86, 2026-10-01)
 

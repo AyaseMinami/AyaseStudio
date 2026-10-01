@@ -241,6 +241,24 @@ describe("parallel conversation generation", () => {
     await expect(session.dataImport.selectBackup()).rejects.toThrow("请先等待当前操作完成");
   });
 
+  it("can send chat while the drawing queue protects shared configuration", async () => {
+    await act(async () => root.render(<Probe externalBusy />));
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.setDraft("Synthetic concurrent chat"));
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    expect(session.isAnyGenerating).toBe(true);
+    await act(async () => {
+      requests[0].push({ type: "completed", finishReason: "stop" });
+      requests[0].finish();
+      await sending;
+    });
+    expect(session.isAnyGenerating).toBe(false);
+    expect(session.backupDisabled).toBe(true);
+  });
+
   it.each(["http://localhost:1234", "http://images.example"])("rejects a drawing catalog callback for %s before creating a client", async (baseUrl) => {
     let drawingId = "";
     await act(async () => { drawingId = session.addConnection("provider", "Drawing", "gemini-image"); });

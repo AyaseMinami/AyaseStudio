@@ -1,10 +1,18 @@
 # Ayase Studio Architecture
 
+## Drawing task lifecycle (#88)
+
+`dispatching` is persisted before provider invocation; cancellation races settle locally once and late callbacks cannot commit. History management shares the reference lifecycle queue, while save retries and deletion reserve task ownership synchronously. Only `enqueue` creates rows; transactional `saveTask`/`complete` reject deleted rows. Regeneration freezes a new task with `sourceTaskId`, reuses an active replacement, and permits later independent actions. Native receipt inventory releases durable payloads; indexed local retry fills only missing receipt entries. Terminal history deletion preserves independent results and their references; explicit journal cleanup is scoped to unowned task outputs. See [recovery, failure memory and cleanup limits](ISSUE-88-IMPLEMENTATION.md).
+
 ### Background blur rendering (#96)
 
 `BackgroundImage` accepts a blur radius in logical CSS pixels and keeps the existing `backgroundViewport` geometry independent of it. A layout-width observer converts the radius into SVG user units, excluding the fixed-preview stage transform. Nonzero blur samples the original image plus eight explicitly extended outer pixel strips/corners, applies an SVG Gaussian filter, and clips the result to the original image bounds. Explicit padding avoids relying on Chromium support for `edgeMode`; transparent source pixels retain their alpha. Outer background containers clip to the viewport. Zero blur bypasses the filter and padding. No image bytes, persisted focus/zoom, native permissions, or transport contracts change.
 
 ## Independent drawing module (#83 / #84)
+
+#87 supersedes the single-active-task contract below: `DrawingController` atomically enqueues 1–99 immutable tasks through `DrawingRepository.enqueue`, with transaction-assigned FIFO order and 1–4 slots covering preparation/network/local save/DB commit. Preferences use optional draft fields without schema migration. A durable running marker precedes dispatch; restart repairs journals, restores preparing as queued, pauses queued work and never resends possibly sent tasks. Shared settings protection does not block chat sends. See [queue/recovery boundaries](ISSUE-87-IMPLEMENTATION.md); older #84–#86 notes below describe the baseline.
+
+2026-10-01 [requirements audit](ISSUE-83-DRAWING-SPEC.md#14-2026-10-01-全面核对与需求修订) supersedes old candidate limits: planned batches 1–99/no extra queue-count cap, concurrency 1–4; task-local save failures do not pause subsequent work. Pure-text presets and complete history reuse load directly. Special terminal deletion needs an impact warning while independent saved results survive. #89 owns optional sanitized parameter PNG export; #92 later reads legacy PNGs. These remain follow-up requirements; the implementation contracts below describe current #84–#86 only.
 
 #85 extends this module with `openai-images`, a dedicated Images generations adapter and explicit runtime dispatch. Shared service configuration includes both drawing protocols while `ChatProtocol` stays unchanged. `DrawingParameters` is a discriminated union; drafts retain independent Gemini and OpenAI option groups, and old drafts default to automatic OpenAI values. No database schema rewrite or new queue is introduced. Settings and dispatch share the OpenAI endpoint resolver; model catalogs reuse only the matching read-only client after drawing HTTPS validation. Both drawing protocol configurations are protected by the pre-#93 backup gate. See [#85 contracts and validation](ISSUE-85-IMPLEMENTATION.md).
 

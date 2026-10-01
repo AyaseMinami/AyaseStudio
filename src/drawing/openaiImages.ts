@@ -79,7 +79,8 @@ export function createOpenAIImagesTransport(fetcher: FetchLike): ImageGeneration
       }
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);
-        throw new ImageGenerationError(`绘图请求失败（HTTP ${response.status}）。`, response.status >= 500 ? "unknown" : "failed");
+        throw new ImageGenerationError(`绘图请求失败（HTTP ${response.status}）。`, response.status >= 500 ? "unknown" : "failed",
+          response.status === 429 ? "rate-limited" : response.status >= 500 ? "network-unknown" : "rejected", response.status);
       }
       const text = await readBoundedImageResponse(response, controller.signal);
       let value: unknown;

@@ -1,5 +1,7 @@
 # Ayase Studio v0.1 Plan
 
+#87 queue is locally implemented: batches 1–99, persistent FIFO, concurrency 1–4, pause/resume, cancellation and conservative restart recovery. [#87 implementation](ISSUE-87-IMPLEMENTATION.md) records the initial subset; [#88 lifecycle implementation](ISSUE-88-IMPLEMENTATION.md) adds batch cancellation, regeneration/source deduplication, terminal history cleanup, local recovery inventory and sanitized diagnostics. Native interaction and #94 pressure acceptance remain separate. No remote delivery or issue closure is implied.
+
 ## Beta drawing scope #23 / #83 (2026-09-30)
 
 2026-10-01 用户授权 #85 OpenAI 兼容 Images 文生图，并要求核对 GPT／Gemini 当前尺寸与分辨率文档。本地实现共享配置、按协议隔离的参数、Base64 单请求生成及既有保存／预览闭环；新版选项和具体兼容边界见 [#85 实施记录](ISSUE-85-IMPLEMENTATION.md)。#86 参考图和其他后续范围不因此提前纳入；真实服务、远端交付与 Issue 关闭仍分别验收。
@@ -8,7 +10,9 @@ User approval includes implementing #84 directly (2026-10-01). The local slice a
 
 The user confirmed an independent drawing module as the second business workspace, sharing the service-settings entry but isolating chat/drawing protocols, models, parameters and data. Same-prompt batches use one image request per task, with global concurrency 1–4 (default 1). Results/parameters and drafts/reference images persist locally; ordinary export omits generation metadata. Restart leaves queued work paused until the user continues it, and never resends possibly dispatched tasks automatically.
 
-The first independent drawing Beta includes #84–#90, #93 and #94. Existing #91 owns later explicit chat exchange; #92 PNG metadata compatibility also remains later. #93 and #94 therefore no longer require #91 for the independent release. Remote issue bodies still describe the earlier dependency set and have not been changed. See [#83 scope, interaction and data specification](ISSUE-83-DRAWING-SPEC.md) and [offline interaction sketch](design/drawing-workspace-83.html). Detailed proposals await user review; #83 does not implement generation or mark remote acceptance.
+The independent Beta includes #84–#90, #93, #94 and [#101 protocol follow-up](https://github.com/AyaseMinami/AyaseStudio/issues/101) from the 2026-10-01 audit. #91 chat exchange and #92 reading legacy PNG parameters remain later; #89 owns optional parameter-bearing PNG export. #93/#94 do not depend on #91/#92. The user authorized remote requirement reconciliation; historical records and CLOSED #84–#86 remain intact. See [confirmed scope and audit](ISSUE-83-DRAWING-SPEC.md#14-2026-10-01-全面核对与需求修订). The old sketch is illustrative, not current acceptance evidence.
+
+Audit decisions: batches 1–99/no additional queue-count cap; global concurrency 1–4/default 1; single save failure does not pause later work. Pure-text presets and history reuse load directly. Special terminal histories may be removed after an extra warning without deleting saved results. Zoom/pan/reset, reference clearing, prompt copying and optional completion sound are follow-ups. Gemini advanced parameters default to model behavior, not fixed 0.9. These are requirements, not implemented capabilities.
 
 ## Custom context menus #74 scope revision (2026-09-30)
 

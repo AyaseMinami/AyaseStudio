@@ -15,9 +15,16 @@ const file = { id: "file-1", reference: "drawing/task/file.png", mime: "image/pn
 function fixture(snapshot: DrawingSnapshot = { tasks: [], results: [] }) {
   let saved: DrawingSnapshot = structuredClone(snapshot);
   const repository: DrawingRepository = {
+    removeTasks: vi.fn(async ids => { saved.tasks = saved.tasks.filter(task => !ids.includes(task.id)); }),
     load: vi.fn(async () => structuredClone(saved)),
     saveDraft: vi.fn(async draft => { saved.draft = structuredClone(draft); }),
     saveTask: vi.fn(async task => { saved.tasks = [structuredClone(task), ...saved.tasks.filter(item => item.id !== task.id)]; }),
+    enqueue: vi.fn(async (tasks: DrawingTask[]) => {
+      const last = Math.max(0, ...saved.tasks.map(task => task.queueOrder ?? 0));
+      const ordered = tasks.map((task, index) => ({ ...structuredClone(task), queueOrder: last + index + 1 }));
+      saved.tasks = [...ordered, ...saved.tasks];
+      return structuredClone(ordered);
+    }),
     complete: vi.fn(async (task, results) => { saved.tasks = [structuredClone(task), ...saved.tasks.filter(item => item.id !== task.id)]; saved.results = [...structuredClone(results), ...saved.results.filter(item => item.taskId !== task.id)]; }),
   };
   let referenceSequence = 0;
@@ -87,7 +94,7 @@ describe("application drawing task controller", () => {
     await f.controller.generate(settings);
     expect(f.controller.getSnapshot().error).toContain("参考图读取失败");
     expect(f.transport.generate).not.toHaveBeenCalled();
-    expect(f.saved().tasks).toHaveLength(0);
+    expect(f.saved().tasks).toEqual([expect.objectContaining({ status: "failed", parameters: expect.objectContaining({ references: expect.any(Array) }) })]);
   });
   it("uses a saved result as a reference without copying bytes, replacing the draft or sending", async () => {
     const f = fixture(); await prepare(f); await f.controller.generate(settings);
@@ -175,7 +182,7 @@ describe("application drawing task controller", () => {
   });
   it("never sends when durable task registration fails", async () => {
     const f = fixture(); await prepare(f);
-    vi.mocked(f.repository.saveTask).mockRejectedValueOnce(new Error("disk"));
+    vi.mocked(f.repository.enqueue).mockRejectedValueOnce(new Error("disk"));
     await f.controller.generate(settings);
     expect(f.transport.generate).not.toHaveBeenCalled();
     expect(f.controller.getSnapshot().error).toContain("未发起");
@@ -264,7 +271,7 @@ describe("application drawing task controller", () => {
     expect(f.transport.generate).not.toHaveBeenCalled();
     expect(f.controller.getSnapshot()).toMatchObject({ closing: true, draft: { prompt: "slow save" } });
     release(); await close;
-    f.controller.cancelClose(); await f.controller.generate(settings);
+    f.controller.cancelClose(); f.controller.resume(); await f.controller.generate(settings);
     expect(f.transport.generate).toHaveBeenCalledOnce();
   });
 });

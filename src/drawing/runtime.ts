@@ -9,6 +9,9 @@ export const runtimeDrawingFiles: DrawingFiles = {
   removeReferences: references => invoke<void>("remove_drawing_references", { references }),
   save: (taskId, images) => invoke<DrawingFile[]>("save_drawing_result", { taskId, images }),
   recover: taskId => invoke<DrawingFile[] | null>("recover_drawing_result", { taskId }),
+  inspectRecovery: taskId => invoke<{ total: number; durable: number[] }>("inspect_drawing_recovery", { taskId }),
+  resumeRecovery: (taskId, images) => invoke<DrawingFile[]>("resume_drawing_recovery", { taskId, images }),
+  discardRecovery: taskId => invoke<void>("discard_drawing_recovery", { taskId }),
   read: reference => invoke<DrawingImageInput>("read_drawing_result", { reference }),
   export: reference => invoke<boolean>("export_drawing_result", { reference }),
 };

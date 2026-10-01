@@ -1,5 +1,13 @@
 # Ayase Studio Development Guide
 
+## Drawing lifecycle #88
+
+Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`, `cargo check --locked --manifest-path src-tauri/Cargo.toml`, and diff checks. `queue.test.ts` includes history deletion/regeneration/cancellation races, exact recovery inventory, indexed local-save retry, continuous disk failure and explicit memory release; `repository.test.ts` rejects deleted-row revival and preserves results. Native tests cover receipt inventory, indexed repair and scoped cleanup. Browser/native/pressure boundaries are recorded in [#88 implementation](ISSUE-88-IMPLEMENTATION.md). This supersedes the pending full #88 management note below.
+
+## Batch drawing queue #87
+
+Queue regressions: `src/drawing/queue.test.ts`, `controller.test.ts`, `repository.test.ts`, `useDrawingWorkspace.test.tsx`, drawing UI and App/chat concurrency tests. Run the default frontend/check gate plus `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`. Tests never call providers. See [implementation and native startup limitation](ISSUE-87-IMPLEMENTATION.md). Full #88 history management remains separate.
+
 ## Multiple reference images #86 (2026-10-01)
 
 本地完成多参考图输入、编号／排序／查看／移除、成果追加、持久草稿及冻结请求输入。PNG/JPG/JPEG/WebP/BMP 原字节私有保存和发送，无新增输入数量、容量或像素预算，无预处理；Gemini 使用 inlineData，OpenAI 有参考图时使用 multipart edits。完整归属和范围见 [#86 实施记录](ISSUE-86-IMPLEMENTATION.md)。

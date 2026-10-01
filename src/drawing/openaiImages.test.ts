@@ -180,6 +180,7 @@ describe("OpenAI Images protocol", () => {
       start(controller) { controller.enqueue(new TextEncoder().encode("synthetic-secret private prompt")); }, cancel,
     }), { status }));
     const error = await expectRedactedFailure(createOpenAIImagesTransport(fetcher).generate(parameters, "synthetic-secret", signal()), status >= 500 ? "unknown" : "failed");
+    expect(error).toMatchObject({ httpStatus: status, category: status === 429 ? "rate-limited" : status >= 500 ? "network-unknown" : "rejected" });
     expect(String(error)).toContain(String(status));
     expect(fetcher).toHaveBeenCalledOnce();
     expect(cancel).toHaveBeenCalledOnce();

@@ -52,7 +52,8 @@ describe("Gemini image protocol", () => {
   it.each([429, 500])("never retries HTTP %s or exposes server echoes", async status => {
     const fetcher = vi.fn().mockResolvedValue(new Response("synthetic-secret-key private prompt", { status }));
     try { await createGeminiImageTransport(fetcher).generate(parameters, "synthetic-secret-key", new AbortController().signal); throw new Error("expected failure"); }
-    catch (error) { expect(error).toBeInstanceOf(ImageGenerationError); expect(String(error)).not.toMatch(/secret|private prompt/); expect((error as ImageGenerationError).outcome).toBe(status === 500 ? "unknown" : "failed"); }
+    catch (error) { expect(error).toBeInstanceOf(ImageGenerationError); expect(String(error)).not.toMatch(/secret|private prompt/); expect((error as ImageGenerationError).outcome).toBe(status === 500 ? "unknown" : "failed");
+      expect(error).toMatchObject({ category: status === 429 ? "rate-limited" : "network-unknown", httpStatus: status }); }
     expect(fetcher).toHaveBeenCalledOnce();
   });
   it("rejects malformed JSON and excessive body headers without requesting again", async () => {

@@ -433,6 +433,121 @@ fn recover(root: &Path, task: &str) -> Result<Option<Vec<DrawingFile>>, Error> {
     Ok(Some(files))
 }
 
+#[derive(Debug, Serialize)]
+pub struct RecoveryInventory {
+    total: usize,
+    durable: Vec<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecoveryImage {
+    index: usize,
+    image: DrawingImageInput,
+}
+
+// Refill only missing receipt entries, allowing the frontend to release every
+// durable image rather than retaining a whole multi-image response after a fault.
+fn resume_recovery(
+    root: &Path,
+    task: &str,
+    images: &[RecoveryImage],
+) -> Result<Vec<DrawingFile>, Error> {
+    if let Some(files) = recover(root, task)? {
+        return Ok(files);
+    }
+    let pending = read_pending(root, task)?.ok_or(Error::Unavailable)?;
+    if images.len() > pending.files.len() {
+        return Err(Error::Collision);
+    }
+    let mut indices = HashSet::new();
+    let mut writes = Vec::new();
+    for input in images {
+        if !indices.insert(input.index) {
+            return Err(Error::Collision);
+        }
+        let item = pending.files.get(input.index).ok_or(Error::Collision)?;
+        let bytes = decode_inputs(std::slice::from_ref(&input.image))?.remove(0);
+        if input.image.mime != item.file.mime
+            || bytes.len() != item.file.size
+            || sha256(&bytes) != item.sha256
+        {
+            return Err(Error::Collision);
+        }
+        verify_bytes(&item.file, &bytes)?;
+        if !verify_pending_file(root, item)? {
+            writes.push((&item.file, bytes));
+        }
+    }
+    // No writes until the entire supplied subset and existing receipt validate.
+    for item in &pending.files {
+        verify_pending_file(root, item)?;
+    }
+    for (file, bytes) in writes {
+        publish(&root.join(&file.reference), &bytes)?;
+    }
+    recover(root, task)?.ok_or(Error::Unavailable)
+}
+
+fn recovery_inventory(root: &Path, task: &str) -> Result<RecoveryInventory, Error> {
+    if let Some(files) = read_manifest(root, task)? {
+        return Ok(RecoveryInventory {
+            total: files.len(),
+            durable: (0..files.len()).collect(),
+        });
+    }
+    let Some(pending) = read_pending(root, task)? else {
+        return Ok(RecoveryInventory {
+            total: 0,
+            durable: Vec::new(),
+        });
+    };
+    let mut durable = Vec::new();
+    for (index, item) in pending.files.iter().enumerate() {
+        if verify_pending_file(root, item)? {
+            durable.push(index);
+        }
+    }
+    Ok(RecoveryInventory {
+        total: pending.files.len(),
+        durable,
+    })
+}
+
+// Called only after terminal history deletion commits and there are no independent
+// result owners. Never scan or recursively remove a directory or follow links.
+fn discard_recovery(root: &Path, task: &str) -> Result<(), Error> {
+    let directory = task_directory(root, task)?;
+    let files = if let Some(files) = read_manifest(root, task)? {
+        files
+    } else if let Some(pending) = read_pending(root, task)? {
+        pending.files.into_iter().map(|item| item.file).collect()
+    } else {
+        Vec::new()
+    };
+    let mut paths = files
+        .iter()
+        .map(|file| root.join(&file.reference))
+        .collect::<Vec<_>>();
+    paths.push(directory.join("manifest.json"));
+    paths.push(directory.join("pending.json"));
+    // Validate all paths before removing any bytes; damaged metadata fails closed.
+    for path in &paths {
+        if inspect(path)?.is_some_and(|metadata| !metadata.is_file()) {
+            return Err(Error::InvalidReference);
+        }
+    }
+    for path in paths {
+        if inspect(&path)?.is_some() {
+            std::fs::remove_file(path).map_err(|_| Error::Storage)?;
+        }
+    }
+    if inspect(&directory)?.is_some() {
+        std::fs::remove_dir(directory).map_err(|_| Error::Storage)?;
+    }
+    Ok(())
+}
+
 fn plan(task: &str, images: &[DrawingImageInput], bytes: &[Vec<u8>]) -> Result<Pending, Error> {
     let mut files = Vec::with_capacity(images.len());
     for (input, bytes) in images.iter().zip(bytes) {
@@ -696,7 +811,10 @@ pub async fn import_drawing_reference(
 }
 
 #[tauri::command]
-pub async fn remove_drawing_references(app: AppHandle, references: Vec<String>) -> Result<(), String> {
+pub async fn remove_drawing_references(
+    app: AppHandle,
+    references: Vec<String>,
+) -> Result<(), String> {
     let root = app_directory(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
@@ -730,6 +848,46 @@ pub async fn recover_drawing_result(
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         recover(&root, &task_id).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
+}
+
+#[tauri::command]
+pub async fn inspect_drawing_recovery(
+    app: AppHandle,
+    task_id: String,
+) -> Result<RecoveryInventory, String> {
+    let root = app_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        recovery_inventory(&root, &task_id).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
+}
+
+#[tauri::command]
+pub async fn discard_drawing_recovery(app: AppHandle, task_id: String) -> Result<(), String> {
+    let root = app_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        discard_recovery(&root, &task_id).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
+}
+
+#[tauri::command]
+pub async fn resume_drawing_recovery(
+    app: AppHandle,
+    task_id: String,
+    images: Vec<RecoveryImage>,
+) -> Result<Vec<DrawingFile>, String> {
+    let root = app_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        resume_recovery(&root, &task_id, &images).map_err(|error| error.code())
     })
     .await
     .map_err(|_| Error::Storage.code())?
@@ -867,7 +1025,9 @@ mod tests {
             if format != ImageFormat::Jpeg {
                 assert_eq!(
                     decode_reference(&STANDARD.decode(read.data).unwrap())
-                        .unwrap().0.to_rgba8(),
+                        .unwrap()
+                        .0
+                        .to_rgba8(),
                     rgba
                 );
             }
@@ -921,14 +1081,21 @@ mod tests {
         }
         assert!(!root.path().join("drawing").exists());
         assert_eq!(
-            import_reference_with_publisher(root.path(), &input(20, ImageFormat::Png), |path, _| {
-                std::fs::write(path, b"partial").unwrap();
-                Err(Error::Storage)
-            }).unwrap_err(),
+            import_reference_with_publisher(
+                root.path(),
+                &input(20, ImageFormat::Png),
+                |path, _| {
+                    std::fs::write(path, b"partial").unwrap();
+                    Err(Error::Storage)
+                }
+            )
+            .unwrap_err(),
             Error::Storage
         );
         assert_eq!(
-            std::fs::read_dir(root.path().join("drawing/references")).unwrap().count(),
+            std::fs::read_dir(root.path().join("drawing/references"))
+                .unwrap()
+                .count(),
             0
         );
     }
@@ -950,7 +1117,8 @@ mod tests {
             format!("drawing/references/{}.bmp", imported.file.id.to_uppercase()),
         ] {
             assert_eq!(
-                remove_references(root.path(), &[imported.file.reference.clone(), invalid]).unwrap_err(),
+                remove_references(root.path(), &[imported.file.reference.clone(), invalid])
+                    .unwrap_err(),
                 Error::InvalidReference
             );
             assert!(original.exists());
@@ -959,11 +1127,19 @@ mod tests {
         std::fs::copy(&original, root.path().join(&wrong_ext)).unwrap();
         assert!(matches!(read(root.path(), &wrong_ext), Err(Error::Corrupt)));
         let missing = format!("drawing/references/{}.webp", Uuid::new_v4());
-        assert!(matches!(read(root.path(), &missing), Err(Error::Unavailable)));
+        assert!(matches!(
+            read(root.path(), &missing),
+            Err(Error::Unavailable)
+        ));
         remove_references(
             root.path(),
-            &[imported.file.reference.clone(), imported.file.reference, missing],
-        ).unwrap();
+            &[
+                imported.file.reference.clone(),
+                imported.file.reference,
+                missing,
+            ],
+        )
+        .unwrap();
         assert!(!original.exists());
         assert!(root.path().join(wrong_ext).exists());
         assert_eq!(read_manifest(root.path(), &task).unwrap(), Some(files));
@@ -1039,6 +1215,108 @@ mod tests {
         )
         .unwrap();
         (pending, bytes)
+    }
+
+    #[test]
+    fn recovery_inventory_identifies_partial_and_complete_durable_originals() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let images = [input(20, ImageFormat::Png), input(30, ImageFormat::Png)];
+        let (pending, bytes) = receipt(root.path(), &task, &images);
+        publish(
+            &root.path().join(&pending.files[1].file.reference),
+            &bytes[1],
+        )
+        .unwrap();
+        let partial = recovery_inventory(root.path(), &task).unwrap();
+        assert_eq!(partial.total, 2);
+        assert_eq!(partial.durable, vec![1]);
+        publish(
+            &root.path().join(&pending.files[0].file.reference),
+            &bytes[0],
+        )
+        .unwrap();
+        assert_eq!(
+            recovery_inventory(root.path(), &task).unwrap().durable,
+            vec![0, 1]
+        );
+        assert!(read_manifest(root.path(), &task).unwrap().is_none());
+        assert_eq!(recover(root.path(), &task).unwrap().unwrap().len(), 2);
+        assert_eq!(
+            recovery_inventory(root.path(), &task).unwrap().durable,
+            vec![0, 1]
+        );
+    }
+
+    #[test]
+    fn discard_recovery_is_scoped_idempotent_and_rejects_untrusted_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let other = Uuid::new_v4().to_string();
+        let images = [input(20, ImageFormat::Png)];
+        save(root.path(), &task, &images).unwrap();
+        let kept = save(root.path(), &other, &images).unwrap();
+        assert!(discard_recovery(root.path(), "../outside").is_err());
+        discard_recovery(root.path(), &task).unwrap();
+        discard_recovery(root.path(), &task).unwrap();
+        assert!(recover(root.path(), &task).unwrap().is_none());
+        assert_eq!(recover(root.path(), &other).unwrap().unwrap(), kept);
+    }
+
+    #[test]
+    fn resume_recovery_only_fills_matching_missing_receipt_entries() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let images = [input(20, ImageFormat::Png), input(30, ImageFormat::Png)];
+        let (pending, bytes) = receipt(root.path(), &task, &images);
+        let first = root.path().join(&pending.files[0].file.reference);
+        publish(&first, &bytes[0]).unwrap();
+        assert!(
+            resume_recovery(
+                root.path(),
+                &task,
+                &[RecoveryImage {
+                    index: 1,
+                    image: input(40, ImageFormat::Png)
+                }]
+            )
+            .is_err()
+        );
+        assert!(!root.path().join(&pending.files[1].file.reference).exists());
+        let result = resume_recovery(
+            root.path(),
+            &task,
+            &[RecoveryImage {
+                index: 1,
+                image: input(30, ImageFormat::Png),
+            }],
+        )
+        .unwrap();
+        assert_eq!(
+            result.iter().map(|file| &file.id).collect::<Vec<_>>(),
+            pending
+                .files
+                .iter()
+                .map(|item| &item.file.id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(std::fs::read(first).unwrap(), bytes[0]);
+        assert_eq!(resume_recovery(root.path(), &task, &[]).unwrap(), result);
+    }
+
+    #[test]
+    fn corrupt_journal_prevents_discard_and_preserves_originals() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let (pending, bytes) = receipt(root.path(), &task, &[input(20, ImageFormat::Png)]);
+        let original = root.path().join(&pending.files[0].file.reference);
+        publish(&original, &bytes[0]).unwrap();
+        let path = task_directory(root.path(), &task)
+            .unwrap()
+            .join("pending.json");
+        std::fs::write(path, b"invalid JSON").unwrap();
+        assert!(discard_recovery(root.path(), &task).is_err());
+        assert_eq!(std::fs::read(original).unwrap(), bytes[0]);
     }
 
     #[test]

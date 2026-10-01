@@ -203,7 +203,8 @@ describe("App navigation", () => {
     expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(false);
     await act(async () => container.querySelector<HTMLButtonElement>("#drawing-generate")!.click());
     await waitFor(() => generate.mock.calls.length === 1);
-    expect(container.querySelector("#drawing-generate")?.textContent).toContain("生成中");
+    expect(container.querySelector("#drawing-generate")?.textContent).toContain("加入队列");
+    expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(false);
     expect(drawingRuntimeMocks.createRuntimeImageTransport).toHaveBeenCalledOnce();
 
     await clickButton("聊天");
@@ -213,13 +214,13 @@ describe("App navigation", () => {
     await clickButton("绘图");
     expect(container.querySelector<HTMLTextAreaElement>("#drawing-prompt")?.value).toBe("合成湖泊图像");
     expect(container.querySelector<HTMLSelectElement>("#drawing-model")?.value).toBe("image-model");
-    expect(container.querySelector("#drawing-generate")?.textContent).toContain("生成中");
+    expect(container.querySelector("#drawing-generate")?.textContent).toContain("加入队列");
     expect(generate).toHaveBeenCalledOnce();
     expect(drawingRuntimeMocks.createRuntimeImageTransport).toHaveBeenCalledOnce();
 
     await act(async () => finishGeneration([syntheticImage]));
     await waitFor(() => drawingRuntimeMocks.runtimeDrawingFiles.save.mock.calls.length === 1);
-    expect(container.querySelector("#drawing-generate")?.textContent).toContain("正在保存");
+    expect(container.querySelector('[aria-label="绘图队列状态"]')?.textContent).toContain("保存 1");
     expect(container.textContent).not.toContain("取消生成");
     const taskId: string = drawingRuntimeMocks.runtimeDrawingFiles.save.mock.calls[0][0];
     const file: DrawingFile = { id: "synthetic-result", reference: `drawing/${taskId}/image.png`,

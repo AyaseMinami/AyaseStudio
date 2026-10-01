@@ -67,6 +67,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             drawing::save_drawing_result,
             drawing::recover_drawing_result,
+            drawing::inspect_drawing_recovery,
+            drawing::discard_drawing_recovery,
+            drawing::resume_drawing_recovery,
             drawing::read_drawing_result,
             drawing::export_drawing_result,
             drawing::import_drawing_reference,

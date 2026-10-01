@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
 import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
@@ -11,15 +11,93 @@ export { initialDrawingDraft } from "../../drawing/types";
 export type { DrawingDraft } from "../../drawing/types";
 
 type DrawingView = "generate" | "tasks" | "library";
+type TaskConfirmation = {
+  kind: "delete" | "regenerate";
+  selected: Array<{ id: string; signature: string }>;
+  text: string;
+  opener: HTMLButtonElement;
+};
+
+function TaskConfirmationDialog({ confirmation, valid, onClose, onConfirm }: {
+  confirmation: TaskConfirmation; valid: boolean; onClose(): void; onConfirm(): void;
+}) {
+  const dialog = useRef<HTMLElement>(null);
+  const accepted = useRef(false);
+  useEffect(() => {
+    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => { if (confirmation.opener.isConnected) confirmation.opener.focus({ preventScroll: true }); };
+  }, [confirmation.opener]);
+  return <div className="drawing-reference-backdrop" onMouseDown={event => {
+    if (event.target === event.currentTarget) onClose();
+  }}><section ref={dialog} className="drawing-task-confirm-dialog" role="dialog" aria-modal="true"
+    aria-labelledby="drawing-task-confirm-title" aria-describedby="drawing-task-confirm-description"
+    onKeyDown={event => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+      if (event.key !== "Tab") return;
+      const buttons = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      if (event.shiftKey && index <= 0) { event.preventDefault(); buttons[buttons.length - 1]?.focus(); }
+      else if (!event.shiftKey && (index === buttons.length - 1 || index < 0)) { event.preventDefault(); buttons[0]?.focus(); }
+    }}>
+    <h2 id="drawing-task-confirm-title">{confirmation.kind === "delete" ? "删除任务历史" : "确认重新生成"}</h2>
+    <p id="drawing-task-confirm-description" className="drawing-muted drawing-task-recovery">{confirmation.text}</p>
+    {!valid && <p className="drawing-error" role="alert">任务状态已变化或正在处理，请取消后重新确认。</p>}
+    <div className="drawing-actions">
+      <button type="button" className="drawing-button" onClick={onClose}>取消</button>
+      <button type="button" className="drawing-button" disabled={!valid} onClick={event => {
+        if (event.detail > 1 || accepted.current || !valid) return;
+        accepted.current = true;
+        onConfirm();
+      }}>{confirmation.kind === "delete" ? "确认删除历史" : "确认新建任务"}</button>
+    </div>
+  </section></div>;
+}
 
 const taskLabels: Record<DrawingTaskStatus, string> = {
+  queued: "等待中", preparing: "准备中", dispatching: "正在发送",
   running: "生成中", saving: "正在保存", completed: "已保存", failed: "生成失败",
   cancelled: "已取消", unknown: "结果未知", "save-failed": "保存失败",
 };
 
+function cancellable(task: DrawingTask) {
+  return task.status === "queued" || task.status === "preparing" || task.status === "dispatching" || task.status === "running";
+}
+
+function terminal(task: DrawingTask) {
+  return ["completed", "failed", "cancelled", "unknown", "save-failed"].includes(task.status);
+}
+
+const diagnosisLabels: Record<string, string> = {
+  rejected: "服务拒绝请求", "rate-limited": "请求过于频繁", "network-unknown": "网络中断，结果无法确认",
+  "invalid-response": "服务返回的图片结果无效", "local-file": "本地图片保存或读取失败",
+  "local-state": "本地任务记录保存失败", configuration: "模型或连接配置不可用", cancelled: "任务已取消",
+};
+
+function recoveryText(task: DrawingTask) {
+  const recovery = task.recovery;
+  if (!recovery) return "图片恢复状态尚未核实；删除后无法通过此任务重试本地保存。";
+  const numbers = (indices: number[]) => indices.map(index => index + 1).join("、");
+  return [
+    `共 ${recovery.total} 张图片。`,
+    recovery.durable.length ? `已暂存图片 ${numbers(recovery.durable)}：可重试本地保存；删除任务后将清理这些暂存图片。` : "",
+    recovery.memory.length ? `仅在内存的图片 ${numbers(recovery.memory)}：退出或删除任务后丢失。` : "",
+    recovery.lost.length ? `已丢失图片 ${numbers(recovery.lost)}：无法恢复。` : "",
+    recovery.unverified ? "暂存图片可用性尚未核实。" : "",
+  ].filter(Boolean).join("\n");
+}
+
+function elapsed(task: DrawingTask, now: number) {
+  const start = task.startedAt ? Date.parse(task.startedAt) : NaN;
+  const end = task.finishedAt ? Date.parse(task.finishedAt) : terminal(task) ? NaN : now;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "—";
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, tasks, results,
-  selectedResultId, previewUrl, previewError, ready, busy, error,
-  onGenerate, onCancel, onSelectResult, onExport, onRetrySave, onReuse,
+  selectedResultId, previewUrl, previewError, ready, busy, submitting = false, paused = false, error,
+  onGenerate, onCancel, onCancelBatch, onRegenerate, onDeleteTasks, managementBusy = false,
+  onPause, onResume, onSelectResult, onExport, onRetrySave, onReuse,
   onAddReferences, onRemoveReference, onMoveReference, onUseAsReference, readReference, referencesBusy }: {
   draft: DrawingDraft;
   onDraftChange(draft: DrawingDraft): void;
@@ -32,9 +110,17 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   previewError: string | null;
   ready: boolean;
   busy: boolean;
+  submitting?: boolean;
+  paused?: boolean;
   error: string | null;
   onGenerate(): void;
-  onCancel(): void;
+  onCancel(id?: string): void;
+  onCancelBatch?(batchId: string): void;
+  onRegenerate?(id: string): void;
+  onDeleteTasks?(ids: string[]): void;
+  managementBusy?: boolean;
+  onPause?(): void;
+  onResume?(): void;
   onSelectResult(id: string): void;
   onExport(id: string): void;
   onRetrySave(id: string): void;
@@ -47,16 +133,66 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   referencesBusy: boolean;
 }) {
   const [view, setView] = useState<DrawingView>("generate");
-  const running = tasks.some((task) => task.status === "running");
-  const saving = tasks.some((task) => task.status === "saving");
+  const [confirmation, setConfirmation] = useState<TaskConfirmation | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const liveElapsed = tasks.some(task => task.startedAt && !task.finishedAt && !terminal(task));
+  useEffect(() => {
+    if (!liveElapsed) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [liveElapsed]);
+  const hasCancellable = tasks.some(cancellable);
+  const count = draft.count ?? 1;
+  const concurrency = draft.concurrency ?? 1;
   const selectedResult = results.find((result) => result.id === selectedResultId);
   const openai = models.find(model => model.id === draft.modelId)?.protocol === "openai-images";
   const size = draft.openai?.size ?? "auto", quality = draft.openai?.quality ?? "auto";
   const presetSize = (openAIImageSizes as readonly string[]).includes(size);
   const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => onDraftChange({ ...draft, openai: { size, quality, ...patch } });
   const resultNumber = (id: string) => results.length - results.findIndex((result) => result.id === id);
-  const canGenerate = ready && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !busy && !referencesBusy;
+  const canGenerate = ready && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy;
   const canEditReferences = ready && !referencesBusy;
+  const managementAllowed = ready && !submitting && !managementBusy;
+  const canManage = managementAllowed && !confirmation;
+  const completedTasks = tasks.filter(task => task.status === "completed");
+  const failedTasks = tasks.filter(task => terminal(task) && task.status !== "completed");
+  const taskNumber = (id: string) => tasks.length - tasks.findIndex(task => task.id === id);
+  const taskSignature = (task: DrawingTask) => `${taskNumber(task.id)}:${JSON.stringify(task)}`;
+  const confirmationValid = Boolean(confirmation && managementAllowed
+    && (confirmation.kind === "delete" ? onDeleteTasks : onRegenerate)
+    && confirmation.selected.every(selected => {
+      const current = tasks.find(task => task.id === selected.id);
+      return current && terminal(current) && taskSignature(current) === selected.signature;
+    }));
+
+  function deleteTasks(selected: DrawingTask[], opener: HTMLButtonElement) {
+    if (!canManage || !onDeleteTasks || !selected.length || selected.some(task => !terminal(task))) return;
+    const warnings = selected.flatMap(task => {
+      if (task.status === "unknown") return [`任务 ${taskNumber(task.id)}：结果未知，删除历史不会取消远端生成或计费。`];
+      if (task.status === "save-failed") return [`任务 ${taskNumber(task.id)}：保存失败。\n${recoveryText(task)}`];
+      return [];
+    });
+    setConfirmation({ kind: "delete", opener, selected: selected.map(task => ({ id: task.id, signature: taskSignature(task) })),
+      text: [`删除 ${selected.length} 条任务历史？此操作无法撤销，已保存成果始终保留。`, ...warnings].join("\n\n") });
+  }
+
+  function regenerate(task: DrawingTask, opener: HTMLButtonElement) {
+    if (!canManage || !onRegenerate || !terminal(task)) return;
+    if (task.status === "unknown") {
+      setConfirmation({ kind: "regenerate", opener, selected: [{ id: task.id, signature: taskSignature(task) }],
+        text: "原任务结果未知，服务端可能仍在生成并计费。重新生成将新建任务，可能造成重复生成和重复计费。是否继续？" });
+      return;
+    }
+    onRegenerate(task.id);
+  }
+
+  function confirmTaskAction() {
+    if (!confirmation || !confirmationValid) return;
+    setConfirmation(null);
+    if (confirmation.kind === "delete") onDeleteTasks?.(confirmation.selected.map(task => task.id));
+    else onRegenerate?.(confirmation.selected[0].id);
+  }
 
   function selectResult(id: string) {
     onSelectResult(id);
@@ -83,14 +219,14 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
       event.preventDefault();
       if (canEditReferences) onAddReferences(files);
     }}>
-      <header className="drawing-header" data-tauri-drag-region>
+      <header className="drawing-header" data-tauri-drag-region inert={Boolean(confirmation)}>
         <div data-tauri-drag-region>
           <h1 data-tauri-drag-region>绘图</h1>
         </div>
         <WindowControls />
       </header>
 
-      <div className="drawing-body">
+      <div className="drawing-body" inert={Boolean(confirmation)}>
         <nav className="drawing-navigation" aria-label="绘图视图">
           {([
             ["generate", "生成"],
@@ -101,7 +237,20 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
               onClick={() => setView(id)}>{label}</button>
           ))}
         </nav>
-        <p className="drawing-notice">{ready ? "单张生成，生成后自动保存。" : "正在加载绘图工作区…"}</p>
+        <p className="drawing-notice">{ready ? "每个任务独立请求一张图片，生成后自动保存。切换视图不会停止队列。" : "正在加载绘图工作区…"}</p>
+        <div className="drawing-queue-summary">
+          <p className="drawing-muted" role="status" aria-label="绘图队列状态">
+            {paused ? "队列已暂停" : "队列运行中"} · 等待 {tasks.filter(task => task.status === "queued").length}
+            {` · 准备 ${tasks.filter(task => task.status === "preparing").length} · 生成 ${tasks.filter(task => task.status === "dispatching" || task.status === "running").length} · 保存 ${tasks.filter(task => task.status === "saving").length} · 已结束 ${tasks.filter(terminal).length}`}
+          </p>
+          <div className="drawing-actions">
+            {paused ? onResume && <button type="button" className="drawing-button" disabled={!ready || submitting} onClick={onResume}>继续队列</button>
+              : onPause && <button type="button" className="drawing-button" disabled={!ready || submitting} onClick={onPause}>暂停队列</button>}
+            {hasCancellable && <button type="button" className="drawing-button" disabled={!canManage}
+              onClick={event => { if (event.detail <= 1) onCancel(); }}>取消全部待处理任务</button>}
+          </div>
+          {hasCancellable && <p className="drawing-muted">已发出的请求取消后，服务端仍可能继续生成并计费。</p>}
+        </div>
         {error && <p className="drawing-error" role="alert">{error}</p>}
 
         {view === "generate" ? (
@@ -165,17 +314,28 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 </label>
               </div>
               <p className="drawing-muted">512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。</p></>}
-              <label className="drawing-field">
-                <span className="drawing-label">数量 <span className="drawing-muted">· 尚未开放</span></span>
-                <input type="number" value={1} disabled />
+              <div className="drawing-parameters">
+                <label className="drawing-field">
+                  <span className="drawing-label">数量</span>
+                  <input type="number" min={1} max={99} step={1} value={count} disabled={!ready || submitting}
+                    onChange={event => onDraftChange({ ...draft, count: Math.min(99, Math.max(1, Math.trunc(Number(event.target.value)) || 1)) })} />
+                </label>
+                <label className="drawing-field">
+                  <span className="drawing-label">并发</span>
+                  <input type="number" min={1} max={4} step={1} value={concurrency} disabled={!ready || submitting}
+                    onChange={event => onDraftChange({ ...draft, concurrency: Math.min(4, Math.max(1, Math.trunc(Number(event.target.value)) || 1)) })} />
+                </label>
+              </div>
+              <label className="drawing-label">
+                <input type="checkbox" checked={draft.completionSound ?? true} disabled={!ready || submitting}
+                  onChange={event => onDraftChange({ ...draft, completionSound: event.target.checked })} /> 完成提示音
               </label>
               <div className="drawing-submit">
                 <button id="drawing-generate" type="button" className="drawing-button drawing-generate"
-                  disabled={!canGenerate} onClick={onGenerate} aria-describedby="drawing-generation-note">
-                  {saving ? "正在保存…" : running ? "生成中…" : "生成图片"}
+                  disabled={!canGenerate} onClick={event => { if (event.detail <= 1) onGenerate(); }} aria-describedby="drawing-generation-note">
+                  {submitting ? "正在加入队列…" : count > 1 ? `加入 ${count} 个任务` : busy || paused ? "加入队列" : "生成图片"}
                 </button>
-                {running && <button type="button" className="drawing-button" onClick={onCancel}>取消生成</button>}
-                <p id="drawing-generation-note" className="drawing-muted">每次生成一张图片，批量生成后续开放。</p>
+                <p id="drawing-generation-note" className="drawing-muted">数量为独立单图请求数，同一批使用提交时的草稿快照。暂停只阻止新任务开始，正在执行的任务继续完成。</p>
               </div>
             </section>
 
@@ -213,17 +373,47 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
         ) : (
           <section className="drawing-panel" aria-labelledby="drawing-view-title">
             <h2 id="drawing-view-title">{view === "tasks" ? "任务" : "成果库"}</h2>
+            {view === "tasks" && onDeleteTasks && <div className="drawing-actions drawing-task-management">
+              <button type="button" className="drawing-button" disabled={!canManage || !completedTasks.length}
+                onClick={event => { if (event.detail <= 1) deleteTasks(completedTasks, event.currentTarget); }}>清空已完成历史</button>
+              <button type="button" className="drawing-button" disabled={!canManage || !failedTasks.length}
+                onClick={event => { if (event.detail <= 1) deleteTasks(failedTasks, event.currentTarget); }}>清空失败历史</button>
+            </div>}
             {view === "tasks" && tasks.length ? <div className="drawing-records">
               {tasks.map((task) => <article className="drawing-record" key={task.id}>
                 <div className="drawing-section-heading"><h3>任务 {tasks.length - tasks.findIndex((item) => item.id === task.id)}</h3>
                   <span className="drawing-muted">{taskLabels[task.status]}</span></div>
                 <p>{task.parameters.prompt}</p>
                 <p className="drawing-muted">{task.parameters.modelName}</p>
+                {task.sourceTaskId && <p className="drawing-muted">{tasks.some(source => source.id === task.sourceTaskId)
+                  ? `重新生成自任务 ${taskNumber(task.sourceTaskId)}` : "重新生成的任务（来源历史已删除）"}</p>}
+                <p className="drawing-muted">执行耗时 {elapsed(task, now)}</p>
                 {task.error && <p className="drawing-error" role="alert">{task.error}</p>}
+                {task.diagnostic && <details className="drawing-task-diagnosis drawing-muted">
+                  <summary>诊断详情</summary>
+                  <p>{diagnosisLabels[task.diagnostic.category] ?? "其他错误"}
+                    {Number.isInteger(task.diagnostic.httpStatus) && task.diagnostic.httpStatus! >= 100 && task.diagnostic.httpStatus! <= 599
+                      ? ` · HTTP 状态 ${task.diagnostic.httpStatus}` : ""}</p>
+                </details>}
                 {task.status === "unknown" && <p className="drawing-muted">请求可能已经发出，不会自动重发。</p>}
-                {task.status === "running" && <button type="button" className="drawing-button" onClick={onCancel}>取消生成</button>}
-                {task.status === "save-failed" && <button type="button" className="drawing-button" disabled={busy}
-                  onClick={() => onRetrySave(task.id)}>重试本地保存</button>}
+                {task.status === "save-failed" && <p className="drawing-muted drawing-task-recovery">{recoveryText(task)}</p>}
+                <div className="drawing-actions">
+                {task.batchId && onCancelBatch && tasks.find(item => item.batchId === task.batchId)?.id === task.id && <button type="button"
+                  className="drawing-button" disabled={!canManage || !tasks.some(item => item.batchId === task.batchId && cancellable(item))}
+                  aria-label={`取消任务 ${taskNumber(task.id)} 所在批次`}
+                  onClick={event => { if (event.detail <= 1) onCancelBatch(task.batchId!); }}>取消本批待处理任务</button>}
+                {cancellable(task) && <button type="button" className="drawing-button" disabled={!canManage}
+                  aria-label={`取消任务 ${tasks.length - tasks.findIndex(item => item.id === task.id)}`}
+                  onClick={event => { if (event.detail <= 1) onCancel(task.id); }}>{task.status === "queued" ? "取消排队" : task.status === "preparing" ? "取消准备" : "取消生成"}</button>}
+                {task.status === "save-failed" && <button type="button" className="drawing-button" disabled={busy || !canManage}
+                  onClick={event => { if (event.detail <= 1) onRetrySave(task.id); }}>重试本地保存</button>}
+                {onRegenerate && terminal(task) && <button type="button" className="drawing-button" disabled={!canManage}
+                  aria-label={`重新生成任务 ${taskNumber(task.id)}`}
+                  onClick={event => { if (event.detail <= 1) regenerate(task, event.currentTarget); }}>重新生成</button>}
+                {onDeleteTasks && <button type="button" className="drawing-button" disabled={!canManage || !terminal(task)}
+                  aria-label={`删除任务 ${taskNumber(task.id)} 历史`}
+                  onClick={event => { if (event.detail <= 1) deleteTasks([task], event.currentTarget); }}>删除历史</button>}
+                </div>
               </article>)}
             </div> : view === "library" && results.length ? <div className="drawing-library">
               {results.map((result) => <article className="drawing-record" key={result.id}>
@@ -244,6 +434,8 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
           </section>
         )}
       </div>
+      {confirmation && <TaskConfirmationDialog confirmation={confirmation} valid={confirmationValid}
+        onClose={() => setConfirmation(null)} onConfirm={confirmTaskAction} />}
     </div>
   );
 }

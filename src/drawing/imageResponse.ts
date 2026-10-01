@@ -1,5 +1,8 @@
+import type { DrawingDiagnostic } from "./types";
+
 export class ImageGenerationError extends Error {
-  constructor(message: string, readonly outcome: "failed" | "unknown" = "failed") { super(message); }
+  constructor(message: string, readonly outcome: "failed" | "unknown" = "failed",
+    readonly category?: DrawingDiagnostic["category"], readonly httpStatus?: number) { super(message); }
 }
 
 const maxBodyBytes = 90 * 1024 * 1024;

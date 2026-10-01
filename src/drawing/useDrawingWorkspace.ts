@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
 import { DrawingController, UnsavedDrawingImagesError } from "./controller";
@@ -9,6 +9,34 @@ export function useDrawingWorkspace() {
   const [controller] = useState(() => new DrawingController({ repository: new DexieDrawingRepository(),
     files: runtimeDrawingFiles, transport: createRuntimeImageTransport }));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const sound = useRef<AudioContext | null>(null);
+  const heard = useRef(0);
+  useEffect(() => {
+    const unlock = () => {
+      if (controller.getSnapshot().draft.completionSound === false || typeof AudioContext === "undefined") return;
+      sound.current ??= new AudioContext();
+      void sound.current.resume().catch(() => undefined);
+    };
+    document.addEventListener("pointerdown", unlock);
+    document.addEventListener("keydown", unlock);
+    return () => {
+      document.removeEventListener("pointerdown", unlock); document.removeEventListener("keydown", unlock);
+      void sound.current?.close().catch(() => undefined); sound.current = null;
+    };
+  }, [controller]);
+  useEffect(() => {
+    if (state.completion.sequence === heard.current) return;
+    heard.current = state.completion.sequence;
+    const context = sound.current;
+    if (state.draft.completionSound === false || !context || context.state !== "running") return;
+    const tone = context.createOscillator(), gain = context.createGain();
+    tone.frequency.value = state.completion.allSucceeded ? 660 : 330;
+    gain.gain.setValueAtTime(0.08, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.3);
+    tone.connect(gain); gain.connect(context.destination);
+    tone.onended = () => { tone.disconnect(); gain.disconnect(); };
+    tone.start(); tone.stop(context.currentTime + 0.3);
+  }, [state.completion, state.draft.completionSound]);
   const [preview, setPreview] = useState<{ id: string; url: string | null; error: string | null } | null>(null);
   useEffect(() => { void controller.initialize(); }, [controller]);
   const result = state.results.find(item => item.id === state.selectedResultId);
@@ -30,7 +58,7 @@ export function useDrawingWorkspace() {
       if (approved) return;
       event.preventDefault();
       if (closing) return;
-      if (controller.getSnapshot().busy && !window.confirm("绘图任务仍在运行。退出将停止本地请求，可能已发出的请求会标记为结果未知。确定退出？")) return;
+      if ((controller.getSnapshot().busy || controller.getSnapshot().submitting || controller.getSnapshot().tasks.some(task => task.status === "queued")) && !window.confirm("绘图队列尚未结束。退出将保留等待项并停止本地请求；可能已发出的请求结果未知，服务端仍可能生成或计费。重启后需手动继续等待项。确定退出？")) return;
       closing = true;
       void (async () => {
         try {

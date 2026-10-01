@@ -6,13 +6,13 @@ import { useDrawingWorkspace } from "./useDrawingWorkspace";
 import { initialDrawingDraft } from "./types";
 import type { ConnectionSettingsState } from "../chat/settings";
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), saveDraft: vi.fn(), saveTask: vi.fn(), complete: vi.fn(),
+const mocks = vi.hoisted(() => ({ load: vi.fn(), enqueue: vi.fn(), saveDraft: vi.fn(), saveTask: vi.fn(), complete: vi.fn(),
   save: vi.fn(), recover: vi.fn(), read: vi.fn(), export: vi.fn(), generate: vi.fn(),
   onCloseRequested: vi.fn(), close: vi.fn(), release: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => mocks }));
 vi.mock("./runtime", () => ({ createRuntimeImageTransport: async () => ({ generate: mocks.generate }), runtimeDrawingFiles: mocks }));
-vi.mock("./repository", () => ({ DexieDrawingRepository: class { load = mocks.load; saveDraft = mocks.saveDraft; saveTask = mocks.saveTask; complete = mocks.complete; } }));
+vi.mock("./repository", () => ({ DexieDrawingRepository: class { load = mocks.load; enqueue = mocks.enqueue; saveDraft = mocks.saveDraft; saveTask = mocks.saveTask; complete = mocks.complete; } }));
 
 const settings: ConnectionSettingsState = { version: 3, activeModelId: null, providers: [{ id: "p", name: "test", connections: [
   { id: "c", name: "test", protocol: "gemini-image", baseUrl: "https://example.test", apiKey: "synthetic-key", models: [{ id: "m", modelId: "test" }] },
@@ -26,6 +26,7 @@ beforeEach(async () => {
   vi.resetAllMocks();
   mocks.load.mockResolvedValue({ draft: { ...initialDrawingDraft, modelId: "m", prompt: "synthetic" }, tasks: [], results: [] });
   mocks.saveDraft.mockResolvedValue(undefined); mocks.saveTask.mockResolvedValue(undefined); mocks.complete.mockResolvedValue(undefined);
+  mocks.enqueue.mockImplementation(async tasks => tasks);
   mocks.recover.mockResolvedValue(null); mocks.save.mockResolvedValue(files); mocks.generate.mockResolvedValue([{ mime: "image/png", data: "AQID" }]);
   mocks.read.mockResolvedValue({ mime: "image/png", data: "AQID" }); mocks.close.mockResolvedValue(undefined);
   mocks.onCloseRequested.mockImplementation(async listener => { closeListener = listener; return mocks.release; });
@@ -34,7 +35,34 @@ beforeEach(async () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<Harness />));
 });
-afterEach(async () => { if (root) await act(async () => root.unmount()); host?.remove(); vi.restoreAllMocks(); });
+afterEach(async () => { if (root) await act(async () => root.unmount()); host?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("plays one completion tone, honors mute, and releases audio resources", async () => {
+  const disconnect = vi.fn(), start = vi.fn(), stop = vi.fn();
+  const oscillator = { frequency: { value: 0 }, connect: vi.fn(), disconnect, start, stop, onended: null as null | (() => void) };
+  const gain = { gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn(), disconnect };
+  const close = vi.fn(async () => undefined), createOscillator = vi.fn(() => oscillator);
+  vi.stubGlobal("AudioContext", class {
+    state = "running"; currentTime = 0; destination = {};
+    resume = vi.fn(async () => undefined); close = close;
+    createOscillator = createOscillator; createGain = () => gain;
+  });
+  document.dispatchEvent(new Event("pointerdown"));
+  expect(start).not.toHaveBeenCalled();
+  await act(async () => state.controller.generate(settings));
+  expect(start).toHaveBeenCalledOnce(); expect(oscillator.frequency.value).toBe(660);
+  oscillator.onended?.(); expect(disconnect).toHaveBeenCalledTimes(2);
+  await act(async () => state.controller.setDraft({ ...state.draft, completionSound: false }));
+  await act(async () => state.controller.generate(settings));
+  expect(start).toHaveBeenCalledOnce();
+  await act(async () => state.controller.setDraft({ ...state.draft, completionSound: true }));
+  expect(start).toHaveBeenCalledOnce();
+  mocks.save.mockRejectedValueOnce(new Error("disk"));
+  await act(async () => state.controller.generate(settings));
+  expect(start).toHaveBeenCalledTimes(2); expect(oscillator.frequency.value).toBe(330);
+  await act(async () => root.render(null));
+  expect(close).toHaveBeenCalledOnce();
+});
 
 it("keeps failed-save pixels alive when the user declines losing them and restores generation controls", async () => {
   mocks.save.mockRejectedValueOnce(new Error("disk"));
@@ -49,6 +77,15 @@ it("keeps failed-save pixels alive when the user declines losing them and restor
   expect(state.tasks[0].status).toBe("completed"); expect(mocks.generate).toHaveBeenCalledOnce();
   await act(async () => closeListener(event));
   expect(mocks.close).toHaveBeenCalledOnce();
+});
+
+it("keeps local retry terminal in memory even when its failure status cannot be persisted", async () => {
+  mocks.save.mockRejectedValue(new Error("disk"));
+  await act(async () => state.controller.generate(settings));
+  mocks.saveTask.mockImplementation(async task => { if (task.status === "save-failed") throw new Error("db"); });
+  await act(async () => state.controller.retrySave(state.tasks[0].id));
+  expect(state.tasks[0].status).toBe("save-failed");
+  expect(state.busy).toBe(false); expect(mocks.generate).toHaveBeenCalledOnce();
 });
 
 it("requires the separate loss confirmation if a saving task fails during close preparation", async () => {
@@ -75,7 +112,7 @@ it("closes only after explicit loss confirmation and releases owned preview URLs
   const event = { preventDefault: vi.fn() }; closeListener(event);
   expect(event.preventDefault).not.toHaveBeenCalled();
   // A fresh successful preview remains transient and is revoked on unmount.
-  await act(async () => state.controller.cancelClose());
+  await act(async () => { state.controller.cancelClose(); state.controller.resume(); });
   await act(async () => state.controller.generate(settings));
   expect(state.previewUrl).toBe("blob:synthetic");
   await act(async () => root.render(null));

@@ -5,7 +5,7 @@ import { validateOpenAIImagesParameters } from "./openaiImages";
 import { bytesToBase64 } from "../chat/attachments";
 import type { DrawingRepository } from "./repository";
 import { initialDrawingDraft, type DrawingDraft, type DrawingTask, type DrawingResult, type DrawingFiles,
-  type DrawingImageInput, type ImageGenerationTransport, type DrawingParameters, type DrawingReference } from "./types";
+  type DrawingImageInput, type ImageGenerationTransport, type DrawingParameters, type DrawingReference, type DrawingRecovery } from "./types";
 
 export interface DrawingState {
   draft: DrawingDraft;
@@ -18,6 +18,10 @@ export interface DrawingState {
   closing: boolean;
   error: string | null;
   hasData: boolean;
+  submitting: boolean;
+  paused: boolean;
+  managementBusy: boolean;
+  completion: { sequence: number; allSucceeded: boolean };
 }
 interface DrawingDependencies {
   repository: DrawingRepository;
@@ -29,19 +33,41 @@ interface DrawingDependencies {
 
 export class UnsavedDrawingImagesError extends Error {}
 
-/** One application-owned task. Page unmounts never own or cancel its request. */
+interface ActiveDrawing { controller: AbortController; sent: boolean; saving: boolean; references: DrawingReference[] }
+const unfinished = (task: DrawingTask) => ["queued", "preparing", "dispatching", "running", "saving"].includes(task.status);
+
+function awaitImages(request: Promise<DrawingImageInput[]>, signal: AbortSignal): Promise<DrawingImageInput[]> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new ImageGenerationError("请求已停止，服务端结果未知。", "unknown"));
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    request.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+/** Application-owned durable queue; page unmounts never own requests. */
 export class DrawingController {
   private state: DrawingState = { draft: initialDrawingDraft, tasks: [], results: [], selectedResultId: null,
-    ready: false, busy: false, referencesBusy: false, closing: false, error: null, hasData: false };
+    ready: false, busy: false, referencesBusy: false, closing: false, error: null, hasData: false,
+    submitting: false, paused: false, managementBusy: false, completion: { sequence: 0, allSucceeded: false } };
   private listeners = new Set<() => void>();
   private initialization?: Promise<void>;
   private draftWrites: Promise<void> = Promise.resolve();
   private draftFailure = false;
-  private active?: { controller: AbortController; sent: boolean; saving: boolean; references: DrawingReference[] };
+  private active = new Map<string, ActiveDrawing>();
+  private settings?: ConnectionSettingsState;
+  private submission?: Promise<void>;
+  private submissionCancelled = false;
+  private submissionReferences: DrawingReference[] = [];
+  private operations = new Set<Promise<void>>();
+  private cycle = new Set<string>();
+  private cycleHadFailure = false;
   private referenceOperations: Promise<void> = Promise.resolve();
   private pendingReferenceOperations = 0;
-  private operation?: Promise<void>;
-  private unsaved = new Map<string, DrawingImageInput[]>();
+  private unsaved = new Map<string, (DrawingImageInput | null)[]>();
+  private deleting = new Set<string>();
+  private regenerations = new Map<string, Promise<string | undefined>>();
+  private managementCount = 0;
   constructor(private readonly dependencies: DrawingDependencies) {}
   getSnapshot = (): DrawingState => this.state;
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -58,17 +84,28 @@ export class DrawingController {
       let tasks = saved.tasks, results = saved.results;
       // A native manifest proves completed local persistence, never server acceptance.
       for (const task of tasks) {
-        if (!["running", "saving", "save-failed"].includes(task.status)) continue;
+        if (task.status === "preparing") {
+          const queued: DrawingTask = { ...task, status: "queued", startedAt: undefined, updatedAt: this.now() };
+          await this.dependencies.repository.saveTask(queued);
+          tasks = tasks.map(item => item.id === task.id ? queued : item);
+          continue;
+        }
+        if (!["dispatching", "running", "saving", "save-failed"].includes(task.status)) continue;
+        const possiblySent = task.status === "running" || task.status === "dispatching";
         let files;
         try { files = await this.dependencies.files.recover(task.id); }
         catch {
-          const damaged: DrawingTask = { ...task, status: "save-failed", updatedAt: this.now(), error: "上次成果文件读取失败，已保留任务与文件；未重新请求服务。" };
+          const damaged: DrawingTask = { ...task, status: "save-failed", recovery: await this.inspectRecovery(task), diagnostic: { category: "local-file" }, updatedAt: this.now(), error: "上次成果文件读取失败，已保留任务与文件；未重新请求服务。" };
           await this.dependencies.repository.saveTask(damaged);
           tasks = tasks.map(item => item.id === task.id ? damaged : item);
           continue;
         }
-        const updated: DrawingTask = { ...task, updatedAt: this.now(), status: files ? "completed" : task.status === "running" ? "unknown" : "save-failed",
-          error: files ? undefined : task.status === "running" ? "上次请求可能已发出，结果未知；不会自动重发。" : "上次图片未完成本地保存；若原始响应已丢失，无法重新保存。" };
+        const recovery = files ? undefined : await this.inspectRecovery(task);
+        const unknown = possiblySent && !recovery?.total;
+        const updated: DrawingTask = { ...task, updatedAt: this.now(), status: files ? "completed" : unknown ? "unknown" : "save-failed",
+          recovery: files || unknown ? undefined : recovery,
+          diagnostic: files ? undefined : { category: unknown ? "network-unknown" : "local-file" },
+          error: files ? undefined : unknown ? "上次请求可能已发出，结果未知；不会自动重发。" : "上次图片未完成本地保存；若原始响应已丢失，无法重新保存。" };
         if (files) {
           const recovered = files.map(file => ({ ...file, taskId: task.id, createdAt: task.createdAt, parameters: task.parameters }));
           await this.dependencies.repository.complete(updated, recovered);
@@ -79,6 +116,7 @@ export class DrawingController {
       tasks = [...tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       results = [...results].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       this.publish({ draft: saved.draft ?? { ...initialDrawingDraft }, tasks, results,
+        paused: tasks.some(task => task.status === "queued"),
         selectedResultId: results[0]?.id ?? null, ready: true, error: tasks[0]?.error ?? null,
         hasData: !!saved.draft || tasks.length > 0 || results.length > 0 });
     } catch { this.publish({ error: "绘图数据读取或恢复失败。请重启应用后重试；当前禁止生成，以免覆盖已有数据。", ready: false }); }
@@ -86,9 +124,11 @@ export class DrawingController {
   setDraft = (draft: DrawingDraft): void => {
     if (!this.state.ready || this.state.closing) return;
     this.storeDraft(draft);
+    this.pump();
   };
   private storeDraft(draft: DrawingDraft): void {
     const next = { id: "current" as const, prompt: draft.prompt, aspectRatio: draft.aspectRatio, resolution: draft.resolution, modelId: draft.modelId,
+      count: draft.count ?? 1, concurrency: draft.concurrency ?? 1, completionSound: draft.completionSound ?? true,
       ...(draft.openai ? { openai: { size: draft.openai.size, quality: draft.openai.quality } } : {}),
       ...(draft.references ? { references: draft.references.map(reference => ({ ...reference })) } : {}) };
     this.publish({ draft: next, hasData: true });
@@ -128,7 +168,7 @@ export class DrawingController {
     // Unknown persisted ownership is never treated as an empty set.
     if (this.draftFailure) return;
     const retained = new Set([
-      ...(this.state.draft.references ?? []), ...(this.active?.references ?? []),
+      ...(this.state.draft.references ?? []), ...this.submissionReferences, ...[...this.active.values()].flatMap(active => active.references),
       ...this.state.tasks.flatMap(task => task.parameters.references ?? []),
       ...this.state.results.flatMap(result => result.parameters.references ?? []),
     ].map(image => image.reference));
@@ -195,8 +235,73 @@ export class DrawingController {
     await this.dependencies.repository.saveTask(task);
     this.publish({ tasks: [task, ...this.state.tasks.filter(item => item.id !== task.id)], hasData: true });
   }
+  private managementCommand(operation: () => Promise<void>): Promise<void> {
+    if (!this.state.ready || this.state.closing) return Promise.resolve();
+    this.managementCount++;
+    this.publish({ managementBusy: true });
+    return this.referenceCommand(operation).finally(() => {
+      this.managementCount--;
+      this.publish({ managementBusy: this.managementCount > 0 });
+    });
+  }
+  regenerate = (id: string): Promise<string | undefined> => {
+    const pending = this.regenerations.get(id);
+    if (pending) return pending;
+    if (this.deleting.has(id)) return Promise.resolve(undefined);
+    let replacementId: string | undefined;
+    const operation = this.managementCommand(async () => {
+      const source = this.state.tasks.find(task => task.id === id);
+      if (!source || unfinished(source) || this.active.has(id) || this.deleting.has(id)) return;
+      const existing = this.state.tasks.find(task => task.sourceTaskId === id && (unfinished(task) || this.active.has(task.id)));
+      if (existing) { replacementId = existing.id; return; }
+      const next: DrawingTask = { id: this.dependencies.id?.() ?? crypto.randomUUID(), sourceTaskId: id,
+        batchId: crypto.randomUUID(), createdAt: this.now(), updatedAt: this.now(), status: "queued", parameters: structuredClone(source.parameters) };
+      try {
+        const registered = await this.dependencies.repository.enqueue([next]);
+        replacementId = next.id;
+        this.publish({ tasks: [...registered, ...this.state.tasks], hasData: true });
+        this.cycle.add(next.id);
+        this.pump();
+      } catch { this.publish({ error: "重新生成任务登记失败，未发起请求。" }); }
+    }).then(() => replacementId).finally(() => { this.regenerations.delete(id); });
+    this.regenerations.set(id, operation);
+    return operation;
+  };
+  /** Call only after the UI has confirmed the exact selected terminal records. */
+  deleteTasks = (ids: string[]): Promise<void> => {
+    if (!this.state.ready || this.state.closing) return Promise.resolve();
+    const unique = [...new Set(ids)];
+    if (unique.some(id => this.deleting.has(id))) return Promise.resolve();
+    unique.forEach(id => this.deleting.add(id));
+    return this.managementCommand(async () => {
+      const tasks = this.state.tasks.filter(task => unique.includes(task.id));
+      if (tasks.some(task => unfinished(task) || this.active.has(task.id))) {
+        this.publish({ error: "任务仍在执行或保存，请结束后再删除历史。" }); return;
+      }
+      try { await this.dependencies.repository.removeTasks(tasks.map(task => task.id)); }
+      catch { this.publish({ error: "历史删除未完成，任务与恢复内容已保留。" }); return; }
+      if (tasks.some(task => this.cycle.has(task.id) && task.status !== "completed")) this.cycleHadFailure = true;
+      this.publish({ tasks: this.state.tasks.filter(task => !unique.includes(task.id)) });
+      for (const task of tasks) {
+        this.unsaved.delete(task.id);
+        // Independent results and input references own their files even after source history is removed.
+        const prefix = `drawing/${task.id}/`;
+        const owned = this.state.results.some(result => result.taskId === task.id || result.reference.startsWith(prefix)) ||
+          [this.state.draft, ...this.state.tasks.map(item => item.parameters), ...this.state.results.map(item => item.parameters)]
+            .some(item => item.references?.some(reference => reference.reference.startsWith(prefix)));
+        if (!owned) try { await this.dependencies.files.discardRecovery?.(task.id); }
+        catch { this.publish({ error: "历史已删除，但本地恢复文件清理失败；文件已保留，未删除其他成果。" }); }
+      }
+      try { await this.draftWrites; await this.releaseReferences(tasks.flatMap(task => task.parameters.references ?? [])); }
+      catch { this.publish({ error: "历史已删除，但无主参考图清理失败，文件已保留。" }); }
+    }).finally(() => unique.forEach(id => this.deleting.delete(id)));
+  };
+  cancelBatch = (batchId: string): void => {
+    this.state.tasks.filter(task => task.batchId === batchId).forEach(task => this.cancel(task.id));
+  };
   generate(settings: ConnectionSettingsState): Promise<void> {
-    if (!this.state.ready || this.state.busy || this.state.referencesBusy || this.state.closing) return Promise.resolve();
+    if (!this.state.ready || this.state.submitting || this.state.referencesBusy || this.state.closing) return Promise.resolve();
+    this.settings = settings;
     const target = getDrawingTarget(settings, this.state.draft.modelId);
     if (!target) { this.publish({ error: "请先选择有效的绘图模型。" }); return Promise.resolve(); }
     const draft = this.state.draft;
@@ -211,24 +316,90 @@ export class DrawingController {
         : { protocol: "openai-images" as const, size: draft.openai?.size ?? "auto", quality: draft.openai?.quality ?? "auto" }),
     };
     try {
+      if (!Number.isInteger(draft.count ?? 1) || (draft.count ?? 1) < 1 || (draft.count ?? 1) > 99)
+        throw new ImageGenerationError("每批数量须为 1–99 的整数。");
       if (parameters.protocol === "gemini-image") validateDrawingParameters(parameters);
       else validateOpenAIImagesParameters(parameters);
       if (!target.connection.apiKey.trim() || /[\u0000-\u001f\u007f]/.test(target.connection.apiKey)) throw new ImageGenerationError("请先在设置中填写有效的绘图 API Key。");
     } catch (error) { this.publish({ error: error instanceof ImageGenerationError ? error.message
       : "请检查绘图连接；需要有效的 HTTPS 地址、模型与 API Key。" }); return Promise.resolve(); }
-    // Freeze credentials only in the running closure. Persisted tasks contain none.
-    const key = target.connection.apiKey;
-    const active = { controller: new AbortController(), sent: false, saving: false, references: parameters.references ?? [] };
-    this.active = active;
-    this.publish({ busy: true, error: null });
-    this.operation = this.run(parameters, key, active);
-    return this.operation;
+    const batchId = crypto.randomUUID();
+    const tasks: DrawingTask[] = Array.from({ length: draft.count ?? 1 }, () => ({
+      id: this.dependencies.id?.() ?? crypto.randomUUID(), batchId, createdAt: this.now(), updatedAt: this.now(),
+      status: "queued", parameters: structuredClone(parameters),
+    }));
+    this.submissionCancelled = false;
+    this.publish({ submitting: true, error: null });
+    // Pin inputs while the atomic registration waits for the draft write.
+    this.submissionReferences = parameters.references ?? [];
+    this.submission = (async () => {
+      try {
+        await this.flush();
+        const registered = await this.dependencies.repository.enqueue(tasks);
+        this.publish({ tasks: [...registered, ...this.state.tasks], hasData: true });
+        registered.forEach(task => this.cycle.add(task.id));
+        if (this.submissionCancelled) {
+          try { for (const task of registered)
+            await this.saveTask({ ...task, status: "cancelled", updatedAt: this.now(), finishedAt: this.now() });
+          } catch { this.pause(); this.publish({ error: "整批已登记，但取消状态保存失败；队列已暂停，请检查后再继续。" }); }
+        }
+      } catch { this.publish({ error: "整批任务登记失败，未发起本批生成请求。" }); }
+      finally {
+        this.submissionReferences = [];
+        this.publish({ submitting: false });
+        this.pump();
+      }
+    })();
+    // Keep the original imperative API useful to callers awaiting a small batch.
+    return this.submission.then(async () => {
+      while (this.operations.size && !this.state.paused) await Promise.all([...this.operations]);
+    });
   }
-  private async run(parameters: DrawingParameters, key: string, active: NonNullable<DrawingController["active"]>): Promise<void> {
-    let task: DrawingTask = { id: this.dependencies.id?.() ?? crypto.randomUUID(), createdAt: this.now(), updatedAt: this.now(), status: "running", parameters };
-    let registered = false;
+  updateSettings = (settings: ConnectionSettingsState): void => { this.settings = settings; this.pump(); };
+  pause = (): void => { this.publish({ paused: true }); };
+  resume = (): void => {
+    if (!this.state.ready || this.state.closing) return;
+    const pending = this.state.tasks.filter(unfinished);
+    const batches = new Set(pending.map(task => task.batchId).filter(Boolean));
+    // A resumed batch with an unknown/failed sibling must not sound like all-success.
+    this.state.tasks.filter(task => unfinished(task) || (task.batchId && batches.has(task.batchId)))
+      .forEach(task => this.cycle.add(task.id));
+    this.publish({ paused: false }); this.pump();
+  };
+  private pump(): void {
+    if (!this.state.ready || this.state.submitting || this.state.closing || this.state.paused || !this.settings) return;
+    const concurrency = Math.min(4, Math.max(1, Math.trunc(this.state.draft.concurrency ?? 1) || 1));
+    const queued = this.state.tasks.filter(task => task.status === "queued" && !this.active.has(task.id))
+      .sort((a, b) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
+    while (queued.length && this.active.size < concurrency) {
+      const task = queued.shift()!;
+      const active: ActiveDrawing = { controller: new AbortController(), sent: false, saving: false, references: task.parameters.references ?? [] };
+      this.active.set(task.id, active);
+      this.publish({ busy: true });
+      const operation = this.run(task, active);
+      this.operations.add(operation);
+      void operation.finally(() => { this.operations.delete(operation); this.pump(); this.finishCycle(); });
+    }
+    this.finishCycle();
+  }
+  private finishCycle(): void {
+    if (!this.cycle.size || this.state.submitting || this.operations.size || this.state.tasks.some(unfinished)) return;
+    const allSucceeded = !this.cycleHadFailure && this.state.tasks.filter(task => this.cycle.has(task.id)).every(task => task.status === "completed");
+    this.cycle.clear();
+    this.cycleHadFailure = false;
+    this.publish({ completion: { sequence: this.state.completion.sequence + 1, allSucceeded } });
+  }
+  private async run(initial: DrawingTask, active: ActiveDrawing): Promise<void> {
+    let task: DrawingTask = { ...initial, status: "preparing", startedAt: this.now(), updatedAt: this.now(), finishedAt: undefined };
+    const parameters = task.parameters;
     try {
-      await this.flush();
+      await this.saveTask(task);
+      const target = this.settings && getDrawingTarget(this.settings, parameters.configuredModelId);
+      if (!target || target.provider.id !== parameters.providerId || target.connection.id !== parameters.connectionId ||
+        target.connection.protocol !== parameters.protocol || target.connection.baseUrl !== parameters.baseUrl || target.model.modelId !== parameters.modelId)
+        throw new ImageGenerationError("排队时的连接或模型已失效或目标已改变，已阻止请求。请检查设置后明确重新提交。");
+      const key = target.connection.apiKey;
+      if (!key.trim() || /[\u0000-\u001f\u007f]/.test(key)) throw new ImageGenerationError("绘图 API Key 无效，未发起请求。");
       const transport = await this.dependencies.transport();
       const references: DrawingImageInput[] = [];
       for (const reference of active.references) {
@@ -236,67 +407,121 @@ export class DrawingController {
         try { references.push(await this.dependencies.files.read(reference.reference)); }
         catch { throw new ImageGenerationError("参考图读取失败，未发起生成请求；请检查或移除不可用图片。"); }
       }
-      await this.saveTask(task); registered = true;
+      // Persist possible-send intent before touching the network. A crash here is conservatively unknown.
+      task = { ...task, status: "dispatching", updatedAt: this.now() };
+      await this.saveTask(task);
       if (active.controller.signal.aborted) throw new ImageGenerationError("请求尚未发出，已取消。");
       active.sent = true;
-      const images = references.length ? await transport.generate(parameters, key, active.controller.signal, references)
-        : await transport.generate(parameters, key, active.controller.signal);
+      task = { ...task, status: "running" };
+      // The durable dispatching marker already covers a crash; running is a UI stage.
+      this.publish({ tasks: [task, ...this.state.tasks.filter(item => item.id !== task.id)] });
+      const images = await awaitImages(references.length ? transport.generate(parameters, key, active.controller.signal, references)
+        : transport.generate(parameters, key, active.controller.signal), active.controller.signal);
       if (active.controller.signal.aborted) throw new ImageGenerationError("请求已停止，服务端结果未知。", "unknown");
       active.saving = true;
       this.unsaved.set(task.id, images);
-      task = { ...task, status: "saving", updatedAt: this.now() };
-      await this.saveTask(task);
+      task = { ...task, status: "saving", updatedAt: this.now(), recovery: { total: images.length, durable: [], memory: images.map((_, index) => index), lost: [] } };
+      this.publish({ tasks: [task, ...this.state.tasks.filter(item => item.id !== task.id)] });
+      // A DB fault must not prevent durable receipt of already returned pixels.
+      try { await this.saveTask(task); } catch { /* dispatching remains conservative on restart */ }
       await this.commitImages(task, images);
     } catch (error) {
-      if (registered) {
         const status = active.saving ? "save-failed" : active.controller.signal.aborted ? active.sent ? "unknown" : "cancelled"
           : error instanceof ImageGenerationError ? error.outcome : active.sent ? "unknown" : "failed";
-        task = { ...task, status, updatedAt: this.now(), error: active.saving ? "图片已返回，但本地保存未完成。可重试保存；不会重新请求服务。"
+        task = { ...task, status, updatedAt: this.now(), finishedAt: this.now(),
+          recovery: active.saving ? await this.inspectRecovery(task) : undefined,
+          diagnostic: { category: active.saving ? "local-file" : active.controller.signal.aborted ? "cancelled"
+            : error instanceof ImageGenerationError ? error.category ?? (error.outcome === "unknown" ? "network-unknown" : active.sent ? "invalid-response" : "configuration") : active.sent ? "network-unknown" : "local-state",
+            ...(error instanceof ImageGenerationError && error.httpStatus ? { httpStatus: error.httpStatus } : {}) },
+          error: active.saving ? "图片已返回，但本地保存未完成。可重试保存；不会重新请求服务。若暂存也失败，图片仅在内存，退出后可能丢失。"
           : error instanceof ImageGenerationError ? error.message : active.sent ? "请求结果未知；不会自动重发。" : "本地任务登记失败，未发起生成请求。" };
         this.publish({ error: task.error ?? null });
         try { await this.saveTask(task); }
         catch { this.publish({ tasks: [task, ...this.state.tasks.filter(item => item.id !== task.id)], error: "任务状态保存失败；重启后会按已有记录保守恢复。" }); }
-      } else this.publish({ error: error instanceof ImageGenerationError ? error.message : "绘图初始化或任务登记失败，未发起生成请求。" });
     } finally {
-      this.active = undefined;
+      this.active.delete(task.id);
       // Preparation can fail after the draft releases its input; registered tasks retain it.
       try { await this.referenceOperations; await this.draftWrites; await this.releaseReferences(active.references); }
       catch { this.publish({ error: "无主参考图临时文件清理失败，文件已保留。" }); }
-      this.publish({ busy: false });
+      this.publish({ busy: this.active.size > 0 });
     }
   }
-  private async commitImages(task: DrawingTask, images: DrawingImageInput[] | null): Promise<void> {
-    const files = await this.dependencies.files.recover(task.id) ?? (images ? await this.dependencies.files.save(task.id, images) : null);
+  private async commitImages(task: DrawingTask, images: (DrawingImageInput | null)[] | null): Promise<void> {
+    let files = await this.dependencies.files.recover(task.id);
+    if (!files && images) {
+      if (images.every((image): image is DrawingImageInput => image !== null)) files = await this.dependencies.files.save(task.id, images);
+      else if (this.dependencies.files.resumeRecovery) files = await this.dependencies.files.resumeRecovery(task.id,
+        images.flatMap((image, index) => image ? [{ index, image }] : []));
+    }
     if (!files?.length) throw new Error("No local images");
-    const completed: DrawingTask = { ...task, status: "completed", updatedAt: this.now(), error: undefined };
+    // Native files are durable now; DB failure no longer needs a full response in memory.
+    this.unsaved.delete(task.id);
+    const completed: DrawingTask = { ...task, status: "completed", updatedAt: this.now(), finishedAt: this.now(), error: undefined, recovery: undefined, diagnostic: undefined };
     const results = files.map(file => ({ ...file, taskId: task.id, createdAt: task.createdAt, parameters: task.parameters }));
     await this.dependencies.repository.complete(completed, results);
     this.unsaved.delete(task.id);
     this.publish({ tasks: [completed, ...this.state.tasks.filter(item => item.id !== task.id)],
       results: [...results, ...this.state.results.filter(item => item.taskId !== task.id)], selectedResultId: results[0].id });
   }
+  private async inspectRecovery(task: DrawingTask): Promise<DrawingRecovery> {
+    const images = this.unsaved.get(task.id);
+    let total = images?.length ?? task.recovery?.total ?? 0;
+    try {
+      if (!this.dependencies.files.inspectRecovery) throw new Error("Recovery inventory unavailable");
+      const inventory = await this.dependencies.files.inspectRecovery(task.id);
+      total = Math.max(total, inventory.total);
+      const durable = inventory.durable;
+      if (total > 0 && durable.length === total) this.unsaved.delete(task.id);
+      else if (images && this.dependencies.files.resumeRecovery) this.unsaved.set(task.id, images.map((image, i) => durable.includes(i) ? null : image));
+      const memory = images ? Array.from({ length: total }, (_, i) => i).filter(i => !durable.includes(i) && !!images[i]) : [];
+      return { total, durable, memory, lost: Array.from({ length: total }, (_, i) => i).filter(i => !durable.includes(i) && !memory.includes(i)) };
+    } catch {
+      return { total, durable: [], memory: images?.flatMap((image, i) => image ? [i] : []) ?? [], lost: [], unverified: true };
+    }
+  }
   retrySave(id: string): Promise<void> {
     const task = this.state.tasks.find(item => item.id === id);
-    if (!this.state.ready || this.state.busy || this.state.closing || task?.status !== "save-failed") return Promise.resolve();
+    if (!this.state.ready || this.state.busy || this.state.closing || this.deleting.has(id) || task?.status !== "save-failed") return Promise.resolve();
     this.publish({ busy: true, error: null });
-    this.operation = (async () => {
+    this.active.set(id, { controller: new AbortController(), sent: false, saving: true, references: task.parameters.references ?? [] });
+    const operation = (async () => {
       try {
         const saving: DrawingTask = { ...task, status: "saving", updatedAt: this.now(), error: undefined };
         await this.saveTask(saving);
         await this.commitImages(saving, this.unsaved.get(id) ?? null);
       } catch {
-        const failed: DrawingTask = { ...task, status: "save-failed", updatedAt: this.now(), error: "本地保存仍未完成；原始响应丢失时无法恢复，未重新请求服务。" };
+        const failed: DrawingTask = { ...task, status: "save-failed", updatedAt: this.now(), recovery: await this.inspectRecovery(task), diagnostic: { category: "local-file" }, error: "本地保存仍未完成；原始响应丢失时无法恢复，未重新请求服务。" };
         this.publish({ error: failed.error ?? null });
-        try { await this.saveTask(failed); } catch { this.publish({ error: "任务状态保存失败，请重启后检查。" }); }
-      } finally { this.publish({ busy: false }); }
+        try { await this.saveTask(failed); } catch {
+          this.publish({ tasks: [failed, ...this.state.tasks.filter(item => item.id !== id)], error: "任务状态保存失败，请重启后检查。" });
+        }
+      } finally { this.active.delete(id); this.publish({ busy: this.active.size > 0 }); }
     })();
-    return this.operation;
+    this.operations.add(operation);
+    void operation.finally(() => { this.operations.delete(operation); this.pump(); });
+    return operation;
   }
-  cancel = (): void => { if (this.active && !this.active.saving) this.active.controller.abort(); };
+  cancel = (id?: string): void => {
+    if (!id && this.state.submitting) this.submissionCancelled = true;
+    for (const [taskId, active] of this.active) if ((!id || id === taskId) && !active.saving) active.controller.abort();
+    for (const task of this.state.tasks.filter(task => (!id || task.id === id) && task.status === "queued" && !this.active.has(task.id))) {
+        const id = task.id;
+        // Reserve synchronously so a concurrent pump cannot dispatch this item.
+        const active: ActiveDrawing = { controller: new AbortController(), sent: false, saving: false, references: task.parameters.references ?? [] };
+        this.active.set(id, active);
+        const operation = this.saveTask({ ...task, status: "cancelled", updatedAt: this.now(), finishedAt: this.now() })
+          .catch(() => { this.pause(); this.publish({ error: "取消状态保存失败，队列已暂停。" }); })
+          .finally(() => { this.active.delete(id); this.operations.delete(operation); this.pump(); this.finishCycle(); });
+        this.operations.add(operation);
+    }
+  };
   hasUnsavedImages(): boolean { return this.unsaved.size > 0; }
   async settleForClose(): Promise<void> {
-    this.publish({ closing: true });
-    this.cancel(); await this.operation; await this.flush();
+    this.publish({ closing: true, paused: true });
+    // In-flight submission remains queued; closing never discards it.
+    for (const active of this.active.values()) if (!active.saving) active.controller.abort();
+    await this.submission;
+    await Promise.all([...this.operations]); await this.flush();
     if (this.hasUnsavedImages()) throw new UnsavedDrawingImagesError("有已返回但未保存的图片，退出会丢失原始响应。");
   }
   cancelClose = (): void => { this.publish({ closing: false }); };

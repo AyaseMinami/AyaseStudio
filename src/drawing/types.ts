@@ -7,6 +7,9 @@ export interface DrawingDraft {
   /** Absent in #84 drafts; defaults to automatic without rewriting old records. */
   openai?: { size: string; quality: string };
   references?: DrawingReference[];
+  count?: number;
+  concurrency?: number;
+  completionSound?: boolean;
 }
 
 export const initialDrawingDraft: DrawingDraft = {
@@ -31,7 +34,18 @@ export type DrawingParameters = DrawingParameterBase & (
   | { protocol: "openai-images"; size: string; quality: string }
 );
 
-export type DrawingTaskStatus = "running" | "saving" | "completed" | "failed" | "cancelled" | "unknown" | "save-failed";
+export type DrawingTaskStatus = "queued" | "preparing" | "dispatching" | "running" | "saving" | "completed" | "failed" | "cancelled" | "unknown" | "save-failed";
+export interface DrawingRecovery {
+  total: number;
+  durable: number[];
+  memory: number[];
+  lost: number[];
+  unverified?: boolean;
+}
+export interface DrawingDiagnostic {
+  category: "rejected" | "rate-limited" | "network-unknown" | "invalid-response" | "local-file" | "local-state" | "configuration" | "cancelled";
+  httpStatus?: number;
+}
 export interface DrawingTask {
   id: string;
   createdAt: string;
@@ -39,6 +53,13 @@ export interface DrawingTask {
   status: DrawingTaskStatus;
   parameters: DrawingParameters;
   error?: string;
+  batchId?: string;
+  queueOrder?: number;
+  startedAt?: string;
+  finishedAt?: string;
+  sourceTaskId?: string;
+  diagnostic?: DrawingDiagnostic;
+  recovery?: DrawingRecovery;
 }
 
 export interface DrawingImageInput { mime: string; data: string }
@@ -62,6 +83,9 @@ export interface DrawingFiles {
   removeReferences(references: string[]): Promise<void>;
   save(taskId: string, images: DrawingImageInput[]): Promise<DrawingFile[]>;
   recover(taskId: string): Promise<DrawingFile[] | null>;
+  inspectRecovery?(taskId: string): Promise<{ total: number; durable: number[] }>;
+  resumeRecovery?(taskId: string, images: { index: number; image: DrawingImageInput }[]): Promise<DrawingFile[]>;
+  discardRecovery?(taskId: string): Promise<void>;
   read(reference: string): Promise<DrawingImageInput>;
   export(reference: string): Promise<boolean>;
 }
