@@ -44,7 +44,7 @@ const result: DrawingResult = {
   reference: "drawing/private-synthetic-image.png", mime: "image/png", size: 100, width: 1024, height: 576,
 };
 function button(text: string) {
-  const result = [...host.querySelectorAll("button")].find((item) => item.textContent === text);
+  const result = [...host.querySelectorAll("button")].find((item) => item.textContent === text || item.getAttribute("aria-label") === text);
   if (!result) throw new Error(`Missing button: ${text}`);
   return result;
 }
@@ -268,7 +268,7 @@ it("renders one controlled large preview and routes history, export and reuse ca
   expect(options.onReuse).toHaveBeenCalledWith(result.id);
   await act(async () => button("成果库").click());
   expect(host.querySelectorAll("img")).toHaveLength(0);
-  await act(async () => button("查看").click());
+  await act(async () => button("查看成果 2").click());
   expect(options.onSelectResult).toHaveBeenLastCalledWith(second.id);
   expect(button("生成").getAttribute("aria-current")).toBe("page");
 });

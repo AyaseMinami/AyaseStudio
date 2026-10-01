@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Image } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
 import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
 import { DrawingReferences } from "./DrawingReferences";
+import { DrawingResultThumbnail } from "./DrawingResultThumbnail";
+import { DrawingResultPreview } from "./DrawingResultPreview";
 import { drawingAspectRatios, drawingResolutions } from "../../drawing/geminiImage";
 import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImages";
 import "./DrawingWorkspace.css";
@@ -12,7 +13,7 @@ export type { DrawingDraft } from "../../drawing/types";
 
 type DrawingView = "generate" | "tasks" | "library";
 type TaskConfirmation = {
-  kind: "delete" | "regenerate";
+  kind: "delete" | "regenerate" | "delete-results";
   selected: Array<{ id: string; signature: string }>;
   text: string;
   opener: HTMLButtonElement;
@@ -39,16 +40,16 @@ function TaskConfirmationDialog({ confirmation, valid, onClose, onConfirm }: {
       if (event.shiftKey && index <= 0) { event.preventDefault(); buttons[buttons.length - 1]?.focus(); }
       else if (!event.shiftKey && (index === buttons.length - 1 || index < 0)) { event.preventDefault(); buttons[0]?.focus(); }
     }}>
-    <h2 id="drawing-task-confirm-title">{confirmation.kind === "delete" ? "删除任务历史" : "确认重新生成"}</h2>
+    <h2 id="drawing-task-confirm-title">{confirmation.kind === "delete-results" ? "删除绘图成果" : confirmation.kind === "delete" ? "删除任务历史" : "确认重新生成"}</h2>
     <p id="drawing-task-confirm-description" className="drawing-muted drawing-task-recovery">{confirmation.text}</p>
-    {!valid && <p className="drawing-error" role="alert">任务状态已变化或正在处理，请取消后重新确认。</p>}
+    {!valid && <p className="drawing-error" role="alert">{confirmation.kind === "delete-results" ? "成果状态已变化或正在处理，请取消后重新确认。" : "任务状态已变化或正在处理，请取消后重新确认。"}</p>}
     <div className="drawing-actions">
       <button type="button" className="drawing-button" onClick={onClose}>取消</button>
       <button type="button" className="drawing-button" disabled={!valid} onClick={event => {
         if (event.detail > 1 || accepted.current || !valid) return;
         accepted.current = true;
         onConfirm();
-      }}>{confirmation.kind === "delete" ? "确认删除历史" : "确认新建任务"}</button>
+      }}>{confirmation.kind === "delete-results" ? "确认删除成果" : confirmation.kind === "delete" ? "确认删除历史" : "确认新建任务"}</button>
     </div>
   </section></div>;
 }
@@ -72,6 +73,19 @@ const diagnosisLabels: Record<string, string> = {
   "invalid-response": "服务返回的图片结果无效", "local-file": "本地图片保存或读取失败",
   "local-state": "本地任务记录保存失败", configuration: "模型或连接配置不可用", cancelled: "任务已取消",
 };
+
+function ResultDetails({ result }: { result: DrawingResult }) {
+  const parameters = result.parameters;
+  return <div className="drawing-result-details">
+    <p className="drawing-result-prompt">{parameters.prompt}</p>
+    <p className="drawing-muted">模型：{parameters.modelId} · 协议：{parameters.protocol}</p>
+    <p className="drawing-muted">{parameters.protocol === "openai-images"
+      ? `尺寸：${parameters.size} · 画质：${parameters.quality}`
+      : `宽高比：${parameters.aspectRatio} · 分辨率：${parameters.resolution}`}</p>
+    <p className="drawing-muted">{parameters.modelName} · {result.width} × {result.height} · 参考图 {parameters.references?.length ?? 0} 张</p>
+    <p className="drawing-muted">生成时间：<time dateTime={result.createdAt}>{result.createdAt}</time></p>
+  </div>;
+}
 
 function recoveryText(task: DrawingTask) {
   const recovery = task.recovery;
@@ -98,7 +112,9 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   selectedResultId, previewUrl, previewError, ready, busy, submitting = false, paused = false, error,
   onGenerate, onCancel, onCancelBatch, onRegenerate, onDeleteTasks, managementBusy = false,
   onPause, onResume, onSelectResult, onExport, onRetrySave, onReuse,
-  onAddReferences, onRemoveReference, onMoveReference, onUseAsReference, readReference, referencesBusy }: {
+  onAddReferences, onRemoveReference, onMoveReference, onUseAsReference, readReference, referencesBusy,
+  onClearReferences, readThumbnail, onDeleteResults, onExportResults, onCopyPrompt, onPreviewActive,
+  closing = false, notice }: {
   draft: DrawingDraft;
   onDraftChange(draft: DrawingDraft): void;
   onConfigure(): void;
@@ -131,9 +147,25 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   onUseAsReference(id: string): void;
   readReference(reference: string): Promise<DrawingImageInput>;
   referencesBusy: boolean;
+  onClearReferences?(): void;
+  readThumbnail?(reference: string): Promise<DrawingImageInput>;
+  onDeleteResults?(ids: string[]): void;
+  onExportResults?(ids: string[], withParameters: boolean): void;
+  onCopyPrompt?(id: string): void;
+  onPreviewActive?(active: boolean): void;
+  closing?: boolean;
+  notice?: string | null;
 }) {
   const [view, setView] = useState<DrawingView>("generate");
   const [confirmation, setConfirmation] = useState<TaskConfirmation | null>(null);
+  const [selectedResults, setSelectedResults] = useState<string[]>([]);
+  useEffect(() => {
+    onPreviewActive?.(view === "generate");
+    return () => onPreviewActive?.(false);
+  }, [view, onPreviewActive]);
+  useEffect(() => {
+    setSelectedResults(current => current.filter(id => results.some(result => result.id === id)));
+  }, [results]);
   const [now, setNow] = useState(Date.now);
   const liveElapsed = tasks.some(task => task.startedAt && !task.finishedAt && !terminal(task));
   useEffect(() => {
@@ -146,22 +178,28 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   const count = draft.count ?? 1;
   const concurrency = draft.concurrency ?? 1;
   const selectedResult = results.find((result) => result.id === selectedResultId);
-  const openai = models.find(model => model.id === draft.modelId)?.protocol === "openai-images";
+  const selectedModel = models.find(model => model.id === draft.modelId);
+  const reusedProtocol = !selectedModel ? draft.reusedProtocol : undefined;
+  const openai = (selectedModel?.protocol ?? reusedProtocol) === "openai-images";
   const size = draft.openai?.size ?? "auto", quality = draft.openai?.quality ?? "auto";
   const presetSize = (openAIImageSizes as readonly string[]).includes(size);
   const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => onDraftChange({ ...draft, openai: { size, quality, ...patch } });
   const resultNumber = (id: string) => results.length - results.findIndex((result) => result.id === id);
-  const canGenerate = ready && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy;
-  const canEditReferences = ready && !referencesBusy;
-  const managementAllowed = ready && !submitting && !managementBusy;
+  const canGenerate = ready && !closing && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy;
+  const canEditReferences = ready && !closing && !referencesBusy && !managementBusy && !confirmation;
+  const managementAllowed = ready && !closing && !submitting && !managementBusy;
   const canManage = managementAllowed && !confirmation;
   const completedTasks = tasks.filter(task => task.status === "completed");
   const failedTasks = tasks.filter(task => terminal(task) && task.status !== "completed");
   const taskNumber = (id: string) => tasks.length - tasks.findIndex(task => task.id === id);
   const taskSignature = (task: DrawingTask) => `${taskNumber(task.id)}:${JSON.stringify(task)}`;
   const confirmationValid = Boolean(confirmation && managementAllowed
-    && (confirmation.kind === "delete" ? onDeleteTasks : onRegenerate)
+    && (confirmation.kind === "delete-results" ? onDeleteResults : confirmation.kind === "delete" ? onDeleteTasks : onRegenerate)
     && confirmation.selected.every(selected => {
+      if (confirmation.kind === "delete-results") {
+        const current = results.find(result => result.id === selected.id);
+        return current && JSON.stringify(current) === selected.signature;
+      }
       const current = tasks.find(task => task.id === selected.id);
       return current && terminal(current) && taskSignature(current) === selected.signature;
     }));
@@ -190,8 +228,43 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   function confirmTaskAction() {
     if (!confirmation || !confirmationValid) return;
     setConfirmation(null);
-    if (confirmation.kind === "delete") onDeleteTasks?.(confirmation.selected.map(task => task.id));
+    if (confirmation.kind === "delete-results") {
+      const ids = confirmation.selected.map(result => result.id);
+      setSelectedResults(current => current.filter(id => !ids.includes(id)));
+      onDeleteResults?.(ids);
+    } else if (confirmation.kind === "delete") onDeleteTasks?.(confirmation.selected.map(task => task.id));
     else onRegenerate?.(confirmation.selected[0].id);
+  }
+
+  function deleteResults(ids: string[], opener: HTMLButtonElement) {
+    if (!canManage || !onDeleteResults || !ids.length) return;
+    const selected = ids.map(id => results.find(result => result.id === id)).filter((result): result is DrawingResult => Boolean(result));
+    if (selected.length !== ids.length) return;
+    setConfirmation({ kind: "delete-results", opener,
+      selected: selected.map(result => ({ id: result.id, signature: JSON.stringify(result) })),
+      text: `删除 ${selected.length} 张绘图成果（${selected.map(result => `成果 ${resultNumber(result.id)}`).join("、")}）？此操作无法撤销；已被草稿或任务引用的参考图仍会保留。` });
+  }
+
+  function exportSelected(withParameters: boolean) {
+    if (!canManage || !onExportResults || !selectedResults.length) return;
+    onExportResults(selectedResults, withParameters);
+    setSelectedResults([]);
+  }
+
+  function resultActions(result: DrawingResult) {
+    return <div className="drawing-actions">
+      <button type="button" className="drawing-button" disabled={!canManage} onClick={() => onExport(result.id)}>导出图片</button>
+      {onExportResults && <button type="button" className="drawing-button" disabled={!canManage}
+        onClick={() => onExportResults([result.id], true)}>导出带参数 PNG</button>}
+      {onCopyPrompt && <button type="button" className="drawing-button" disabled={!canManage}
+        onClick={() => onCopyPrompt(result.id)}>复制提示词</button>}
+      <button type="button" className="drawing-button" disabled={!canManage || referencesBusy}
+        onClick={() => reuseResult(result.id)}>复用参数</button>
+      <button type="button" className="drawing-button" disabled={!canEditReferences}
+        onClick={() => onUseAsReference(result.id)}>作为参考图</button>
+      {onDeleteResults && <button type="button" className="drawing-button" disabled={!canManage}
+        aria-label={`删除成果 ${resultNumber(result.id)}`} onClick={event => deleteResults([result.id], event.currentTarget)}>删除成果</button>}
+    </div>;
   }
 
   function selectResult(id: string) {
@@ -252,6 +325,7 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
           {hasCancellable && <p className="drawing-muted">已发出的请求取消后，服务端仍可能继续生成并计费。</p>}
         </div>
         {error && <p className="drawing-error" role="alert">{error}</p>}
+        {notice && <p className="drawing-muted" role="status">{notice}</p>}
 
         {view === "generate" ? (
           <div className="drawing-layout">
@@ -260,12 +334,17 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 <label className="drawing-label" htmlFor="drawing-model">绘图模型</label>
                 <div className="drawing-model">
                   <select id="drawing-model" value={draft.modelId ?? ""} disabled={!ready}
-                    onChange={(event) => onDraftChange({ ...draft, modelId: event.target.value || null })}>
-                    <option value="">选择绘图模型</option>
+                    onChange={(event) => {
+                      const next = { ...draft, modelId: event.target.value || null };
+                      delete next.reusedProtocol;
+                      onDraftChange(next);
+                    }}>
+                    <option value="">{reusedProtocol ? `选择绘图模型（已复用 ${reusedProtocol === "openai-images" ? "OpenAI" : "Gemini"} 参数）` : "选择绘图模型"}</option>
                     {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
                   </select>
                   <button type="button" className="drawing-button" onClick={onConfigure}>前往设置</button>
                 </div>
+                {reusedProtocol && <p className="drawing-muted" role="status">原模型不可用，请重新选择绘图模型。已保留 {reusedProtocol === "openai-images" ? "OpenAI Images" : "Gemini Image"} 协议参数。</p>}
                 {ready && models.length === 0 && <p className="drawing-muted">请在设置中添加 Gemini 或 OpenAI 绘图连接和模型。</p>}
               </div>
               <label className="drawing-field">
@@ -275,7 +354,7 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
               </label>
               <DrawingReferences references={draft.references ?? []} disabled={!canEditReferences}
                 busy={referencesBusy} read={readReference} onAdd={onAddReferences}
-                onRemove={onRemoveReference} onMove={onMoveReference} />
+                onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
               {openai ? <>
                 <div className="drawing-parameters">
                   <label className="drawing-field">
@@ -344,28 +423,19 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 <h2 id="drawing-preview-title">图像预览</h2>
                 <span className="drawing-muted">{selectedResult ? `成果 ${resultNumber(selectedResult.id)}` : "等待生成"}</span>
               </div>
-              <div className="drawing-result-stage drawing-preview-stage" aria-label="生成图像大图预览">
-                {previewError ? <div className="drawing-empty"><p role="alert">{previewError}</p></div>
-                  : selectedResult && previewUrl ? <img src={previewUrl} alt={`成果 ${resultNumber(selectedResult.id)} · ${selectedResult.parameters.modelName}`} />
-                  : <div className="drawing-empty">
-                  <Image size={32} strokeWidth={1.5} aria-hidden="true" />
-                  <p>{selectedResult ? "正在加载图片…" : "生成后的图片会自动显示在这里"}</p>
-                </div>}
-              </div>
+              <DrawingResultPreview id={selectedResult?.id ?? null} url={selectedResult ? previewUrl : null} error={previewError}
+                width={selectedResult?.width} height={selectedResult?.height} />
               {selectedResult && <div className="drawing-preview-details">
-                <p className="drawing-muted">{selectedResult.parameters.modelName} · {selectedResult.width} × {selectedResult.height}</p>
-                <div className="drawing-actions">
-                  <button type="button" className="drawing-button" onClick={() => onExport(selectedResult.id)}>导出图片</button>
-                  <button type="button" className="drawing-button" onClick={() => reuseResult(selectedResult.id)}>复用参数</button>
-                  <button type="button" className="drawing-button" disabled={!canEditReferences}
-                    onClick={() => onUseAsReference(selectedResult.id)}>作为参考图</button>
-                </div>
+                <ResultDetails result={selectedResult} />
+                {resultActions(selectedResult)}
+                {onExportResults && <p className="drawing-muted">带参数 PNG 含提示词等生成参数，不含参考图原件，不保证可确定复现；分享前请确认内容。</p>}
               </div>}
               <h2 className="drawing-history-heading">生成历史</h2>
               <div className="drawing-history" aria-label="生成历史">
                 {results.length ? results.map((result) => <button key={result.id} type="button"
-                  className="drawing-button" aria-pressed={result.id === selectedResultId}
-                  onClick={() => onSelectResult(result.id)}>成果 {resultNumber(result.id)}</button>)
+                  className="drawing-button" aria-label={`成果 ${resultNumber(result.id)}`} aria-pressed={result.id === selectedResultId}
+                  onClick={() => onSelectResult(result.id)}><DrawingResultThumbnail reference={result.reference}
+                    label={`成果 ${resultNumber(result.id)} 缩略图`} read={readThumbnail} />成果 {resultNumber(result.id)}</button>)
                   : <p className="drawing-muted">暂无生成历史</p>}
               </div>
             </section>
@@ -373,6 +443,24 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
         ) : (
           <section className="drawing-panel" aria-labelledby="drawing-view-title">
             <h2 id="drawing-view-title">{view === "tasks" ? "任务" : "成果库"}</h2>
+            {view === "library" && (onDeleteResults || onExportResults) && <div className="drawing-library-management">
+              <div className="drawing-actions">
+                <button type="button" className="drawing-button" disabled={!canManage || !results.length}
+                  onClick={() => setSelectedResults(results.map(result => result.id))}>全选成果</button>
+                <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
+                  onClick={() => setSelectedResults([])}>取消选择</button>
+                <span className="drawing-muted" role="status">已选择 {selectedResults.length} 张</span>
+                {onExportResults && <>
+                  <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
+                    onClick={() => exportSelected(false)}>导出所选图片</button>
+                  <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
+                    onClick={() => exportSelected(true)}>导出所选带参数 PNG</button>
+                </>}
+                {onDeleteResults && <button type="button" className="drawing-button" disabled={!canManage || !selectedResults.length}
+                  onClick={event => deleteResults(selectedResults, event.currentTarget)}>删除所选成果</button>}
+              </div>
+              {onExportResults && <p className="drawing-muted">带参数 PNG 含提示词等生成参数，不含参考图原件，不保证可确定复现；分享前请确认内容。</p>}
+            </div>}
             {view === "tasks" && onDeleteTasks && <div className="drawing-actions drawing-task-management">
               <button type="button" className="drawing-button" disabled={!canManage || !completedTasks.length}
                 onClick={event => { if (event.detail <= 1) deleteTasks(completedTasks, event.currentTarget); }}>清空已完成历史</button>
@@ -417,16 +505,17 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
               </article>)}
             </div> : view === "library" && results.length ? <div className="drawing-library">
               {results.map((result) => <article className="drawing-record" key={result.id}>
-                <h3>成果 {resultNumber(result.id)}</h3>
-                <p>{result.parameters.prompt}</p>
-                <p className="drawing-muted">{result.parameters.modelName} · {result.width} × {result.height}</p>
-                <div className="drawing-actions">
-                  <button type="button" className="drawing-button" onClick={() => selectResult(result.id)}>查看</button>
-                  <button type="button" className="drawing-button" onClick={() => onExport(result.id)}>导出图片</button>
-                  <button type="button" className="drawing-button" onClick={() => reuseResult(result.id)}>复用参数</button>
-                  <button type="button" className="drawing-button" disabled={!canEditReferences}
-                    onClick={() => onUseAsReference(result.id)}>作为参考图</button>
+                <div className="drawing-section-heading"><h3>成果 {resultNumber(result.id)}</h3>
+                  {(onDeleteResults || onExportResults) && <label className="drawing-result-select">
+                    <input type="checkbox" aria-label={`选择成果 ${resultNumber(result.id)}`} disabled={!canManage}
+                      checked={selectedResults.includes(result.id)} onChange={event => setSelectedResults(current => event.target.checked
+                        ? [...current, result.id] : current.filter(id => id !== result.id))} />选择</label>}
                 </div>
+                <button type="button" className="drawing-button drawing-library-preview" aria-label={`查看成果 ${resultNumber(result.id)}`}
+                  onClick={() => selectResult(result.id)}><DrawingResultThumbnail reference={result.reference}
+                    label={`成果 ${resultNumber(result.id)} 缩略图`} read={readThumbnail} /><span>查看</span></button>
+                <ResultDetails result={result} />
+                {resultActions(result)}
               </article>)}
             </div> : <div className="drawing-empty drawing-view-empty">
               <p>{view === "tasks" ? "暂无绘图任务" : "暂无绘图成果"}</p>

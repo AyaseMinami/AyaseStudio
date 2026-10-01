@@ -37,6 +37,16 @@ beforeEach(async () => {
 });
 afterEach(async () => { if (root) await act(async () => root.unmount()); host?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it("releases originals when preview is hidden and reads only when it becomes visible again", async () => {
+  await act(async () => state.controller.generate(settings));
+  expect(mocks.read).toHaveBeenCalledOnce(); expect(state.previewUrl).toBe("blob:synthetic");
+  await act(async () => state.setPreviewActive(false));
+  expect(state.previewUrl).toBeNull(); expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:synthetic");
+  await act(async () => state.controller.generate(settings));
+  expect(mocks.read).toHaveBeenCalledOnce(); expect(state.previewUrl).toBeNull();
+  await act(async () => state.setPreviewActive(true));
+  expect(mocks.read).toHaveBeenCalledTimes(2); expect(state.previewUrl).toBe("blob:synthetic");
+});
 it("plays one completion tone, honors mute, and releases audio resources", async () => {
   const disconnect = vi.fn(), start = vi.fn(), stop = vi.fn();
   const oscillator = { frequency: { value: 0 }, connect: vi.fn(), disconnect, start, stop, onended: null as null | (() => void) };

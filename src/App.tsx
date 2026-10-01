@@ -29,7 +29,7 @@ function App() {
   const appearance = useAppearance();
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
-  const drawing = useDrawingWorkspace();
+  const drawing = useDrawingWorkspace(activePage === "drawing");
   const chat = useChatSession({
     externalBusy: drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued") || drawing.closing,
     onConfigurationRequired: () => {
@@ -108,7 +108,12 @@ function App() {
           managementBusy={drawing.managementBusy} onCancelBatch={drawing.controller.cancelBatch}
           onRegenerate={id => void drawing.controller.regenerate(id)} onDeleteTasks={ids => void drawing.controller.deleteTasks(ids)}
           onExport={id => void drawing.controller.export(id)} onRetrySave={id => void drawing.controller.retrySave(id)}
-          onReuse={drawing.controller.reuse}
+          onReuse={id => void drawing.controller.reuse(id)}
+          onClearReferences={() => void drawing.controller.clearReferences()}
+          readThumbnail={drawing.controller.readThumbnail} onPreviewActive={drawing.setPreviewActive}
+          onDeleteResults={ids => void drawing.controller.deleteResults(ids)}
+          onExportResults={(ids, withParameters) => void drawing.controller.exportResults(ids, withParameters)}
+          onCopyPrompt={id => void drawing.controller.copyPrompt(id)} notice={drawing.notice} closing={drawing.closing}
           referencesBusy={drawing.referencesBusy} onAddReferences={files => void drawing.controller.addReferences(files)}
           onRemoveReference={id => void drawing.controller.removeReference(id)}
           onMoveReference={(id, direction) => void drawing.controller.moveReference(id, direction)}

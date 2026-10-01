@@ -3,7 +3,8 @@ import { getDrawingTarget } from "../chat/settings";
 import { ImageGenerationError, validateDrawingParameters } from "./geminiImage";
 import { validateOpenAIImagesParameters } from "./openaiImages";
 import { bytesToBase64 } from "../chat/attachments";
-import type { DrawingRepository } from "./repository";
+import { drawingExportParameters } from "./exportParameters";
+import type { DrawingRepository, DrawingSnapshot } from "./repository";
 import { initialDrawingDraft, type DrawingDraft, type DrawingTask, type DrawingResult, type DrawingFiles,
   type DrawingImageInput, type ImageGenerationTransport, type DrawingParameters, type DrawingReference, type DrawingRecovery } from "./types";
 
@@ -17,6 +18,7 @@ export interface DrawingState {
   referencesBusy: boolean;
   closing: boolean;
   error: string | null;
+  notice: string | null;
   hasData: boolean;
   submitting: boolean;
   paused: boolean;
@@ -36,6 +38,29 @@ export class UnsavedDrawingImagesError extends Error {}
 interface ActiveDrawing { controller: AbortController; sent: boolean; saving: boolean; references: DrawingReference[] }
 const unfinished = (task: DrawingTask) => ["queued", "preparing", "dispatching", "running", "saving"].includes(task.status);
 
+function validateOwnership(saved: DrawingSnapshot): void {
+  const reference = (item: DrawingReference | DrawingResult) => {
+    if (!item || typeof item.reference !== "string" || !/^drawing\/[^/]+\/[^/]+$/.test(item.reference) ||
+      typeof item.id !== "string" || !item.id || !Number.isFinite(item.size) || item.size <= 0 ||
+      !Number.isFinite(item.width) || item.width <= 0 || !Number.isFinite(item.height) || item.height <= 0)
+      throw new Error("Damaged drawing ownership");
+  };
+  const parameters = (item: DrawingParameters) => {
+    if (!item || !["gemini-image", "openai-images"].includes(item.protocol)) throw new Error("Unknown drawing protocol");
+    item.references?.forEach(reference);
+  };
+  saved.draft?.references?.forEach(reference);
+  for (const task of saved.tasks) {
+    if (!task.id || !["queued", "preparing", "dispatching", "running", "saving", "completed", "failed", "cancelled", "unknown", "save-failed"].includes(task.status))
+      throw new Error("Unknown drawing task ownership");
+    parameters(task.parameters);
+  }
+  for (const result of saved.results) {
+    reference(result); parameters(result.parameters);
+    if (!result.taskId || !result.reference.startsWith(`drawing/${result.taskId}/`)) throw new Error("Damaged result provenance");
+  }
+}
+
 function awaitImages(request: Promise<DrawingImageInput[]>, signal: AbortSignal): Promise<DrawingImageInput[]> {
   return new Promise((resolve, reject) => {
     const abort = () => reject(new ImageGenerationError("请求已停止，服务端结果未知。", "unknown"));
@@ -48,7 +73,7 @@ function awaitImages(request: Promise<DrawingImageInput[]>, signal: AbortSignal)
 /** Application-owned durable queue; page unmounts never own requests. */
 export class DrawingController {
   private state: DrawingState = { draft: initialDrawingDraft, tasks: [], results: [], selectedResultId: null,
-    ready: false, busy: false, referencesBusy: false, closing: false, error: null, hasData: false,
+    ready: false, busy: false, referencesBusy: false, closing: false, error: null, notice: null, hasData: false,
     submitting: false, paused: false, managementBusy: false, completion: { sequence: 0, allSucceeded: false } };
   private listeners = new Set<() => void>();
   private initialization?: Promise<void>;
@@ -123,12 +148,13 @@ export class DrawingController {
   }
   setDraft = (draft: DrawingDraft): void => {
     if (!this.state.ready || this.state.closing) return;
-    this.storeDraft(draft);
+    this.storeDraft(draft.modelId ? { ...draft, reusedProtocol: undefined } : draft);
     this.pump();
   };
   private storeDraft(draft: DrawingDraft): void {
     const next = { id: "current" as const, prompt: draft.prompt, aspectRatio: draft.aspectRatio, resolution: draft.resolution, modelId: draft.modelId,
       count: draft.count ?? 1, concurrency: draft.concurrency ?? 1, completionSound: draft.completionSound ?? true,
+      ...(draft.reusedProtocol ? { reusedProtocol: draft.reusedProtocol } : {}),
       ...(draft.openai ? { openai: { size: draft.openai.size, quality: draft.openai.quality } } : {}),
       ...(draft.references ? { references: draft.references.map(reference => ({ ...reference })) } : {}) };
     this.publish({ draft: next, hasData: true });
@@ -166,15 +192,48 @@ export class DrawingController {
   }
   private async releaseReferences(candidates: DrawingReference[]): Promise<void> {
     // Unknown persisted ownership is never treated as an empty set.
-    if (this.draftFailure) return;
+    if (this.draftFailure || !candidates.length) return;
+    const saved = await this.dependencies.repository.load();
+    validateOwnership(saved);
+    validateOwnership({ draft: { ...initialDrawingDraft, references: candidates }, tasks: [], results: [] });
     const retained = new Set([
       ...(this.state.draft.references ?? []), ...this.submissionReferences, ...[...this.active.values()].flatMap(active => active.references),
       ...this.state.tasks.flatMap(task => task.parameters.references ?? []),
       ...this.state.results.flatMap(result => result.parameters.references ?? []),
+      ...(saved.draft?.references ?? []), ...saved.tasks.flatMap(task => task.parameters.references ?? []),
+      ...saved.results.flatMap(result => result.parameters.references ?? []),
     ].map(image => image.reference));
     const unused = [...new Set(candidates.map(image => image.reference))]
       .filter(reference => reference.startsWith("drawing/references/") && !retained.has(reference));
     if (unused.length) await this.dependencies.files.removeReferences(unused);
+    const outputs = candidates.flatMap(image => {
+      const match = /^drawing\/([^/]+)\/[^/]+$/.exec(image.reference);
+      return match && match[1] !== "references" ? [{ taskId: match[1] }] : [];
+    });
+    if (outputs.length) await this.releaseResultFiles(outputs);
+  }
+  private async releaseResultFiles(candidates: Array<{ taskId: string; reference?: string }>, completedOnly = true): Promise<void> {
+    await this.draftWrites;
+    if (this.draftFailure) throw new Error("Uncertain draft ownership");
+    // Re-read durable ownership before any native cleanup. Corrupt/unknown ownership
+    // is an error, never an empty inventory. No full-directory orphan scan.
+    const saved = await this.dependencies.repository.load();
+    validateOwnership(saved);
+    if (candidates.some(result => !result.taskId || (result.reference !== undefined && !result.reference.startsWith(`drawing/${result.taskId}/`))))
+      throw new Error("Damaged cleanup provenance");
+    const references = [
+      ...(saved.draft?.references ?? []), ...(this.state.draft.references ?? []),
+      ...this.submissionReferences, ...[...this.active.values()].flatMap(active => active.references),
+      ...saved.tasks.flatMap(task => task.parameters.references ?? []),
+      ...saved.results.flatMap(result => result.parameters.references ?? []),
+    ];
+    for (const taskId of new Set(candidates.map(result => result.taskId))) {
+      const prefix = `drawing/${taskId}/`;
+      if (saved.tasks.some(task => task.id === taskId && (unfinished(task) || task.status === "save-failed")) || this.active.has(taskId) ||
+        saved.results.some(result => result.taskId === taskId || result.reference.startsWith(prefix)) ||
+        references.some(reference => reference.reference.startsWith(prefix))) continue;
+      await this.dependencies.files.discardRecovery?.(taskId, completedOnly);
+    }
   }
   addReferences = (files: File[]): Promise<void> => this.referenceCommand(async () => {
     const imported: DrawingReference[] = [];
@@ -199,6 +258,11 @@ export class DrawingController {
     await this.writeReferences(previous.filter(image => image.id !== id));
     await this.releaseReferences(previous);
   });
+  clearReferences = (): Promise<void> => this.referenceCommand(async () => {
+    const previous = this.state.draft.references ?? [];
+    await this.writeReferences([]);
+    await this.releaseReferences(previous);
+  });
   moveReference = (id: string, direction: -1 | 1): Promise<void> => this.referenceCommand(async () => {
     const references = [...(this.state.draft.references ?? [])];
     const index = references.findIndex(image => image.id === id), target = index + direction;
@@ -220,17 +284,49 @@ export class DrawingController {
       size: result.size, width: result.width, height: result.height, digest, name: `成果 ${this.state.results.length - this.state.results.findIndex(item => item.id === id)}` }]);
   });
   readReference = (reference: string): Promise<DrawingImageInput> => this.dependencies.files.read(reference);
+  readThumbnail = (reference: string): Promise<DrawingImageInput> => {
+    if (!this.dependencies.files.thumbnail) return Promise.reject(new Error("Thumbnail unavailable"));
+    return this.dependencies.files.thumbnail(reference);
+  };
   selectResult = (id: string): void => {
     if (this.state.results.some(result => result.id === id)) this.publish({ selectedResultId: id });
   };
-  reuse = (id: string): void => {
+  reuse = (id: string): Promise<void> => this.referenceCommand(async () => {
     const result = this.state.results.find(item => item.id === id);
     if (!result) return;
     const parameters = result.parameters;
-    this.setDraft({ ...this.state.draft, prompt: parameters.prompt, modelId: parameters.configuredModelId,
+    const previous = this.state.draft.references ?? [];
+    const references = structuredClone(parameters.references ?? []);
+    const missing: number[] = [];
+    for (let index = 0; index < references.length; index++) {
+      try { await this.dependencies.files.read(references[index].reference); }
+      catch { missing.push(index + 1); }
+    }
+    const target = this.settings ? getDrawingTarget(this.settings, parameters.configuredModelId) : undefined;
+    const invalid = this.settings && (!target || target.connection.id !== parameters.connectionId ||
+      target.provider.id !== parameters.providerId || target.connection.protocol !== parameters.protocol || target.model.modelId !== parameters.modelId);
+    const next = { ...this.state.draft, prompt: parameters.prompt, modelId: invalid ? null : parameters.configuredModelId,
+      reusedProtocol: invalid ? parameters.protocol : undefined, references,
       ...(parameters.protocol === "gemini-image" ? { aspectRatio: parameters.aspectRatio, resolution: parameters.resolution }
-        : { openai: { size: parameters.size, quality: parameters.quality } }) });
-  };
+        : { openai: { size: parameters.size, quality: parameters.quality } }) };
+    const priorDraft = this.state.draft;
+    this.storeDraft(next);
+    const reusedDraft = this.state.draft;
+    await this.draftWrites;
+    if (this.draftFailure) {
+      // Editable text/options may have queued a newer write while this snapshot
+      // was saving. Roll back only the snapshot this operation still owns.
+      if (this.state.draft === reusedDraft) {
+        this.storeDraft(priorDraft); await this.draftWrites;
+        throw new ImageGenerationError("复用草稿保存失败，未确认本次修改；历史与文件已保留。");
+      }
+      await this.draftWrites;
+      if (this.draftFailure) throw new ImageGenerationError("最新绘图草稿尚未保存；当前编辑与历史文件已保留，请检查本地存储。");
+    }
+    await this.releaseReferences(previous);
+    if (invalid || missing.length) this.publish({ error: [invalid ? "原绘图模型已失效或配置已改变，请重新选择同协议模型；文本、参数与参考图记录已保留。" : "",
+      missing.length ? `参考图 ${missing.join("、")} 读取失败，未完整恢复；请补充或移除缺失项。` : ""].filter(Boolean).join(" ") });
+  });
   private async saveTask(task: DrawingTask): Promise<void> {
     await this.dependencies.repository.saveTask(task);
     this.publish({ tasks: [task, ...this.state.tasks.filter(item => item.id !== task.id)], hasData: true });
@@ -278,24 +374,40 @@ export class DrawingController {
       if (tasks.some(task => unfinished(task) || this.active.has(task.id))) {
         this.publish({ error: "任务仍在执行或保存，请结束后再删除历史。" }); return;
       }
-      try { await this.dependencies.repository.removeTasks(tasks.map(task => task.id)); }
+      try { validateOwnership({ tasks, results: [] }); await this.dependencies.repository.removeTasks(tasks.map(task => task.id)); }
       catch { this.publish({ error: "历史删除未完成，任务与恢复内容已保留。" }); return; }
       if (tasks.some(task => this.cycle.has(task.id) && task.status !== "completed")) this.cycleHadFailure = true;
       this.publish({ tasks: this.state.tasks.filter(task => !unique.includes(task.id)) });
       for (const task of tasks) {
         this.unsaved.delete(task.id);
-        // Independent results and input references own their files even after source history is removed.
-        const prefix = `drawing/${task.id}/`;
-        const owned = this.state.results.some(result => result.taskId === task.id || result.reference.startsWith(prefix)) ||
-          [this.state.draft, ...this.state.tasks.map(item => item.parameters), ...this.state.results.map(item => item.parameters)]
-            .some(item => item.references?.some(reference => reference.reference.startsWith(prefix)));
-        if (!owned) try { await this.dependencies.files.discardRecovery?.(task.id); }
-        catch { this.publish({ error: "历史已删除，但本地恢复文件清理失败；文件已保留，未删除其他成果。" }); }
       }
+      try { await this.releaseResultFiles(tasks.map(task => ({ taskId: task.id })), false); }
+      catch { this.publish({ error: "历史已删除，但本地恢复文件清理失败；文件已保留，未删除其他成果。" }); }
       try { await this.draftWrites; await this.releaseReferences(tasks.flatMap(task => task.parameters.references ?? [])); }
       catch { this.publish({ error: "历史已删除，但无主参考图清理失败，文件已保留。" }); }
     }).finally(() => unique.forEach(id => this.deleting.delete(id)));
   };
+  /** UI confirms exactly these result records; task history remains independent. */
+  deleteResults = (ids: string[]): Promise<void> => this.managementCommand(async () => {
+    const unique = new Set(ids);
+    const results = this.state.results.filter(result => unique.has(result.id));
+    // A save-failed task may still re-register its complete receipt. Keep those
+    // records until local recovery settles, rather than silently resurrecting them.
+    if (results.some(result => this.active.has(result.taskId) || this.state.tasks.some(task =>
+      task.id === result.taskId && (unfinished(task) || task.status === "save-failed")))) {
+      this.publish({ error: "成果所属任务仍在保存或等待本地恢复，请先完成恢复或删除该任务历史。" }); return;
+    }
+    try { await this.dependencies.repository.removeResults(results.map(result => result.id)); }
+    catch { this.publish({ error: "成果删除失败，记录与文件已保留。" }); return; }
+    const remaining = this.state.results.filter(result => !unique.has(result.id));
+    this.publish({ results: remaining, selectedResultId: remaining.some(result => result.id === this.state.selectedResultId)
+      ? this.state.selectedResultId : remaining[0]?.id ?? null, notice: `已删除 ${results.length} 项成果。` });
+    try {
+      validateOwnership({ tasks: [], results });
+      await this.releaseResultFiles(results);
+      await this.releaseReferences(results.flatMap(result => result.parameters.references ?? []));
+    } catch { this.publish({ error: "成果记录已删除，但无主文件清理未完成；文件已保留，未清理仍有引用的资源。" }); }
+  });
   cancelBatch = (batchId: string): void => {
     this.state.tasks.filter(task => task.batchId === batchId).forEach(task => this.cancel(task.id));
   };
@@ -527,11 +639,28 @@ export class DrawingController {
   cancelClose = (): void => { this.publish({ closing: false }); };
   /** Only after explicit user confirmation of losing unpersisted pixels. */
   async discardUnsavedForClose(): Promise<void> { await this.flush(); this.unsaved.clear(); }
-  async export(id: string): Promise<void> {
-    if (this.state.closing) return;
+  copyPrompt = async (id: string): Promise<void> => {
     const result = this.state.results.find(item => item.id === id);
     if (!result) return;
-    try { await this.dependencies.files.export(result.reference); }
-    catch { this.publish({ error: "图片导出失败，请检查成果文件和目标位置后重试。" }); }
-  }
+    try { await navigator.clipboard.writeText(result.parameters.prompt); this.publish({ notice: "提示词已复制。" }); }
+    catch { this.publish({ error: "提示词复制失败，请检查剪贴板权限。" }); }
+  };
+  export = (id: string): Promise<void> => this.exportResults([id], false);
+  exportResults = (ids: string[], withParameters: boolean): Promise<void> => this.managementCommand(async () => {
+    const selected = [...new Set(ids)].map(id => this.state.results.find(result => result.id === id)).filter((result): result is DrawingResult => !!result);
+    let succeeded = 0, cancelled = false;
+    const failed: number[] = [];
+    for (let index = 0; index < selected.length; index++) {
+      try {
+        const result = selected[index];
+        const exported = withParameters
+          ? await this.dependencies.files.export(result.reference, drawingExportParameters(result.parameters))
+          : await this.dependencies.files.export(result.reference);
+        if (!exported) { cancelled = true; break; }
+        succeeded++;
+      } catch { failed.push(index + 1); }
+    }
+    this.publish({ notice: `已导出 ${succeeded}／${selected.length} 项${cancelled ? "；已取消，后续项未导出" : ""}。`,
+      error: failed.length ? `所选第 ${failed.join("、")} 项导出失败，请检查成果文件和目标位置；已成功项保留。` : null });
+  });
 }

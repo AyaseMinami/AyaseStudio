@@ -25,6 +25,7 @@ static DRAWING_FILES: Mutex<()> = Mutex::new(());
 #[derive(Debug, PartialEq, Eq)]
 enum Error {
     InvalidReference,
+    InvalidParameters,
     TooLarge,
     Corrupt,
     Collision,
@@ -35,6 +36,7 @@ impl Error {
     fn code(&self) -> String {
         match self {
             Self::InvalidReference => "drawing-invalid-reference",
+            Self::InvalidParameters => "drawing-invalid-parameters",
             Self::TooLarge => "drawing-too-large",
             Self::Corrupt => "drawing-corrupt",
             Self::Collision => "drawing-task-collision",
@@ -50,6 +52,82 @@ impl Error {
 pub struct DrawingImageInput {
     mime: String,
     data: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DrawingExportParameters {
+    prompt: String,
+    model: String,
+    protocol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    api_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aspect_ratio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolution: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quality: Option<String>,
+}
+
+impl DrawingExportParameters {
+    fn validate(&self) -> Result<(), Error> {
+        if self.model.trim().is_empty()
+            || [
+                &self.aspect_ratio,
+                &self.resolution,
+                &self.size,
+                &self.quality,
+            ]
+            .iter()
+            .any(|value| value.as_ref().is_some_and(|value| value.trim().is_empty()))
+        {
+            return Err(Error::InvalidParameters);
+        }
+        match self.protocol.as_str() {
+            "gemini-image"
+                if self.size.is_none()
+                    && self.quality.is_none()
+                    && self
+                        .api_type
+                        .as_deref()
+                        .is_none_or(|value| value == "gemini") =>
+            {
+                Ok(())
+            }
+            "openai-images"
+                if self.aspect_ratio.is_none()
+                    && self.resolution.is_none()
+                    && self.api_type.as_deref().is_none_or(|value| value == "gpt") =>
+            {
+                Ok(())
+            }
+            _ => Err(Error::InvalidParameters),
+        }
+    }
+
+    fn json(&self) -> Result<Vec<u8>, Error> {
+        self.validate()?;
+        let mut value = serde_json::to_value(self).map_err(|_| Error::InvalidParameters)?;
+        let fields = value.as_object_mut().ok_or(Error::InvalidParameters)?;
+        fields.retain(|key, value| {
+            !matches!(
+                key.as_str(),
+                "aspect_ratio" | "resolution" | "size" | "quality"
+            ) || value != "auto"
+        });
+        fields.insert(
+            "api_type".into(),
+            if self.protocol == "gemini-image" {
+                "gemini".into()
+            } else {
+                "gpt".into()
+            },
+        );
+        serde_json::to_vec(&value).map_err(|_| Error::InvalidParameters)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -340,7 +418,7 @@ fn verify_bytes(item: &DrawingFile, bytes: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-fn read_manifest(root: &Path, task: &str) -> Result<Option<Vec<DrawingFile>>, Error> {
+fn read_manifest_descriptors(root: &Path, task: &str) -> Result<Option<Vec<DrawingFile>>, Error> {
     let directory = task_directory(root, task)?;
     let manifest_path = directory.join("manifest.json");
     if inspect(&manifest_path)?.is_none() {
@@ -352,13 +430,20 @@ fn read_manifest(root: &Path, task: &str) -> Result<Option<Vec<DrawingFile>>, Er
         return Err(Error::Corrupt);
     }
     validate_descriptors(task, &manifest.files)?;
-    for item in &manifest.files {
+    Ok(Some(manifest.files))
+}
+
+fn read_manifest(root: &Path, task: &str) -> Result<Option<Vec<DrawingFile>>, Error> {
+    let Some(files) = read_manifest_descriptors(root, task)? else {
+        return Ok(None);
+    };
+    for item in &files {
         verify_bytes(
             item,
             &bounded_read(&root.join(&item.reference), IMAGE_LIMIT)?,
         )?;
     }
-    Ok(Some(manifest.files))
+    Ok(Some(files))
 }
 
 fn read_pending(root: &Path, task: &str) -> Result<Option<Pending>, Error> {
@@ -517,9 +602,34 @@ fn recovery_inventory(root: &Path, task: &str) -> Result<RecoveryInventory, Erro
 // Called only after terminal history deletion commits and there are no independent
 // result owners. Never scan or recursively remove a directory or follow links.
 fn discard_recovery(root: &Path, task: &str) -> Result<(), Error> {
+    discard_recovery_with_mode(root, task, false)
+}
+
+fn discard_completed(root: &Path, task: &str) -> Result<(), Error> {
+    discard_recovery_with_mode(root, task, true)
+}
+
+fn validate_completed_receipt(root: &Path, task: &str, files: &[DrawingFile]) -> Result<(), Error> {
+    if let Some(pending) = read_pending(root, task)? {
+        if pending.files.len() != files.len() {
+            return Err(Error::Collision);
+        }
+        for (planned, published) in pending.files.iter().zip(files) {
+            if planned.file != *published || !verify_pending_file(root, planned)? {
+                return Err(Error::Collision);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn discard_recovery_with_mode(root: &Path, task: &str, completed_only: bool) -> Result<(), Error> {
     let directory = task_directory(root, task)?;
     let files = if let Some(files) = read_manifest(root, task)? {
+        validate_completed_receipt(root, task, &files)?;
         files
+    } else if completed_only {
+        return Err(Error::Unavailable);
     } else if let Some(pending) = read_pending(root, task)? {
         pending.files.into_iter().map(|item| item.file).collect()
     } else {
@@ -739,19 +849,77 @@ fn read(root: &Path, value: &str) -> Result<DrawingImageInput, Error> {
             data: STANDARD.encode(bytes),
         });
     }
+    let (mime, bytes) = read_result_bytes(root, value)?;
+    Ok(DrawingImageInput {
+        mime,
+        data: STANDARD.encode(bytes),
+    })
+}
+
+fn read_result_bytes(root: &Path, value: &str) -> Result<(String, Vec<u8>), Error> {
     let (task, _, _) = reference(value)?;
-    let files = read_manifest(root, task)?.ok_or(Error::Unavailable)?;
+    // A missing sibling must not hide an otherwise valid, published result.
+    // Recovery still checks every original through read_manifest.
+    let files = read_manifest_descriptors(root, task)?.ok_or(Error::Unavailable)?;
     let item = files
         .iter()
         .find(|item| item.reference == value)
         .ok_or(Error::Unavailable)?;
+    let bytes = bounded_read(&root.join(value), IMAGE_LIMIT)?;
+    verify_bytes(item, &bytes)?;
+    Ok((item.mime.clone(), bytes))
+}
+
+fn thumbnail(root: &Path, value: &str) -> Result<DrawingImageInput, Error> {
+    let (mime, bytes) = read_result_bytes(root, value)?;
+    let image = decode_image(&bytes, &mime)?;
+    let image = if image.width() > 256 || image.height() > 256 {
+        image.thumbnail(256, 256)
+    } else {
+        image
+    };
+    let mut png = Cursor::new(Vec::new());
+    image
+        .write_to(&mut png, ImageFormat::Png)
+        .map_err(|_| Error::Storage)?;
     Ok(DrawingImageInput {
-        mime: item.mime.clone(),
-        data: STANDARD.encode(bounded_read(&root.join(value), IMAGE_LIMIT)?),
+        mime: "image/png".to_owned(),
+        data: STANDARD.encode(png.into_inner()),
     })
 }
 
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut value = !0u32;
+    for byte in bytes {
+        value ^= u32::from(*byte);
+        for _ in 0..8 {
+            value = (value >> 1) ^ (0xedb88320u32 & 0u32.wrapping_sub(value & 1));
+        }
+    }
+    !value
+}
+
+fn png_chunk(name: &[u8; 4], data: &[u8]) -> Result<Vec<u8>, Error> {
+    let length = u32::try_from(data.len()).map_err(|_| Error::TooLarge)?;
+    let mut chunk = length.to_be_bytes().to_vec();
+    chunk.extend_from_slice(name);
+    chunk.extend_from_slice(data);
+    let checksum = crc32(&chunk[4..]);
+    chunk.extend_from_slice(&checksum.to_be_bytes());
+    Ok(chunk)
+}
+
 fn export_png(root: &Path, value: &str, destination: &Path) -> Result<(), Error> {
+    export_png_with_parameters(root, value, destination, None)
+}
+
+fn export_png_with_parameters(
+    root: &Path,
+    value: &str,
+    destination: &Path,
+    parameters: Option<&DrawingExportParameters>,
+) -> Result<(), Error> {
+    let parameters = parameters.map(DrawingExportParameters::json).transpose()?;
     let input = read(root, value)?;
     let bytes = STANDARD.decode(input.data).map_err(|_| Error::Corrupt)?;
     let image = decode_image(&bytes, &input.mime)?;
@@ -760,6 +928,14 @@ fn export_png(root: &Path, value: &str, destination: &Path) -> Result<(), Error>
     image
         .write_to(&mut png, ImageFormat::Png)
         .map_err(|_| Error::Storage)?;
+    let mut png = png.into_inner();
+    if let Some(parameters) = parameters {
+        // Uncompressed iTXt supports Unicode and Pillow's info["parameters"].
+        // Insert after the freshly encoded PNG's fixed IHDR chunk.
+        let mut text = b"parameters\0\0\0\0\0".to_vec();
+        text.extend_from_slice(&parameters);
+        png.splice(33..33, png_chunk(b"iTXt", &text)?);
+    }
     if inspect(destination)?.is_some_and(|metadata| !metadata.is_file()) {
         return Err(Error::InvalidReference);
     }
@@ -783,9 +959,7 @@ fn export_png(root: &Path, value: &str, destination: &Path) -> Result<(), Error>
         return Err(Error::InvalidReference);
     }
     let mut output = tempfile::NamedTempFile::new_in(&parent).map_err(|_| Error::Storage)?;
-    output
-        .write_all(png.get_ref())
-        .map_err(|_| Error::Storage)?;
+    output.write_all(&png).map_err(|_| Error::Storage)?;
     output.flush().map_err(|_| Error::Storage)?;
     output.as_file().sync_all().map_err(|_| Error::Storage)?;
     output.persist(destination).map_err(|_| Error::Storage)?;
@@ -868,11 +1042,20 @@ pub async fn inspect_drawing_recovery(
 }
 
 #[tauri::command]
-pub async fn discard_drawing_recovery(app: AppHandle, task_id: String) -> Result<(), String> {
+pub async fn discard_drawing_recovery(
+    app: AppHandle,
+    task_id: String,
+    completed_only: Option<bool>,
+) -> Result<(), String> {
     let root = app_directory(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
-        discard_recovery(&root, &task_id).map_err(|error| error.code())
+        if completed_only.unwrap_or(false) {
+            discard_completed(&root, &task_id)
+        } else {
+            discard_recovery(&root, &task_id)
+        }
+        .map_err(|error| error.code())
     })
     .await
     .map_err(|_| Error::Storage.code())?
@@ -908,9 +1091,30 @@ pub async fn read_drawing_result(
 }
 
 #[tauri::command]
-pub async fn export_drawing_result(app: AppHandle, reference: String) -> Result<bool, String> {
+pub async fn read_drawing_thumbnail(
+    app: AppHandle,
+    reference: String,
+) -> Result<DrawingImageInput, String> {
+    let root = app_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        thumbnail(&root, &reference).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
+}
+
+#[tauri::command]
+pub async fn export_drawing_result(
+    app: AppHandle,
+    reference: String,
+    parameters: Option<DrawingExportParameters>,
+) -> Result<bool, String> {
     let root = app_directory(&app)?;
     self::reference(&reference).map_err(|error| error.code())?;
+    if let Some(parameters) = &parameters {
+        parameters.validate().map_err(|error| error.code())?;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let Some(file) = app
             .dialog()
@@ -925,9 +1129,12 @@ pub async fn export_drawing_result(app: AppHandle, reference: String) -> Result<
             .into_path()
             .map_err(|_| Error::InvalidReference.code())?;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
-        export_png(&root, &reference, &destination)
-            .map(|_| true)
-            .map_err(|error| error.code())
+        let result = if let Some(parameters) = &parameters {
+            export_png_with_parameters(&root, &reference, &destination, Some(parameters))
+        } else {
+            export_png(&root, &reference, &destination)
+        };
+        result.map(|_| true).map_err(|error| error.code())
     })
     .await
     .map_err(|_| Error::Storage.code())?
@@ -958,24 +1165,8 @@ mod tests {
         }
     }
 
-    fn crc32(bytes: &[u8]) -> u32 {
-        let mut value = !0u32;
-        for byte in bytes {
-            value ^= u32::from(*byte);
-            for _ in 0..8 {
-                value = (value >> 1) ^ (0xedb88320u32 & 0u32.wrapping_sub(value & 1));
-            }
-        }
-        !value
-    }
-
     fn png_chunk(name: &[u8; 4], data: &[u8]) -> Vec<u8> {
-        let mut chunk = (data.len() as u32).to_be_bytes().to_vec();
-        chunk.extend_from_slice(name);
-        chunk.extend_from_slice(data);
-        let checksum = crc32(&chunk[4..]);
-        chunk.extend_from_slice(&checksum.to_be_bytes());
-        chunk
+        super::png_chunk(name, data).unwrap()
     }
 
     #[test]
@@ -1666,6 +1857,349 @@ mod tests {
             decode_image(&bytes, "image/png").unwrap().to_rgba8()
         );
         assert_eq!(std::fs::read(original).unwrap(), bytes);
+    }
+
+    fn exported_parameters(bytes: &[u8]) -> Option<serde_json::Value> {
+        let mut offset = 8;
+        let mut result = None;
+        while offset < bytes.len() {
+            let length = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+            let name = &bytes[offset + 4..offset + 8];
+            let data = &bytes[offset + 8..offset + 8 + length];
+            let checksum = u32::from_be_bytes(
+                bytes[offset + 8 + length..offset + 12 + length]
+                    .try_into()
+                    .unwrap(),
+            );
+            assert_eq!(checksum, crc32(&bytes[offset + 4..offset + 8 + length]));
+            if matches!(name, b"tEXt" | b"zTXt" | b"iTXt" | b"eXIf") {
+                assert_eq!(name, b"iTXt");
+                let prefix = b"parameters\0\0\0\0\0";
+                assert!(data.starts_with(prefix));
+                assert!(result.is_none());
+                result = Some(serde_json::from_slice(&data[prefix.len()..]).unwrap());
+            }
+            offset += length + 12;
+        }
+        result
+    }
+
+    #[test]
+    fn parameter_export_is_utf8_json_and_preserves_alpha_without_source_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            3,
+            2,
+            image::Rgba([20, 40, 90, 70]),
+        ));
+        let mut encoded = Cursor::new(Vec::new());
+        image.write_to(&mut encoded, ImageFormat::Png).unwrap();
+        let mut bytes = encoded.into_inner();
+        bytes.splice(33..33, png_chunk(b"tEXt", b"api_key\0SOURCE-SECRET"));
+        let files = save(
+            root.path(),
+            &task,
+            &[DrawingImageInput {
+                mime: "image/png".into(),
+                data: STANDARD.encode(&bytes),
+            }],
+        )
+        .unwrap();
+        let parameters: DrawingExportParameters = serde_json::from_value(serde_json::json!({
+            "prompt": "透明的猫 🐈\n他说：\"你好\" \\ 雪",
+            "model": "synthetic-image", "protocol": "gemini-image", "aspect_ratio": "3:2", "resolution": "2K"
+        })).unwrap();
+        let destination = output.path().join("parameters.png");
+        export_png_with_parameters(
+            root.path(),
+            &files[0].reference,
+            &destination,
+            Some(&parameters),
+        )
+        .unwrap();
+        let exported = std::fs::read(&destination).unwrap();
+        assert_eq!(
+            exported_parameters(&exported),
+            Some(serde_json::json!({
+                "prompt": parameters.prompt, "model": "synthetic-image", "protocol": "gemini-image",
+                "api_type": "gemini", "aspect_ratio": "3:2", "resolution": "2K"
+            }))
+        );
+        assert!(!exported.windows(13).any(|value| value == b"SOURCE-SECRET"));
+        assert_eq!(
+            decode_image(&exported, "image/png").unwrap().to_rgba8(),
+            image.to_rgba8()
+        );
+        let plain = output.path().join("plain.png");
+        export_png(root.path(), &files[0].reference, &plain).unwrap();
+        let plain_bytes = std::fs::read(&plain).unwrap();
+        assert_eq!(exported_parameters(&plain_bytes), None);
+        assert_eq!(
+            decode_image(&plain_bytes, "image/png").unwrap().to_rgba8(),
+            image.to_rgba8()
+        );
+        assert_eq!(
+            std::fs::read(root.path().join(&files[0].reference)).unwrap(),
+            bytes
+        );
+        assert_eq!(
+            export_png_with_parameters(
+                root.path(),
+                &files[0].reference,
+                &root.path().join("forbidden.png"),
+                Some(&parameters)
+            ),
+            Err(Error::InvalidReference)
+        );
+        // Opt-in local fixtures let the primary verify with GNBP's actual Pillow reader.
+        if let Some(directory) = std::env::var_os("AYASE_DRAWING_EXPORT_FIXTURE_DIR") {
+            let directory = PathBuf::from(directory);
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::copy(destination, directory.join("parameters.png")).unwrap();
+            std::fs::copy(plain, directory.join("plain.png")).unwrap();
+        }
+    }
+
+    #[test]
+    fn export_parameters_reject_unknown_sensitive_fields_and_protocol_mismatch() {
+        let base = serde_json::json!({ "prompt": "test", "model": "synthetic", "protocol": "openai-images" });
+        for key in [
+            "api_key",
+            "api_url",
+            "reference",
+            "ref_images",
+            "output_dir",
+            "unexpected",
+        ] {
+            let mut value = base.clone();
+            value[key] = "SECRET-C:/private/file.png".into();
+            assert!(
+                serde_json::from_value::<DrawingExportParameters>(value).is_err(),
+                "{key}"
+            );
+        }
+        for extra in [
+            serde_json::json!({ "protocol": "other" }),
+            serde_json::json!({ "aspect_ratio": "1:1" }),
+            serde_json::json!({ "resolution": "1K" }),
+            serde_json::json!({ "model": " " }),
+            serde_json::json!({ "quality": " " }),
+            serde_json::json!({ "api_type": "gemini" }),
+            serde_json::json!({ "protocol": "gemini-image", "size": "1024x1024" }),
+            serde_json::json!({ "protocol": "gemini-image", "quality": "high" }),
+        ] {
+            let mut value = base.clone();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let parameters: DrawingExportParameters = serde_json::from_value(value).unwrap();
+            assert_eq!(parameters.json(), Err(Error::InvalidParameters));
+        }
+        for (protocol, extra, api_type) in [
+            (
+                "gemini-image",
+                serde_json::json!({"aspect_ratio": "auto", "resolution": "auto"}),
+                "gemini",
+            ),
+            (
+                "openai-images",
+                serde_json::json!({"size": "auto", "quality": "auto"}),
+                "gpt",
+            ),
+        ] {
+            let mut value = base.clone();
+            value["protocol"] = protocol.into();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let parameters: DrawingExportParameters = serde_json::from_value(value).unwrap();
+            let value: serde_json::Value =
+                serde_json::from_slice(&parameters.json().unwrap()).unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({"prompt": "test", "model": "synthetic", "protocol": protocol, "api_type": api_type})
+            );
+        }
+    }
+
+    #[test]
+    fn thumbnails_contain_without_upscaling_preserve_alpha_and_never_write_cache() {
+        let root = tempfile::tempdir().unwrap();
+        for (width, height, expected) in [
+            (640, 320, (256, 128)),
+            (320, 640, (128, 256)),
+            (3, 2, (3, 2)),
+        ] {
+            let task = Uuid::new_v4().to_string();
+            let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                width,
+                height,
+                image::Rgba([20, 40, 90, 70]),
+            ));
+            let mut bytes = Cursor::new(Vec::new());
+            image.write_to(&mut bytes, ImageFormat::Png).unwrap();
+            let bytes = bytes.into_inner();
+            let files = save(
+                root.path(),
+                &task,
+                &[DrawingImageInput {
+                    mime: "image/png".into(),
+                    data: STANDARD.encode(&bytes),
+                }],
+            )
+            .unwrap();
+            let before = std::fs::read_dir(task_directory(root.path(), &task).unwrap())
+                .unwrap()
+                .count();
+            for _ in 0..2 {
+                let derived = thumbnail(root.path(), &files[0].reference).unwrap();
+                assert_eq!(derived.mime, "image/png");
+                let decoded = decode_image(&STANDARD.decode(derived.data).unwrap(), &derived.mime)
+                    .unwrap()
+                    .to_rgba8();
+                assert_eq!(decoded.dimensions(), expected);
+                assert!(decoded.pixels().all(|pixel| pixel.0 == [20, 40, 90, 70]));
+            }
+            assert_eq!(
+                std::fs::read_dir(task_directory(root.path(), &task).unwrap())
+                    .unwrap()
+                    .count(),
+                before
+            );
+            assert_eq!(
+                std::fs::read(root.path().join(&files[0].reference)).unwrap(),
+                bytes
+            );
+        }
+        assert!(matches!(
+            thumbnail(root.path(), "../private.png"),
+            Err(Error::InvalidReference)
+        ));
+        assert!(matches!(
+            thumbnail(
+                root.path(),
+                &format!("drawing/references/{}.png", Uuid::new_v4())
+            ),
+            Err(Error::InvalidReference)
+        ));
+    }
+
+    #[test]
+    fn requested_result_remains_readable_with_missing_sibling_but_recovery_stays_strict() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let files = save(
+            root.path(),
+            &task,
+            &[input(20, ImageFormat::Png), input(80, ImageFormat::Png)],
+        )
+        .unwrap();
+        std::fs::remove_file(root.path().join(&files[1].reference)).unwrap();
+        assert!(read(root.path(), &files[0].reference).is_ok());
+        assert!(thumbnail(root.path(), &files[0].reference).is_ok());
+        assert!(matches!(
+            thumbnail(root.path(), &files[1].reference),
+            Err(Error::Unavailable)
+        ));
+        assert_eq!(
+            read_manifest(root.path(), &task).unwrap_err(),
+            Error::Unavailable
+        );
+        std::fs::write(root.path().join(&files[0].reference), b"corrupt").unwrap();
+        assert!(matches!(
+            thumbnail(root.path(), &files[0].reference),
+            Err(Error::Corrupt)
+        ));
+    }
+
+    #[test]
+    fn completed_cleanup_requires_valid_manifest_and_reconciled_receipt_before_deleting() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        assert_eq!(
+            discard_completed(root.path(), &task),
+            Err(Error::Unavailable)
+        );
+        let (pending, bytes) = receipt(root.path(), &task, &[input(20, ImageFormat::Png)]);
+        let original = root.path().join(&pending.files[0].file.reference);
+        std::fs::write(&original, &bytes[0]).unwrap();
+        assert_eq!(
+            discard_completed(root.path(), &task),
+            Err(Error::Unavailable)
+        );
+        let files = recover(root.path(), &task).unwrap().unwrap();
+        let directory = task_directory(root.path(), &task).unwrap();
+        let manifest_path = directory.join("manifest.json");
+        let manifest_bytes = std::fs::read(&manifest_path).unwrap();
+        std::fs::write(&manifest_path, b"broken").unwrap();
+        assert_eq!(discard_completed(root.path(), &task), Err(Error::Corrupt));
+        assert!(original.exists());
+        std::fs::write(&manifest_path, &manifest_bytes).unwrap();
+        let pending_path = directory.join("pending.json");
+        let pending_bytes = std::fs::read(&pending_path).unwrap();
+        std::fs::write(&pending_path, b"broken").unwrap();
+        assert_eq!(discard_completed(root.path(), &task), Err(Error::Corrupt));
+        assert!(original.exists());
+        let mut conflicting: Pending = serde_json::from_slice(&pending_bytes).unwrap();
+        conflicting.files[0].sha256 = "0".repeat(64);
+        std::fs::write(&pending_path, serde_json::to_vec(&conflicting).unwrap()).unwrap();
+        assert_eq!(discard_completed(root.path(), &task), Err(Error::Corrupt));
+        assert!(original.exists());
+        conflicting.files[0].file.id = Uuid::new_v4().to_string();
+        conflicting.files[0].file.reference =
+            format!("drawing/{task}/{}.png", conflicting.files[0].file.id);
+        std::fs::write(&pending_path, serde_json::to_vec(&conflicting).unwrap()).unwrap();
+        assert_eq!(discard_completed(root.path(), &task), Err(Error::Collision));
+        assert!(original.exists());
+        std::fs::write(&pending_path, &pending_bytes).unwrap();
+        std::fs::remove_file(&original).unwrap();
+        assert_eq!(
+            discard_completed(root.path(), &task),
+            Err(Error::Unavailable)
+        );
+        assert!(manifest_path.exists());
+        std::fs::write(root.path().join(&files[0].reference), &bytes[0]).unwrap();
+        discard_completed(root.path(), &task).unwrap();
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn default_cleanup_preserves_completed_originals_when_receipt_is_damaged_or_conflicting() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let files = save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap();
+        let directory = task_directory(root.path(), &task).unwrap();
+        let original = root.path().join(&files[0].reference);
+        let original_bytes = std::fs::read(&original).unwrap();
+        let manifest_path = directory.join("manifest.json");
+        let manifest_bytes = std::fs::read(&manifest_path).unwrap();
+        let pending_path = directory.join("pending.json");
+        let pending_bytes = std::fs::read(&pending_path).unwrap();
+        let mut wrong_hash: Pending = serde_json::from_slice(&pending_bytes).unwrap();
+        wrong_hash.files[0].sha256 = "0".repeat(64);
+        let mut wrong_file: Pending = serde_json::from_slice(&pending_bytes).unwrap();
+        wrong_file.files[0].file.id = Uuid::new_v4().to_string();
+        wrong_file.files[0].file.reference =
+            format!("drawing/{task}/{}.png", wrong_file.files[0].file.id);
+        for (receipt, expected) in [
+            (b"broken".to_vec(), Error::Corrupt),
+            (serde_json::to_vec(&wrong_hash).unwrap(), Error::Corrupt),
+            (serde_json::to_vec(&wrong_file).unwrap(), Error::Collision),
+        ] {
+            std::fs::write(&pending_path, &receipt).unwrap();
+            // Omitted and false completedOnly both dispatch this default path.
+            assert_eq!(discard_recovery(root.path(), &task), Err(expected));
+            assert_eq!(std::fs::read(&original).unwrap(), original_bytes);
+            assert_eq!(std::fs::read(&manifest_path).unwrap(), manifest_bytes);
+            assert_eq!(std::fs::read(&pending_path).unwrap(), receipt);
+        }
+        std::fs::write(&pending_path, &pending_bytes).unwrap();
+        discard_recovery(root.path(), &task).unwrap();
+        assert!(!directory.exists());
     }
 
     #[test]

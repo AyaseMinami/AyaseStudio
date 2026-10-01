@@ -11,9 +11,10 @@ export const runtimeDrawingFiles: DrawingFiles = {
   recover: taskId => invoke<DrawingFile[] | null>("recover_drawing_result", { taskId }),
   inspectRecovery: taskId => invoke<{ total: number; durable: number[] }>("inspect_drawing_recovery", { taskId }),
   resumeRecovery: (taskId, images) => invoke<DrawingFile[]>("resume_drawing_recovery", { taskId, images }),
-  discardRecovery: taskId => invoke<void>("discard_drawing_recovery", { taskId }),
+  discardRecovery: (taskId, completedOnly) => invoke<void>("discard_drawing_recovery", { taskId, ...(completedOnly ? { completedOnly } : {}) }),
   read: reference => invoke<DrawingImageInput>("read_drawing_result", { reference }),
-  export: reference => invoke<boolean>("export_drawing_result", { reference }),
+  thumbnail: reference => invoke<DrawingImageInput>("read_drawing_thumbnail", { reference }),
+  export: (reference, parameters) => invoke<boolean>("export_drawing_result", { reference, ...(parameters ? { parameters } : {}) }),
 };
 
 export async function createRuntimeImageTransport(): Promise<ImageGenerationTransport> {

@@ -71,6 +71,7 @@ pub fn run() {
             drawing::discard_drawing_recovery,
             drawing::resume_drawing_recovery,
             drawing::read_drawing_result,
+            drawing::read_drawing_thumbnail,
             drawing::export_drawing_result,
             drawing::import_drawing_reference,
             drawing::remove_drawing_references,

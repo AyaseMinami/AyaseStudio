@@ -10,6 +10,8 @@ export interface DrawingDraft {
   count?: number;
   concurrency?: number;
   completionSound?: boolean;
+  /** Preserve reused protocol controls when the original target is unavailable. */
+  reusedProtocol?: DrawingProtocol;
 }
 
 export const initialDrawingDraft: DrawingDraft = {
@@ -78,6 +80,18 @@ export interface DrawingResult extends DrawingFile {
   parameters: DrawingParameters;
 }
 
+/** Export-only allowlist. Never spread stored provider configuration here. */
+export interface DrawingExportParameters {
+  prompt: string;
+  model: string;
+  protocol: DrawingProtocol;
+  api_type: "gemini" | "gpt";
+  aspect_ratio?: string;
+  resolution?: string;
+  size?: string;
+  quality?: string;
+}
+
 export interface DrawingFiles {
   importReference(image: DrawingImageInput): Promise<DrawingFile & { digest: string }>;
   removeReferences(references: string[]): Promise<void>;
@@ -85,9 +99,10 @@ export interface DrawingFiles {
   recover(taskId: string): Promise<DrawingFile[] | null>;
   inspectRecovery?(taskId: string): Promise<{ total: number; durable: number[] }>;
   resumeRecovery?(taskId: string, images: { index: number; image: DrawingImageInput }[]): Promise<DrawingFile[]>;
-  discardRecovery?(taskId: string): Promise<void>;
+  discardRecovery?(taskId: string, completedOnly?: boolean): Promise<void>;
   read(reference: string): Promise<DrawingImageInput>;
-  export(reference: string): Promise<boolean>;
+  thumbnail?(reference: string): Promise<DrawingImageInput>;
+  export(reference: string, parameters?: DrawingExportParameters): Promise<boolean>;
 }
 
 export interface ImageGenerationTransport {

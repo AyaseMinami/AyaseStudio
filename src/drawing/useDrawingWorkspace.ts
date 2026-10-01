@@ -5,7 +5,7 @@ import { DrawingController, UnsavedDrawingImagesError } from "./controller";
 import { DexieDrawingRepository } from "./repository";
 import { createRuntimeImageTransport, runtimeDrawingFiles } from "./runtime";
 
-export function useDrawingWorkspace() {
+export function useDrawingWorkspace(previewPageActive = true) {
   const [controller] = useState(() => new DrawingController({ repository: new DexieDrawingRepository(),
     files: runtimeDrawingFiles, transport: createRuntimeImageTransport }));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
@@ -38,10 +38,12 @@ export function useDrawingWorkspace() {
     tone.start(); tone.stop(context.currentTime + 0.3);
   }, [state.completion, state.draft.completionSound]);
   const [preview, setPreview] = useState<{ id: string; url: string | null; error: string | null } | null>(null);
+  const [previewActive, setPreviewActive] = useState(true);
   useEffect(() => { void controller.initialize(); }, [controller]);
   const result = state.results.find(item => item.id === state.selectedResultId);
   useEffect(() => {
-    if (!result) return;
+    setPreview(null);
+    if (!result || !previewPageActive || !previewActive) return;
     let alive = true, url: string | undefined;
     void runtimeDrawingFiles.read(result.reference).then(image => {
       if (!alive) return;
@@ -50,7 +52,7 @@ export function useDrawingWorkspace() {
       setPreview({ id: result.id, url, error: null });
     }).catch(() => { if (alive) setPreview({ id: result.id, url: null, error: "图片读取失败；本地成果记录已保留。" }); });
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
-  }, [result]);
+  }, [result, previewPageActive, previewActive]);
   useEffect(() => {
     if (!isTauri()) return;
     let alive = true, release: (() => void) | undefined, approved = false, closing = false;
@@ -74,6 +76,7 @@ export function useDrawingWorkspace() {
     }).then(unlisten => { if (alive) release = unlisten; else unlisten(); }).catch(() => { /* Startup smoke does not claim native close-event acceptance. */ });
     return () => { alive = false; release?.(); };
   }, [controller]);
-  return { ...state, controller, previewUrl: preview?.id === result?.id ? preview?.url ?? null : null,
-    previewError: preview?.id === result?.id ? preview?.error ?? null : null };
+  return { ...state, controller, setPreviewActive,
+    previewUrl: previewPageActive && previewActive && preview?.id === result?.id ? preview?.url ?? null : null,
+    previewError: previewPageActive && previewActive && preview?.id === result?.id ? preview?.error ?? null : null };
 }

@@ -1,5 +1,9 @@
 # Ayase Studio Development Guide
 
+## Drawing gallery #89
+
+Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks. Ownership/reuse/export cases live in controller/repository/exportParameters tests; visibility/interaction in DrawingResults/workspace/hook/App tests. Native tests cover PNG/alpha, thumbnails, independent reads and completed cleanup. Latest gate: 1430 frontend and 29 drawing Rust tests pass. Browser acceptance is synthetic. Native startup initially met an occupied executable; after the user authorized ending that dev instance, the isolated retry compiled and created the Ayase window successfully (test entry HTTP 200). No Computer Use was required; dialogs/restart/live services remain pending. See [#89 evidence](ISSUE-89-IMPLEMENTATION.md).
+
 ## Drawing lifecycle #88
 
 Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`, `cargo check --locked --manifest-path src-tauri/Cargo.toml`, and diff checks. `queue.test.ts` includes history deletion/regeneration/cancellation races, exact recovery inventory, indexed local-save retry, continuous disk failure and explicit memory release; `repository.test.ts` rejects deleted-row revival and preserves results. Native tests cover receipt inventory, indexed repair and scoped cleanup. Browser/native/pressure boundaries are recorded in [#88 implementation](ISSUE-88-IMPLEMENTATION.md). This supersedes the pending full #88 management note below.

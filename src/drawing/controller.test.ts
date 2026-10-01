@@ -15,6 +15,7 @@ const file = { id: "file-1", reference: "drawing/task/file.png", mime: "image/pn
 function fixture(snapshot: DrawingSnapshot = { tasks: [], results: [] }) {
   let saved: DrawingSnapshot = structuredClone(snapshot);
   const repository: DrawingRepository = {
+    removeResults: vi.fn(async ids => { saved.results = saved.results.filter(result => !ids.includes(result.id)); }),
     removeTasks: vi.fn(async ids => { saved.tasks = saved.tasks.filter(task => !ids.includes(task.id)); }),
     load: vi.fn(async () => structuredClone(saved)),
     saveDraft: vi.fn(async draft => { saved.draft = structuredClone(draft); }),
@@ -43,6 +44,123 @@ async function prepare(f: ReturnType<typeof fixture>) {
   f.controller.setDraft({ ...f.controller.getSnapshot().draft, modelId: "image-model", prompt: "synthetic prompt", aspectRatio: "1:1", resolution: "2K" });
 }
 describe("application drawing task controller", () => {
+  it("clears only draft references, retaining prompt/options and immutable result/task owners", async () => {
+    const f = fixture(); await prepare(f);
+    await f.controller.addReferences([new File(["input"], "synthetic.png", { type: "image/png" })]);
+    await f.controller.generate(settings);
+    const prior = structuredClone(f.saved());
+    await f.controller.clearReferences();
+    expect(f.saved().draft).toMatchObject({ prompt: "synthetic prompt", modelId: "image-model", aspectRatio: "1:1", resolution: "2K", references: [] });
+    expect(f.saved().tasks).toEqual(prior.tasks); expect(f.saved().results).toEqual(prior.results);
+    expect(f.files.removeReferences).not.toHaveBeenCalled();
+    expect(f.transport.generate).toHaveBeenCalledOnce();
+  });
+  it("deletes result records independently and retains source files until all owners release them", async () => {
+    const f = fixture(); await prepare(f);
+    vi.mocked(f.files.save).mockResolvedValue([{ ...file, reference: "drawing/task-1/file.png" }]);
+    await f.controller.generate(settings);
+    f.files.discardRecovery = vi.fn(async () => undefined);
+    await f.controller.useAsReference("file-1");
+    await f.controller.deleteTasks(["task-1"]);
+    await f.controller.deleteResults(["file-1"]);
+    expect(f.saved().results).toEqual([]); expect(f.saved().draft?.references).toHaveLength(1);
+    expect(f.controller.getSnapshot().selectedResultId).toBeNull();
+    expect(f.files.discardRecovery).not.toHaveBeenCalled();
+    await f.controller.clearReferences();
+    expect(f.files.discardRecovery).toHaveBeenCalledWith("task-1", true);
+    const restored = fixture(f.saved()); await restored.controller.initialize();
+    expect(restored.controller.getSnapshot().results).toEqual([]);
+  });
+  it("keeps results after deletion failure and retains files if durable ownership cannot be read", async () => {
+    const f = fixture(); await prepare(f); await f.controller.generate(settings);
+    f.files.discardRecovery = vi.fn(async () => undefined);
+    vi.mocked(f.repository.removeResults).mockRejectedValueOnce(new Error("db"));
+    await f.controller.deleteResults(["file-1"]);
+    expect(f.controller.getSnapshot().results).toHaveLength(1);
+    expect(f.files.discardRecovery).not.toHaveBeenCalled();
+    vi.mocked(f.repository.load).mockRejectedValueOnce(new Error("corrupt ownership"));
+    await f.controller.deleteResults(["file-1"]);
+    expect(f.controller.getSnapshot().results).toHaveLength(0);
+    expect(f.controller.getSnapshot().error).toContain("清理未完成");
+    expect(f.files.discardRecovery).not.toHaveBeenCalled();
+  });
+  it("completed task provenance survives result deletion without retaining unowned output bytes", async () => {
+    const f = fixture(); await prepare(f);
+    vi.mocked(f.files.save).mockResolvedValue([{ ...file, reference: "drawing/task-1/file.png" }]);
+    await f.controller.generate(settings); f.files.discardRecovery = vi.fn(async () => undefined);
+    await f.controller.deleteResults(["file-1"]);
+    expect(f.saved().tasks).toEqual([expect.objectContaining({ id: "task-1", status: "completed" })]);
+    expect(f.files.discardRecovery).toHaveBeenCalledWith("task-1", true);
+    const restored = fixture(f.saved()); await restored.controller.initialize();
+    expect(restored.controller.getSnapshot().results).toEqual([]); expect(restored.files.recover).not.toHaveBeenCalled();
+  });
+  it("batch export distinguishes partial failure from cancellation and metadata requires explicit choice", async () => {
+    const f = fixture(); await prepare(f); await f.controller.generate(settings);
+    const result = f.saved().results[0];
+    const g = fixture({ tasks: [], results: [result, { ...result, id: "r2", reference: "drawing/t/r2.png" }, { ...result, id: "r3", reference: "drawing/t/r3.png" }] });
+    await g.controller.initialize();
+    vi.mocked(g.files.export).mockRejectedValueOnce(new Error("file missing")).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await g.controller.exportResults(["file-1", "r2", "r3"], false);
+    expect(g.files.export).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(g.files.export).mock.calls.every(call => call.length === 1)).toBe(true);
+    expect(g.controller.getSnapshot().notice).toContain("已导出 1／3");
+    expect(g.controller.getSnapshot().notice).toContain("取消"); expect(g.controller.getSnapshot().error).toContain("第 1 项");
+    vi.mocked(g.files.export).mockClear().mockResolvedValueOnce(false);
+    await g.controller.exportResults(["file-1", "r2"], true);
+    expect(g.files.export).toHaveBeenCalledOnce();
+    expect(g.files.export).toHaveBeenCalledWith(result.reference, { prompt: "synthetic prompt", model: "test-image", protocol: "gemini-image", api_type: "gemini", aspect_ratio: "1:1", resolution: "2K" });
+    expect(g.transport.generate).not.toHaveBeenCalled();
+  });
+  it("reuses ordered references without requests and reports every missing input and invalid target", async () => {
+    const f = fixture(); await prepare(f);
+    await f.controller.addReferences([new File(["a"], "a.png"), new File(["b"], "b.png")]);
+    await f.controller.generate(settings); const historical = structuredClone(f.saved().results[0]);
+    await f.controller.clearReferences();
+    f.controller.updateSettings({ version: 3, activeModelId: null, providers: [] });
+    vi.mocked(f.files.read).mockRejectedValue(new Error("missing"));
+    vi.mocked(f.transport.generate).mockClear();
+    await f.controller.reuse("file-1"); await f.controller.flush();
+    expect(f.saved().draft?.references).toEqual(historical.parameters.references);
+    expect(f.saved().draft?.modelId).toBeNull();
+    expect(f.controller.getSnapshot().error).toContain("模型已失效");
+    expect(f.controller.getSnapshot().error).toContain("参考图 1、2");
+    expect(f.saved().results[0]).toEqual(historical); expect(f.transport.generate).not.toHaveBeenCalled();
+  });
+  it("failed reuse persistence never rolls back a newer prompt edit queued during saving", async () => {
+    const f = fixture(); await prepare(f); await f.controller.generate(settings);
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "old next draft" }); await f.controller.flush();
+    let rejectSave!: (error: Error) => void;
+    vi.mocked(f.repository.saveDraft).mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject; }));
+    const reused = f.controller.reuse("file-1");
+    await vi.waitFor(() => expect(rejectSave).toBeTypeOf("function"));
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "new user edit while save pending" });
+    rejectSave(new Error("disk")); await reused; await f.controller.flush();
+    expect(f.controller.getSnapshot().draft.prompt).toBe("new user edit while save pending");
+    expect(f.saved().draft?.prompt).toBe("new user edit while save pending");
+  });
+  it("damaged result provenance and unknown task status block every file cleanup", async () => {
+    const parameters = { protocol: "gemini-image" as const, prompt: "synthetic", aspectRatio: "auto", resolution: "auto",
+      providerId: "p", connectionId: "c", configuredModelId: "m", modelId: "m", modelName: "m", baseUrl: "https://example.test" };
+    const corrupt = { ...file, taskId: "unrelated-task", createdAt: "2026-10-01", parameters };
+    const f = fixture({ tasks: [], results: [corrupt] }); f.files.discardRecovery = vi.fn(async () => undefined);
+    await f.controller.initialize(); await f.controller.deleteResults([file.id]);
+    expect(f.files.discardRecovery).not.toHaveBeenCalled(); expect(f.controller.getSnapshot().error).toContain("清理未完成");
+    const g = fixture({ tasks: [], results: [{ ...corrupt, taskId: "task" }] }); g.files.discardRecovery = vi.fn(async () => undefined);
+    await g.controller.initialize();
+    vi.mocked(g.repository.load).mockResolvedValueOnce({ tasks: [{ id: "future", status: "new-unknown-status", parameters } as unknown as DrawingTask], results: [] });
+    await g.controller.deleteResults([file.id]);
+    expect(g.files.discardRecovery).not.toHaveBeenCalled(); expect(g.controller.getSnapshot().error).toContain("清理未完成");
+  });
+  it("unknown durable ownership also prevents imported-reference cleanup after draft clear", async () => {
+    const f = fixture(); await prepare(f);
+    await f.controller.addReferences([new File(["synthetic"], "input.png", { type: "image/png" })]);
+    vi.mocked(f.files.removeReferences).mockClear();
+    vi.mocked(f.repository.load).mockResolvedValueOnce({ results: [], tasks: [{ id: "future", status: "future-status" } as unknown as DrawingTask] });
+    await f.controller.clearReferences();
+    expect(f.files.removeReferences).not.toHaveBeenCalled();
+    expect(f.controller.getSnapshot().draft.references).toEqual([]);
+    expect(f.controller.getSnapshot().error).toContain("参考图读取或保存失败");
+  });
   it("imports a batch, skips duplicate bytes, reorders and persists references across reload", async () => {
     const f = fixture(); await prepare(f);
     const first = new File(["first"], "first.png", { type: "image/png" });

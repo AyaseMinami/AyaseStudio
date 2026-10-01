@@ -57,7 +57,7 @@ function ReferencePreview({ url, number, opener, onClose }: {
   </div>;
 }
 
-export function DrawingReferences({ references, disabled, busy, read, onAdd, onRemove, onMove }: {
+export function DrawingReferences({ references, disabled, busy, read, onAdd, onRemove, onMove, onClear }: {
   references: DrawingReference[];
   disabled: boolean;
   busy: boolean;
@@ -65,6 +65,7 @@ export function DrawingReferences({ references, disabled, busy, read, onAdd, onR
   onAdd(files: File[]): void;
   onRemove(id: string): void;
   onMove(id: string, direction: -1 | 1): void;
+  onClear?(): void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{ id: string; url: string; opener: HTMLButtonElement } | null>(null);
@@ -81,6 +82,8 @@ export function DrawingReferences({ references, disabled, busy, read, onAdd, onR
     <button type="button" className="drawing-button drawing-reference" disabled={disabled} onClick={() => input.current?.click()}>
       <Plus size={16} aria-hidden="true" />添加参考图
     </button>
+    {onClear && references.length > 0 && <button type="button" className="drawing-button" disabled={disabled}
+      onClick={() => { setPreview(null); onClear(); }}>清空参考图</button>}
     <p className="drawing-muted">可多选、拖入或粘贴图片；支持 PNG、JPG、JPEG、WebP、BMP。</p>
     {busy && <p className="drawing-muted" role="status">正在添加参考图…</p>}
     {references.length > 0 && <ol className="drawing-reference-list">

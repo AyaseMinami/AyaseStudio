@@ -20,6 +20,7 @@ function fixture(snapshot: DrawingSnapshot = { tasks: [], results: [] }) {
       models: [{ id: "m", modelId: "synthetic-image" }] },
   ] }] };
   const repository: DrawingRepository = {
+    removeResults: vi.fn(async ids => { saved.results = saved.results.filter(result => !ids.includes(result.id)); }),
     removeTasks: vi.fn(async ids => { saved.tasks = saved.tasks.filter(task => !ids.includes(task.id)); }),
     load: vi.fn(async () => structuredClone(saved)),
     saveDraft: vi.fn(async draft => { saved.draft = structuredClone(draft); }),

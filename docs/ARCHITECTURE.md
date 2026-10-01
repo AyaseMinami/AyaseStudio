@@ -1,5 +1,9 @@
 # Ayase Studio Architecture
 
+## Drawing results and ownership (#89)
+
+Results persist independently of history; completed task provenance retains inputs, not unowned outputs. Deletion shares the reference queue, removes rows transactionally, then rereads and validates durable owners before scoped cleanup; damaged metadata/uncertain drafts prohibit cleanup. Whole output groups survive any owner; both completed cleanup routes reconcile manifest/pending identities and hashes. Native ≤256px PNG thumbnails and originals have separate visibility lifetimes. Explicit exports use frontend/native allowlists. Draft `reusedProtocol` preserves invalid historical target controls until explicit reselection. See [implementation and acceptance boundaries](ISSUE-89-IMPLEMENTATION.md).
+
 ## Drawing task lifecycle (#88)
 
 `dispatching` is persisted before provider invocation; cancellation races settle locally once and late callbacks cannot commit. History management shares the reference lifecycle queue, while save retries and deletion reserve task ownership synchronously. Only `enqueue` creates rows; transactional `saveTask`/`complete` reject deleted rows. Regeneration freezes a new task with `sourceTaskId`, reuses an active replacement, and permits later independent actions. Native receipt inventory releases durable payloads; indexed local retry fills only missing receipt entries. Terminal history deletion preserves independent results and their references; explicit journal cleanup is scoped to unowned task outputs. See [recovery, failure memory and cleanup limits](ISSUE-88-IMPLEMENTATION.md).

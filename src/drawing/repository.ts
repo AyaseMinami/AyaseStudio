@@ -9,6 +9,7 @@ export interface DrawingRepository {
   enqueue(tasks: DrawingTask[]): Promise<DrawingTask[]>;
   complete(task: DrawingTask, results: DrawingResult[]): Promise<void>;
   removeTasks(ids: string[]): Promise<void>;
+  removeResults(ids: string[]): Promise<void>;
 }
 
 export class DexieDrawingRepository implements DrawingRepository {
@@ -25,6 +26,12 @@ export class DexieDrawingRepository implements DrawingRepository {
     await this.database.transaction("rw", this.database.drawingTasks, async () => {
       if (!await this.database.drawingTasks.get(task.id)) throw new Error("Drawing task no longer exists");
       await this.database.drawingTasks.put(task);
+    });
+  }
+  async removeResults(ids: string[]): Promise<void> {
+    // Results own their records independently of the generating task.
+    await this.database.transaction("rw", this.database.drawingResults, async () => {
+      await this.database.drawingResults.bulkDelete(ids);
     });
   }
   async removeTasks(ids: string[]): Promise<void> {

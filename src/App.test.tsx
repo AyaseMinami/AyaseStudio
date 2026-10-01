@@ -243,10 +243,11 @@ describe("App navigation", () => {
     await clickButton("聊天");
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留的聊天草稿");
     expect(getButton("切换模型").textContent).toContain("聊天测试模型");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:https://synthetic.example/one-pixel");
     await clickButton("绘图");
     expect(container.querySelector(".drawing-preview-stage img")).not.toBeNull();
     expect(generate).toHaveBeenCalledOnce();
-    expect(drawingRuntimeMocks.runtimeDrawingFiles.read).toHaveBeenCalledOnce();
+    expect(drawingRuntimeMocks.runtimeDrawingFiles.read).toHaveBeenCalledTimes(2);
     expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
     expect(runtimeMocks.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
   });

@@ -29,6 +29,20 @@ describe("durable drawing repository and backup maintenance gate", () => {
     expect((await repository.load()).tasks.map(item => item.id)).toEqual(["active"]);
     await db.delete();
   });
+  it("deletes only selected results and persists independently of task history and draft references", async () => {
+    const name = `drawing-result-delete-${crypto.randomUUID()}`, db = new AyaseDatabase(name), repository = new DexieDrawingRepository(db);
+    const task = { ...queuedTask("finished"), status: "completed" as const };
+    const result = { id: "r", taskId: task.id, createdAt: task.createdAt, parameters: task.parameters,
+      reference: "drawing/finished/r.png", mime: "image/png", size: 1, width: 1, height: 1 };
+    const draft = { ...initialDrawingDraft, references: [{ ...result, name: "synthetic.png" }] };
+    await repository.saveDraft(draft); await repository.enqueue([task]);
+    await repository.complete(task, [result, { ...result, id: "keep" }]);
+    await repository.removeResults(["r", "missing"]); db.close();
+    const reopened = new AyaseDatabase(name), saved = await new DexieDrawingRepository(reopened).load();
+    expect(saved.results.map(result => result.id)).toEqual(["keep"]);
+    expect(saved.tasks).toEqual([expect.objectContaining(task)]); expect(saved.draft).toEqual(draft);
+    await reopened.delete();
+  });
   it("assigns durable FIFO order atomically across batches, concurrent submissions and reopen", async () => {
     const name = `drawing-queue-${crypto.randomUUID()}`, db = new AyaseDatabase(name);
     const repository = new DexieDrawingRepository(db);

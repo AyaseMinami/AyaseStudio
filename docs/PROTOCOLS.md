@@ -1,5 +1,9 @@
 # Protocol Compatibility Contract
 
+## Drawing PNG parameter export (#89)
+
+Export leaves adapter requests unchanged. Explicit PNG `parameters` JSON contains prompt, actual model ID, protocol, GNBP-compatible `api_type` (gemini/gpt) and explicitly submitted protocol option fields; automatic values are omitted. Frontend mapping and native typed allowlist reject credentials, addresses, connection identifiers, paths, reference bytes and unknown fields. Ordinary PNG re-encoding remains metadata-free. No provider defaults, reference originals or deterministic reproduction are asserted; legacy import stays in #92. See [allowlist and pinned GNBP verification](ISSUE-89-IMPLEMENTATION.md).
+
 ## Drawing lifecycle and diagnostics (#88)
 
 The durable `dispatching` marker covers the possible-send boundary. Abort ends local waiting, including transports that settle late; it does not prove remote cancellation. Only explicit regeneration can create a new provider request, retaining source identity and deduplicating active replacements. Local recovery inventories and indexed missing-image repair never call providers. HTTP failures retain only category and numeric status, never raw response bodies, credentials or machine paths. Request parameter mapping is unchanged. See [lifecycle contract](ISSUE-88-IMPLEMENTATION.md).
