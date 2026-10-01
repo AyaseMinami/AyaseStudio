@@ -52,7 +52,7 @@ export function parseGeminiImages(value: unknown): DrawingImageInput[] {
 }
 
 export function createGeminiImageTransport(fetcher: FetchLike): ImageGenerationTransport {
-  return { async generate(parameters, apiKey, signal) {
+  return { async generate(parameters, apiKey, signal, references = []) {
     validateDrawingParameters(parameters);
     if (!apiKey.trim()) throw new ImageGenerationError("请先在设置中填写绘图连接的 API Key。");
     if (signal.aborted) throw new ImageGenerationError("请求尚未发出，已取消。");
@@ -69,7 +69,8 @@ export function createGeminiImageTransport(fetcher: FetchLike): ImageGenerationT
       const response = await fetcher(endpoint, {
         method: "POST", redirect: "error", credentials: "omit", signal: controller.signal,
         headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey.trim() },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: parameters.prompt.trim() }] }],
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: parameters.prompt.trim() },
+          ...references.map(image => ({ inlineData: { mimeType: image.mime, data: image.data } }))] }],
           generationConfig: { candidateCount: 1, responseModalities: ["TEXT", "IMAGE"],
             ...(Object.keys(imageConfig).length ? { imageConfig } : {}) } }),
       });

@@ -105,8 +105,8 @@ export function resolveImageGenerationEndpoint(baseUrl: string, modelId: string)
   return resolveGenerationEndpoint("gemini-native", normalizedBaseUrl, modelId.trim(), false).resolvedEndpoint;
 }
 
-export function resolveOpenAIImagesEndpoint(baseUrl: string, modelId: string): string {
+export function resolveOpenAIImagesEndpoint(baseUrl: string, modelId: string, operation: "generations" | "edits" = "generations"): string {
   const base = normalizeBaseUrl("openai-images", baseUrl);
   if (!modelId.trim()) throw new UrlResolutionError("missing-model", "请先添加并选择绘图模型 ID。");
-  return `${base}/images/generations`;
+  return `${base}/images/${operation}`;
 }

@@ -46,21 +46,32 @@ export function parseOpenAIImages(value: unknown): DrawingImageInput[] {
 }
 
 export function createOpenAIImagesTransport(fetcher: FetchLike): ImageGenerationTransport {
-  return { async generate(parameters, apiKey, signal) {
+  return { async generate(parameters, apiKey, signal, references = []) {
     validateOpenAIImagesParameters(parameters);
     if (!apiKey.trim() || /[\u0000-\u001f\u007f]/.test(apiKey)) throw new ImageGenerationError("请先在设置中填写有效的绘图 API Key。");
     if (signal.aborted) throw new ImageGenerationError("请求尚未发出，已取消。");
-    const endpoint = resolveOpenAIImagesEndpoint(parameters.baseUrl, parameters.modelId);
+    const endpoint = resolveOpenAIImagesEndpoint(parameters.baseUrl, parameters.modelId, references.length ? "edits" : "generations");
     const controller = new AbortController(), abort = () => controller.abort();
     signal.addEventListener("abort", abort, { once: true });
     const timeout = setTimeout(abort, 400_000);
     try {
+      const fields = { model: parameters.modelId.trim(), prompt: parameters.prompt.trim(), n: 1, output_format: "png",
+        ...(parameters.size !== "auto" ? { size: parameters.size } : {}),
+        ...(parameters.quality !== "auto" ? { quality: parameters.quality } : {}) };
+      let body: string | FormData = JSON.stringify(fields);
+      if (references.length) {
+        const form = new FormData();
+        Object.entries(fields).forEach(([name, value]) => form.append(name, String(value)));
+        references.forEach((image, index) => {
+          const bytes = Uint8Array.from(atob(image.data), character => character.charCodeAt(0));
+          const extension = image.mime === "image/jpeg" ? "jpg" : image.mime.split("/")[1];
+          form.append("image[]", new Blob([bytes], { type: image.mime }), `reference-${index + 1}.${extension}`);
+        });
+        body = form;
+      }
       const response = await fetcher(endpoint, {
         method: "POST", redirect: "error", credentials: "omit", signal: controller.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
-        body: JSON.stringify({ model: parameters.modelId.trim(), prompt: parameters.prompt.trim(), n: 1, output_format: "png",
-          ...(parameters.size !== "auto" ? { size: parameters.size } : {}),
-          ...(parameters.quality !== "auto" ? { quality: parameters.quality } : {}) }),
+        headers: { ...(references.length ? {} : { "Content-Type": "application/json" }), Authorization: `Bearer ${apiKey.trim()}` }, body,
       });
       if ((response.status >= 300 && response.status < 400) || response.redirected || (response.url && response.url !== endpoint)) {
         await response.body?.cancel().catch(() => undefined);

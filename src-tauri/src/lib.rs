@@ -69,6 +69,8 @@ pub fn run() {
             drawing::recover_drawing_result,
             drawing::read_drawing_result,
             drawing::export_drawing_result,
+            drawing::import_drawing_reference,
+            drawing::remove_drawing_references,
             background::select_background_image,
             background::resolve_background_image,
             background::cleanup_background_images,

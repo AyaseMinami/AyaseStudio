@@ -6,7 +6,7 @@ Ayase Studio 是一个本地优先的多协议客户端，聊天之外有独立�
 
 2026-10-01，#85 本地接入 OpenAI Images 文生图。绘图协议包括 `gemini-image` 与 `openai-images`；绘图草稿分别保存 Gemini 宽高比／分辨率与 OpenAI 尺寸／画质，任务仅冻结当前协议的参数。共享连接配置不把绘图模型纳入聊天对象；具体支持边界见 [#85 实施](docs/ISSUE-85-IMPLEMENTATION.md)。
 
-用户已确认独立绘图及共用设置。草稿、单任务、成果与私有原图已在 [#84 单张实施](docs/ISSUE-84-IMPLEMENTATION.md) 中实现；批次、参考图、派生缩略图、预设及带参数导出仍属于 [#83 完整设计](docs/ISSUE-83-DRAWING-SPEC.md) 的后续范围，不改变现有聊天对象。
+用户已确认独立绘图及共用设置。草稿、单任务、成果与私有原图已在 [#84 单张实施](docs/ISSUE-84-IMPLEMENTATION.md) 中实现；[#86](docs/ISSUE-86-IMPLEMENTATION.md) 新增有序参考图输入及成果作为参考图，原字节保存／发送，任务冻结输入独立于后续草稿编辑。批次、派生缩略图、预设及带参数导出仍属于 [#83 完整设计](docs/ISSUE-83-DRAWING-SPEC.md) 的后续范围，不改变现有聊天对象。
 
 **绘图工作区（Drawing Workspace）**：与聊天同级的业务模块，拥有生成、任务和成果库视图；不属于助手或对话。
 

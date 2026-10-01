@@ -46,6 +46,19 @@
 .drawing-button:hover:not(:disabled) { border-color: rgb(var(--color-border-strong)); background: rgb(var(--color-hover)); }
 .drawing-button:disabled, .drawing-field input:disabled, .drawing-field select:disabled { color: rgb(var(--color-disabled-text)); cursor: default; }
 .drawing-reference { border-style: dashed; }
+.drawing-reference-input { display: none; }
+.drawing-reference-list { display: flex; flex-direction: column; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.drawing-reference-card { display: flex; min-width: 0; gap: 0.5rem; border: 1px solid rgb(var(--color-border)); border-radius: 8px; padding: 0.5rem; }
+.drawing-reference-thumbnail { display: flex; width: 64px; height: 64px; flex-shrink: 0; align-items: center; justify-content: center; overflow: hidden; border: 1px solid rgb(var(--color-border)); border-radius: 8px; background: rgb(var(--color-canvas)); color: rgb(var(--color-muted)); font-size: var(--font-small); cursor: pointer; }
+.drawing-reference-thumbnail:disabled { cursor: default; }
+.drawing-reference-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
+.drawing-reference-info { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 0.25rem; }
+.drawing-reference-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawing-reference-card .drawing-button { min-height: 1.75rem; padding: 0.2rem 0.35rem; }
+.drawing-reference-backdrop { position: fixed; z-index: 70; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(0 0 0 / 0.5); }
+.drawing-reference-dialog { display: flex; width: min(100%, 1100px); max-height: calc(100vh - 2rem); min-height: 0; flex-direction: column; gap: 0.75rem; border: 1px solid rgb(var(--color-border)); border-radius: 8px; padding: 1rem; background: rgb(var(--color-panel)); }
+.drawing-reference-dialog .drawing-section-heading { flex-shrink: 0; }
+.drawing-reference-dialog img { display: block; min-height: 0; width: 100%; flex: 1; object-fit: contain; }
 .drawing-generate { width: 100%; border-color: rgb(var(--color-accent)); background: rgb(var(--color-accent)); color: rgb(var(--color-on-accent)); }
 .drawing-generate:hover:not(:disabled) { border-color: rgb(var(--color-accent-hover)); background: rgb(var(--color-accent-hover)); }
 .drawing-generate:disabled { border-color: rgb(var(--color-disabled)); background: rgb(var(--color-disabled)); }

@@ -1,5 +1,11 @@
 # Ayase Studio Development Guide
 
+## Multiple reference images #86 (2026-10-01)
+
+本地完成多参考图输入、编号／排序／查看／移除、成果追加、持久草稿及冻结请求输入。PNG/JPG/JPEG/WebP/BMP 原字节私有保存和发送，无新增输入数量、容量或像素预算，无预处理；Gemini 使用 inlineData，OpenAI 有参考图时使用 multipart edits。完整归属和范围见 [#86 实施记录](ISSUE-86-IMPLEMENTATION.md)。
+
+`npm.cmd run check` 通过 95 文件／1350 项测试、TypeScript 与生产构建；Rust 绘图测试 19 项及 `cargo check --locked` 通过。独立审查无可操作发现。内置浏览器在隔离合成数据下通过选择／拖入／粘贴、去重／排序／预览、成果追加、运行草稿隔离、重载及失败／取消，覆盖浅深主题与桌面／窄窗口。原生隔离实例启动烟雾检查通过并停止；真实服务、原生文件选择器及实际关闭重启仍待用户验收。未读取真实凭据或请求供应商；实施检查阶段尚未执行 Git／远端交付，后续用户已授权提交、推送和 #86 验收通过，交付结果见 Issue 评论。
+
 ## OpenAI Images #85 (2026-10-01)
 
 本地接入 `openai-images` 与当前官方 GPT／Gemini 尺寸选项；[实施记录](ISSUE-85-IMPLEMENTATION.md) 列明协议边界、模型限制和验证。定向测试：`npm.cmd test -- src/drawing src/ui/drawing src/chat/settings.test.ts src/chat/urlResolution.test.ts src/ui/settings/ConnectionSettings.test.tsx`，再运行默认代码检查。使用合成 Base64、HTTP 故障和原生文件 mock；不得为验证错误而发真实请求。浏览器隔离验收入口 `.drawing85.local/` 不读取真实数据或供应商凭据。原生网络与系统对话框必须与离线／浏览器／启动检查区分。

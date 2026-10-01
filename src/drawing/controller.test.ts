@@ -20,7 +20,10 @@ function fixture(snapshot: DrawingSnapshot = { tasks: [], results: [] }) {
     saveTask: vi.fn(async task => { saved.tasks = [structuredClone(task), ...saved.tasks.filter(item => item.id !== task.id)]; }),
     complete: vi.fn(async (task, results) => { saved.tasks = [structuredClone(task), ...saved.tasks.filter(item => item.id !== task.id)]; saved.results = [...structuredClone(results), ...saved.results.filter(item => item.taskId !== task.id)]; }),
   };
+  let referenceSequence = 0;
   const files: DrawingFiles = { save: vi.fn(async () => [file]), recover: vi.fn(async () => null),
+    importReference: vi.fn(async image => { const id = `ref-${++referenceSequence}`; return { ...file, id, reference: `drawing/references/${id}.png`, digest: image.data }; }),
+    removeReferences: vi.fn(async () => undefined),
     read: vi.fn(async () => images[0]), export: vi.fn(async () => true) };
   const transport: ImageGenerationTransport = { generate: vi.fn(async () => images) };
   let sequence = 0;
@@ -33,6 +36,70 @@ async function prepare(f: ReturnType<typeof fixture>) {
   f.controller.setDraft({ ...f.controller.getSnapshot().draft, modelId: "image-model", prompt: "synthetic prompt", aspectRatio: "1:1", resolution: "2K" });
 }
 describe("application drawing task controller", () => {
+  it("imports a batch, skips duplicate bytes, reorders and persists references across reload", async () => {
+    const f = fixture(); await prepare(f);
+    const first = new File(["first"], "first.png", { type: "image/png" });
+    const second = new File(["second"], "second.bmp", { type: "image/bmp" });
+    await f.controller.addReferences([first, second, first]);
+    expect(f.controller.getSnapshot().draft.references?.map(item => item.name)).toEqual(["first.png", "second.bmp"]);
+    expect(f.controller.getSnapshot().error).toContain("重复");
+    const id = f.controller.getSnapshot().draft.references![1].id;
+    await f.controller.moveReference(id, -1);
+    const restored = fixture(f.saved()); await restored.controller.initialize();
+    expect(restored.controller.getSnapshot().draft.references?.map(item => item.name)).toEqual(["second.bmp", "first.png"]);
+    expect(f.transport.generate).not.toHaveBeenCalled();
+    await f.controller.removeReference(id);
+    expect(f.files.removeReferences).toHaveBeenCalledWith([expect.stringContaining("drawing/references/")]);
+  });
+  it("pins submission references while the draft is edited, and failed tasks retain their inputs", async () => {
+    const f = fixture(); await prepare(f);
+    await f.controller.addReferences([new File(["first"], "first.png", { type: "image/png" })]);
+    const reference = f.controller.getSnapshot().draft.references![0];
+    let release!: () => void;
+    const reading = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(f.files.read).mockImplementation(async () => { await reading; return images[0]; });
+    vi.mocked(f.transport.generate).mockRejectedValue(new ImageGenerationError("synthetic failure"));
+    const running = f.controller.generate(settings);
+    await vi.waitFor(() => expect(f.files.read).toHaveBeenCalled());
+    await f.controller.removeReference(reference.id);
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "next prompt" });
+    expect(f.files.removeReferences).not.toHaveBeenCalled();
+    release(); await running;
+    expect(f.transport.generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: "synthetic prompt", references: [reference] }), "synthetic-secret", expect.any(AbortSignal), images);
+    expect(f.saved().tasks[0]).toMatchObject({ status: "failed", parameters: { references: [reference] } });
+    expect(f.saved().draft).toMatchObject({ prompt: "next prompt", references: [] });
+    expect(f.files.removeReferences).not.toHaveBeenCalled();
+  });
+  it("cleans an uncommitted batch on import failure and blocks unreadable task inputs before dispatch", async () => {
+    const f = fixture(); await prepare(f);
+    vi.mocked(f.files.importReference).mockRejectedValueOnce(new Error("synthetic corrupt image"));
+    await f.controller.addReferences([new File(["bad"], "bad.png")]);
+    expect(f.controller.getSnapshot().error).toContain("参考图");
+    expect(f.controller.getSnapshot().draft.references).toBeUndefined();
+    await f.controller.addReferences([new File(["first"], "first.png")]);
+    vi.mocked(f.files.importReference).mockResolvedValueOnce({ ...file, id: "orphan", reference: "drawing/references/orphan.png", digest: "another" })
+      .mockRejectedValueOnce(new Error("failure"));
+    await f.controller.addReferences([new File(["another"], "other.png"), new File(["bad"], "bad.png")]);
+    // Existing draft is unaffected by the rejected batch.
+    expect(f.controller.getSnapshot().draft.references).toHaveLength(1);
+    expect(f.files.removeReferences).toHaveBeenCalledWith(["drawing/references/orphan.png"]);
+    vi.mocked(f.files.read).mockRejectedValue(new Error("unavailable"));
+    await f.controller.generate(settings);
+    expect(f.controller.getSnapshot().error).toContain("参考图读取失败");
+    expect(f.transport.generate).not.toHaveBeenCalled();
+    expect(f.saved().tasks).toHaveLength(0);
+  });
+  it("uses a saved result as a reference without copying bytes, replacing the draft or sending", async () => {
+    const f = fixture(); await prepare(f); await f.controller.generate(settings);
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "next prompt" });
+    vi.mocked(f.transport.generate).mockClear();
+    await f.controller.useAsReference("file-1"); await f.controller.useAsReference("file-1");
+    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: "next prompt", modelId: "image-model", references: [{ reference: file.reference }] });
+    expect(f.controller.getSnapshot().draft.references).toHaveLength(1);
+    expect(f.files.importReference).not.toHaveBeenCalled(); expect(f.transport.generate).not.toHaveBeenCalled();
+    await f.controller.removeReference("file-1");
+    expect(f.files.removeReferences).not.toHaveBeenCalled();
+  });
   it("freezes only OpenAI parameters, persists/results/reuses them, and preserves the Gemini draft across restart", async () => {
     const f = fixture(); await prepare(f);
     const local = structuredClone(settings);

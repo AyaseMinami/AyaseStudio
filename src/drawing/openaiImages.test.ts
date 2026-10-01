@@ -33,6 +33,23 @@ async function expectRedactedFailure(pending: Promise<unknown>, outcome: "failed
 afterEach(() => vi.useRealTimers());
 
 describe("OpenAI Images protocol", () => {
+  it("uses multipart edits for ordered original images and lets the service validate inputs", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response());
+    const references = Array.from({ length: 10 }, (_, index) => ({ mime: index % 2 ? "image/bmp" : "image/png", data: btoa(`original-${index}`) }));
+    await createOpenAIImagesTransport(fetcher).generate(parameters, "test", signal(), references);
+    const [url, init] = fetcher.mock.calls[0];
+    expect(url).toBe("https://example.test/v1/images/edits");
+    expect(new Headers(init.headers).has("content-type")).toBe(false);
+    const form = init.body as FormData;
+    expect(form.get("n")).toBe("1"); expect(form.get("output_format")).toBe("png");
+    const files = form.getAll("image[]") as File[];
+    expect(files).toHaveLength(10);
+    for (const [index, file] of files.entries()) {
+      expect(file.type).toBe(references[index].mime);
+      expect(await file.text()).toBe(`original-${index}`);
+    }
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it.each([301, 302, 307, 308])("classifies unfollowed native HTTP %s as unknown without a redirect request", async status => {
     const fetcher = vi.fn().mockResolvedValue(new Response("synthetic-secret", {status,headers:{location:"https://remote-image.test"}}));
     await expectRedactedFailure(createOpenAIImagesTransport(fetcher).generate(parameters,"test",signal()), "unknown");

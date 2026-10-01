@@ -6,6 +6,7 @@ export interface DrawingDraft {
   modelId: string | null;
   /** Absent in #84 drafts; defaults to automatic without rewriting old records. */
   openai?: { size: string; quality: string };
+  references?: DrawingReference[];
 }
 
 export const initialDrawingDraft: DrawingDraft = {
@@ -21,6 +22,7 @@ interface DrawingParameterBase {
   modelId: string;
   modelName: string;
   baseUrl: string;
+  references?: DrawingReference[];
 }
 
 export type DrawingProtocol = "gemini-image" | "openai-images";
@@ -48,6 +50,7 @@ export interface DrawingFile {
   width: number;
   height: number;
 }
+export interface DrawingReference extends DrawingFile { name: string; digest?: string }
 export interface DrawingResult extends DrawingFile {
   taskId: string;
   createdAt: string;
@@ -55,6 +58,8 @@ export interface DrawingResult extends DrawingFile {
 }
 
 export interface DrawingFiles {
+  importReference(image: DrawingImageInput): Promise<DrawingFile & { digest: string }>;
+  removeReferences(references: string[]): Promise<void>;
   save(taskId: string, images: DrawingImageInput[]): Promise<DrawingFile[]>;
   recover(taskId: string): Promise<DrawingFile[] | null>;
   read(reference: string): Promise<DrawingImageInput>;
@@ -62,7 +67,7 @@ export interface DrawingFiles {
 }
 
 export interface ImageGenerationTransport {
-  generate(parameters: DrawingParameters, apiKey: string, signal: AbortSignal): Promise<DrawingImageInput[]>;
+  generate(parameters: DrawingParameters, apiKey: string, signal: AbortSignal, references?: DrawingImageInput[]): Promise<DrawingImageInput[]>;
 }
 
 export interface DrawingModelOption { id: string; label: string; protocol: DrawingProtocol }

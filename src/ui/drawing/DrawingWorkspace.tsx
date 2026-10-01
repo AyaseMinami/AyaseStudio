@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Image, Plus } from "lucide-react";
+import { Image } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
-import type { DrawingDraft, DrawingModelOption, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
+import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
+import { DrawingReferences } from "./DrawingReferences";
 import { drawingAspectRatios, drawingResolutions } from "../../drawing/geminiImage";
 import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImages";
 import "./DrawingWorkspace.css";
@@ -18,7 +19,8 @@ const taskLabels: Record<DrawingTaskStatus, string> = {
 
 export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, tasks, results,
   selectedResultId, previewUrl, previewError, ready, busy, error,
-  onGenerate, onCancel, onSelectResult, onExport, onRetrySave, onReuse }: {
+  onGenerate, onCancel, onSelectResult, onExport, onRetrySave, onReuse,
+  onAddReferences, onRemoveReference, onMoveReference, onUseAsReference, readReference, referencesBusy }: {
   draft: DrawingDraft;
   onDraftChange(draft: DrawingDraft): void;
   onConfigure(): void;
@@ -37,6 +39,12 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   onExport(id: string): void;
   onRetrySave(id: string): void;
   onReuse(id: string): void;
+  onAddReferences(files: File[]): void;
+  onRemoveReference(id: string): void;
+  onMoveReference(id: string, direction: -1 | 1): void;
+  onUseAsReference(id: string): void;
+  readReference(reference: string): Promise<DrawingImageInput>;
+  referencesBusy: boolean;
 }) {
   const [view, setView] = useState<DrawingView>("generate");
   const running = tasks.some((task) => task.status === "running");
@@ -47,7 +55,8 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   const presetSize = (openAIImageSizes as readonly string[]).includes(size);
   const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => onDraftChange({ ...draft, openai: { size, quality, ...patch } });
   const resultNumber = (id: string) => results.length - results.findIndex((result) => result.id === id);
-  const canGenerate = ready && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !busy;
+  const canGenerate = ready && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !busy && !referencesBusy;
+  const canEditReferences = ready && !referencesBusy;
 
   function selectResult(id: string) {
     onSelectResult(id);
@@ -60,7 +69,20 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   }
 
   return (
-    <div className="drawing-workspace">
+    <div className="drawing-workspace" onDragOver={(event) => {
+      if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+    }} onDrop={(event) => {
+      if (!event.dataTransfer.files.length) return;
+      event.preventDefault();
+      if (canEditReferences) onAddReferences(Array.from(event.dataTransfer.files));
+    }} onPaste={(event) => {
+      const files = Array.from(event.clipboardData.items)
+        .filter(item => item.kind === "file" && item.type.startsWith("image/"))
+        .map(item => item.getAsFile()).filter((file): file is File => file !== null);
+      if (!files.length) return;
+      event.preventDefault();
+      if (canEditReferences) onAddReferences(files);
+    }}>
       <header className="drawing-header" data-tauri-drag-region>
         <div data-tauri-drag-region>
           <h1 data-tauri-drag-region>绘图</h1>
@@ -102,12 +124,9 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 <textarea id="drawing-prompt" value={draft.prompt} placeholder="描述想要生成的画面"
                   onChange={(event) => onDraftChange({ ...draft, prompt: event.target.value })} />
               </label>
-              <div className="drawing-field">
-                <span className="drawing-label">参考图</span>
-                <button type="button" className="drawing-button drawing-reference" disabled>
-                  <Plus size={16} aria-hidden="true" />添加参考图 · 尚未开放
-                </button>
-              </div>
+              <DrawingReferences references={draft.references ?? []} disabled={!canEditReferences}
+                busy={referencesBusy} read={readReference} onAdd={onAddReferences}
+                onRemove={onRemoveReference} onMove={onMoveReference} />
               {openai ? <>
                 <div className="drawing-parameters">
                   <label className="drawing-field">
@@ -156,7 +175,7 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                   {saving ? "正在保存…" : running ? "生成中…" : "生成图片"}
                 </button>
                 {running && <button type="button" className="drawing-button" onClick={onCancel}>取消生成</button>}
-                <p id="drawing-generation-note" className="drawing-muted">每次生成一张图片，参考图和批量生成后续开放。</p>
+                <p id="drawing-generation-note" className="drawing-muted">每次生成一张图片，批量生成后续开放。</p>
               </div>
             </section>
 
@@ -178,6 +197,8 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 <div className="drawing-actions">
                   <button type="button" className="drawing-button" onClick={() => onExport(selectedResult.id)}>导出图片</button>
                   <button type="button" className="drawing-button" onClick={() => reuseResult(selectedResult.id)}>复用参数</button>
+                  <button type="button" className="drawing-button" disabled={!canEditReferences}
+                    onClick={() => onUseAsReference(selectedResult.id)}>作为参考图</button>
                 </div>
               </div>}
               <h2 className="drawing-history-heading">生成历史</h2>
@@ -213,6 +234,8 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                   <button type="button" className="drawing-button" onClick={() => selectResult(result.id)}>查看</button>
                   <button type="button" className="drawing-button" onClick={() => onExport(result.id)}>导出图片</button>
                   <button type="button" className="drawing-button" onClick={() => reuseResult(result.id)}>复用参数</button>
+                  <button type="button" className="drawing-button" disabled={!canEditReferences}
+                    onClick={() => onUseAsReference(result.id)}>作为参考图</button>
                 </div>
               </article>)}
             </div> : <div className="drawing-empty drawing-view-empty">

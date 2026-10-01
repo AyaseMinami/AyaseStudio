@@ -2,7 +2,7 @@
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DrawingParameters, DrawingResult, DrawingTask } from "../../drawing/types";
+import type { DrawingParameters, DrawingReference, DrawingResult, DrawingTask } from "../../drawing/types";
 import { DrawingWorkspace, initialDrawingDraft, type DrawingDraft } from "./DrawingWorkspace";
 
 let host: HTMLDivElement;
@@ -12,8 +12,11 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  let previewNumber = 0;
+  vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:synthetic-reference-${++previewNumber}`);
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); });
 
 function props() {
   return {
@@ -23,6 +26,8 @@ function props() {
     previewUrl: null, previewError: null, ready: true, busy: false, error: null,
     onGenerate: vi.fn(), onCancel: vi.fn(), onSelectResult: vi.fn(), onExport: vi.fn(),
     onRetrySave: vi.fn(), onReuse: vi.fn(),
+    onAddReferences: vi.fn(), onRemoveReference: vi.fn(), onMoveReference: vi.fn(), onUseAsReference: vi.fn(),
+    readReference: vi.fn(async () => ({ mime: "image/png", data: "AQ==" })), referencesBusy: false,
   };
 }
 const parameters: DrawingParameters = {
@@ -69,7 +74,7 @@ it("switches protocol fields, preserves both drafts and offers current sizes/qua
   expect([...host.querySelectorAll("select")].map(select => select.value)).toEqual(["openai", "custom", "max"]);
 });
 
-it("keeps empty previews and unfinished reference/batch actions while connecting settings", async () => {
+it("keeps empty previews and the unfinished batch action while connecting settings", async () => {
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} models={[]} />));
   expect(host.querySelector("textarea")?.value).toBe("");
@@ -78,8 +83,8 @@ it("keeps empty previews and unfinished reference/batch actions while connecting
   expect(host.textContent).toContain("暂无生成历史");
   expect(host.textContent).toContain("请在设置中添加 Gemini 或 OpenAI 绘图连接和模型。");
   expect(button("生成图片").disabled).toBe(true);
-  expect(button("添加参考图 · 尚未开放").disabled).toBe(true);
-  expect(host.querySelector("input")?.disabled).toBe(true);
+  expect(button("添加参考图").disabled).toBe(false);
+  expect(host.querySelector<HTMLInputElement>('input[type="number"]')?.disabled).toBe(true);
   expect(host.querySelector("header h1")?.hasAttribute("data-tauri-drag-region")).toBe(true);
   await act(async () => button("前往设置").click());
   expect(options.onConfigure).toHaveBeenCalledOnce();
@@ -121,7 +126,7 @@ it("only enables a ready idle single-image request with a model and nonblank pro
   const draft = { ...initialDrawingDraft, prompt: "湖泊", modelId: "configured-image-model" };
   for (const overrides of [
     { ready: false }, { draft: { ...draft, modelId: null } },
-    { draft: { ...draft, prompt: " \n " } }, { busy: true },
+    { draft: { ...draft, prompt: " \n " } }, { busy: true }, { referencesBusy: true },
   ]) {
     await act(async () => root.render(<DrawingWorkspace {...options} draft={draft} {...overrides} />));
     expect(host.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(true);
@@ -187,4 +192,91 @@ it("displays escaped workspace and preview errors while keeping the preview regi
   expect(host.querySelector("script")).toBeNull();
   expect(host.querySelector(".drawing-preview-stage")?.textContent).toContain("无法读取图片");
   expect(host.querySelectorAll('[role="alert"]')).toHaveLength(2);
+});
+
+it("batches picker, drop and clipboard image imports while preserving text paste and guarding loading", async () => {
+  const options = props();
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  const first = new File(["one"], "one.png", { type: "image/png" });
+  const second = new File(["two"], "two.bmp", { type: "image/bmp" });
+  const picker = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+  expect(picker.multiple).toBe(true);
+  expect(picker.accept).toContain(".bmp");
+  Object.defineProperty(picker, "files", { configurable: true, value: [first, second] });
+  await act(async () => picker.dispatchEvent(new Event("change", { bubbles: true })));
+  expect(options.onAddReferences).toHaveBeenCalledExactlyOnceWith([first, second]);
+  expect(picker.value).toBe("");
+  const drop = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(drop, "dataTransfer", { value: { files: [second, first] } });
+  await act(async () => host.querySelector("textarea")!.dispatchEvent(drop));
+  expect(drop.defaultPrevented).toBe(true);
+  expect(options.onAddReferences).toHaveBeenLastCalledWith([second, first]);
+  const paste = (items: Array<{ kind: string; type: string; getAsFile?(): File }>) => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { items } });
+    return event;
+  };
+  const textPaste = paste([{ kind: "string", type: "text/plain" }]);
+  await act(async () => host.querySelector("textarea")!.dispatchEvent(textPaste));
+  expect(textPaste.defaultPrevented).toBe(false);
+  expect(options.onAddReferences).toHaveBeenCalledTimes(2);
+  const imagePaste = paste([{ kind: "file", type: "image/png", getAsFile: () => first }]);
+  await act(async () => host.querySelector("textarea")!.dispatchEvent(imagePaste));
+  expect(imagePaste.defaultPrevented).toBe(true);
+  expect(options.onAddReferences).toHaveBeenLastCalledWith([first]);
+  await act(async () => root.render(<DrawingWorkspace {...options} ready={false} />));
+  expect(button("添加参考图").disabled).toBe(true);
+  const blockedDrop = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(blockedDrop, "dataTransfer", { value: { files: [first] } });
+  await act(async () => host.querySelector("textarea")!.dispatchEvent(blockedDrop));
+  expect(blockedDrop.defaultPrevented).toBe(true);
+  expect(options.onAddReferences).toHaveBeenCalledTimes(3);
+  await act(async () => root.render(<DrawingWorkspace {...options} referencesBusy />));
+  expect(button("添加参考图").disabled).toBe(true);
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("正在添加参考图");
+});
+
+it("numbers references and allows view, reorder and removal during generation with preview URL cleanup", async () => {
+  const options = props();
+  const first: DrawingReference = { ...result, id: "reference-one", name: "first.png" };
+  const second: DrawingReference = { ...result, id: "reference-two", name: "second.png", reference: "drawing/private-second.png" };
+  const draft = { ...initialDrawingDraft, references: [first, second] };
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft} busy tasks={[task]} />));
+  const labeled = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  expect(labeled("上移参考图 1").disabled).toBe(true);
+  expect(labeled("下移参考图 2").disabled).toBe(true);
+  expect(button("添加参考图").disabled).toBe(false);
+  await act(async () => labeled("下移参考图 1").click());
+  expect(options.onMoveReference).toHaveBeenCalledWith(first.id, 1);
+  await act(async () => labeled("上移参考图 2").click());
+  expect(options.onMoveReference).toHaveBeenCalledWith(second.id, -1);
+  await act(async () => labeled("查看参考图 1").click());
+  expect(host.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe("参考图 1 大图预览");
+  expect(document.activeElement).toBe(button("关闭参考图预览"));
+  await act(async () => button("关闭参考图预览").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(labeled("查看参考图 1"));
+  await act(async () => labeled("移除参考图 1").click());
+  expect(options.onRemoveReference).toHaveBeenCalledWith(first.id);
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={{ ...draft, references: [second] }} />));
+  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={{ ...draft, references: [second] }} ready={false} />));
+  expect(labeled("移除参考图 1").disabled).toBe(true);
+  expect(options.onGenerate).not.toHaveBeenCalled();
+  expect(options.onDraftChange).not.toHaveBeenCalled();
+});
+
+it("routes preview and library reference actions without changing draft options or automatically generating", async () => {
+  const options = props();
+  await act(async () => root.render(<DrawingWorkspace {...options} results={[result]} selectedResultId={result.id}
+    previewUrl="blob:synthetic-result" busy tasks={[task]} />));
+  await act(async () => button("作为参考图").click());
+  expect(options.onUseAsReference).toHaveBeenCalledExactlyOnceWith(result.id);
+  await act(async () => button("成果库").click());
+  await act(async () => button("作为参考图").click());
+  expect(options.onUseAsReference).toHaveBeenCalledTimes(2);
+  expect(button("成果库").getAttribute("aria-current")).toBe("page");
+  expect(options.onGenerate).not.toHaveBeenCalled();
+  expect(options.onDraftChange).not.toHaveBeenCalled();
+  expect(options.onReuse).not.toHaveBeenCalled();
 });

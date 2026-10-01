@@ -8,6 +8,14 @@ const parameters: DrawingParameters = { prompt: "A synthetic square", aspectRati
 const image = { mimeType: "image/png", data: "AQID" };
 const body = { candidates: [{ finishReason: "STOP", content: { parts: [{ text: "done" }, { inlineData: image }] } }] };
 describe("Gemini image protocol", () => {
+  it("sends ordered original references without preprocessing or input-count caps", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(body)));
+    const references = Array.from({ length: 10 }, (_, index) => ({ mime: index % 2 ? "image/bmp" : "image/png", data: btoa(`original-${index}`) }));
+    await createGeminiImageTransport(fetcher).generate(parameters, "test", new AbortController().signal, references);
+    expect(JSON.parse(fetcher.mock.calls[0][1].body).contents[0].parts).toEqual([
+      { text: parameters.prompt }, ...references.map(image => ({ inlineData: { mimeType: image.mime, data: image.data } })),
+    ]);
+  });
   it.each(["1:1", "1:4", "4:1", "1:8", "8:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"])("maps the current documented ratio %s and literal 512 size", async aspectRatio => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(body)));
     await createGeminiImageTransport(fetcher).generate({ ...parameters, aspectRatio, resolution: "512" }, "test", new AbortController().signal);

@@ -63,6 +63,13 @@ pub struct DrawingFile {
     height: u32,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ImportedDrawingReference {
+    #[serde(flatten)]
+    file: DrawingFile,
+    digest: String,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
@@ -113,6 +120,18 @@ fn reference(value: &str) -> Result<(&str, &str, &str), Error> {
     Ok((task, id, ext))
 }
 
+fn reference_input(value: &str) -> Result<(&str, &str), Error> {
+    let name = value
+        .strip_prefix("drawing/references/")
+        .ok_or(Error::InvalidReference)?;
+    let (id, ext) = name.rsplit_once('.').ok_or(Error::InvalidReference)?;
+    uuid(id)?;
+    if !matches!(ext, "png" | "jpg" | "webp" | "bmp") {
+        return Err(Error::InvalidReference);
+    }
+    Ok((id, ext))
+}
+
 fn link(metadata: &Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return true;
@@ -158,11 +177,15 @@ fn inspect(path: &Path) -> Result<Option<Metadata>, Error> {
 }
 
 fn bounded_read(path: &Path, limit: usize) -> Result<Vec<u8>, Error> {
+    checked_read(path, Some(limit))
+}
+
+fn checked_read(path: &Path, limit: Option<usize>) -> Result<Vec<u8>, Error> {
     let metadata = inspect(path)?.ok_or(Error::Unavailable)?;
     if !metadata.is_file() {
         return Err(Error::InvalidReference);
     }
-    if metadata.len() > limit as u64 {
+    if limit.is_some_and(|limit| metadata.len() > limit as u64) {
         return Err(Error::TooLarge);
     }
     let mut options = OpenOptions::new();
@@ -177,17 +200,35 @@ fn bounded_read(path: &Path, limit: usize) -> Result<Vec<u8>, Error> {
     if link(&metadata) || !metadata.is_file() {
         return Err(Error::InvalidReference);
     }
-    if metadata.len() > limit as u64 {
+    if limit.is_some_and(|limit| metadata.len() > limit as u64) {
         return Err(Error::TooLarge);
     }
     let mut bytes = Vec::new();
-    file.take(limit as u64 + 1)
+    file.take(limit.map_or(u64::MAX, |limit| limit as u64 + 1))
         .read_to_end(&mut bytes)
         .map_err(|_| Error::Storage)?;
-    if bytes.len() > limit {
+    if limit.is_some_and(|limit| bytes.len() > limit) {
         return Err(Error::TooLarge);
     }
     Ok(bytes)
+}
+
+fn decode_reference(bytes: &[u8]) -> Result<(DynamicImage, &'static str, &'static str), Error> {
+    let format = image::guess_format(bytes).map_err(|_| Error::Corrupt)?;
+    let (mime, ext) = match format {
+        ImageFormat::Png => ("image/png", "png"),
+        ImageFormat::Jpeg => ("image/jpeg", "jpg"),
+        ImageFormat::WebP => ("image/webp", "webp"),
+        ImageFormat::Bmp => ("image/bmp", "bmp"),
+        _ => return Err(Error::Corrupt),
+    };
+    let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+    reader.no_limits();
+    let image = reader.decode().map_err(|_| Error::Corrupt)?;
+    if image.width() == 0 || image.height() == 0 {
+        return Err(Error::Corrupt);
+    }
+    Ok((image, mime, ext))
 }
 
 fn kind(mime: &str) -> Result<(ImageFormat, &'static str), Error> {
@@ -504,7 +545,85 @@ fn save_with_manifest_publisher(
     Ok(files)
 }
 
+fn import_reference(
+    root: &Path,
+    input: &DrawingImageInput,
+) -> Result<ImportedDrawingReference, Error> {
+    import_reference_with_publisher(root, input, publish)
+}
+
+fn import_reference_with_publisher(
+    root: &Path,
+    input: &DrawingImageInput,
+    publish: impl FnOnce(&Path, &[u8]) -> Result<(), Error>,
+) -> Result<ImportedDrawingReference, Error> {
+    let bytes = STANDARD.decode(&input.data).map_err(|_| Error::Corrupt)?;
+    // Browser MIME labels are advisory; preserve the detected original format.
+    let (image, mime, ext) = decode_reference(&bytes)?;
+    let id = Uuid::new_v4().to_string();
+    let value = format!("drawing/references/{id}.{ext}");
+    let path = root.join(&value);
+    inspect(&path)?;
+    let directory = path.parent().ok_or(Error::Storage)?;
+    std::fs::create_dir_all(directory).map_err(|_| Error::Storage)?;
+    inspect(directory)?;
+    if let Err(error) = publish(&path, &bytes) {
+        // Publication can fail after persisting (for example on final sync).
+        // The failed import must not leave its newly reserved original behind.
+        if error != Error::Collision && inspect(&path)?.is_some() {
+            std::fs::remove_file(&path).map_err(|_| Error::Storage)?;
+        }
+        return Err(error);
+    }
+    Ok(ImportedDrawingReference {
+        file: DrawingFile {
+            id,
+            reference: value,
+            mime: mime.to_owned(),
+            size: bytes.len(),
+            width: image.width(),
+            height: image.height(),
+        },
+        digest: sha256(&bytes),
+    })
+}
+
+fn remove_references(root: &Path, values: &[String]) -> Result<(), Error> {
+    // Validate the entire explicit list before deleting any file.
+    let paths = values
+        .iter()
+        .map(|value| {
+            reference_input(value)?;
+            let path = root.join(value);
+            if inspect(&path)?.is_some_and(|metadata| !metadata.is_file()) {
+                return Err(Error::InvalidReference);
+            }
+            Ok(path)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for path in paths {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(Error::Storage),
+        }
+    }
+    Ok(())
+}
+
 fn read(root: &Path, value: &str) -> Result<DrawingImageInput, Error> {
+    if value.starts_with("drawing/references/") {
+        let (_, ext) = reference_input(value)?;
+        let bytes = checked_read(&root.join(value), None)?;
+        let (_, mime, detected_ext) = decode_reference(&bytes)?;
+        if ext != detected_ext {
+            return Err(Error::Corrupt);
+        }
+        return Ok(DrawingImageInput {
+            mime: mime.to_owned(),
+            data: STANDARD.encode(bytes),
+        });
+    }
     let (task, _, _) = reference(value)?;
     let files = read_manifest(root, task)?.ok_or(Error::Unavailable)?;
     let item = files
@@ -560,6 +679,31 @@ fn export_png(root: &Path, value: &str, destination: &Path) -> Result<(), Error>
 
 fn app_directory(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|_| Error::Storage.code())
+}
+
+#[tauri::command]
+pub async fn import_drawing_reference(
+    app: AppHandle,
+    image: DrawingImageInput,
+) -> Result<ImportedDrawingReference, String> {
+    let root = app_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        import_reference(&root, &image).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
+}
+
+#[tauri::command]
+pub async fn remove_drawing_references(app: AppHandle, references: Vec<String>) -> Result<(), String> {
+    let root = app_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        remove_references(&root, &references).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
 }
 
 #[tauri::command]
@@ -647,6 +791,7 @@ mod tests {
             ImageFormat::Png => "image/png",
             ImageFormat::Jpeg => "image/jpeg",
             ImageFormat::WebP => "image/webp",
+            ImageFormat::Bmp => "image/bmp",
             _ => unreachable!(),
         };
         DrawingImageInput {
@@ -673,6 +818,155 @@ mod tests {
         let checksum = crc32(&chunk[4..]);
         chunk.extend_from_slice(&checksum.to_be_bytes());
         chunk
+    }
+
+    #[test]
+    fn imports_original_formats_and_alpha_with_readable_digest_descriptors() {
+        let root = tempfile::tempdir().unwrap();
+        let rgba = image::RgbaImage::from_pixel(3, 2, image::Rgba([20, 40, 90, 70]));
+        for (format, mime, ext) in [
+            (ImageFormat::Png, "image/png", "png"),
+            (ImageFormat::Jpeg, "image/jpeg", "jpg"),
+            (ImageFormat::WebP, "image/webp", "webp"),
+            (ImageFormat::Bmp, "image/bmp", "bmp"),
+        ] {
+            let image = if format == ImageFormat::Jpeg {
+                DynamicImage::ImageRgba8(rgba.clone()).to_rgb8().into()
+            } else {
+                DynamicImage::ImageRgba8(rgba.clone())
+            };
+            let mut encoded = Cursor::new(Vec::new());
+            image.write_to(&mut encoded, format).unwrap();
+            let mut bytes = encoded.into_inner();
+            if format == ImageFormat::Png {
+                bytes.splice(33..33, png_chunk(b"tEXt", b"original\0keep-metadata"));
+            }
+            let input = DrawingImageInput {
+                mime: "application/octet-stream".into(),
+                data: STANDARD.encode(&bytes),
+            };
+            let imported = import_reference(root.path(), &input).unwrap();
+            let duplicate = import_reference(root.path(), &input).unwrap();
+            assert_eq!(imported.digest, sha256(&bytes));
+            assert_eq!(imported.digest, duplicate.digest);
+            assert_ne!(imported.file.reference, duplicate.file.reference);
+            assert_eq!(imported.file.mime, mime);
+            assert_eq!(imported.file.size, bytes.len());
+            assert_eq!((imported.file.width, imported.file.height), (3, 2));
+            assert_eq!(
+                reference_input(&imported.file.reference).unwrap(),
+                (imported.file.id.as_str(), ext)
+            );
+            assert_eq!(
+                std::fs::read(root.path().join(&imported.file.reference)).unwrap(),
+                bytes
+            );
+            let read = read(root.path(), &imported.file.reference).unwrap();
+            assert_eq!(read.data, input.data);
+            assert_eq!(read.mime, mime);
+            if format != ImageFormat::Jpeg {
+                assert_eq!(
+                    decode_reference(&STANDARD.decode(read.data).unwrap())
+                        .unwrap().0.to_rgba8(),
+                    rgba
+                );
+            }
+            let descriptor = serde_json::to_value(imported).unwrap();
+            assert_eq!(descriptor["digest"], sha256(&bytes));
+            assert_eq!(descriptor["mime"], mime);
+            assert!(descriptor.get("file").is_none());
+        }
+    }
+
+    #[test]
+    fn references_do_not_inherit_output_byte_budget() {
+        let root = tempfile::tempdir().unwrap();
+        let mut bytes = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        bytes.resize(IMAGE_LIMIT + 1, 0);
+        let input = DrawingImageInput {
+            mime: "image/png".into(),
+            data: STANDARD.encode(&bytes),
+        };
+        let imported = import_reference(root.path(), &input).unwrap();
+        assert_eq!(imported.file.size, IMAGE_LIMIT + 1);
+        assert_eq!(
+            read(root.path(), &imported.file.reference).unwrap().data,
+            input.data
+        );
+        assert!(matches!(decode_inputs(&[input]), Err(Error::TooLarge)));
+    }
+
+    #[test]
+    fn corrupt_reference_imports_and_failed_publication_leave_no_original() {
+        let root = tempfile::tempdir().unwrap();
+        let png = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        for input in [
+            DrawingImageInput {
+                mime: "image/png".into(),
+                data: "bad base64!".into(),
+            },
+            DrawingImageInput {
+                mime: "image/png".into(),
+                data: STANDARD.encode("not an image"),
+            },
+            DrawingImageInput {
+                mime: "image/png".into(),
+                data: STANDARD.encode(&png[..40]),
+            },
+        ] {
+            assert_eq!(
+                import_reference(root.path(), &input).unwrap_err(),
+                Error::Corrupt
+            );
+        }
+        assert!(!root.path().join("drawing").exists());
+        assert_eq!(
+            import_reference_with_publisher(root.path(), &input(20, ImageFormat::Png), |path, _| {
+                std::fs::write(path, b"partial").unwrap();
+                Err(Error::Storage)
+            }).unwrap_err(),
+            Error::Storage
+        );
+        assert_eq!(
+            std::fs::read_dir(root.path().join("drawing/references")).unwrap().count(),
+            0
+        );
+    }
+
+    #[test]
+    fn removal_accepts_only_explicit_managed_references_and_preserves_results() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let files = save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap();
+        let imported = import_reference(root.path(), &input(30, ImageFormat::Bmp)).unwrap();
+        let original = root.path().join(&imported.file.reference);
+        for invalid in [
+            files[0].reference.clone(),
+            original.to_string_lossy().into_owned(),
+            "drawing/references".into(),
+            format!("drawing/references/../{}.png", imported.file.id),
+            format!("drawing/references/{}.BMP", imported.file.id),
+            format!("drawing\\references\\{}.bmp", imported.file.id),
+            format!("drawing/references/{}.bmp", imported.file.id.to_uppercase()),
+        ] {
+            assert_eq!(
+                remove_references(root.path(), &[imported.file.reference.clone(), invalid]).unwrap_err(),
+                Error::InvalidReference
+            );
+            assert!(original.exists());
+        }
+        let wrong_ext = format!("drawing/references/{}.png", Uuid::new_v4());
+        std::fs::copy(&original, root.path().join(&wrong_ext)).unwrap();
+        assert!(matches!(read(root.path(), &wrong_ext), Err(Error::Corrupt)));
+        let missing = format!("drawing/references/{}.webp", Uuid::new_v4());
+        assert!(matches!(read(root.path(), &missing), Err(Error::Unavailable)));
+        remove_references(
+            root.path(),
+            &[imported.file.reference.clone(), imported.file.reference, missing],
+        ).unwrap();
+        assert!(!original.exists());
+        assert!(root.path().join(wrong_ext).exists());
+        assert_eq!(read_manifest(root.path(), &task).unwrap(), Some(files));
     }
 
     #[test]
@@ -1164,6 +1458,19 @@ mod tests {
         );
         assert_eq!(
             read_manifest(root.path(), &task).unwrap_err(),
+            Error::InvalidReference
+        );
+        let value = format!("drawing/references/{}.png", Uuid::new_v4());
+        assert_eq!(
+            import_reference(root.path(), &input(20, ImageFormat::Png)).unwrap_err(),
+            Error::InvalidReference
+        );
+        assert!(matches!(
+            read(root.path(), &value),
+            Err(Error::InvalidReference)
+        ));
+        assert_eq!(
+            remove_references(root.path(), &[value]).unwrap_err(),
             Error::InvalidReference
         );
         assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);

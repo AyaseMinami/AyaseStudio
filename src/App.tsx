@@ -105,6 +105,10 @@ function App() {
           onCancel={drawing.controller.cancel} onSelectResult={drawing.controller.selectResult}
           onExport={id => void drawing.controller.export(id)} onRetrySave={id => void drawing.controller.retrySave(id)}
           onReuse={drawing.controller.reuse}
+          referencesBusy={drawing.referencesBusy} onAddReferences={files => void drawing.controller.addReferences(files)}
+          onRemoveReference={id => void drawing.controller.removeReference(id)}
+          onMoveReference={(id, direction) => void drawing.controller.moveReference(id, direction)}
+          onUseAsReference={id => void drawing.controller.useAsReference(id)} readReference={drawing.controller.readReference}
           onConfigure={() => { setActiveSettingsSection("connections"); setActivePage("settings"); }} />
       ) : (
         <SettingsWorkspace

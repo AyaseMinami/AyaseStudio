@@ -6,7 +6,7 @@
 
 ## 功能
 
-- **独立绘图**：Gemini 绘图与 OpenAI 兼容 Images 文生图；按协议选择比例／分辨率或尺寸／画质，自动保存、大图预览和 PNG 导出。具体模型和中转支持范围见 [绘图兼容说明](docs/ISSUE-85-IMPLEMENTATION.md)。
+- **独立绘图**：Gemini 绘图与 OpenAI 兼容 Images 文生图／[多参考图输入](docs/ISSUE-86-IMPLEMENTATION.md)；按协议选择比例／分辨率或尺寸／画质，自动保存、大图预览和 PNG 导出。具体模型和中转支持范围见 [绘图兼容说明](docs/ISSUE-85-IMPLEMENTATION.md)。
 
 - **多协议连接**：支持 OpenAI Chat Completions、OpenAI Responses、Gemini 和 Anthropic 原生协议；按供应商、连接、模型组织配置。
 - **对话与助手**：助手提供新对话预设，每个对话可独立设置模型、系统提示词和生成参数；支持并行生成、停止和自动命名。
