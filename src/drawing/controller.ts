@@ -5,6 +5,7 @@ import { validateOpenAIImagesParameters } from "./openaiImages";
 import { bytesToBase64 } from "../chat/attachments";
 import { drawingExportParameters } from "./exportParameters";
 import type { DrawingRepository, DrawingSnapshot } from "./repository";
+import type { DrawingPresetInput, DrawingPresetRepository, DrawingPromptPreset } from "./presets";
 import { initialDrawingDraft, type DrawingDraft, type DrawingTask, type DrawingResult, type DrawingFiles,
   type DrawingImageInput, type ImageGenerationTransport, type DrawingParameters, type DrawingReference, type DrawingRecovery } from "./types";
 
@@ -12,6 +13,8 @@ export interface DrawingState {
   draft: DrawingDraft;
   tasks: DrawingTask[];
   results: DrawingResult[];
+  presets: DrawingPromptPreset[];
+  presetsBusy: boolean;
   selectedResultId: string | null;
   ready: boolean;
   busy: boolean;
@@ -27,6 +30,7 @@ export interface DrawingState {
 }
 interface DrawingDependencies {
   repository: DrawingRepository;
+  presetRepository?: DrawingPresetRepository;
   files: DrawingFiles;
   transport(): Promise<ImageGenerationTransport>;
   now?(): string;
@@ -72,13 +76,16 @@ function awaitImages(request: Promise<DrawingImageInput[]>, signal: AbortSignal)
 
 /** Application-owned durable queue; page unmounts never own requests. */
 export class DrawingController {
-  private state: DrawingState = { draft: initialDrawingDraft, tasks: [], results: [], selectedResultId: null,
+  private state: DrawingState = { draft: initialDrawingDraft, tasks: [], results: [], presets: [], presetsBusy: false, selectedResultId: null,
     ready: false, busy: false, referencesBusy: false, closing: false, error: null, notice: null, hasData: false,
     submitting: false, paused: false, managementBusy: false, completion: { sequence: 0, allSucceeded: false } };
   private listeners = new Set<() => void>();
   private initialization?: Promise<void>;
   private draftWrites: Promise<void> = Promise.resolve();
   private draftFailure = false;
+  private hasSavedDraft = false;
+  private presetWrites: Promise<void> = Promise.resolve();
+  private pendingPresetWrites = 0;
   private active = new Map<string, ActiveDrawing>();
   private settings?: ConnectionSettingsState;
   private submission?: Promise<void>;
@@ -105,7 +112,9 @@ export class DrawingController {
   }
   private async load(): Promise<void> {
     try {
-      const saved = await this.dependencies.repository.load();
+      const [saved, presets] = await Promise.all([
+        this.dependencies.repository.load(), this.dependencies.presetRepository?.load() ?? Promise.resolve([]),
+      ]);
       let tasks = saved.tasks, results = saved.results;
       // A native manifest proves completed local persistence, never server acceptance.
       for (const task of tasks) {
@@ -140,10 +149,11 @@ export class DrawingController {
       }
       tasks = [...tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       results = [...results].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      this.publish({ draft: saved.draft ?? { ...initialDrawingDraft }, tasks, results,
+      this.hasSavedDraft = !!saved.draft;
+      this.publish({ draft: saved.draft ?? { ...initialDrawingDraft }, tasks, results, presets,
         paused: tasks.some(task => task.status === "queued"),
         selectedResultId: results[0]?.id ?? null, ready: true, error: tasks[0]?.error ?? null,
-        hasData: !!saved.draft || tasks.length > 0 || results.length > 0 });
+        hasData: !!saved.draft || tasks.length > 0 || results.length > 0 || presets.length > 0 });
     } catch { this.publish({ error: "绘图数据读取或恢复失败。请重启应用后重试；当前禁止生成，以免覆盖已有数据。", ready: false }); }
   }
   setDraft = (draft: DrawingDraft): void => {
@@ -152,6 +162,7 @@ export class DrawingController {
     this.pump();
   };
   private storeDraft(draft: DrawingDraft): void {
+    this.hasSavedDraft = true;
     const next = { id: "current" as const, prompt: draft.prompt, aspectRatio: draft.aspectRatio, resolution: draft.resolution, modelId: draft.modelId,
       count: draft.count ?? 1, concurrency: draft.concurrency ?? 1, completionSound: draft.completionSound ?? true,
       ...(draft.reusedProtocol ? { reusedProtocol: draft.reusedProtocol } : {}),
@@ -164,10 +175,57 @@ export class DrawingController {
     });
   }
   async flush(): Promise<void> {
+    await this.presetWrites;
     await this.referenceOperations;
     await this.draftWrites;
     if (this.draftFailure) throw new Error("绘图草稿尚未保存，暂时不能退出。");
   }
+  applyPreset = (id: string): void => {
+    if (!this.state.ready || this.state.closing || this.state.presetsBusy) return;
+    const preset = this.state.presets.find(item => item.id === id);
+    if (!preset) { this.publish({ error: "提示词预设已不存在，请重新选择。" }); return; }
+    this.storeDraft({ ...this.state.draft, prompt: preset.content });
+    this.publish({ notice: "提示词预设已载入。", error: null });
+  };
+  private presetCommand(operation: (repository: DrawingPresetRepository) => Promise<void>): Promise<boolean> {
+    const repository = this.dependencies.presetRepository;
+    if (!this.state.ready || this.state.closing || !repository) return Promise.resolve(false);
+    this.pendingPresetWrites++;
+    this.publish({ presetsBusy: true, error: null });
+    const write = this.presetWrites.then(async () => {
+      await operation(repository);
+      return true;
+    }).catch(() => {
+      this.publish({ error: "提示词预设保存或删除失败，请检查本地存储后重试；已保存记录未被替换。" });
+      return false;
+    }).finally(() => {
+      this.pendingPresetWrites--;
+      this.publish({ presetsBusy: this.pendingPresetWrites > 0 });
+    });
+    this.presetWrites = write.then(() => undefined);
+    return write;
+  }
+  createPreset = (input: DrawingPresetInput): Promise<boolean> => {
+    const captured = { name: input.name, content: input.content };
+    return this.presetCommand(async repository => {
+      const preset = await repository.create(captured);
+      const presets = [...this.state.presets, preset].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      this.publish({ presets, hasData: true, notice: "提示词预设已保存。" });
+    });
+  };
+  updatePreset = (id: string, input: DrawingPresetInput): Promise<boolean> => {
+    const captured = { name: input.name, content: input.content };
+    return this.presetCommand(async repository => {
+      const preset = await repository.update(id, captured);
+      this.publish({ presets: this.state.presets.map(item => item.id === id ? preset : item), notice: "提示词预设已更新。" });
+    });
+  };
+  deletePreset = (id: string): Promise<boolean> => this.presetCommand(async repository => {
+    await repository.remove(id);
+    const presets = this.state.presets.filter(item => item.id !== id);
+    this.publish({ presets, hasData: this.hasSavedDraft || this.state.tasks.length > 0 || this.state.results.length > 0 || presets.length > 0,
+      notice: "提示词预设已删除。" });
+  });
   private referenceCommand(operation: () => Promise<void>): Promise<void> {
     if (!this.state.ready || this.state.closing) return Promise.resolve();
     this.pendingReferenceOperations++;
@@ -293,8 +351,13 @@ export class DrawingController {
   };
   reuse = (id: string): Promise<void> => this.referenceCommand(async () => {
     const result = this.state.results.find(item => item.id === id);
-    if (!result) return;
-    const parameters = result.parameters;
+    if (result) await this.reuseParameters(result.parameters);
+  });
+  reuseTask = (id: string): Promise<void> => this.referenceCommand(async () => {
+    const task = this.state.tasks.find(item => item.id === id);
+    if (task) await this.reuseParameters(task.parameters);
+  });
+  private async reuseParameters(parameters: DrawingParameters): Promise<void> {
     const previous = this.state.draft.references ?? [];
     const references = structuredClone(parameters.references ?? []);
     const missing: number[] = [];
@@ -303,8 +366,8 @@ export class DrawingController {
       catch { missing.push(index + 1); }
     }
     const target = this.settings ? getDrawingTarget(this.settings, parameters.configuredModelId) : undefined;
-    const invalid = this.settings && (!target || target.connection.id !== parameters.connectionId ||
-      target.provider.id !== parameters.providerId || target.connection.protocol !== parameters.protocol || target.model.modelId !== parameters.modelId);
+    const invalid = !target || target.connection.id !== parameters.connectionId ||
+      target.provider.id !== parameters.providerId || target.connection.protocol !== parameters.protocol || target.model.modelId !== parameters.modelId;
     const next = { ...this.state.draft, prompt: parameters.prompt, modelId: invalid ? null : parameters.configuredModelId,
       reusedProtocol: invalid ? parameters.protocol : undefined, references,
       ...(parameters.protocol === "gemini-image" ? { aspectRatio: parameters.aspectRatio, resolution: parameters.resolution }
@@ -326,7 +389,7 @@ export class DrawingController {
     await this.releaseReferences(previous);
     if (invalid || missing.length) this.publish({ error: [invalid ? "原绘图模型已失效或配置已改变，请重新选择同协议模型；文本、参数与参考图记录已保留。" : "",
       missing.length ? `参考图 ${missing.join("、")} 读取失败，未完整恢复；请补充或移除缺失项。` : ""].filter(Boolean).join(" ") });
-  });
+  }
   private async saveTask(task: DrawingTask): Promise<void> {
     await this.dependencies.repository.saveTask(task);
     this.publish({ tasks: [task, ...this.state.tasks.filter(item => item.id !== task.id)], hasData: true });
@@ -640,11 +703,20 @@ export class DrawingController {
   /** Only after explicit user confirmation of losing unpersisted pixels. */
   async discardUnsavedForClose(): Promise<void> { await this.flush(); this.unsaved.clear(); }
   copyPrompt = async (id: string): Promise<void> => {
+    if (!this.state.ready || this.state.closing) return;
     const result = this.state.results.find(item => item.id === id);
     if (!result) return;
-    try { await navigator.clipboard.writeText(result.parameters.prompt); this.publish({ notice: "提示词已复制。" }); }
-    catch { this.publish({ error: "提示词复制失败，请检查剪贴板权限。" }); }
+    await this.copyPromptText(result.parameters.prompt);
   };
+  copyTaskPrompt = async (id: string): Promise<void> => {
+    if (!this.state.ready || this.state.closing) return;
+    const task = this.state.tasks.find(item => item.id === id);
+    if (task) await this.copyPromptText(task.parameters.prompt);
+  };
+  private async copyPromptText(prompt: string): Promise<void> {
+    try { await navigator.clipboard.writeText(prompt); this.publish({ notice: "提示词已复制。", error: null }); }
+    catch { this.publish({ error: "提示词复制失败，请检查剪贴板权限。" }); }
+  }
   export = (id: string): Promise<void> => this.exportResults([id], false);
   exportResults = (ids: string[], withParameters: boolean): Promise<void> => this.managementCommand(async () => {
     const selected = [...new Set(ids)].map(id => this.state.results.find(result => result.id === id)).filter((result): result is DrawingResult => !!result);

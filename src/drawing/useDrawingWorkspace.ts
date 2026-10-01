@@ -3,10 +3,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
 import { DrawingController, UnsavedDrawingImagesError } from "./controller";
 import { DexieDrawingRepository } from "./repository";
+import { DexieDrawingPresetRepository } from "./presets";
 import { createRuntimeImageTransport, runtimeDrawingFiles } from "./runtime";
 
 export function useDrawingWorkspace(previewPageActive = true) {
   const [controller] = useState(() => new DrawingController({ repository: new DexieDrawingRepository(),
+    presetRepository: new DexieDrawingPresetRepository(),
     files: runtimeDrawingFiles, transport: createRuntimeImageTransport }));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const sound = useRef<AudioContext | null>(null);

@@ -6,6 +6,10 @@
 
 #87 queue is locally implemented: batches 1–99, persistent FIFO, concurrency 1–4, pause/resume, cancellation and conservative restart recovery. [#87 implementation](ISSUE-87-IMPLEMENTATION.md) records the initial subset; [#88 lifecycle implementation](ISSUE-88-IMPLEMENTATION.md) adds batch cancellation, regeneration/source deduplication, terminal history cleanup, local recovery inventory and sanitized diagnostics. Native interaction and #94 pressure acceptance remain separate. No remote delivery or issue closure is implied.
 
+## Drawing prompt presets and parameter reuse #90 (2026-10-01)
+
+Local implementation adds pure-text name/content presets in database v8, explicit CRUD and save-as, direct text-only application, and task prompt copying/full parameter reuse through the existing result reuse path. It keeps per-protocol controls and ordered input references independent, reports invalid targets/missing files and never generates implicitly. The pre-#93 backup gate includes presets; PNG parameter export remains #89, old PNG import remains #92, and drawing/chat exchange remains #91. See [#90 implementation and verification](ISSUE-90-IMPLEMENTATION.md); local work does not imply Git delivery or remote acceptance.
+
 ## Beta drawing scope #23 / #83 (2026-09-30)
 
 2026-10-01 用户授权 #85 OpenAI 兼容 Images 文生图，并要求核对 GPT／Gemini 当前尺寸与分辨率文档。本地实现共享配置、按协议隔离的参数、Base64 单请求生成及既有保存／预览闭环；新版选项和具体兼容边界见 [#85 实施记录](ISSUE-85-IMPLEMENTATION.md)。#86 参考图和其他后续范围不因此提前纳入；真实服务、远端交付与 Issue 关闭仍分别验收。

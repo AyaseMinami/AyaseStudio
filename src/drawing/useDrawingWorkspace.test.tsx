@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => mocks }));
 vi.mock("./runtime", () => ({ createRuntimeImageTransport: async () => ({ generate: mocks.generate }), runtimeDrawingFiles: mocks }));
 vi.mock("./repository", () => ({ DexieDrawingRepository: class { load = mocks.load; enqueue = mocks.enqueue; saveDraft = mocks.saveDraft; saveTask = mocks.saveTask; complete = mocks.complete; } }));
+vi.mock("./presets", () => ({ DexieDrawingPresetRepository: class { load = async () => []; } }));
 
 const settings: ConnectionSettingsState = { version: 3, activeModelId: null, providers: [{ id: "p", name: "test", connections: [
   { id: "c", name: "test", protocol: "gemini-image", baseUrl: "https://example.test", apiKey: "synthetic-key", models: [{ id: "m", modelId: "test" }] },

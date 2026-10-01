@@ -49,6 +49,44 @@ function button(text: string) {
   return result;
 }
 
+it("shows presets only with complete handlers, allows editing during generation and guards unavailable workspace", async () => {
+  const options = props();
+  const presets = [{ id: "preset", name: "合成预设", content: "合成内容", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }];
+  const handlers = { onApplyPreset: vi.fn(), onCreatePreset: vi.fn(async () => true), onUpdatePreset: vi.fn(async () => true), onDeletePreset: vi.fn(async () => true) };
+  await act(async () => root.render(<DrawingWorkspace {...options} presets={presets} onApplyPreset={handlers.onApplyPreset} />));
+  expect(host.querySelector('.drawing-presets')).toBeNull();
+  await act(async () => root.render(<DrawingWorkspace {...options} {...handlers} presets={presets} busy tasks={[task]} />));
+  expect(button("新建预设").disabled).toBe(false);
+  expect(host.querySelector('.drawing-presets')!.previousElementSibling!.querySelector('textarea')).not.toBeNull();
+  const select = host.querySelector<HTMLSelectElement>('.drawing-presets select')!;
+  await act(async () => { select.value = "preset"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(handlers.onApplyPreset).toHaveBeenCalledExactlyOnceWith("preset");
+  expect(options.onGenerate).not.toHaveBeenCalled(); expect(options.onRegenerate).not.toHaveBeenCalled();
+  for (const state of [{ ready: false }, { closing: true }, { presetsBusy: true }]) {
+    await act(async () => root.render(<DrawingWorkspace {...options} {...handlers} presets={presets} {...state} />));
+    expect(button("新建预设").disabled).toBe(true);
+  }
+  await act(async () => root.render(<DrawingWorkspace {...options} {...handlers} presets={presets} />));
+  await act(async () => button("新建预设").click());
+  expect(host.querySelector('.drawing-body')!.hasAttribute('inert')).toBe(true);
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="关闭预设弹窗"]')!.click());
+  expect(host.querySelector('.drawing-body')!.hasAttribute('inert')).toBe(false);
+  expect(document.activeElement).toBe(button("新建预设"));
+});
+
+it("copies task prompts and reuses task parameters by returning to generation without generating", async () => {
+  const options = props(), onReuseTask = vi.fn(), onCopyTaskPrompt = vi.fn();
+  await act(async () => root.render(<DrawingWorkspace {...options} tasks={[task]} onReuseTask={onReuseTask} onCopyTaskPrompt={onCopyTaskPrompt} />));
+  await act(async () => button("任务").click());
+  await act(async () => button("复制任务 1 提示词").click());
+  expect(onCopyTaskPrompt).toHaveBeenCalledExactlyOnceWith(task.id);
+  expect(button("任务").getAttribute("aria-current")).toBe("page");
+  await act(async () => button("复用任务 1 参数").click());
+  expect(onReuseTask).toHaveBeenCalledExactlyOnceWith(task.id);
+  expect(button("生成").getAttribute("aria-current")).toBe("page");
+  expect(options.onGenerate).not.toHaveBeenCalled(); expect(options.onRegenerate).not.toHaveBeenCalled(); expect(options.onReuse).not.toHaveBeenCalled();
+});
+
 it("switches protocol fields, preserves both drafts and offers current sizes/qualities including custom dimensions", async () => {
   const options = props();
   function Harness() {

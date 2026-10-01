@@ -109,6 +109,11 @@ function App() {
           onRegenerate={id => void drawing.controller.regenerate(id)} onDeleteTasks={ids => void drawing.controller.deleteTasks(ids)}
           onExport={id => void drawing.controller.export(id)} onRetrySave={id => void drawing.controller.retrySave(id)}
           onReuse={id => void drawing.controller.reuse(id)}
+          onReuseTask={id => void drawing.controller.reuseTask(id)}
+          onCopyTaskPrompt={id => void drawing.controller.copyTaskPrompt(id)}
+          presets={drawing.presets} presetsBusy={drawing.presetsBusy}
+          onApplyPreset={drawing.controller.applyPreset} onCreatePreset={drawing.controller.createPreset}
+          onUpdatePreset={drawing.controller.updatePreset} onDeletePreset={drawing.controller.deletePreset}
           onClearReferences={() => void drawing.controller.clearReferences()}
           readThumbnail={drawing.controller.readThumbnail} onPreviewActive={drawing.setPreviewActive}
           onDeleteResults={ids => void drawing.controller.deleteResults(ids)}
@@ -122,7 +127,7 @@ function App() {
       ) : (
         <SettingsWorkspace
           dataImport={chat.dataImport}
-          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.hasData
+          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.hasData || drawing.presetsBusy
             || chat.connectionSettings.providers.some(provider => provider.connections.some(connection => isDrawingProtocol(connection.protocol)))}
           backupError={drawing.hasData || chat.connectionSettings.providers.some(provider => provider.connections.some(connection => isDrawingProtocol(connection.protocol)))
             ? "当前备份格式尚未包含绘图数据；为防止遗漏成果或覆盖配置，暂时禁止备份与恢复，等待 #93 扩展格式。" : chat.backupPreparationError}

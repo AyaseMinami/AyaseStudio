@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { WindowControls } from "../window/WindowControls";
 import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
 import { DrawingReferences } from "./DrawingReferences";
+import { DrawingPresets } from "./DrawingPresets";
+import type { DrawingPresetInput, DrawingPromptPreset } from "../../drawing/presets";
 import { DrawingResultThumbnail } from "./DrawingResultThumbnail";
 import { DrawingResultPreview } from "./DrawingResultPreview";
 import { drawingAspectRatios, drawingResolutions } from "../../drawing/geminiImage";
@@ -114,6 +116,8 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   onPause, onResume, onSelectResult, onExport, onRetrySave, onReuse,
   onAddReferences, onRemoveReference, onMoveReference, onUseAsReference, readReference, referencesBusy,
   onClearReferences, readThumbnail, onDeleteResults, onExportResults, onCopyPrompt, onPreviewActive,
+  presets = [], presetsBusy = false, onApplyPreset, onCreatePreset, onUpdatePreset, onDeletePreset,
+  onReuseTask, onCopyTaskPrompt,
   closing = false, notice }: {
   draft: DrawingDraft;
   onDraftChange(draft: DrawingDraft): void;
@@ -153,11 +157,20 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   onExportResults?(ids: string[], withParameters: boolean): void;
   onCopyPrompt?(id: string): void;
   onPreviewActive?(active: boolean): void;
+  presets?: DrawingPromptPreset[];
+  presetsBusy?: boolean;
+  onApplyPreset?(id: string): void;
+  onCreatePreset?(input: DrawingPresetInput): Promise<boolean>;
+  onUpdatePreset?(id: string, input: DrawingPresetInput): Promise<boolean>;
+  onDeletePreset?(id: string): Promise<boolean>;
+  onReuseTask?(id: string): void;
+  onCopyTaskPrompt?(id: string): void;
   closing?: boolean;
   notice?: string | null;
 }) {
   const [view, setView] = useState<DrawingView>("generate");
   const [confirmation, setConfirmation] = useState<TaskConfirmation | null>(null);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [selectedResults, setSelectedResults] = useState<string[]>([]);
   useEffect(() => {
     onPreviewActive?.(view === "generate");
@@ -185,10 +198,10 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   const presetSize = (openAIImageSizes as readonly string[]).includes(size);
   const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => onDraftChange({ ...draft, openai: { size, quality, ...patch } });
   const resultNumber = (id: string) => results.length - results.findIndex((result) => result.id === id);
-  const canGenerate = ready && !closing && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy;
-  const canEditReferences = ready && !closing && !referencesBusy && !managementBusy && !confirmation;
+  const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy;
+  const canEditReferences = ready && !closing && !referencesBusy && !managementBusy && !confirmation && !presetDialogOpen;
   const managementAllowed = ready && !closing && !submitting && !managementBusy;
-  const canManage = managementAllowed && !confirmation;
+  const canManage = managementAllowed && !confirmation && !presetDialogOpen;
   const completedTasks = tasks.filter(task => task.status === "completed");
   const failedTasks = tasks.filter(task => terminal(task) && task.status !== "completed");
   const taskNumber = (id: string) => tasks.length - tasks.findIndex(task => task.id === id);
@@ -292,14 +305,14 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
       event.preventDefault();
       if (canEditReferences) onAddReferences(files);
     }}>
-      <header className="drawing-header" data-tauri-drag-region inert={Boolean(confirmation)}>
+      <header className="drawing-header" data-tauri-drag-region inert={Boolean(confirmation) || presetDialogOpen}>
         <div data-tauri-drag-region>
           <h1 data-tauri-drag-region>绘图</h1>
         </div>
         <WindowControls />
       </header>
 
-      <div className="drawing-body" inert={Boolean(confirmation)}>
+      <div className="drawing-body" inert={Boolean(confirmation) || presetDialogOpen}>
         <nav className="drawing-navigation" aria-label="绘图视图">
           {([
             ["generate", "生成"],
@@ -352,6 +365,10 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 <textarea id="drawing-prompt" value={draft.prompt} placeholder="描述想要生成的画面"
                   onChange={(event) => onDraftChange({ ...draft, prompt: event.target.value })} />
               </label>
+              {onApplyPreset && onCreatePreset && onUpdatePreset && onDeletePreset && <DrawingPresets
+                presets={presets} prompt={draft.prompt} disabled={!ready || closing || presetsBusy || Boolean(confirmation)}
+                onApply={onApplyPreset} onCreate={onCreatePreset} onUpdate={onUpdatePreset} onDelete={onDeletePreset}
+                onDialogChange={setPresetDialogOpen} />}
               <DrawingReferences references={draft.references ?? []} disabled={!canEditReferences}
                 busy={referencesBusy} read={readReference} onAdd={onAddReferences}
                 onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
@@ -486,6 +503,10 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                 {task.status === "unknown" && <p className="drawing-muted">请求可能已经发出，不会自动重发。</p>}
                 {task.status === "save-failed" && <p className="drawing-muted drawing-task-recovery">{recoveryText(task)}</p>}
                 <div className="drawing-actions">
+                {onCopyTaskPrompt && <button type="button" className="drawing-button" disabled={!canManage}
+                  aria-label={`复制任务 ${taskNumber(task.id)} 提示词`} onClick={() => onCopyTaskPrompt(task.id)}>复制提示词</button>}
+                {onReuseTask && <button type="button" className="drawing-button" disabled={!canManage || referencesBusy}
+                  aria-label={`复用任务 ${taskNumber(task.id)} 参数`} onClick={() => { onReuseTask(task.id); setView("generate"); }}>复用参数</button>}
                 {task.batchId && onCancelBatch && tasks.find(item => item.batchId === task.batchId)?.id === task.id && <button type="button"
                   className="drawing-button" disabled={!canManage || !tasks.some(item => item.batchId === task.batchId && cancellable(item))}
                   aria-label={`取消任务 ${taskNumber(task.id)} 所在批次`}

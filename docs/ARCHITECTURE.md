@@ -1,5 +1,11 @@
 # Ayase Studio Architecture
 
+## Drawing prompt presets and history reuse (#90)
+
+Database version 8 adds only `drawingPromptPresets`; chat and drawing records stay intact. `src/drawing/presets.ts` exposes independent CRUD through a repository, stores only `{id,name,content,createdAt,updatedAt}`, preserves prompt whitespace and accepts independently identified duplicate names. `DrawingController` loads presets with drawing initialization, serializes explicit preset writes and waits for them during close preparation. Failed writes retain saved records; unreadable initialization never becomes an empty writable workspace. Applying a preset changes only draft prompt text and does not dispatch the queue. Editing the draft never updates a preset implicitly.
+
+Task and result reuse share one controller implementation behind the reference lifecycle queue: restore prompt, validated configured target, only the matching protocol's options and ordered input descriptors; preserve the other protocol's independent draft options. Missing targets retain historical protocol controls with no automatic substitution. Missing input files are reported individually; history records remain unchanged. Copy uses the clipboard without loading a draft or generating. React preset dialogs hold temporary fields until explicit Save and retain them on failure; cancellation does not write. The existing pre-#93 backup gate includes preset-only databases. PNG export remains the #89 allowlist; old PNG import remains #92. See [implementation and verification](ISSUE-90-IMPLEMENTATION.md).
+
 ## Drawing results and ownership (#89)
 
 Results persist independently of history; completed task provenance retains inputs, not unowned outputs. Deletion shares the reference queue, removes rows transactionally, then rereads and validates durable owners before scoped cleanup; damaged metadata/uncertain drafts prohibit cleanup. Whole output groups survive any owner; both completed cleanup routes reconcile manifest/pending identities and hashes. Native ≤256px PNG thumbnails and originals have separate visibility lifetimes. Explicit exports use frontend/native allowlists. Draft `reusedProtocol` preserves invalid historical target controls until explicit reselection. See [implementation and acceptance boundaries](ISSUE-89-IMPLEMENTATION.md).

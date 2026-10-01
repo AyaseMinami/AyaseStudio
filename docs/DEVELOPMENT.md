@@ -1,5 +1,9 @@
 # Ayase Studio Development Guide
 
+## Drawing prompt presets #90
+
+Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and Git diff checks. Preset CRUD, reopen persistence, v7-to-v8 preservation and five-field allowlisting are covered by `drawing/presets.test.ts`; controller integration covers direct text-only application, frozen queued inputs, close waiting, write failures, history/cross-protocol isolation, invalid models, missing references and zero provider dispatch. `ui/drawing/DrawingPresets.test.tsx` covers editor cancellation, focus, explicit update/save-as/delete, failures and duplicate submission; workspace tests cover task actions. `backup/drawingPresets.test.ts` verifies that a preset-only database blocks legacy snapshot/restore before writes. Browser acceptance must use an isolated origin/database and synthetic files/transport, with provider counters staying zero. See [#90 evidence and acceptance boundaries](ISSUE-90-IMPLEMENTATION.md).
+
 ## Drawing gallery #89
 
 Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks. Ownership/reuse/export cases live in controller/repository/exportParameters tests; visibility/interaction in DrawingResults/workspace/hook/App tests. Native tests cover PNG/alpha, thumbnails, independent reads and completed cleanup. Latest gate: 1430 frontend and 29 drawing Rust tests pass. Browser acceptance is synthetic. Native startup initially met an occupied executable; after the user authorized ending that dev instance, the isolated retry compiled and created the Ayase window successfully (test entry HTTP 200). No Computer Use was required; dialogs/restart/live services remain pending. See [#89 evidence](ISSUE-89-IMPLEMENTATION.md).

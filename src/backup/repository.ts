@@ -15,8 +15,9 @@ export class BackupRepository {
   constructor(readonly database = new AyaseDatabase("AyaseStudio"), private storage: BackupStorage = localStorage) {}
   private async assertDrawingAbsent(): Promise<void> {
     const db = this.database;
-    const hasData = await db.transaction("r", [db.drawingDrafts, db.drawingTasks, db.drawingResults], async () =>
-      (await db.drawingDrafts.count()) > 0 || (await db.drawingTasks.count()) > 0 || (await db.drawingResults.count()) > 0);
+    const hasData = await db.transaction("r", [db.drawingDrafts, db.drawingTasks, db.drawingResults, db.drawingPromptPresets], async () =>
+      (await db.drawingDrafts.count()) > 0 || (await db.drawingTasks.count()) > 0 || (await db.drawingResults.count()) > 0
+      || (await db.drawingPromptPresets.count()) > 0);
     let configured = false;
     try {
       const settings = JSON.parse(this.storage.getItem(connectionSettingsStorageKey) ?? "null");
