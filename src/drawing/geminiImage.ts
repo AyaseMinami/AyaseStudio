@@ -2,18 +2,21 @@ import type { FetchLike } from "../chat/types";
 import { resolveImageGenerationEndpoint } from "../chat/urlResolution";
 import type { DrawingImageInput, DrawingParameters, ImageGenerationTransport } from "./types";
 
-import { ImageGenerationError, readBoundedImageResponse } from "./imageResponse";
+import { ImageGenerationError, normalizeImageResponseData, readBoundedImageResponse } from "./imageResponse";
+import { geminiSafetyCategories, validGeminiDrawingOptions } from "./geminiOptions";
 export { ImageGenerationError } from "./imageResponse";
 
 export const drawingAspectRatios = ["auto", "1:1", "1:4", "4:1", "1:8", "8:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] as const;
 export const drawingResolutions = ["auto", "512", "1K", "2K", "4K"] as const;
-const maxImageBytes = 32 * 1024 * 1024;
 function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 
 export function validateDrawingParameters(parameters: DrawingParameters): asserts parameters is Extract<DrawingParameters, { protocol: "gemini-image" }> {
   if (parameters.protocol !== "gemini-image") throw new ImageGenerationError("绘图协议与参数不匹配。");
   resolveImageGenerationEndpoint(parameters.baseUrl, parameters.modelId);
-  if (!parameters.prompt.trim() || parameters.prompt.length > 32_000) throw new ImageGenerationError("提示词不能为空，且最多 32000 个字符。");
+  if (!parameters.prompt.trim()) throw new ImageGenerationError("提示词不能为空。");
+  if (parameters.gemini !== undefined && !validGeminiDrawingOptions(parameters.gemini)) {
+    throw new ImageGenerationError("Gemini 绘图参数无效，请重新设置。");
+  }
   if (!(drawingAspectRatios as readonly string[]).includes(parameters.aspectRatio) || !(drawingResolutions as readonly string[]).includes(parameters.resolution)) {
     throw new ImageGenerationError("绘图参数无效，请重新选择宽高比和分辨率。");
   }
@@ -38,14 +41,11 @@ export function parseGeminiImages(value: unknown): DrawingImageInput[] {
     const inline = part.inlineData ?? part.inline_data;
     if (inline === undefined) continue;
     if (!record(inline)) throw new ImageGenerationError("绘图服务返回了无效图片字段。");
-    const mime = inline.mimeType ?? inline.mime_type, data = inline.data;
-    if (typeof mime !== "string" || !["image/png", "image/jpeg", "image/webp"].includes(mime) || typeof data !== "string"
-      || !data.length || data.length > Math.ceil(maxImageBytes / 3) * 4 || data.length % 4 !== 0
-      || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new ImageGenerationError("绘图服务返回了无效或过大的图片。");
-    const size = data.length / 4 * 3 - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
-    totalBytes += size;
-    if (size > maxImageBytes || totalBytes > 64 * 1024 * 1024 || images.length >= 8) throw new ImageGenerationError("绘图结果超出本地保存限制。");
-    images.push({ mime, data });
+    const mime = inline.mimeType ?? inline.mime_type;
+    const { data, bytes } = normalizeImageResponseData(inline.data, mime);
+    totalBytes += bytes;
+    if (totalBytes > 64 * 1024 * 1024 || images.length >= 8) throw new ImageGenerationError("绘图结果超出本地保存限制。");
+    images.push({ mime: mime as string, data });
   }
   if (!images.length) throw new ImageGenerationError("绘图服务未返回图片；可能只返回了文本或拒绝说明。");
   return images;
@@ -71,7 +71,11 @@ export function createGeminiImageTransport(fetcher: FetchLike): ImageGenerationT
         headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey.trim() },
         body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: parameters.prompt.trim() },
           ...references.map(image => ({ inlineData: { mimeType: image.mime, data: image.data } }))] }],
-          generationConfig: { candidateCount: 1, responseModalities: ["TEXT", "IMAGE"],
+          ...(parameters.gemini?.safetyThreshold !== undefined ? { safetySettings: geminiSafetyCategories.map(category => ({
+            category, threshold: parameters.gemini!.safetyThreshold,
+          })) } : {}),
+          generationConfig: { candidateCount: 1, responseModalities: parameters.gemini?.outputMode === "image" ? ["IMAGE"] : ["TEXT", "IMAGE"],
+            ...(parameters.gemini?.temperature !== undefined ? { temperature: parameters.gemini.temperature } : {}),
             ...(Object.keys(imageConfig).length ? { imageConfig } : {}) } }),
       });
       if ((response.status >= 300 && response.status < 400) || response.redirected || (response.url && response.url !== endpoint)) {

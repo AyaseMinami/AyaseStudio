@@ -27,7 +27,7 @@
 
 相同 ID 是冲突依据，不根据同名、同地址或实际模型名称猜测对象等价。合并不会用备份内容更新已有连接，包括密钥。缺失的助手／对话／文件引用、损坏资源或格式不支持会拒绝；旧来源标记可以保留已删除对象的历史 ID。当前助手、对话和资源在导出时必须可读取；缺失附件／背景不会静默略过，也不会下载 URL 或读取来源路径。
 
-绘图区域单独处理：设置包含 aspectRatio、resolution、modelId、OpenAI size／quality、count、concurrency、completionSound 和可选 reusedProtocol；预设只包含 id、name、content、createdAt、updatedAt，正文空白原样保留，同名预设按不同 ID 独立保存。合并保留同 ID 预设并追加新 ID；另存副本分配新预设 ID，两者保留本机绘图设置。替换仅处理实际包含的类别：预设空数组表示清空预设，设置补丁保留当前草稿 prompt、references 和其他本机字段；没有当前草稿时创建空提示词、无参考图的草稿，不创建任务。旧文件或缺失类别均保留本机对应数据。
+绘图区域单独处理：设置包含 aspectRatio、resolution、modelId、OpenAI size／quality、可选 Gemini temperature／safetyThreshold／outputMode、count、concurrency、completionSound 和可选 reusedProtocol；预设只包含 id、name、content、createdAt、updatedAt，正文空白原样保留，同名预设按不同 ID 独立保存。合并保留同 ID 预设并追加新 ID；另存副本分配新预设 ID，两者保留本机绘图设置。替换仅处理实际包含的类别：预设空数组表示清空预设，设置补丁保留当前草稿 prompt、references 和其他本机字段；没有当前草稿时创建空提示词、无参考图的草稿，不创建任务。旧文件或缺失类别均保留本机对应数据。
 
 绘图模型通过连接／模型 ID 映射，必须解析为绘图协议，否则取消导入设置中的选择并提示手动选择。共享连接替换可能影响保留的草稿及历史目标；预览比较历史冻结的供应商／连接 ID、协议、地址和实际上游模型 ID 并报告变化，不改写历史、不猜测替代、不发请求。任务／批次、成果、图片和原生未决保存日志始终保留；备份不绑定参考图，跨设备使用时需自行选择输入图片，恢复资源计划不读写或删除绘图文件。
 
@@ -37,9 +37,9 @@
 
 UTF-8 JSON 外层：`format: ayase-studio-envelope`、`version: 1`、`encrypted` 和 `payload`。明文 payload 是含 `document`（JSON 文本）和 `sha256` 的容器。新文档为 `format: ayase-studio-backup`、`version: 5`、创建时间、导出选项、显式表数据、允许的偏好、可选连接、独立 `searchSettings`、可选 `drawing`、资源清单及 `compatibility`。v3/v4/v5 的 `searchSettings` 为 `version: 2` 和 `exaMcp`／`exaApi` 两组配置，每组只允许 `version: 1`、HTTPS `baseUrl`、1–10 的 `numResults`，以及包含凭据时的 `apiKey`；不含凭据时两组 Key 都省略。v2 的同字段仍是原来的单 MCP 配置。配置不会混入普通偏好或消息记录。资源清单逐项包含 ID、MIME、原始大小、Base64 字节和 SHA-256；头像 Blob 以受约束标记引用清单。原生引用仅允许专用目录中的规范 UUID v4 文件名；恢复时重映射。备份不是整目录归档，也不直接复制原始 localStorage。
 
-v5 的 `compatibility` 必须包含 `minimumReaderVersion: 5`、`requiredCapabilities`（当前为空）和 `modules`。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`，`drawing.settings` 和 `drawing.presets` 存在时分别增加 `drawingSettings` 和 `drawingPresets`，内容与模块声明必须一致。两类独立可选，缺失不表示空数据，非空 `drawing` 至少包含一类；新导出明确包含设置及预设，即使预设为空数组。每个模块声明 `version`、`minimumReaderVersion` 和 `requiredCapabilities`。当前连接 v3、搜索 v2、绘图模块及其余模块 v1；#93 不升级 Dexie schema。旧 v4 仍固定原七模块、最低文档读者 4，不接受绘图区或绘图模块。未知模块、未知必需能力、超出最低读者要求或不支持结构都拒绝并提示升级。
+v5 的 `compatibility` 必须包含 `minimumReaderVersion: 5`、`requiredCapabilities`（当前为空）和 `modules`。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`，`drawing.settings` 和 `drawing.presets` 存在时分别增加 `drawingSettings` 和 `drawingPresets`，内容与模块声明必须一致。两类独立可选，缺失不表示空数据，非空 `drawing` 至少包含一类；新导出明确包含设置及预设，即使预设为空数组。每个模块声明 `version`、`minimumReaderVersion` 和 `requiredCapabilities`。当前连接 v3、搜索 v2、绘图设置 v2／最低读者 2、绘图预设及其余模块 v1；#101 不升级 Dexie schema。旧绘图设置模块 v1 继续读取，但不能声明新增 Gemini 组。旧 v4 仍固定原七模块、最低文档读者 4，不接受绘图区或绘图模块。未知模块、未知必需能力、超出最低读者要求或不支持结构都拒绝并提示升级。
 
-只有未来 `session` 或 `drawingSettings` 模块明确允许当前读者读取、外层结构相同时，才在声明参数区过滤未知可选项：会话的助手默认／对话配置／分支创建配置／历史配置，包括数值和已知协议思考参数；绘图的设置及其 OpenAI 参数区。协议、模型／对象引用、安全、凭据、资源、预设正文结构及任意顶层字段不属于可过滤参数；草稿身份、提示词、参考图及非法／安全字段仍拒绝。原始预算检查先于克隆与过滤，完整语义／资源校验先于计划和所有持久写入。绘图本机读取与备份读取复用纯克隆读入口，旧缺失字段补齐 auto 比例／分辨率、未选模型、OpenAI auto／auto、数量及并发 1、提示音开启，不自动写回。OpenAI 自定义尺寸保留可编辑字符串，包括尚未有效的尺寸，不新增字段长度上限；生成时由 transport 校验，备份总文本预算保持。
+只有未来 `session` 或 `drawingSettings` 模块明确允许当前读者读取、外层结构相同时，才在声明参数区过滤未知可选项：会话的助手默认／对话配置／分支创建配置／历史配置，包括数值和已知协议思考参数；绘图的设置及其 OpenAI／Gemini 参数区。未知安全和输出结构一律拒绝；新字段缺失时沿用温度／安全省略和 TEXT+IMAGE。替换旧设置会移除本机新 Gemini 覆盖，缺失设置类别仍保留本机数据。协议、模型／对象引用、安全、凭据、资源、预设正文结构及任意顶层字段不属于可过滤参数；草稿身份、提示词、参考图及非法／安全字段仍拒绝。原始预算检查先于克隆与过滤，完整语义／资源校验先于计划和所有持久写入。绘图本机读取与备份读取复用纯克隆读入口，旧缺失字段补齐 auto 比例／分辨率、未选模型、OpenAI auto／auto、数量及并发 1、提示音开启，不自动写回。OpenAI 自定义尺寸保留可编辑字符串，包括尚未有效的尺寸，不新增字段长度上限；生成时由 transport 校验，备份总文本预算保持。
 
 `filteredParameters` 仅报告路径，预览／结果说明被过滤项不会发送，再次保存或导出可能丢失参数，并要求保留原始备份文件。私有偏好 `ayase-studio.data-compatibility.v1` 保留路径并参与恢复日志／回滚，后续导出仍携带路径并提示；不保留或披露被过滤值，不改写源文件、不下载 URL、不调用供应商。此限定降级不承诺任意未来结构或语义迁移。
 

@@ -33,6 +33,37 @@ async function expectRedactedFailure(pending: Promise<unknown>, outcome: "failed
 afterEach(() => vi.useRealTimers());
 
 describe("OpenAI Images protocol", () => {
+  it.each(["generation", "edit"])("counts trimmed Unicode code points for %s prompts", async operation => {
+    const references = operation === "edit" ? [{ mime: "image/png", data: "AQID" }] : [];
+    for (const prompt of ["😀".repeat(32_000), "字".repeat(32_000), "e\u0301".repeat(16_000)]) {
+      const fetcher = vi.fn().mockResolvedValue(response());
+      await createOpenAIImagesTransport(fetcher).generate({ ...parameters, prompt: ` \n${prompt}\n ` }, "test", signal(), references);
+      const [url, init] = fetcher.mock.calls[0];
+      expect(url).toContain(operation === "edit" ? "/edits" : "/generations");
+      expect(init.body instanceof FormData ? init.body.get("prompt") : JSON.parse(init.body).prompt).toBe(prompt);
+      expect(fetcher).toHaveBeenCalledOnce();
+      const blocked = vi.fn();
+      await expect(createOpenAIImagesTransport(blocked).generate({ ...parameters, prompt: prompt + "😀" }, "test", signal(), references))
+        .rejects.toThrow("32000");
+      expect(blocked).not.toHaveBeenCalled();
+    }
+  });
+  it.each([undefined, "png", "jpeg", "webp"])("accepts the pinned single-object data response (%s)", output_format => {
+    const mime = `image/${output_format ?? "png"}`;
+    expect(parseOpenAIImages({ output_format, data: { b64_json: `data:${mime};base64,AQ\r\nID` } }))
+      .toEqual([{ mime, data: "AQID" }]);
+  });
+  it("normalizes raw CR/LF in every array image without discarding outputs", () => {
+    expect(parseOpenAIImages({ data: [{ b64_json: "AQ\r\nID" }, { b64_json: "data:image/png;base64,BA\nUG" }] }))
+      .toEqual([{ mime: "image/png", data: "AQID" }, { mime: "image/png", data: "BAUG" }]);
+  });
+  it.each([
+    { data: { url: "https://remote-image.test/private" } },
+    { data: { b64_json: "data:image/jpeg;base64,AQID" } },
+    { output_format: "webp", data: [{ b64_json: "data:image/png;base64,AQID" }] },
+  ])("rejects URL-only objects and declared/default MIME wrapper mismatches", value => {
+    expect(() => parseOpenAIImages(value)).toThrow(ImageGenerationError);
+  });
   it("uses multipart edits for ordered original images and lets the service validate inputs", async () => {
     const fetcher = vi.fn().mockResolvedValue(response());
     const references = Array.from({ length: 10 }, (_, index) => ({ mime: index % 2 ? "image/bmp" : "image/png", data: btoa(`original-${index}`) }));
@@ -157,7 +188,7 @@ describe("OpenAI Images protocol", () => {
     { data: [{ b64_json: "AQID" }, { url: "https://remote-image.test/private" }] },
     { error: { message: "synthetic-secret private prompt" }, data: [{ b64_json: "AQID" }] },
     { output_format: "gif", data: [{ b64_json: "AQID" }] },
-    ...["", "bad!", "AQI", "AQID\n", "data:image/png;base64,AQID", "A===", "AQ==ID=="].map(b64_json => ({ data: [{ b64_json }] })),
+    ...["", "bad!", "AQI", "A===", "AQ==ID==", "AB==", "AAF=", "AQ ID", "data:image/gif;base64,AQID"].map(b64_json => ({ data: [{ b64_json }] })),
   ])("rejects empty, URL-only, error and malformed responses without echoing fields", value => {
     try { parseOpenAIImages(value); throw new Error("Expected parser to fail"); }
     catch (error) {

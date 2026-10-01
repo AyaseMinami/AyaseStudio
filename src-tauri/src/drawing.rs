@@ -70,6 +70,29 @@ pub struct DrawingExportParameters {
     size: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     quality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    safety_threshold: Option<DrawingSafetyThreshold>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_modalities: Option<Vec<DrawingResponseModality>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum DrawingSafetyThreshold {
+    BlockNone,
+    BlockOnlyHigh,
+    BlockMediumAndAbove,
+    BlockLowAndAbove,
+    Off,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum DrawingResponseModality {
+    Text,
+    Image,
 }
 
 impl DrawingExportParameters {
@@ -83,6 +106,22 @@ impl DrawingExportParameters {
             ]
             .iter()
             .any(|value| value.as_ref().is_some_and(|value| value.trim().is_empty()))
+        {
+            return Err(Error::InvalidParameters);
+        }
+        if self
+            .temperature
+            .is_some_and(|value| !value.is_finite() || !(0.0..=2.0).contains(&value))
+            || self.response_modalities.as_deref().is_some_and(|values| {
+                !matches!(
+                    values,
+                    [DrawingResponseModality::Image]
+                        | [
+                            DrawingResponseModality::Text,
+                            DrawingResponseModality::Image
+                        ]
+                )
+            })
         {
             return Err(Error::InvalidParameters);
         }
@@ -100,6 +139,9 @@ impl DrawingExportParameters {
             "openai-images"
                 if self.aspect_ratio.is_none()
                     && self.resolution.is_none()
+                    && self.temperature.is_none()
+                    && self.safety_threshold.is_none()
+                    && self.response_modalities.is_none()
                     && self.api_type.as_deref().is_none_or(|value| value == "gpt") =>
             {
                 Ok(())
@@ -2023,6 +2065,198 @@ mod tests {
                 value,
                 serde_json::json!({"prompt": "test", "model": "synthetic", "protocol": protocol, "api_type": api_type})
             );
+        }
+    }
+
+    #[test]
+    fn gemini_export_parameters_preserve_explicit_advanced_options() {
+        for threshold in [
+            "BLOCK_NONE",
+            "BLOCK_ONLY_HIGH",
+            "BLOCK_MEDIUM_AND_ABOVE",
+            "BLOCK_LOW_AND_ABOVE",
+            "OFF",
+        ] {
+            for temperature in [0.0, 2.0] {
+                for modalities in [
+                    serde_json::json!(["IMAGE"]),
+                    serde_json::json!(["TEXT", "IMAGE"]),
+                ] {
+                    let input = serde_json::json!({
+                        "prompt": "test", "model": "synthetic", "protocol": "gemini-image",
+                        "aspect_ratio": "auto", "resolution": "auto",
+                        "temperature": temperature, "safety_threshold": threshold,
+                        "response_modalities": modalities
+                    });
+                    let parameters: DrawingExportParameters =
+                        serde_json::from_value(input).unwrap();
+                    let value: serde_json::Value =
+                        serde_json::from_slice(&parameters.json().unwrap()).unwrap();
+                    assert_eq!(
+                        value,
+                        serde_json::json!({
+                            "prompt": "test", "model": "synthetic", "protocol": "gemini-image",
+                            "api_type": "gemini", "temperature": temperature,
+                            "safety_threshold": threshold, "response_modalities": modalities
+                        })
+                    );
+                }
+            }
+        }
+        for protocol in ["gemini-image", "openai-images"] {
+            let parameters: DrawingExportParameters = serde_json::from_value(serde_json::json!({
+                "prompt": "test", "model": "synthetic", "protocol": protocol,
+                "temperature": null, "safety_threshold": null, "response_modalities": null
+            }))
+            .unwrap();
+            let value: serde_json::Value =
+                serde_json::from_slice(&parameters.json().unwrap()).unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({
+                    "prompt": "test", "model": "synthetic", "protocol": protocol,
+                    "api_type": if protocol == "gemini-image" { "gemini" } else { "gpt" }
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn advanced_export_parameters_reject_invalid_values_and_wrong_protocol() {
+        let base = serde_json::json!({
+            "prompt": "test", "model": "synthetic", "protocol": "gemini-image"
+        });
+        for extra in [
+            serde_json::json!({"temperature": -0.01}),
+            serde_json::json!({"temperature": 2.01}),
+            serde_json::json!({"response_modalities": []}),
+            serde_json::json!({"response_modalities": ["TEXT"]}),
+            serde_json::json!({"response_modalities": ["IMAGE", "TEXT"]}),
+            serde_json::json!({"response_modalities": ["IMAGE", "IMAGE"]}),
+            serde_json::json!({"response_modalities": ["TEXT", "IMAGE", "IMAGE"]}),
+            serde_json::json!({"protocol": "openai-images", "size": "auto", "temperature": 0}),
+            serde_json::json!({"protocol": "openai-images", "quality": "high", "safety_threshold": "OFF"}),
+            serde_json::json!({"protocol": "openai-images", "response_modalities": ["IMAGE"]}),
+        ] {
+            let mut value = base.clone();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let parameters: DrawingExportParameters = serde_json::from_value(value).unwrap();
+            assert_eq!(parameters.json(), Err(Error::InvalidParameters), "{extra}");
+        }
+        for temperature in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut parameters: DrawingExportParameters =
+                serde_json::from_value(base.clone()).unwrap();
+            parameters.temperature = Some(temperature);
+            assert_eq!(parameters.json(), Err(Error::InvalidParameters));
+        }
+        for extra in [
+            serde_json::json!({"temperature": "1"}),
+            serde_json::json!({"temperature": true}),
+            serde_json::json!({"temperature": []}),
+            serde_json::json!({"safety_threshold": "BLOCK_UNSPECIFIED"}),
+            serde_json::json!({"safety_threshold": "off"}),
+            serde_json::json!({"safety_threshold": 0}),
+            serde_json::json!({"response_modalities": "IMAGE"}),
+            serde_json::json!({"response_modalities": ["AUDIO"]}),
+            serde_json::json!({"response_modalities": [null]}),
+        ] {
+            let mut value = base.clone();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            assert!(
+                serde_json::from_value::<DrawingExportParameters>(value).is_err(),
+                "{extra}"
+            );
+        }
+    }
+
+    #[test]
+    fn advanced_parameter_png_contains_exact_fields_and_invalid_exports_write_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let files = save(
+            root.path(),
+            &Uuid::new_v4().to_string(),
+            &[input(20, ImageFormat::Png)],
+        )
+        .unwrap();
+        let input = serde_json::json!({
+            "prompt": "透明的猫 🐈", "model": "synthetic", "protocol": "gemini-image",
+            "aspect_ratio": "auto", "resolution": "2K", "temperature": 0.0,
+            "safety_threshold": "BLOCK_ONLY_HIGH", "response_modalities": ["IMAGE"]
+        });
+        let mut parameters: DrawingExportParameters =
+            serde_json::from_value(input.clone()).unwrap();
+        let destination = output.path().join("advanced-parameters.png");
+        export_png_with_parameters(
+            root.path(),
+            &files[0].reference,
+            &destination,
+            Some(&parameters),
+        )
+        .unwrap();
+        let bytes = std::fs::read(&destination).unwrap();
+        assert_eq!(
+            exported_parameters(&bytes),
+            Some(serde_json::json!({
+                "prompt": "透明的猫 🐈", "model": "synthetic", "protocol": "gemini-image",
+                "api_type": "gemini", "resolution": "2K", "temperature": 0.0,
+                "safety_threshold": "BLOCK_ONLY_HIGH", "response_modalities": ["IMAGE"]
+            }))
+        );
+        let original = std::fs::read(root.path().join(&files[0].reference)).unwrap();
+        assert_eq!(
+            decode_image(&bytes, "image/png").unwrap().to_rgba8(),
+            decode_image(&original, "image/png").unwrap().to_rgba8()
+        );
+        if let Some(directory) = std::env::var_os("AYASE_DRAWING_EXPORT_FIXTURE_DIR") {
+            let directory = PathBuf::from(directory);
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::copy(&destination, directory.join("advanced-parameters.png")).unwrap();
+        }
+        for temperature in [-0.01, 2.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            parameters.temperature = Some(temperature);
+            assert_eq!(
+                export_png_with_parameters(
+                    root.path(),
+                    &files[0].reference,
+                    &destination,
+                    Some(&parameters)
+                ),
+                Err(Error::InvalidParameters)
+            );
+            assert_eq!(std::fs::read(&destination).unwrap(), bytes);
+        }
+        for extra in [
+            serde_json::json!({"response_modalities": ["TEXT"]}),
+            serde_json::json!({"protocol": "openai-images", "temperature": 0.0}),
+            serde_json::json!({"protocol": "openai-images", "safety_threshold": "OFF"}),
+            serde_json::json!({"protocol": "openai-images", "response_modalities": ["IMAGE"]}),
+        ] {
+            let mut value = serde_json::json!({
+                "prompt": "test", "model": "synthetic", "protocol": "gemini-image"
+            });
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let parameters: DrawingExportParameters = serde_json::from_value(value).unwrap();
+            let refused = output.path().join("refused.png");
+            assert_eq!(
+                export_png_with_parameters(
+                    root.path(),
+                    &files[0].reference,
+                    &refused,
+                    Some(&parameters)
+                ),
+                Err(Error::InvalidParameters)
+            );
+            assert!(!refused.exists());
         }
     }
 

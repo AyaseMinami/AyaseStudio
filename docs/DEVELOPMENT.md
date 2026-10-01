@@ -1,5 +1,11 @@
 # Ayase Studio Development Guide
 
+## Drawing protocol completion #101 (2026-10-01)
+
+Gemini 选项共享 `geminiOptions.ts` 校验，缺失时保持原默认；controller 冻结独立组，重启恢复写入之前预检全部历史新参数。`imageResponse.ts` 有界规范化服务响应 CR/LF 与严格图片 data-URL，不改变参考图原字节或供应商重试规则。新绘图设置模块 v2／最低读者 2；实际类型字段策略、备份投影和旧设置默认／未来参数边界同步。功能入口沿用现有控件，最终 UI 设计后置。
+
+定向门禁包括 `src/drawing`、`src/backup/drawingIntegration.test.ts`、`src/ui/drawing/DrawingWorkspace.test.tsx` 及 Rust drawing 测试，随后执行常规 check、cargo check、diff；独立 Sol/high 审查与隔离浏览器／Tauri 启动证据见 [#101 记录](ISSUE-101-IMPLEMENTATION.md)。不读取正式数据库／凭据，不调用真实服务；文件窗口、实际重启和 #94 压力单列接受。
+
 ## Persistent data development #105 (2026-10-01)
 
 Follow [DATA-CONTRACTS.md](DATA-CONTRACTS.md) as part of every persistent-data feature, without waiting for a user reminder. Register tables and preference keys (including exclusions and legacy sources), bind exhaustive field/nested policies to actual persisted types and real export projections, and define module versions, minimum readers, capabilities, migration steps and missing-field defaults. Local and backup reads reuse the pure migration seam; invalid structure must fail before writes and preserve original data. Future optional-parameter filtering is limited to declared session and drawing-setting areas; unknown protocols, credentials, references, preset structure and outer structure remain strict.

@@ -4,6 +4,7 @@ import { ImageGenerationError, validateDrawingParameters } from "./geminiImage";
 import { validateOpenAIImagesParameters } from "./openaiImages";
 import { bytesToBase64 } from "../chat/attachments";
 import { drawingExportParameters } from "./exportParameters";
+import { validGeminiDrawingOptions } from "./geminiOptions";
 import type { DrawingRepository, DrawingSnapshot } from "./repository";
 import type { DrawingPresetInput, DrawingPresetRepository, DrawingPromptPreset } from "./presets";
 import { initialDrawingDraft, type DrawingDraft, type DrawingTask, type DrawingResult, type DrawingFiles,
@@ -51,6 +52,7 @@ function validateOwnership(saved: DrawingSnapshot): void {
   };
   const parameters = (item: DrawingParameters) => {
     if (!item || !["gemini-image", "openai-images"].includes(item.protocol)) throw new Error("Unknown drawing protocol");
+    if (item.protocol === "gemini-image" && item.gemini !== undefined && !validGeminiDrawingOptions(item.gemini)) throw new Error("Invalid Gemini drawing settings");
     item.references?.forEach(reference);
   };
   saved.draft?.references?.forEach(reference);
@@ -115,6 +117,11 @@ export class DrawingController {
       const [saved, presets] = await Promise.all([
         this.dependencies.repository.load(), this.dependencies.presetRepository?.load() ?? Promise.resolve([]),
       ]);
+      // Validate every newly added option before any restart repair writes or file recovery.
+      for (const rows of [saved.tasks, saved.results]) for (const row of rows) {
+        if (row.parameters?.protocol === "gemini-image" && row.parameters.gemini !== undefined
+          && !validGeminiDrawingOptions(row.parameters.gemini)) throw new Error("Invalid Gemini drawing settings");
+      }
       let tasks = saved.tasks, results = saved.results;
       // A native manifest proves completed local persistence, never server acceptance.
       for (const task of tasks) {
@@ -158,6 +165,10 @@ export class DrawingController {
   }
   setDraft = (draft: DrawingDraft): void => {
     if (!this.state.ready || this.state.closing) return;
+    if (draft.gemini !== undefined && !validGeminiDrawingOptions(draft.gemini)) {
+      this.publish({ error: "Gemini 高级参数无效，请检查温度、安全阈值和输出模式。" });
+      return;
+    }
     this.storeDraft(draft.modelId ? { ...draft, reusedProtocol: undefined } : draft);
     this.pump();
   };
@@ -167,6 +178,7 @@ export class DrawingController {
       count: draft.count ?? 1, concurrency: draft.concurrency ?? 1, completionSound: draft.completionSound ?? true,
       ...(draft.reusedProtocol ? { reusedProtocol: draft.reusedProtocol } : {}),
       ...(draft.openai ? { openai: { size: draft.openai.size, quality: draft.openai.quality } } : {}),
+      ...(draft.gemini ? { gemini: structuredClone(draft.gemini) } : {}),
       ...(draft.references ? { references: draft.references.map(reference => ({ ...reference })) } : {}) };
     this.publish({ draft: next, hasData: true });
     this.draftWrites = this.draftWrites.then(async () => {
@@ -370,7 +382,8 @@ export class DrawingController {
       target.provider.id !== parameters.providerId || target.connection.protocol !== parameters.protocol || target.model.modelId !== parameters.modelId;
     const next = { ...this.state.draft, prompt: parameters.prompt, modelId: invalid ? null : parameters.configuredModelId,
       reusedProtocol: invalid ? parameters.protocol : undefined, references,
-      ...(parameters.protocol === "gemini-image" ? { aspectRatio: parameters.aspectRatio, resolution: parameters.resolution }
+      ...(parameters.protocol === "gemini-image" ? { aspectRatio: parameters.aspectRatio, resolution: parameters.resolution,
+        gemini: structuredClone(parameters.gemini ?? {}) }
         : { openai: { size: parameters.size, quality: parameters.quality } }) };
     const priorDraft = this.state.draft;
     this.storeDraft(next);
@@ -487,7 +500,8 @@ export class DrawingController {
       baseUrl: target.connection.baseUrl,
       ...(draft.references?.length ? { references: draft.references.map(reference => ({ ...reference })) } : {}),
       ...(target.connection.protocol === "gemini-image"
-        ? { protocol: "gemini-image" as const, aspectRatio: draft.aspectRatio, resolution: draft.resolution }
+        ? { protocol: "gemini-image" as const, aspectRatio: draft.aspectRatio, resolution: draft.resolution,
+          ...(draft.gemini ? { gemini: structuredClone(draft.gemini) } : {}) }
         : { protocol: "openai-images" as const, size: draft.openai?.size ?? "auto", quality: draft.openai?.quality ?? "auto" }),
     };
     try {

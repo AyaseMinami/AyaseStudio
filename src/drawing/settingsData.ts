@@ -4,10 +4,11 @@ import { drawingAspectRatios, drawingResolutions } from "./geminiImage";
 import { openAIImageQualities } from "./openaiImages";
 import type { DrawingPromptPreset } from "./presets";
 import type { DrawingDraft, DrawingReference } from "./types";
+import { validGeminiDrawingOptions } from "./geminiOptions";
 
 export type DrawingSettingsData = Required<Pick<DrawingDraft,
   "aspectRatio" | "resolution" | "modelId" | "openai" | "count" | "concurrency" | "completionSound">>
-  & Pick<DrawingDraft, "reusedProtocol">;
+  & Pick<DrawingDraft, "reusedProtocol" | "gemini">;
 
 function fields(raw: unknown, allowed: readonly string[]): asserts raw is Record<string, unknown> {
   dataRecord(raw);
@@ -59,6 +60,11 @@ export function readDrawingSettingsData(raw: unknown): DrawingSettingsData {
   const quality = "quality" in openai ? openai.quality : "auto";
   openaiSize(size); option(quality, openAIImageQualities);
   const result: DrawingSettingsData = { aspectRatio, resolution, modelId, openai: { size, quality }, count, concurrency, completionSound };
+  if ("gemini" in value) {
+    fields(value.gemini, backupFields(dataPolicies.drawingGemini));
+    dataCheck(validGeminiDrawingOptions(value.gemini));
+    result.gemini = value.gemini;
+  }
   if ("reusedProtocol" in value) {
     dataCheck(value.reusedProtocol === "gemini-image" || value.reusedProtocol === "openai-images");
     result.reusedProtocol = value.reusedProtocol;
@@ -78,6 +84,13 @@ export function projectDrawingSettings(draft?: DrawingDraft): DrawingSettingsDat
         const nested: Record<string, unknown> = {};
         for (const field of backupFields(dataPolicies.drawingOpenai)) {
           if (field in value) nested[field] = value[field as keyof NonNullable<DrawingDraft["openai"]>];
+        }
+        projected[key] = nested;
+      } else if (key === "gemini") {
+        dataRecord(value);
+        const nested: Record<string, unknown> = {};
+        for (const field of backupFields(dataPolicies.drawingGemini)) {
+          if (field in value) nested[field] = (value as Record<string, unknown>)[field];
         }
         projected[key] = nested;
       } else projected[key] = value;

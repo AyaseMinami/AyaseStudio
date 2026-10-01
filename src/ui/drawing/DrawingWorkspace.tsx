@@ -8,6 +8,8 @@ import { DrawingResultThumbnail } from "./DrawingResultThumbnail";
 import { DrawingResultPreview } from "./DrawingResultPreview";
 import { drawingAspectRatios, drawingResolutions } from "../../drawing/geminiImage";
 import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImages";
+import { geminiSafetyThresholds } from "../../drawing/geminiOptions";
+import type { GeminiDrawingOptions, GeminiSafetyThreshold } from "../../drawing/types";
 import "./DrawingWorkspace.css";
 
 export { initialDrawingDraft } from "../../drawing/types";
@@ -171,6 +173,9 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   const [view, setView] = useState<DrawingView>("generate");
   const [confirmation, setConfirmation] = useState<TaskConfirmation | null>(null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [temperatureError, setTemperatureError] = useState(false);
+  useEffect(() => { setTemperatureError(false); }, [draft.modelId, draft.gemini]);
   const [selectedResults, setSelectedResults] = useState<string[]>([]);
   useEffect(() => {
     onPreviewActive?.(view === "generate");
@@ -197,8 +202,13 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
   const size = draft.openai?.size ?? "auto", quality = draft.openai?.quality ?? "auto";
   const presetSize = (openAIImageSizes as readonly string[]).includes(size);
   const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => onDraftChange({ ...draft, openai: { size, quality, ...patch } });
+  const setGemini = (patch: Partial<GeminiDrawingOptions>) => {
+    const next = { ...draft.gemini, ...patch };
+    for (const key of Object.keys(next) as (keyof GeminiDrawingOptions)[]) if (next[key] === undefined) delete next[key];
+    onDraftChange({ ...draft, gemini: next });
+  };
   const resultNumber = (id: string) => results.length - results.findIndex((result) => result.id === id);
-  const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy;
+  const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy && (openai || !temperatureError);
   const canEditReferences = ready && !closing && !referencesBusy && !managementBusy && !confirmation && !presetDialogOpen;
   const managementAllowed = ready && !closing && !submitting && !managementBusy;
   const canManage = managementAllowed && !confirmation && !presetDialogOpen;
@@ -409,7 +419,39 @@ export function DrawingWorkspace({ draft, onDraftChange, onConfigure, models, ta
                   </select>
                 </label>
               </div>
-              <p className="drawing-muted">512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。</p></>}
+              <p className="drawing-muted">512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。</p>
+              <button type="button" className="drawing-button" aria-expanded={advancedOpen}
+                aria-controls="drawing-gemini-advanced" onClick={() => setAdvancedOpen(!advancedOpen)}>Gemini 高级参数</button>
+              {advancedOpen && <div id="drawing-gemini-advanced">
+                <label className="drawing-field"><span className="drawing-label">Temperature（0–2）</span>
+                  <input type="number" min="0" max="2" step="any" placeholder="跟随模型" disabled={!ready || closing}
+                    aria-label="Gemini temperature" aria-invalid={temperatureError} value={draft.gemini?.temperature ?? ""}
+                    onChange={event => {
+                      const text = event.target.value, value = event.target.valueAsNumber;
+                      const invalid = text !== "" && (!Number.isFinite(value) || value < 0 || value > 2);
+                      setTemperatureError(invalid);
+                      if (!invalid) setGemini({ temperature: text === "" ? undefined : value });
+                    }} />
+                </label>
+                <button type="button" className="drawing-button" disabled={!ready || closing}
+                  onClick={() => { setTemperatureError(false); setGemini({ temperature: undefined }); }}>恢复模型温度</button>
+                {temperatureError && <p className="drawing-error" role="alert">Temperature 须为 0–2 的有限数。</p>}
+                <p className="drawing-muted">默认跟随模型，不发送 temperature。Gemini 3 官方建议保持默认 1.0。</p>
+                <label className="drawing-field"><span className="drawing-label">安全阈值（四类统一设置）</span>
+                  <select aria-label="Gemini 安全阈值" value={draft.gemini?.safetyThreshold ?? "auto"} disabled={!ready || closing}
+                    onChange={event => setGemini({ safetyThreshold: event.target.value === "auto" ? undefined : event.target.value as GeminiSafetyThreshold })}>
+                    <option value="auto">服务默认</option>
+                    {geminiSafetyThresholds.map(value => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                </label>
+                <p className="drawing-muted">适用于骚扰、仇恨、色情和危险内容四类；服务端仍可能拒绝内容或参数，支持范围以模型和中转为准。</p>
+                <label className="drawing-field"><span className="drawing-label">输出模式</span>
+                  <select aria-label="Gemini 输出模式" value={draft.gemini?.outputMode ?? "text-image"} disabled={!ready || closing}
+                    onChange={event => setGemini({ outputMode: event.target.value as "text-image" | "image" })}>
+                    <option value="text-image">文字＋图片</option><option value="image">仅图片</option>
+                  </select>
+                </label>
+              </div>}</>}
               <div className="drawing-parameters">
                 <label className="drawing-field">
                   <span className="drawing-label">数量</span>

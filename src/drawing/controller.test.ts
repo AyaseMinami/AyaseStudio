@@ -44,6 +44,40 @@ async function prepare(f: ReturnType<typeof fixture>) {
   f.controller.setDraft({ ...f.controller.getSnapshot().draft, modelId: "image-model", prompt: "synthetic prompt", aspectRatio: "1:1", resolution: "2K" });
 }
 describe("application drawing task controller", () => {
+  it.each(["task", "result"])("rejects invalid persisted Gemini %s options before any restart recovery write", async source => {
+    const valid: DrawingTask = { id: "old-task", status: "preparing", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
+      parameters: { protocol: "gemini-image", prompt: "old", aspectRatio: "auto", resolution: "auto", providerId: "p", connectionId: "image", configuredModelId: "image-model", modelId: "test-image", modelName: "test", baseUrl: "https://example.test" } };
+    const invalid = { ...valid.parameters, gemini: { outputMode: "AUDIO" } } as unknown as DrawingTask["parameters"];
+    const snapshot: DrawingSnapshot = { tasks: source === "task" ? [{ ...valid, parameters: invalid }] : [valid],
+      results: source === "result" ? [{ ...file, taskId: valid.id, createdAt: valid.createdAt, parameters: invalid }] : [] };
+    const f = fixture(snapshot); await f.controller.initialize();
+    expect(f.controller.getSnapshot().ready).toBe(false); expect(f.saved()).toEqual(snapshot);
+    expect(f.repository.saveTask).not.toHaveBeenCalled(); expect(f.repository.complete).not.toHaveBeenCalled();
+    expect(f.files.recover).not.toHaveBeenCalled(); expect(f.transport.generate).not.toHaveBeenCalled();
+  });
+  it("freezes Gemini controls per submitted task, persists independent edits and restores them after reload", async () => {
+    const f = fixture(); await prepare(f);
+    const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const };
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, gemini });
+    gemini.temperature = 2;
+    await f.controller.generate(settings);
+    expect(f.saved().tasks[0].parameters).toMatchObject({ gemini: { temperature: 0, safetyThreshold: "BLOCK_NONE", outputMode: "image" } });
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, gemini: { temperature: 1, outputMode: "text-image" } });
+    await f.controller.flush();
+    expect(f.saved().tasks[0].parameters).toMatchObject({ gemini: { temperature: 0 } });
+    const reopened = fixture(f.saved()); await reopened.controller.initialize();
+    expect(reopened.controller.getSnapshot().draft.gemini).toEqual({ temperature: 1, outputMode: "text-image" });
+    expect(reopened.transport.generate).not.toHaveBeenCalled();
+  });
+  it("rejects invalid Gemini edits before persistent writes or dispatch", async () => {
+    const f = fixture(); await prepare(f); await f.controller.flush();
+    const prior = structuredClone(f.saved()), writes = vi.mocked(f.repository.saveDraft).mock.calls.length;
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, gemini: { temperature: Infinity } });
+    await f.controller.flush();
+    expect(f.saved()).toEqual(prior); expect(f.repository.saveDraft).toHaveBeenCalledTimes(writes);
+    expect(f.controller.getSnapshot().error).toContain("高级参数无效");
+    expect(f.transport.generate).not.toHaveBeenCalled();
+  });
   it("clears only draft references, retaining prompt/options and immutable result/task owners", async () => {
     const f = fixture(); await prepare(f);
     await f.controller.addReferences([new File(["input"], "synthetic.png", { type: "image/png" })]);

@@ -6,6 +6,8 @@ export interface DrawingDraft {
   modelId: string | null;
   /** Absent in #84 drafts; defaults to automatic without rewriting old records. */
   openai?: { size: string; quality: string };
+  /** Missing old fields preserve service defaults and TEXT+IMAGE output. */
+  gemini?: GeminiDrawingOptions;
   references?: DrawingReference[];
   count?: number;
   concurrency?: number;
@@ -31,8 +33,14 @@ interface DrawingParameterBase {
 }
 
 export type DrawingProtocol = "gemini-image" | "openai-images";
+export type GeminiSafetyThreshold = "BLOCK_NONE" | "BLOCK_ONLY_HIGH" | "BLOCK_MEDIUM_AND_ABOVE" | "BLOCK_LOW_AND_ABOVE" | "OFF";
+export interface GeminiDrawingOptions {
+  temperature?: number;
+  safetyThreshold?: GeminiSafetyThreshold;
+  outputMode?: "text-image" | "image";
+}
 export type DrawingParameters = DrawingParameterBase & (
-  | { protocol: "gemini-image"; aspectRatio: string; resolution: string }
+  | { protocol: "gemini-image"; aspectRatio: string; resolution: string; gemini?: GeminiDrawingOptions }
   | { protocol: "openai-images"; size: string; quality: string }
 );
 
@@ -90,6 +98,9 @@ export interface DrawingExportParameters {
   resolution?: string;
   size?: string;
   quality?: string;
+  temperature?: number;
+  safety_threshold?: GeminiSafetyThreshold;
+  response_modalities?: ("TEXT" | "IMAGE")[];
 }
 
 export interface DrawingFiles {

@@ -87,13 +87,29 @@ export function normalizeCompatibleParameters(raw: unknown): void {
     if (raw.drawing.settings !== undefined) {
       const stamp = compatibility.modules.drawingSettings;
       let settings: unknown = raw.drawing.settings;
+      dataRecord(settings);
+      dataCheck(stamp.version !== 1 || !("gemini" in settings), "Gemini 高级参数与绘图模块版本不匹配，请升级应用。");
       if (stamp.version > dataModules.drawingSettings.version) {
         dataRecord(settings);
         dataCheck(!Object.keys(settings).some(key => dataPolicies.drawingDraft[key as keyof typeof dataPolicies.drawingDraft] === "exclude"),
           "绘图设置包含不支持的草稿、身份或图片字段，请升级应用。");
+        const refuseUnknownSafety = (value: unknown, allowed: readonly string[]) => {
+          dataRecord(value);
+          dataCheck(Object.keys(value).every(key => allowed.includes(key) || !/(safety|threshold|modalit|output|response|mode)/i.test(key)),
+            "绘图参数包含不支持的安全或输出结构，请升级应用。");
+        };
+        refuseUnknownSafety(settings, backupFields(dataPolicies.drawingDraft));
         const next = filterOptionalParameters(settings, backupFields(dataPolicies.drawingDraft), "drawing.settings", filtered);
-        if (next.openai !== undefined) next.openai = filterOptionalParameters(next.openai,
-          backupFields(dataPolicies.drawingOpenai), "drawing.settings.openai", filtered);
+        if (next.openai !== undefined) {
+          refuseUnknownSafety(next.openai, backupFields(dataPolicies.drawingOpenai));
+          next.openai = filterOptionalParameters(next.openai,
+            backupFields(dataPolicies.drawingOpenai), "drawing.settings.openai", filtered);
+        }
+        if (next.gemini !== undefined) {
+          refuseUnknownSafety(next.gemini, backupFields(dataPolicies.drawingGemini));
+          next.gemini = filterOptionalParameters(next.gemini,
+            backupFields(dataPolicies.drawingGemini), "drawing.settings.gemini", filtered);
+        }
         settings = next;
       }
       raw.drawing.settings = readDrawingSettingsData(settings);

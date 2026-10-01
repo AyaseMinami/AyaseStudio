@@ -31,6 +31,24 @@ function fixture() {
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(yes => { resolve = yes; }); return { promise, resolve }; }
 
 describe("pure-text presets and history reuse #90", () => {
+  it("reuses advanced Gemini controls and resets absent historical controls without touching OpenAI or presets", async () => {
+    const f = fixture(), advanced = { ...parameters, gemini: { temperature: 0, safetyThreshold: "OFF" as const, outputMode: "image" as const } };
+    await f.repository.enqueue([task("advanced", advanced), task("historical", parameters), task("openai", openai)]);
+    await f.controller.initialize(); f.controller.updateSettings(settings);
+    f.controller.setDraft({ ...initialDrawingDraft, modelId: "gm", openai: { size: "auto", quality: "low" } });
+    await f.controller.reuseTask("advanced");
+    expect(f.controller.getSnapshot().draft.gemini).toEqual(advanced.gemini);
+    await f.controller.createPreset({ name: "text", content: "preset only" });
+    const preset = f.controller.getSnapshot().presets[0]; await f.controller.applyPreset(preset.id);
+    expect(f.controller.getSnapshot().draft.gemini).toEqual(advanced.gemini);
+    expect(preset).not.toHaveProperty("gemini");
+    await f.controller.reuseTask("openai");
+    expect(f.controller.getSnapshot().draft.gemini).toEqual(advanced.gemini);
+    await f.controller.reuseTask("historical");
+    expect(f.controller.getSnapshot().draft.gemini).toEqual({});
+    expect(f.controller.getSnapshot().draft.openai).toEqual({ size: "1536x1024", quality: "high" });
+    expect(f.transport).not.toHaveBeenCalled();
+  });
   it("releases the preset-only maintenance gate when the last preset is deleted without touching a draft", async () => {
     const f = fixture(); await f.controller.initialize();
     expect(f.controller.getSnapshot().hasData).toBe(false);

@@ -10,7 +10,7 @@ export const dataModules = {
   appearance: { version: 1, capabilities: [], resources: "managed background originals; derived thumbnails excluded" },
   connections: { version: 3, capabilities: [], resources: "credentials only in the explicit credential section" },
   search: { version: 2, capabilities: [], resources: "separate Exa credentials; legacy v1 migrates to MCP" },
-  drawingSettings: { version: 1, capabilities: [], resources: "allowlisted settings only; no prompt or image bindings" },
+  drawingSettings: { version: 2, capabilities: [], resources: "allowlisted settings including optional Gemini controls; no prompt or image bindings" },
   drawingPresets: { version: 1, capabilities: [], resources: "explicit text only; dedicated drawing.presets projection" },
   drawingHistory: { version: 1, capabilities: [], resources: "excluded; retained local task/result/image ownership" },
   recovery: { version: 1, capabilities: [], resources: "private journals; never portable" },

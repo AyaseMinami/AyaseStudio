@@ -83,6 +83,45 @@ function drawingConnections(protocol: "gemini-image" | "openai-images" = "gemini
 }
 
 describe("drawing backup category integration", () => {
+  it.each(["replace", "merge", "copy"] as const)("round-trips v2 Gemini controls under %s while retaining excluded local data", async mode => {
+    const t = await setup(), gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const };
+    const raw = document(5, { settings: { ...importedSettings, gemini }, presets: [] });
+    expect(raw.compatibility!.modules.drawingSettings).toEqual({ version: 2, minimumReaderVersion: 2, requiredCapabilities: [] });
+    const decoded = (await decodeBackup(await encodeBackup(raw))).document;
+    expect(decoded.drawing!.settings!.gemini).toEqual(gemini);
+    await apply(t, decoded, mode);
+    expect((await t.db.drawingDrafts.get("current"))?.gemini).toEqual(mode === "replace" ? gemini : undefined);
+    await assertPrivateData(t);
+  });
+  it("reads old module v1 defaults and clears newer local controls only when settings are replaced", async () => {
+    const t = await setup(), old = document();
+    old.compatibility!.modules.drawingSettings = { version: 1, minimumReaderVersion: 1, requiredCapabilities: [] };
+    const draft = { ...localDraft, gemini: { temperature: 2, safetyThreshold: "OFF" as const, outputMode: "image" as const } };
+    await t.db.drawingDrafts.put(draft); t.before = await t.repository.snapshot();
+    await apply(t, old);
+    expect((await t.db.drawingDrafts.get("current"))?.gemini).toBeUndefined();
+    await assertPrivateData(t);
+  });
+  it.each(["moduleMismatch", "unsafeFuture", "futureOutput", "openaiSafety", "invalidTemperature", "invalidSafety"])("rejects new Gemini %s before any durable writes", async fault => {
+    const t = await setup(), raw = document();
+    raw.drawing!.settings!.gemini = { temperature: 0, outputMode: "image" };
+    if (fault === "moduleMismatch") raw.compatibility!.modules.drawingSettings = { version: 1, minimumReaderVersion: 1, requiredCapabilities: [] };
+    if (fault === "unsafeFuture" || fault === "futureOutput") {
+      raw.compatibility!.modules.drawingSettings.version = 3;
+      (raw.drawing!.settings!.gemini as Record<string, unknown>)[fault === "unsafeFuture" ? "futureSafety" : "outputModeV2"] = "unknown";
+    }
+    if (fault === "openaiSafety") {
+      raw.compatibility!.modules.drawingSettings.version = 3;
+      (raw.drawing!.settings!.openai as Record<string, unknown>).safetyPolicy = "unknown";
+    }
+    if (fault === "invalidTemperature") raw.drawing!.settings!.gemini.temperature = 2.1;
+    if (fault === "invalidSafety") (raw.drawing!.settings!.gemini as Record<string, unknown>).safetyThreshold = "UNKNOWN";
+    const original = structuredClone(raw);
+    await expect(apply(t, raw)).rejects.toThrow();
+    expect(raw).toEqual(original); expect(await t.repository.snapshot()).toEqual(t.before);
+    expect(t.files.write).not.toHaveBeenCalled(); expect(t.storage.setItem).not.toHaveBeenCalled();
+    expect(await t.db.backupJournal.count()).toBe(0);
+  });
   it.each([1, 2, 3, 4] as const)("historical v%s absence preserves local drawing data during replacement", async version => {
     const t = await setup(), plan = await apply(t, document(version));
     expect((await t.repository.snapshot()).drawing).toEqual(t.before.drawing);
@@ -146,7 +185,7 @@ describe("drawing backup category integration", () => {
 describe("drawing review regressions", () => {
   it("refuses an excluded prompt even under a forward-readable drawing settings stamp", async () => {
     const t = await setup(), raw = document();
-    raw.compatibility!.modules.drawingSettings = { version: 2, minimumReaderVersion: 1, requiredCapabilities: [] };
+    raw.compatibility!.modules.drawingSettings = { version: 3, minimumReaderVersion: 2, requiredCapabilities: [] };
     (raw.drawing!.settings as unknown as Record<string, unknown>).prompt = "excluded private text";
     const source = structuredClone(raw);
     await expect(apply(t, raw)).rejects.toThrow();
@@ -273,7 +312,7 @@ describe("drawing backup validation and rollback", () => {
     const t = await setup(), raw = document(), oversized = "x".repeat(8 * 1024 * 1024 + 1);
     if (category === "preset") raw.drawing!.presets![0].content = oversized;
     else {
-      raw.compatibility!.modules.drawingSettings = { version: 2, minimumReaderVersion: 1, requiredCapabilities: [] };
+      raw.compatibility!.modules.drawingSettings = { version: 3, minimumReaderVersion: 2, requiredCapabilities: [] };
       (raw.drawing!.settings as unknown as Record<string, unknown>).futureParameter = oversized;
     }
     const original = structuredClone(raw), filesBefore = [...t.saved], restore = vi.spyOn(t.repository, "restore");
@@ -291,7 +330,7 @@ describe("drawing backup validation and rollback", () => {
     "rejects %s before database, preference or file writes", async fault => {
       const t = await setup(), raw = document();
       const settings = raw.drawing!.settings as unknown as Record<string, unknown>;
-      if (fault === "futureRequired") raw.compatibility!.modules.drawingSettings.minimumReaderVersion = 2;
+      if (fault === "futureRequired") raw.compatibility!.modules.drawingSettings = { version: 3, minimumReaderVersion: 3, requiredCapabilities: [] };
       if (["prompt", "references", "apiKey"].includes(fault)) settings[fault] = "synthetic private value";
       if (fault === "nestedCredential") (settings.openai as Record<string, unknown>).token = "synthetic";
       if (fault === "unknownOuter") (raw.drawing as unknown as Record<string, unknown>).history = [];
@@ -309,15 +348,16 @@ describe("drawing backup validation and rollback", () => {
 
   it("filters forward optional drawing parameters into path-only reports and retains reexport warnings", async () => {
     const t = await setup(), raw = document();
-    raw.compatibility!.modules.drawingSettings.version = 2;
+    raw.compatibility!.modules.drawingSettings.version = 3;
     const settings = raw.drawing!.settings as unknown as Record<string, unknown>;
     settings.futureParameter = { text: "discarded value must stay private" };
     (settings.openai as Record<string, unknown>).futurePrecision = 4;
+    settings.gemini = { temperature: 0, outputMode: "image", futurePrecision: 2 };
     const source = structuredClone(raw), incoming = await readBackupDocument(raw);
-    const paths = ["drawing.settings.futureParameter", "drawing.settings.openai.futurePrecision"];
+    const paths = ["drawing.settings.futureParameter", "drawing.settings.openai.futurePrecision", "drawing.settings.gemini.futurePrecision"];
     expect(incoming.compatibility!.filteredParameters).toEqual(paths);
-    expect(incoming.compatibility!.modules.drawingSettings.version).toBe(1);
-    expect(incoming.drawing!.settings).toEqual(importedSettings);
+    expect(incoming.compatibility!.modules.drawingSettings.version).toBe(2);
+    expect(incoming.drawing!.settings).toEqual({ ...importedSettings, gemini: { temperature: 0, outputMode: "image" } });
     expect(raw).toEqual(source);
     const plan = createRestorePlan(incoming, t.before, "replace");
     expect(plan.warnings.join(" ")).toContain("再次保存或导出可能丢失");

@@ -11,6 +11,24 @@ const preset = { id: "preset", name: "Landscape", content: "  mountains\n\ncloud
   createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T01:00:00.000Z" };
 
 describe("drawing settings data boundary", () => {
+  it("clones and projects Gemini controls with exact finite defaults and no private nested fields", () => {
+    const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const };
+    const draft = { ...initialDrawingDraft, gemini: { ...gemini, apiKey: "synthetic" } };
+    const projected = projectDrawingSettings(draft);
+    expect(projected).toEqual({ ...defaults, gemini });
+    expect(readDrawingSettingsData(readDrawingSettingsData(projected))).toEqual(projected);
+    projected.gemini!.temperature = 2;
+    expect(draft.gemini.temperature).toBe(0);
+    expect(readDrawingDraftData({ ...initialDrawingDraft, gemini }).gemini).toEqual(gemini);
+    expect(readDrawingSettingsData({ gemini: {} }).gemini).toEqual({});
+  });
+  it.each([null, [], { temperature: NaN }, { temperature: Infinity }, { temperature: -0.1 }, { temperature: 2.1 },
+    { temperature: "1" }, { temperature: undefined }, { safetyThreshold: "UNKNOWN" }, { outputMode: "TEXT" },
+    { apiKey: "synthetic" }, { futureSafety: true }])("rejects invalid Gemini options %j without changing source", gemini => {
+    const raw = { gemini }, before = structuredClone(raw);
+    expect(() => readDrawingSettingsData(raw)).toThrow(DataContractError);
+    expect(raw).toEqual(before);
+  });
   it("normalizes missing historical preferences without mutating source records", () => {
     const old = { aspectRatio: "auto", resolution: "auto", modelId: null };
     const before = structuredClone(old);

@@ -10,7 +10,7 @@ import type { SentAttachment } from "../chat/attachments";
 import type { UserAvatar, AvatarCrop } from "../avatar/repository";
 import type { AvatarLibraryEntry } from "../avatar/library";
 import type { AppearancePreferences, BackgroundLibraryEntry } from "../appearance/appearance";
-import type { DrawingDraft, DrawingTask, DrawingResult, DrawingParameters, DrawingReference } from "../drawing/types";
+import type { DrawingDraft, DrawingTask, DrawingResult, DrawingParameters, DrawingReference, GeminiDrawingOptions } from "../drawing/types";
 import type { DrawingPromptPreset } from "../drawing/presets";
 import type { AyaseDatabase, CherryImportRecord } from "./database";
 import type { FieldPolicy } from "./dataContract";
@@ -68,11 +68,12 @@ export const dataPolicies = {
     backgroundFit: "backup", backgroundMask: "backup", backgroundBlur: "backup", backgroundLibrary: "resource", backgroundEnabled: "backup", backgroundName: "backup",
   } satisfies FieldPolicy<AppearancePreferences>,
   background: { id: "backup", name: "backup", reference: "resource", focus: "backup", fit: "backup", mask: "backup", blur: "backup" } satisfies FieldPolicy<BackgroundLibraryEntry>,
-  drawingDraft: { id: "exclude", prompt: "exclude", aspectRatio: "backup", resolution: "backup", modelId: "backup", openai: "backup", count: "backup", concurrency: "backup", completionSound: "backup", reusedProtocol: "backup", references: "exclude" } satisfies FieldPolicy<DrawingDraft>,
+  drawingDraft: { id: "exclude", prompt: "exclude", aspectRatio: "backup", resolution: "backup", modelId: "backup", openai: "backup", gemini: "backup", count: "backup", concurrency: "backup", completionSound: "backup", reusedProtocol: "backup", references: "exclude" } satisfies FieldPolicy<DrawingDraft>,
   drawingOpenai: { size: "backup", quality: "backup" } satisfies FieldPolicy<NonNullable<DrawingDraft["openai"]>>,
+  drawingGemini: { temperature: "backup", safetyThreshold: "backup", outputMode: "backup" } satisfies FieldPolicy<GeminiDrawingOptions>,
   drawingPresets: { id: "backup", name: "backup", content: "backup", createdAt: "backup", updatedAt: "backup" } satisfies FieldPolicy<DrawingPromptPreset>,
   drawingTasks: { id: "exclude", createdAt: "exclude", updatedAt: "exclude", status: "exclude", parameters: "exclude", error: "exclude", batchId: "exclude", queueOrder: "exclude", startedAt: "exclude", finishedAt: "exclude", sourceTaskId: "exclude", diagnostic: "exclude", recovery: "exclude" } satisfies FieldPolicy<DrawingTask>,
   drawingResults: { id: "exclude", taskId: "exclude", createdAt: "exclude", parameters: "exclude", reference: "exclude", mime: "exclude", size: "exclude", width: "exclude", height: "exclude" } satisfies FieldPolicy<DrawingResult>,
-  drawingParameters: { prompt: "exclude", providerId: "exclude", connectionId: "exclude", configuredModelId: "exclude", modelId: "exclude", modelName: "exclude", baseUrl: "exclude", references: "exclude", protocol: "exclude", aspectRatio: "exclude", resolution: "exclude", size: "exclude", quality: "exclude" } satisfies FieldPolicy<DrawingParameters>,
+  drawingParameters: { prompt: "exclude", providerId: "exclude", connectionId: "exclude", configuredModelId: "exclude", modelId: "exclude", modelName: "exclude", baseUrl: "exclude", references: "exclude", protocol: "exclude", aspectRatio: "exclude", resolution: "exclude", gemini: "exclude", size: "exclude", quality: "exclude" } satisfies FieldPolicy<DrawingParameters>,
   drawingReference: { id: "exclude", reference: "exclude", mime: "exclude", size: "exclude", width: "exclude", height: "exclude", name: "exclude", digest: "exclude" } satisfies FieldPolicy<DrawingReference>,
 } as const;

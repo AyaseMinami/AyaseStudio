@@ -153,6 +153,7 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
     const target = targets.find(m => m.id === mappedModel && isDrawingProtocol(m.connection.protocol));
     if (settings.modelId && !target) warnings.push("绘图模型引用不可用，已设为未选择；请手动选择绘图模型，不自动替换协议或生成。");
     drawingAfter.draft = { ...(drawingAfter.draft ?? initialDrawingDraft), ...settings, modelId: target?.id ?? null };
+    if (settings.gemini === undefined) delete drawingAfter.draft.gemini;
     if (settings.reusedProtocol === undefined) delete drawingAfter.draft.reusedProtocol;
     warnings.push("仅替换绘图参数、数量、并发及提示音设置；保留本机自动草稿提示词和参考图，参考图不从备份恢复，不创建生成任务。");
   } else warnings.push(document.drawing?.settings !== undefined

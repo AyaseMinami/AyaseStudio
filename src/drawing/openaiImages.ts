@@ -1,6 +1,6 @@
 import type { FetchLike } from "../chat/types";
 import { resolveOpenAIImagesEndpoint } from "../chat/urlResolution";
-import { ImageGenerationError, readBoundedImageResponse } from "./imageResponse";
+import { ImageGenerationError, normalizeImageResponseData, readBoundedImageResponse } from "./imageResponse";
 import type { DrawingImageInput, DrawingParameters, ImageGenerationTransport } from "./types";
 
 export const openAIImageQualities = ["auto", "low", "medium", "high", "xhigh", "max"] as const;
@@ -10,7 +10,12 @@ export function validateOpenAIImagesParameters(parameters: DrawingParameters): a
   if (parameters.protocol !== "openai-images") throw new ImageGenerationError("绘图协议与参数不匹配。");
   resolveOpenAIImagesEndpoint(parameters.baseUrl, parameters.modelId);
   if (["dall-e-2", "dall-e-3"].includes(parameters.modelId.trim())) throw new ImageGenerationError("当前绘图接入支持 GPT Image 与兼容服务，尚未接入 DALL·E 参数契约。");
-  if (!parameters.prompt.trim() || parameters.prompt.length > 32_000) throw new ImageGenerationError("提示词不能为空，且最多 32000 个字符。");
+  const prompt = parameters.prompt.trim();
+  if (!prompt) throw new ImageGenerationError("提示词不能为空，且最多 32000 个字符。");
+  let characters = 0;
+  for (const _character of prompt) {
+    if (++characters > 32_000) throw new ImageGenerationError("提示词不能为空，且最多 32000 个字符。");
+  }
   if (!(openAIImageQualities as readonly string[]).includes(parameters.quality)) throw new ImageGenerationError("绘图画质无效，请重新选择。");
   // Aliases/relays need explicit service acceptance; never infer capabilities from names.
   if (parameters.size === "auto") return;
@@ -27,21 +32,21 @@ function record(value: unknown): value is Record<string, unknown> { return typeo
 export function parseOpenAIImages(value: unknown): DrawingImageInput[] {
   if (!record(value)) throw new ImageGenerationError("绘图服务返回了无效响应。");
   if (value.error) throw new ImageGenerationError("绘图服务返回了错误。");
-  if (!Array.isArray(value.data) || !value.data.length) throw new ImageGenerationError("绘图服务未返回图片。");
-  if (value.data.length > 8) throw new ImageGenerationError("绘图结果超出本地保存限制。");
+  const items = Array.isArray(value.data) ? value.data : record(value.data) ? [value.data] : [];
+  if (!items.length) throw new ImageGenerationError("绘图服务未返回图片。");
+  if (items.length > 8) throw new ImageGenerationError("绘图结果超出本地保存限制。");
   const format = value.output_format ?? "png";
   if (format !== "png" && format !== "jpeg" && format !== "webp") throw new ImageGenerationError("绘图服务返回了不支持的图片格式。");
   let totalBytes = 0;
-  return value.data.map(item => {
+  return items.map(item => {
     if (!record(item)) throw new ImageGenerationError("绘图服务返回了无效图片字段。");
     const data = item.b64_json;
     if (data === undefined && typeof item.url === "string") throw new ImageGenerationError("当前仅支持 Base64 图片，服务返回的 URL 不会自动下载。");
-    if (typeof data !== "string" || !data.length || data.length > Math.ceil(32 * 1024 * 1024 / 3) * 4
-      || data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new ImageGenerationError("绘图服务返回了无效或过大的图片。");
-    const size = data.length / 4 * 3 - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
-    totalBytes += size;
-    if (size > 32 * 1024 * 1024 || totalBytes > 64 * 1024 * 1024) throw new ImageGenerationError("绘图结果超出本地保存限制。");
-    return { mime: `image/${format}`, data };
+    const mime = `image/${format}`;
+    const normalized = normalizeImageResponseData(data, mime);
+    totalBytes += normalized.bytes;
+    if (totalBytes > 64 * 1024 * 1024) throw new ImageGenerationError("绘图结果超出本地保存限制。");
+    return { mime, data: normalized.data };
   });
 }
 

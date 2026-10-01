@@ -49,6 +49,38 @@ function button(text: string) {
   return result;
 }
 
+it("edits optional Gemini controls, rejects invalid temperature and preserves options across protocol switches", async () => {
+  const options = props(), drafts: DrawingDraft[] = [];
+  function Harness() {
+    const [draft, setDraft] = useState<DrawingDraft>({ ...initialDrawingDraft, modelId: "configured-image-model", prompt: "synthetic" });
+    return <DrawingWorkspace {...options} draft={draft} onDraftChange={next => { drafts.push(next); setDraft(next); }}
+      models={[...options.models, { id: "openai", label: "OpenAI", protocol: "openai-images" }]} />;
+  }
+  await act(async () => root.render(<Harness />));
+  expect(host.querySelector('[aria-label="Gemini temperature"]')).toBeNull();
+  await act(async () => button("Gemini 高级参数").click());
+  const change = async (label: string, value: string) => {
+    const select = host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
+    await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  };
+  const input = host.querySelector<HTMLInputElement>('[aria-label="Gemini temperature"]')!;
+  const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => { setInput.call(input, "0"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+  await change("Gemini 安全阈值", "BLOCK_NONE"); await change("Gemini 输出模式", "image");
+  expect(drafts[drafts.length - 1].gemini).toEqual({ temperature: 0, safetyThreshold: "BLOCK_NONE", outputMode: "image" });
+  const calls = drafts.length;
+  await act(async () => { setInput.call(input, "3"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+  expect(drafts).toHaveLength(calls); expect(host.querySelector<HTMLButtonElement>('#drawing-generate')!.disabled).toBe(true);
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  await act(async () => button("恢复模型温度").click());
+  expect(drafts[drafts.length - 1].gemini).not.toHaveProperty("temperature");
+  await act(async () => { const select = host.querySelector<HTMLSelectElement>('#drawing-model')!;
+    select.value = "openai"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(host.querySelector('[aria-label="Gemini 安全阈值"]')).toBeNull();
+  expect(drafts[drafts.length - 1].gemini).toEqual({ safetyThreshold: "BLOCK_NONE", outputMode: "image" });
+  expect(options.onGenerate).not.toHaveBeenCalled();
+});
+
 it("shows presets only with complete handlers, allows editing during generation and guards unavailable workspace", async () => {
   const options = props();
   const presets = [{ id: "preset", name: "合成预设", content: "合成内容", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }];
