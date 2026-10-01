@@ -45,7 +45,7 @@ async function key(element: Element, value: string, shiftKey = false) {
   await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key: value, shiftKey, bubbles: true, cancelable: true })));
 }
 
-it("loads only visible thumbnails and releases URLs when hidden, changed or unmounted", async () => {
+it("loads thumbnails once when first visible, retains them across scrolling and releases them on unmount", async () => {
   const observed: Array<{ element: Element; callback: IntersectionObserverCallback; disconnect: ReturnType<typeof vi.fn> }> = [];
   vi.stubGlobal("IntersectionObserver", class {
     callback: IntersectionObserverCallback;
@@ -64,12 +64,20 @@ it("loads only visible thumbnails and releases URLs when hidden, changed or unmo
   expect(options.readReference).not.toHaveBeenCalled();
   expect(host.querySelectorAll("img")).toHaveLength(2);
   await visibility(false);
-  expect(URL.revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:thumbnail");
-  expect(host.querySelectorAll("img")).toHaveLength(1);
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  expect(host.querySelectorAll("img")).toHaveLength(2);
   await visibility(true);
-  await click("任务与日志");
-  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
-  expect(entry.disconnect).toHaveBeenCalledOnce();
+  expect(options.readThumbnail).toHaveBeenCalledTimes(1);
+  const disconnectsBeforeTabs = entry.disconnect.mock.calls.length;
+  await click("任务日志");
+  await click("任务列表");
+  expect(options.readThumbnail).toHaveBeenCalledTimes(1);
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  expect(host.querySelectorAll("img")).toHaveLength(2);
+  expect(entry.disconnect).toHaveBeenCalledTimes(disconnectsBeforeTabs);
+  await act(async () => root.render(<div />));
+  expect(URL.revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:thumbnail");
+  expect(entry.disconnect).toHaveBeenCalledTimes(disconnectsBeforeTabs + 1);
 });
 
 it("falls back without IntersectionObserver and distinguishes thumbnail and original decode errors", async () => {
@@ -87,13 +95,15 @@ it("falls back without IntersectionObserver and distinguishes thumbnail and orig
   expect(host.querySelector(".drawing-preview-stage img")?.getAttribute("src")).toBe("blob:second");
 });
 
-it("releases late thumbnail reads without creating a URL after leaving the view", async () => {
+it("releases late thumbnail reads without creating a URL after the workspace unmounts", async () => {
   vi.stubGlobal("IntersectionObserver", undefined);
   let resolve!: (value: { mime: string; data: string }) => void;
   const pending = new Promise<{ mime: string; data: string }>(done => { resolve = done; });
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} results={[result]} readThumbnail={() => pending} />));
-  await click("任务与日志");
+  expect(host.querySelector(".drawing-result-thumbnail")).not.toBeNull();
+  await act(async () => root.render(<div />));
+  expect(host.querySelector(".drawing-result-thumbnail")).toBeNull();
   await act(async () => resolve({ mime: "image/png", data: "AQ==" }));
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
@@ -126,14 +136,19 @@ it("zooms, pans, fits and resets on result change while preventing wheel page sc
   expect(transform()).toBe("translate(0px, 0px) scale(1)");
 });
 
-it("activates the root preview only on the generate view and releases it on unmount", async () => {
+it("keeps the root preview active across task tabs and releases it on workspace unmount", async () => {
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} />));
-  expect(options.onPreviewActive).toHaveBeenLastCalledWith(true);
-  await click("任务与日志"); expect(options.onPreviewActive).toHaveBeenLastCalledWith(false);
-  await click("任务日志"); expect(options.onPreviewActive).toHaveBeenLastCalledWith(false);
-  await click("生成"); expect(options.onPreviewActive).toHaveBeenLastCalledWith(true);
-  await act(async () => root.render(<div />)); expect(options.onPreviewActive).toHaveBeenLastCalledWith(false);
+  const preview = host.querySelector(".drawing-preview-stage img");
+  expect(options.onPreviewActive).toHaveBeenCalledExactlyOnceWith(true);
+  await click("任务日志");
+  expect(host.querySelector(".drawing-preview-stage img")).toBe(preview);
+  expect(options.onPreviewActive).toHaveBeenCalledExactlyOnceWith(true);
+  await click("任务列表");
+  expect(host.querySelector(".drawing-preview-stage img")).toBe(preview);
+  expect(options.onPreviewActive).toHaveBeenCalledExactlyOnceWith(true);
+  await act(async () => root.render(<div />));
+  expect(options.onPreviewActive.mock.calls).toEqual([[true], [false]]);
 });
 
 it("shows safe snapshot details and explicit parameter export while keeping plain export separate", async () => {

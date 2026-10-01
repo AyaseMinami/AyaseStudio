@@ -8,6 +8,7 @@ export interface DrawingDraft {
   openai?: { size: string; quality: string };
   /** Missing old fields preserve service defaults and TEXT+IMAGE output. */
   gemini?: GeminiDrawingOptions;
+  /** Legacy durable bindings only. New selections live in DrawingState.references, never here. */
   references?: DrawingReference[];
   count?: number;
   concurrency?: number;
@@ -82,6 +83,8 @@ export interface DrawingFile {
   height: number;
 }
 export interface DrawingReference extends DrawingFile { name: string; digest?: string }
+/** Session only: byte-backed Blobs are never serialized or placed in task records. */
+export type DrawingReferenceSelection = DrawingReference | { id: string; name: string; blob: Blob };
 export interface DrawingResult extends DrawingFile {
   taskId: string;
   createdAt: string;
@@ -105,6 +108,8 @@ export interface DrawingExportParameters {
 
 export interface DrawingFiles {
   importReference(image: DrawingImageInput): Promise<DrawingFile & { digest: string }>;
+  importReferenceBytes?(bytes: Uint8Array<ArrayBuffer>): Promise<DrawingFile & { digest: string }>;
+  listReferences?(): Promise<string[]>;
   removeReferences(references: string[]): Promise<void>;
   save(taskId: string, images: DrawingImageInput[]): Promise<DrawingFile[]>;
   recover(taskId: string): Promise<DrawingFile[] | null>;

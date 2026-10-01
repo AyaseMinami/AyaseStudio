@@ -12,6 +12,8 @@ export async function openDrawingOutputDirectory(): Promise<void> {
 
 export const runtimeDrawingFiles: DrawingFiles = {
   importReference: image => invoke<DrawingFile & { digest: string }>("import_drawing_reference", { image }),
+  importReferenceBytes: bytes => invoke<DrawingFile & { digest: string }>("import_drawing_reference_bytes", bytes),
+  listReferences: () => invoke<string[]>("list_drawing_references"),
   removeReferences: references => invoke<void>("remove_drawing_references", { references }),
   save: (taskId, images) => invoke<DrawingFile[]>("save_drawing_result", { taskId, images }),
   recover: taskId => invoke<DrawingFile[] | null>("recover_drawing_result", { taskId }),

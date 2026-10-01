@@ -100,13 +100,13 @@ function App() {
         />
         </ConversationNavigation>
       ) : activePage === "drawing" ? (
-        <DrawingWorkspace draft={drawing.draft} onDraftChange={drawing.controller.setDraft}
+        <DrawingWorkspace draft={drawing.draft} references={drawing.references} preparation={drawing.preparation} onDraftChange={drawing.controller.setDraft}
           models={getDrawingModels(chat.connectionSettings)} tasks={drawing.tasks} results={drawing.results}
           selectedResultId={drawing.selectedResultId} previewUrl={drawing.previewUrl} previewError={drawing.previewError}
           ready={drawing.ready && !chat.maintenanceBusy} busy={drawing.busy} error={drawing.error}
           submitting={drawing.submitting} paused={drawing.paused} onPause={drawing.controller.pause} onResume={drawing.controller.resume}
           onGenerate={() => { if (!chat.maintenanceBusy) void drawing.controller.generate(chat.connectionSettings); }}
-          onCancel={drawing.controller.cancel} onSelectResult={drawing.controller.selectResult}
+          onCancel={drawing.controller.cancel} onCancelPreparation={drawing.controller.cancelPreparation} onSelectResult={drawing.controller.selectResult}
           managementBusy={drawing.managementBusy} onCancelBatch={drawing.controller.cancelBatch}
           onRegenerate={id => void drawing.controller.regenerate(id)} onDeleteTasks={ids => void drawing.controller.deleteTasks(ids)}
           onExport={id => void drawing.controller.export(id)} onRetrySave={id => void drawing.controller.retrySave(id)}

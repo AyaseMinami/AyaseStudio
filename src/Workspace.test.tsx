@@ -242,7 +242,7 @@ describe("assistant workspace public behavior", () => {
       models: [{ id: "model-a", modelId: "gemini-3-flash-preview" }, { id: "model-b", modelId: "gemini-3.8-flash" }],
     }] }] });
     root = createRoot(container); await act(async () => root.render(<App />));
-    await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
+    await wait(() => container.querySelector<HTMLButtonElement>('button[aria-label="思考设置"]')?.disabled === false);
     async function thinkingReady() {
       await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
       if (!container.querySelector(".thinking-popover")) await click("思考设置");
@@ -319,7 +319,7 @@ describe("assistant workspace public behavior", () => {
       },
     } } });
     root = createRoot(container); await act(async () => root.render(<App />));
-    await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
+    await wait(() => container.querySelector<HTMLButtonElement>('button[aria-label="思考设置"]')?.disabled === false);
     await click("思考设置");
     expect(container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value).toBe("high");
     await click("编辑助手 默认助手");
@@ -407,7 +407,7 @@ describe("assistant workspace public behavior", () => {
       models: [{ id: "model-a", modelId: "claude-opus-4-6" }, { id: "model-b", modelId: "claude-opus-5" }],
     }] }] });
     root = createRoot(container); await act(async () => root.render(<App />));
-    await wait(() => !!container.querySelector('button[aria-label="思考设置"]'));
+    await wait(() => container.querySelector<HTMLButtonElement>('button[aria-label="思考设置"]')?.disabled === false);
     await click("思考设置");
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="budget"]')!.click());
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);

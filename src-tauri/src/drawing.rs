@@ -191,6 +191,15 @@ pub struct ImportedDrawingReference {
     digest: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReferenceImportReceipt {
+    version: u8,
+    reference: String,
+    digest: String,
+    size: usize,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
@@ -817,29 +826,70 @@ fn import_reference(
     root: &Path,
     input: &DrawingImageInput,
 ) -> Result<ImportedDrawingReference, Error> {
-    import_reference_with_publisher(root, input, publish)
+    let bytes = STANDARD.decode(&input.data).map_err(|_| Error::Corrupt)?;
+    import_reference_bytes(root, &bytes)
+}
+
+fn import_reference_bytes(
+    root: &Path,
+    bytes: &[u8],
+) -> Result<ImportedDrawingReference, Error> {
+    import_reference_with_publisher(root, bytes, None, publish)
+}
+
+fn import_reference_scoped(
+    root: &Path,
+    bytes: &[u8],
+    scope: &str,
+) -> Result<ImportedDrawingReference, Error> {
+    import_reference_with_publisher(root, bytes, Some(scope), publish)
 }
 
 fn import_reference_with_publisher(
     root: &Path,
-    input: &DrawingImageInput,
+    bytes: &[u8],
+    scope: Option<&str>,
     publish: impl FnOnce(&Path, &[u8]) -> Result<(), Error>,
 ) -> Result<ImportedDrawingReference, Error> {
-    let bytes = STANDARD.decode(&input.data).map_err(|_| Error::Corrupt)?;
     // Browser MIME labels are advisory; preserve the detected original format.
-    let (image, mime, ext) = decode_reference(&bytes)?;
+    let (image, mime, ext) = decode_reference(bytes)?;
     let id = Uuid::new_v4().to_string();
     let value = format!("drawing/references/{id}.{ext}");
+    let digest = sha256(bytes);
     let path = root.join(&value);
     inspect(&path)?;
     let directory = path.parent().ok_or(Error::Storage)?;
     std::fs::create_dir_all(directory).map_err(|_| Error::Storage)?;
     inspect(directory)?;
-    if let Err(error) = publish(&path, &bytes) {
+    let receipt_path = if let Some(scope) = scope {
+        let directory = reference_import_directory(root, scope)?;
+        std::fs::create_dir_all(&directory).map_err(|_| Error::Storage)?;
+        inspect(&directory)?;
+        let receipt_path = directory.join(format!("{id}.json"));
+        if inspect(&receipt_path)?.is_some() {
+            return Err(Error::Collision);
+        }
+        let receipt = ReferenceImportReceipt {
+            version: 1, reference: value.clone(), digest: digest.clone(), size: bytes.len(),
+        };
+        let encoded = serde_json::to_vec(&receipt).map_err(|_| Error::Storage)?;
+        if let Err(error) = self::publish(&receipt_path, &encoded) {
+            if error != Error::Collision && inspect(&receipt_path)?.is_some() {
+                std::fs::remove_file(&receipt_path).map_err(|_| Error::Storage)?;
+            }
+            return Err(error);
+        }
+        Some(receipt_path)
+    } else { None };
+    if let Err(error) = publish(&path, bytes) {
         // Publication can fail after persisting (for example on final sync).
         // The failed import must not leave its newly reserved original behind.
         if error != Error::Collision && inspect(&path)?.is_some() {
             std::fs::remove_file(&path).map_err(|_| Error::Storage)?;
+        }
+        if let Some(receipt_path) = receipt_path {
+            inspect(&receipt_path)?;
+            std::fs::remove_file(receipt_path).map_err(|_| Error::Storage)?;
         }
         return Err(error);
     }
@@ -852,8 +902,102 @@ fn import_reference_with_publisher(
             width: image.width(),
             height: image.height(),
         },
-        digest: sha256(&bytes),
+        digest,
     })
+}
+
+fn raw_reference_body(body: &tauri::ipc::InvokeBody) -> Result<&[u8], Error> {
+    match body {
+        tauri::ipc::InvokeBody::Raw(bytes) => Ok(bytes),
+        tauri::ipc::InvokeBody::Json(_) => Err(Error::InvalidParameters),
+    }
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn reference_import_scope(url: &tauri::Url) -> Result<String, Error> {
+    let origin = url.origin().ascii_serialization();
+    if origin == "null" || !matches!(url.scheme(), "http" | "https") {
+        return Err(Error::InvalidReference);
+    }
+    Ok(sha256(format!("{origin}\0AyaseStudio").as_bytes()))
+}
+
+fn reference_import_directory(root: &Path, scope: &str) -> Result<PathBuf, Error> {
+    if !valid_digest(scope) { return Err(Error::InvalidReference); }
+    let directory = root.join("drawing").join("reference-imports").join(scope);
+    if inspect(&directory)?.is_some_and(|metadata| !metadata.is_dir()) {
+        return Err(Error::InvalidReference);
+    }
+    Ok(directory)
+}
+
+fn read_reference_receipt(path: &Path) -> Result<ReferenceImportReceipt, Error> {
+    let name = path.file_name().and_then(|name| name.to_str()).ok_or(Error::InvalidReference)?;
+    let id = name.strip_suffix(".json").ok_or(Error::InvalidReference)?;
+    uuid(id)?;
+    let receipt: ReferenceImportReceipt = serde_json::from_slice(&bounded_read(path, MANIFEST_LIMIT)?)
+        .map_err(|_| Error::Corrupt)?;
+    let (reference_id, _) = reference_input(&receipt.reference)?;
+    if receipt.version != 1 || reference_id != id || !valid_digest(&receipt.digest) || receipt.size == 0 {
+        return Err(Error::Corrupt);
+    }
+    Ok(receipt)
+}
+
+fn list_references(root: &Path, scope: &str) -> Result<Vec<String>, Error> {
+    let directory = reference_import_directory(root, scope)?;
+    match inspect(&directory)? {
+        None => return Ok(Vec::new()),
+        Some(metadata) if metadata.is_dir() => {}
+        Some(_) => return Err(Error::InvalidReference),
+    }
+    let mut references = Vec::new();
+    for entry in std::fs::read_dir(&directory).map_err(|_| Error::Storage)? {
+        let entry = entry.map_err(|_| Error::Storage)?;
+        let name = entry.file_name();
+        let name = name.to_str().ok_or(Error::InvalidReference)?;
+        let receipt = read_reference_receipt(&directory.join(name))?;
+        if inspect(&root.join(&receipt.reference))?.is_some_and(|metadata| !metadata.is_file()) {
+            return Err(Error::InvalidReference);
+        }
+        references.push(receipt.reference);
+    }
+    references.sort();
+    Ok(references)
+}
+
+fn remove_scoped_references(root: &Path, scope: &str, values: &[String]) -> Result<(), Error> {
+    let directory = reference_import_directory(root, scope)?;
+    let receipts = values.iter().map(|value| {
+        let (id, _) = reference_input(value)?;
+        let path = directory.join(format!("{id}.json"));
+        if inspect(&path)?.is_none() { return Ok(None); }
+        let receipt = read_reference_receipt(&path)?;
+        if receipt.reference != *value { return Err(Error::Corrupt); }
+        if let Some(metadata) = inspect(&root.join(value))? {
+            if !metadata.is_file() || metadata.len() != receipt.size as u64 {
+                return Err(Error::Corrupt);
+            }
+            let bytes = checked_read(&root.join(value), None)?;
+            if bytes.len() != receipt.size || sha256(&bytes) != receipt.digest {
+                return Err(Error::Corrupt);
+            }
+        }
+        Ok(Some(path))
+    }).collect::<Result<Vec<_>, Error>>()?;
+    // Validate every requested receipt before deleting any original or receipt.
+    remove_references(root, values)?;
+    for path in receipts.into_iter().flatten() {
+        match std::fs::remove_file(path) {
+            Ok(()) => {},
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+            Err(_) => return Err(Error::Storage),
+        }
+    }
+    Ok(())
 }
 
 fn remove_references(root: &Path, values: &[String]) -> Result<(), Error> {
@@ -914,8 +1058,18 @@ fn read_result_bytes(root: &Path, value: &str) -> Result<(String, Vec<u8>), Erro
 }
 
 fn thumbnail(root: &Path, value: &str) -> Result<DrawingImageInput, Error> {
-    let (mime, bytes) = read_result_bytes(root, value)?;
-    let image = decode_image(&bytes, &mime)?;
+    let image = if value.starts_with("drawing/references/") {
+        let (_, ext) = reference_input(value)?;
+        let bytes = checked_read(&root.join(value), None)?;
+        let (image, _, detected_ext) = decode_reference(&bytes)?;
+        if ext != detected_ext {
+            return Err(Error::Corrupt);
+        }
+        image
+    } else {
+        let (mime, bytes) = read_result_bytes(root, value)?;
+        decode_image(&bytes, &mime)?
+    };
     let image = if image.width() > 256 || image.height() > 256 {
         image.thumbnail(256, 256)
     } else {
@@ -1060,14 +1214,50 @@ pub async fn import_drawing_reference(
 }
 
 #[tauri::command]
+pub async fn import_drawing_reference_bytes(
+    app: AppHandle,
+    webview: tauri::Webview,
+    request: tauri::ipc::Request<'_>,
+) -> Result<ImportedDrawingReference, String> {
+    let bytes = raw_reference_body(request.body())
+        .map_err(|error| error.code())?
+        .to_vec();
+    let root = app_directory(&app)?;
+    let scope = reference_import_scope(&webview.url().map_err(|_| Error::InvalidReference.code())?)
+        .map_err(|error| error.code())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        import_reference_scoped(&root, &bytes, &scope).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
+}
+
+#[tauri::command]
+pub async fn list_drawing_references(app: AppHandle, webview: tauri::Webview) -> Result<Vec<String>, String> {
+    let root = app_directory(&app)?;
+    let scope = reference_import_scope(&webview.url().map_err(|_| Error::InvalidReference.code())?)
+        .map_err(|error| error.code())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        list_references(&root, &scope).map_err(|error| error.code())
+    })
+    .await
+    .map_err(|_| Error::Storage.code())?
+}
+
+#[tauri::command]
 pub async fn remove_drawing_references(
     app: AppHandle,
+    webview: tauri::Webview,
     references: Vec<String>,
 ) -> Result<(), String> {
     let root = app_directory(&app)?;
+    let scope = reference_import_scope(&webview.url().map_err(|_| Error::InvalidReference.code())?)
+        .map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
-        remove_references(&root, &references).map_err(|error| error.code())
+        remove_scoped_references(&root, &scope, &references).map_err(|error| error.code())
     })
     .await
     .map_err(|_| Error::Storage.code())?
@@ -1245,8 +1435,9 @@ mod tests {
     }
 
     #[test]
-    fn imports_original_formats_and_alpha_with_readable_digest_descriptors() {
+    fn raw_and_base64_imports_preserve_original_formats_alpha_and_descriptors() {
         let root = tempfile::tempdir().unwrap();
+        let scope = sha256(b"scope-a");
         let rgba = image::RgbaImage::from_pixel(3, 2, image::Rgba([20, 40, 90, 70]));
         for (format, mime, ext) in [
             (ImageFormat::Png, "image/png", "png"),
@@ -1270,10 +1461,20 @@ mod tests {
                 data: STANDARD.encode(&bytes),
             };
             let imported = import_reference(root.path(), &input).unwrap();
-            let duplicate = import_reference(root.path(), &input).unwrap();
+            let body = tauri::ipc::InvokeBody::Raw(bytes.clone());
+            let duplicate = import_reference_scoped(
+                root.path(),
+                raw_reference_body(&body).unwrap(),
+                &scope,
+            )
+            .unwrap();
             assert_eq!(imported.digest, sha256(&bytes));
             assert_eq!(imported.digest, duplicate.digest);
             assert_ne!(imported.file.reference, duplicate.file.reference);
+            assert_eq!(imported.file.mime, duplicate.file.mime);
+            assert_eq!(imported.file.size, duplicate.file.size);
+            assert_eq!(imported.file.width, duplicate.file.width);
+            assert_eq!(imported.file.height, duplicate.file.height);
             assert_eq!(imported.file.mime, mime);
             assert_eq!(imported.file.size, bytes.len());
             assert_eq!((imported.file.width, imported.file.height), (3, 2));
@@ -1285,22 +1486,45 @@ mod tests {
                 std::fs::read(root.path().join(&imported.file.reference)).unwrap(),
                 bytes
             );
-            let read = read(root.path(), &imported.file.reference).unwrap();
-            assert_eq!(read.data, input.data);
-            assert_eq!(read.mime, mime);
-            if format != ImageFormat::Jpeg {
+            for reference in [&imported.file.reference, &duplicate.file.reference] {
                 assert_eq!(
-                    decode_reference(&STANDARD.decode(read.data).unwrap())
-                        .unwrap()
-                        .0
-                        .to_rgba8(),
-                    rgba
+                    std::fs::read(root.path().join(reference)).unwrap(),
+                    bytes
                 );
+                let read = read(root.path(), reference).unwrap();
+                assert_eq!(read.data, input.data);
+                assert_eq!(read.mime, mime);
+                if format != ImageFormat::Jpeg {
+                    assert_eq!(
+                        decode_reference(&STANDARD.decode(read.data).unwrap())
+                            .unwrap()
+                            .0
+                            .to_rgba8(),
+                        rgba
+                    );
+                }
             }
             let descriptor = serde_json::to_value(imported).unwrap();
             assert_eq!(descriptor["digest"], sha256(&bytes));
             assert_eq!(descriptor["mime"], mime);
             assert!(descriptor.get("file").is_none());
+        }
+    }
+
+    #[test]
+    fn raw_reference_body_rejects_json_payloads() {
+        let bytes = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        let body = tauri::ipc::InvokeBody::Raw(bytes.clone());
+        assert_eq!(raw_reference_body(&body).unwrap(), bytes);
+        for value in [
+            serde_json::json!({ "image": { "mime": "image/png", "data": STANDARD.encode(&bytes) } }),
+            serde_json::json!(bytes),
+            serde_json::Value::Null,
+        ] {
+            assert_eq!(
+                raw_reference_body(&tauri::ipc::InvokeBody::Json(value)).unwrap_err(),
+                Error::InvalidParameters
+            );
         }
     }
 
@@ -1314,7 +1538,11 @@ mod tests {
             data: STANDARD.encode(&bytes),
         };
         let imported = import_reference(root.path(), &input).unwrap();
+        let raw = import_reference_bytes(root.path(), &bytes).unwrap();
         assert_eq!(imported.file.size, IMAGE_LIMIT + 1);
+        assert_eq!(raw.file.size, imported.file.size);
+        assert_eq!(raw.digest, imported.digest);
+        assert_eq!(std::fs::read(root.path().join(&raw.file.reference)).unwrap(), bytes);
         assert_eq!(
             read(root.path(), &imported.file.reference).unwrap().data,
             input.data
@@ -1345,11 +1573,18 @@ mod tests {
                 Error::Corrupt
             );
         }
+        for bytes in [b"not an image".as_slice(), &png[..40], &[]] {
+            assert_eq!(
+                import_reference_bytes(root.path(), bytes).unwrap_err(),
+                Error::Corrupt
+            );
+        }
         assert!(!root.path().join("drawing").exists());
         assert_eq!(
             import_reference_with_publisher(
                 root.path(),
-                &input(20, ImageFormat::Png),
+                &png,
+                None,
                 |path, _| {
                     std::fs::write(path, b"partial").unwrap();
                     Err(Error::Storage)
@@ -1364,6 +1599,198 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    #[test]
+    fn reference_scope_uses_native_url_origin_and_rejects_opaque_origins() {
+        let scope = |url| reference_import_scope(&tauri::Url::parse(url).unwrap());
+        assert_eq!(scope("http://127.0.0.1:1496/a?input=b").unwrap(), scope("http://127.0.0.1:1496/c").unwrap());
+        assert_ne!(scope("http://127.0.0.1:1496/").unwrap(), scope("http://tauri.localhost/").unwrap());
+        assert_ne!(scope("http://127.0.0.1:1496/").unwrap(), scope("http://127.0.0.1:1420/").unwrap());
+        for url in ["file:///C:/app/index.html", "data:text/plain,unknown", "tauri://localhost/", "about:blank"] {
+            assert_eq!(scope(url).unwrap_err(), Error::InvalidReference);
+        }
+    }
+
+    #[test]
+    fn reference_receipts_isolate_scopes_and_exclude_legacy_originals() {
+        let root = tempfile::tempdir().unwrap();
+        let a = sha256(b"scope-a");
+        let b = sha256(b"scope-b");
+        let png = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        let imported_a = import_reference_scoped(root.path(), &png, &a).unwrap();
+        assert!(list_references(root.path(), &b).unwrap().is_empty());
+        let imported_b = import_reference_scoped(root.path(), &png, &b).unwrap();
+        let legacy = import_reference(root.path(), &input(30, ImageFormat::Bmp)).unwrap();
+        assert_eq!(list_references(root.path(), &a).unwrap(), vec![imported_a.file.reference.clone()]);
+        assert_eq!(list_references(root.path(), &b).unwrap(), vec![imported_b.file.reference.clone()]);
+        remove_scoped_references(root.path(), &b, &[imported_b.file.reference]).unwrap();
+        assert_eq!(list_references(root.path(), &a).unwrap(), vec![imported_a.file.reference.clone()]);
+        assert!(root.path().join(&imported_a.file.reference).exists());
+        assert!(root.path().join(&legacy.file.reference).exists());
+        assert!(list_references(root.path(), &b).unwrap().is_empty());
+        remove_scoped_references(root.path(), &a, &[legacy.file.reference]).unwrap();
+        assert!(root.path().join(&imported_a.file.reference).exists());
+    }
+
+    #[test]
+    fn reference_receipt_precedes_publication_and_failed_import_cleans_both() {
+        let root = tempfile::tempdir().unwrap();
+        let scope = sha256(b"scope-a");
+        let png = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        assert_eq!(import_reference_with_publisher(root.path(), &png, Some(&scope), |path, _| {
+            assert!(!path.exists());
+            let references = list_references(root.path(), &scope).unwrap();
+            assert_eq!(references.len(), 1);
+            assert_eq!(root.path().join(&references[0]), path);
+            std::fs::write(path, b"partial").unwrap();
+            Err(Error::Storage)
+        }).unwrap_err(), Error::Storage);
+        assert!(list_references(root.path(), &scope).unwrap().is_empty());
+        assert_eq!(std::fs::read_dir(root.path().join("drawing/references")).unwrap().count(), 0);
+        let imported = import_reference_scoped(root.path(), &png, &scope).unwrap();
+        std::fs::remove_file(root.path().join(&imported.file.reference)).unwrap();
+        assert_eq!(list_references(root.path(), &scope).unwrap(), vec![imported.file.reference.clone()]);
+        remove_scoped_references(root.path(), &scope, &[imported.file.reference]).unwrap();
+        assert!(list_references(root.path(), &scope).unwrap().is_empty());
+    }
+
+    #[test]
+    fn invalid_reference_receipts_prevent_all_requested_deletes() {
+        let scope = sha256(b"scope-a");
+        let png = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        for invalid in ["version", "digest", "size", "reference", "unknown", "malformed"] {
+            let root = tempfile::tempdir().unwrap();
+            let first = import_reference_scoped(root.path(), &png, &scope).unwrap();
+            let second = import_reference_scoped(root.path(), &png, &scope).unwrap();
+            let receipt_path = reference_import_directory(root.path(), &scope).unwrap().join(format!("{}.json", second.file.id));
+            let mut receipt = serde_json::to_value(read_reference_receipt(&receipt_path).unwrap()).unwrap();
+            match invalid {
+                "version" => receipt["version"] = serde_json::json!(2),
+                "digest" => receipt["digest"] = serde_json::json!("bad-digest"),
+                "size" => receipt["size"] = serde_json::json!(0),
+                "reference" => receipt["reference"] = serde_json::json!(first.file.reference),
+                "unknown" => receipt["unknown"] = serde_json::json!(true),
+                "malformed" => {},
+                _ => unreachable!(),
+            }
+            let corrupted = if invalid == "malformed" { b"{invalid".to_vec() } else { serde_json::to_vec(&receipt).unwrap() };
+            std::fs::write(&receipt_path, &corrupted).unwrap();
+            assert!(list_references(root.path(), &scope).is_err());
+            assert!(remove_scoped_references(root.path(), &scope, &[first.file.reference.clone(), second.file.reference.clone()]).is_err());
+            assert_eq!(std::fs::read(root.path().join(&first.file.reference)).unwrap(), png);
+            assert_eq!(std::fs::read(root.path().join(&second.file.reference)).unwrap(), png);
+            assert_eq!(std::fs::read(receipt_path).unwrap(), corrupted);
+        }
+    }
+
+    #[test]
+    fn original_digest_or_size_mismatch_preserves_all_receipted_files() {
+        let scope = sha256(b"scope-a");
+        let png = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        for truncate in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let first = import_reference_scoped(root.path(), &png, &scope).unwrap();
+            let second = import_reference_scoped(root.path(), &png, &scope).unwrap();
+            let mut modified = png.clone();
+            if truncate { modified.pop(); } else { modified[40] ^= 1; }
+            std::fs::write(root.path().join(&second.file.reference), &modified).unwrap();
+            // Inventory does not read retained original content.
+            assert_eq!(list_references(root.path(), &scope).unwrap().len(), 2);
+            assert_eq!(remove_scoped_references(root.path(), &scope, &[first.file.reference.clone(), second.file.reference.clone()]).unwrap_err(), Error::Corrupt);
+            assert_eq!(std::fs::read(root.path().join(&first.file.reference)).unwrap(), png);
+            assert_eq!(std::fs::read(root.path().join(&second.file.reference)).unwrap(), modified);
+            assert_eq!(list_references(root.path(), &scope).unwrap().len(), 2);
+        }
+    }
+
+    #[test]
+    fn reference_inventory_lists_only_fixed_directory_without_writes() {
+        let root = tempfile::tempdir().unwrap();
+        let scope = sha256(b"scope-a");
+        assert!(list_references(root.path(), &scope).unwrap().is_empty());
+        assert!(!root.path().join("drawing").exists());
+        let mut expected = Vec::new();
+        for format in [ImageFormat::Png, ImageFormat::Jpeg, ImageFormat::WebP, ImageFormat::Bmp] {
+            let bytes = STANDARD.decode(input(20, format).data).unwrap();
+            let imported = import_reference_scoped(root.path(), &bytes, &scope).unwrap();
+            expected.push(imported.file.reference);
+        }
+        let task = Uuid::new_v4().to_string();
+        let outputs = save(root.path(), &task, &[input(30, ImageFormat::Png)]).unwrap();
+        expected.sort();
+        assert_eq!(list_references(root.path(), &scope).unwrap(), expected);
+        assert!(root.path().join(&outputs[0].reference).exists());
+        for reference in expected {
+            assert!(root.path().join(reference).exists());
+        }
+    }
+
+    #[test]
+    fn reference_inventory_refuses_invalid_entries_and_nonfiles() {
+        let scope = sha256(b"scope-a");
+        for name in [
+            "unknown.txt".to_owned(),
+            format!("{}.JSON", Uuid::new_v4()),
+            "00000000-0000-4000-8000-00000000000A.json".to_owned(),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let imported = import_reference(root.path(), &input(20, ImageFormat::Png)).unwrap();
+            let directory = reference_import_directory(root.path(), &scope).unwrap();
+            std::fs::create_dir_all(&directory).unwrap();
+            let invalid = directory.join(name);
+            std::fs::write(&invalid, b"keep unknown original").unwrap();
+            assert_eq!(list_references(root.path(), &scope).unwrap_err(), Error::InvalidReference);
+            assert!(invalid.exists());
+            assert!(root.path().join(imported.file.reference).exists());
+        }
+        let root = tempfile::tempdir().unwrap();
+        let directory = reference_import_directory(root.path(), &scope).unwrap();
+        std::fs::create_dir_all(directory.parent().unwrap()).unwrap();
+        std::fs::write(&directory, b"keep").unwrap();
+        assert_eq!(list_references(root.path(), &scope).unwrap_err(), Error::InvalidReference);
+        std::fs::remove_file(&directory).unwrap();
+        std::fs::create_dir_all(directory.join(format!("{}.json", Uuid::new_v4()))).unwrap();
+        assert_eq!(list_references(root.path(), &scope).unwrap_err(), Error::InvalidReference);
+    }
+
+    #[test]
+    fn reference_inventory_refuses_linked_directory_and_entry() {
+        let scope = sha256(b"scope-a");
+        for linked_entry in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let outside = tempfile::tempdir().unwrap();
+            std::fs::write(outside.path().join("private.png"), b"keep outside").unwrap();
+            let linked = if linked_entry {
+                let bytes = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+                let imported = import_reference_scoped(root.path(), &bytes, &scope).unwrap();
+                assert!(root.path().join(imported.file.reference).exists());
+                reference_import_directory(root.path(), &scope).unwrap().join(format!("{}.json", Uuid::new_v4()))
+            } else {
+                let directory = reference_import_directory(root.path(), &scope).unwrap();
+                std::fs::create_dir_all(directory.parent().unwrap()).unwrap();
+                directory
+            };
+            #[cfg(windows)]
+            {
+                let result = std::process::Command::new("cmd")
+                    .args(["/c", "mklink", "/J"])
+                    .arg(&linked)
+                    .arg(outside.path())
+                    .output()
+                    .unwrap();
+                assert!(
+                    result.status.success(),
+                    "synthetic junction creation failed: {} {}",
+                    String::from_utf8_lossy(&result.stdout),
+                    String::from_utf8_lossy(&result.stderr)
+                );
+            }
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(outside.path(), &linked).unwrap();
+            assert_eq!(list_references(root.path(), &scope).unwrap_err(), Error::InvalidReference);
+            assert_eq!(std::fs::read(outside.path().join("private.png")).unwrap(), b"keep outside");
+        }
     }
 
     #[test]
@@ -2351,8 +2778,35 @@ mod tests {
                 root.path(),
                 &format!("drawing/references/{}.png", Uuid::new_v4())
             ),
-            Err(Error::InvalidReference)
+            Err(Error::Unavailable)
         ));
+    }
+
+    #[test]
+    fn reference_thumbnails_preserve_originals_alpha_and_validate_paths() {
+        let root = tempfile::tempdir().unwrap();
+        for (width, height, expected) in [(640, 320, (256, 128)), (3, 2, (3, 2))] {
+            let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                width, height, image::Rgba([20, 40, 90, 70]),
+            ));
+            let mut bytes = Cursor::new(Vec::new());
+            image.write_to(&mut bytes, ImageFormat::Png).unwrap();
+            let bytes = bytes.into_inner();
+            let imported = import_reference(root.path(), &DrawingImageInput {
+                mime: "image/png".into(), data: STANDARD.encode(&bytes),
+            }).unwrap();
+            let derived = thumbnail(root.path(), &imported.file.reference).unwrap();
+            let decoded = decode_image(&STANDARD.decode(derived.data).unwrap(), &derived.mime).unwrap().to_rgba8();
+            assert_eq!(decoded.dimensions(), expected);
+            assert!(decoded.pixels().all(|pixel| pixel.0 == [20, 40, 90, 70]));
+            assert_eq!(std::fs::read(root.path().join(&imported.file.reference)).unwrap(), bytes);
+            let wrong = imported.file.reference.replace(".png", ".jpg");
+            std::fs::write(root.path().join(&wrong), &bytes).unwrap();
+            assert!(matches!(thumbnail(root.path(), &wrong), Err(Error::Corrupt)));
+            std::fs::write(root.path().join(&imported.file.reference), b"corrupt").unwrap();
+            assert!(matches!(thumbnail(root.path(), &imported.file.reference), Err(Error::Corrupt)));
+        }
+        assert!(matches!(thumbnail(root.path(), "drawing/references/../../private.png"), Err(Error::InvalidReference)));
     }
 
     #[test]

@@ -68,6 +68,7 @@ export const dataPolicies = {
     backgroundFit: "backup", backgroundMask: "backup", backgroundBlur: "backup", backgroundLibrary: "resource", backgroundEnabled: "backup", backgroundName: "backup",
   } satisfies FieldPolicy<AppearancePreferences>,
   background: { id: "backup", name: "backup", reference: "resource", focus: "backup", fit: "backup", mask: "backup", blur: "backup" } satisfies FieldPolicy<BackgroundLibraryEntry>,
+  // #110 retains old durable references for compatibility; new Blob/managed selections are session-only.
   drawingDraft: { id: "exclude", prompt: "exclude", aspectRatio: "backup", resolution: "backup", modelId: "backup", openai: "backup", gemini: "backup", count: "backup", concurrency: "backup", completionSound: "backup", reusedProtocol: "backup", references: "exclude" } satisfies FieldPolicy<DrawingDraft>,
   drawingOpenai: { size: "backup", quality: "backup" } satisfies FieldPolicy<NonNullable<DrawingDraft["openai"]>>,
   drawingGemini: { temperature: "backup", safetyThreshold: "backup", outputMode: "backup" } satisfies FieldPolicy<GeminiDrawingOptions>,

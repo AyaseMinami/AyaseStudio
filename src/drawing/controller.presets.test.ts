@@ -127,21 +127,25 @@ describe("pure-text presets and history reuse #90", () => {
     f.controller.setDraft({ ...initialDrawingDraft, prompt: "discarded draft", modelId: "gm", aspectRatio: "auto", resolution: "auto", openai: { size: "auto", quality: "low" } });
     const before = await f.repository.load();
     await f.controller.reuseTask("openai");
-    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: openai.prompt, modelId: "om", aspectRatio: "auto", resolution: "auto", openai: { size: "1536x1024", quality: "high" }, references: [...references].reverse() });
+    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: openai.prompt, modelId: "om", aspectRatio: "auto", resolution: "auto", openai: { size: "1536x1024", quality: "high" } });
+    expect(f.controller.getSnapshot().references).toEqual([...references].reverse());
     await f.controller.reuse("r");
-    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: parameters.prompt, modelId: "gm", aspectRatio: "16:9", resolution: "2K", openai: { size: "1536x1024", quality: "high" }, references });
+    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: parameters.prompt, modelId: "gm", aspectRatio: "16:9", resolution: "2K", openai: { size: "1536x1024", quality: "high" } });
+    expect(f.controller.getSnapshot().references).toEqual(references);
     await f.controller.reuseTask("openai");
-    expect(f.controller.getSnapshot().draft).toMatchObject({ modelId: "om", aspectRatio: "16:9", resolution: "2K", references: [...references].reverse() });
+    expect(f.controller.getSnapshot().draft).toMatchObject({ modelId: "om", aspectRatio: "16:9", resolution: "2K" });
+    expect(f.controller.getSnapshot().references).toEqual([...references].reverse());
     const after = await f.repository.load(); expect(after.tasks).toEqual(before.tasks); expect(after.results).toEqual(before.results);
     expect(f.transport).not.toHaveBeenCalled(); expect(f.files.save).not.toHaveBeenCalled();
   });
-  it("retains invalid historical protocol controls and reports each unavailable reference", async () => {
+  it("retains invalid historical protocol controls and defers original validation until submission", async () => {
     const f = fixture(); await f.repository.enqueue([task("openai", openai)]); await f.controller.initialize();
     f.controller.updateSettings({ version: 3, activeModelId: null, providers: [] });
     vi.mocked(f.files.read).mockRejectedValue(new Error("missing"));
     await f.controller.reuseTask("openai");
-    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: openai.prompt, modelId: null, reusedProtocol: "openai-images", openai: { size: "1536x1024", quality: "high" }, references: [...references].reverse() });
-    expect(f.controller.getSnapshot().error).toContain("模型已失效"); expect(f.controller.getSnapshot().error).toContain("参考图 1、2");
+    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: openai.prompt, modelId: null, reusedProtocol: "openai-images", openai: { size: "1536x1024", quality: "high" } });
+    expect(f.controller.getSnapshot().references).toEqual([...references].reverse());
+    expect(f.controller.getSnapshot().error).toContain("模型已失效"); expect(f.files.read).not.toHaveBeenCalled();
     expect(f.transport).not.toHaveBeenCalled(); expect((await f.repository.load()).tasks[0].parameters).toEqual(openai);
   });
   it("copies task and result text without loading it or generating; clipboard failure preserves the draft", async () => {

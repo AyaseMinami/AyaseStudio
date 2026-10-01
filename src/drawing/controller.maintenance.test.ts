@@ -172,20 +172,21 @@ describe("drawing maintenance preparation", () => {
     expectNoMaintenanceCleanup(f);
   });
 
-  it("waits for reference import and its resulting draft persistence", async () => {
+  it("drains an accepted selection but refuses maintenance that would discard its session bytes", async () => {
     const f = fixture(); await prepare(f);
-    const importing = deferred<void>();
-    const original = vi.mocked(f.files.importReference).getMockImplementation()!;
-    vi.mocked(f.files.importReference).mockImplementationOnce(async input => { await importing.promise; return original(input); });
-    const imported = f.controller.addReferences([new File(["synthetic"], "accepted.png", { type: "image/png" })]);
-    await vi.waitFor(() => expect(f.files.importReference).toHaveBeenCalledOnce());
-    let settled = false;
-    const maintenance = f.controller.prepareMaintenance().then(() => { settled = true; });
+    const reading = deferred<ArrayBuffer>();
+    const file = new File(["synthetic"], "accepted.png", { type: "image/png" });
+    vi.spyOn(file, "arrayBuffer").mockReturnValue(reading.promise);
+    const imported = f.controller.addReferences([file]);
+    await vi.waitFor(() => expect(file.arrayBuffer).toHaveBeenCalledOnce());
+    const maintenance = f.controller.prepareMaintenance();
+    const rejected = expect(maintenance).rejects.toThrow("参考图");
     expect(f.controller.getSnapshot()).toMatchObject({ closing: true, referencesBusy: true });
-    await f.controller.clearReferences(); expect(settled).toBe(false);
-    importing.resolve(); await imported; await maintenance;
-    expect(f.saved.draft?.references).toEqual([expect.objectContaining({ id: "ref", name: "accepted.png" })]);
-    expect(f.controller.getSnapshot()).toMatchObject({ closing: true, referencesBusy: false });
+    reading.resolve(new TextEncoder().encode("synthetic").buffer); await imported; await rejected;
+    expect(f.controller.getSnapshot().references).toEqual([expect.objectContaining({ name: "accepted.png", blob: expect.any(Blob) })]);
+    expect(f.saved.draft?.references).toBeUndefined();
+    expect(f.controller.getSnapshot()).toMatchObject({ closing: false, referencesBusy: false });
+    expect(f.files.importReference).not.toHaveBeenCalled();
     expect(f.transport.generate).not.toHaveBeenCalled(); expectNoMaintenanceCleanup(f);
   });
 

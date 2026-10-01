@@ -5,13 +5,14 @@ import type { DrawingFiles, DrawingImageInput, DrawingTask, ImageGenerationTrans
 import type { ConnectionSettingsState } from "../chat/settings";
 import { ImageGenerationError } from "./geminiImage";
 import { createOpenAIImagesTransport } from "./openaiImages";
+import { referenceDigest } from "./referenceSession";
 
 const images: DrawingImageInput[] = [{ mime: "image/png", data: "AQID" }];
 const settings: ConnectionSettingsState = { version: 3, activeModelId: "chat-model", providers: [{ id: "p", name: "test", connections: [
   { id: "image", name: "drawing", protocol: "gemini-image", baseUrl: "https://example.test", apiKey: "synthetic-secret", models: [{ id: "image-model", modelId: "test-image" }] },
   { id: "chat", name: "chat", protocol: "gemini-native", baseUrl: "https://example.test", apiKey: "synthetic-chat", models: [{ id: "chat-model", modelId: "test-chat" }] },
 ] }] };
-const file = { id: "file-1", reference: "drawing/task/file.png", mime: "image/png", size: 3, width: 1, height: 1 };
+const file = { id: "file-1", reference: "drawing/task-1/file.png", mime: "image/png", size: 3, width: 1, height: 1 };
 function fixture(snapshot: DrawingSnapshot = { tasks: [], results: [] }) {
   let saved: DrawingSnapshot = structuredClone(snapshot);
   const repository: DrawingRepository = {
@@ -29,10 +30,12 @@ function fixture(snapshot: DrawingSnapshot = { tasks: [], results: [] }) {
     complete: vi.fn(async (task, results) => { saved.tasks = [structuredClone(task), ...saved.tasks.filter(item => item.id !== task.id)]; saved.results = [...structuredClone(results), ...saved.results.filter(item => item.taskId !== task.id)]; }),
   };
   let referenceSequence = 0;
-  const files: DrawingFiles = { save: vi.fn(async () => [file]), recover: vi.fn(async () => null),
-    importReference: vi.fn(async image => { const id = `ref-${++referenceSequence}`; return { ...file, id, reference: `drawing/references/${id}.png`, digest: image.data }; }),
+  const originals = new Map<string, DrawingImageInput>();
+  const files: DrawingFiles = { save: vi.fn(async taskId => [{ ...file, reference: `drawing/${taskId}/file.png` }]), recover: vi.fn(async () => null),
+    importReference: vi.fn(async image => { const id = `ref-${++referenceSequence}`, reference = `drawing/references/${id}.png`; originals.set(reference, image);
+      return { ...file, id, reference, digest: await referenceDigest(Uint8Array.from(atob(image.data), c => c.charCodeAt(0))) }; }),
     removeReferences: vi.fn(async () => undefined),
-    read: vi.fn(async () => images[0]), export: vi.fn(async () => true) };
+    read: vi.fn(async reference => originals.get(reference) ?? images[0]), export: vi.fn(async () => true) };
   const transport: ImageGenerationTransport = { generate: vi.fn(async () => images) };
   let sequence = 0;
   const controller = new DrawingController({ repository, files, transport: vi.fn(async () => transport),
@@ -84,7 +87,8 @@ describe("application drawing task controller", () => {
     await f.controller.generate(settings);
     const prior = structuredClone(f.saved());
     await f.controller.clearReferences();
-    expect(f.saved().draft).toMatchObject({ prompt: "synthetic prompt", modelId: "image-model", aspectRatio: "1:1", resolution: "2K", references: [] });
+    expect(f.saved().draft).toMatchObject({ prompt: "synthetic prompt", modelId: "image-model", aspectRatio: "1:1", resolution: "2K" });
+    expect(f.controller.getSnapshot().references).toEqual([]);
     expect(f.saved().tasks).toEqual(prior.tasks); expect(f.saved().results).toEqual(prior.results);
     expect(f.files.removeReferences).not.toHaveBeenCalled();
     expect(f.transport.generate).toHaveBeenCalledOnce();
@@ -97,7 +101,7 @@ describe("application drawing task controller", () => {
     await f.controller.useAsReference("file-1");
     await f.controller.deleteTasks(["task-1"]);
     await f.controller.deleteResults(["file-1"]);
-    expect(f.saved().results).toEqual([]); expect(f.saved().draft?.references).toHaveLength(1);
+    expect(f.saved().results).toEqual([]); expect(f.controller.getSnapshot().references).toHaveLength(1);
     expect(f.controller.getSnapshot().selectedResultId).toBeNull();
     expect(f.files.discardRecovery).not.toHaveBeenCalled();
     await f.controller.clearReferences();
@@ -131,7 +135,7 @@ describe("application drawing task controller", () => {
   it("batch export distinguishes partial failure from cancellation and metadata requires explicit choice", async () => {
     const f = fixture(); await prepare(f); await f.controller.generate(settings);
     const result = f.saved().results[0];
-    const g = fixture({ tasks: [], results: [result, { ...result, id: "r2", reference: "drawing/t/r2.png" }, { ...result, id: "r3", reference: "drawing/t/r3.png" }] });
+    const g = fixture({ tasks: [], results: [result, { ...result, id: "r2", reference: "drawing/task-1/r2.png" }, { ...result, id: "r3", reference: "drawing/task-1/r3.png" }] });
     await g.controller.initialize();
     vi.mocked(g.files.export).mockRejectedValueOnce(new Error("file missing")).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     await g.controller.exportResults(["file-1", "r2", "r3"], false);
@@ -145,7 +149,7 @@ describe("application drawing task controller", () => {
     expect(g.files.export).toHaveBeenCalledWith(result.reference, { prompt: "synthetic prompt", model: "test-image", protocol: "gemini-image", api_type: "gemini", aspect_ratio: "1:1", resolution: "2K" });
     expect(g.transport.generate).not.toHaveBeenCalled();
   });
-  it("reuses ordered references without requests and reports every missing input and invalid target", async () => {
+  it("reuses ordered references without reading originals and reports an invalid target", async () => {
     const f = fixture(); await prepare(f);
     await f.controller.addReferences([new File(["a"], "a.png"), new File(["b"], "b.png")]);
     await f.controller.generate(settings); const historical = structuredClone(f.saved().results[0]);
@@ -154,10 +158,9 @@ describe("application drawing task controller", () => {
     vi.mocked(f.files.read).mockRejectedValue(new Error("missing"));
     vi.mocked(f.transport.generate).mockClear();
     await f.controller.reuse("file-1"); await f.controller.flush();
-    expect(f.saved().draft?.references).toEqual(historical.parameters.references);
+    expect(f.controller.getSnapshot().references).toEqual(historical.parameters.references);
     expect(f.saved().draft?.modelId).toBeNull();
     expect(f.controller.getSnapshot().error).toContain("模型已失效");
-    expect(f.controller.getSnapshot().error).toContain("参考图 1、2");
     expect(f.saved().results[0]).toEqual(historical); expect(f.transport.generate).not.toHaveBeenCalled();
   });
   it("failed reuse persistence never rolls back a newer prompt edit queued during saving", async () => {
@@ -178,8 +181,8 @@ describe("application drawing task controller", () => {
     const corrupt = { ...file, taskId: "unrelated-task", createdAt: "2026-10-01", parameters };
     const f = fixture({ tasks: [], results: [corrupt] }); f.files.discardRecovery = vi.fn(async () => undefined);
     await f.controller.initialize(); await f.controller.deleteResults([file.id]);
-    expect(f.files.discardRecovery).not.toHaveBeenCalled(); expect(f.controller.getSnapshot().error).toContain("清理未完成");
-    const g = fixture({ tasks: [], results: [{ ...corrupt, taskId: "task" }] }); g.files.discardRecovery = vi.fn(async () => undefined);
+    expect(f.files.discardRecovery).not.toHaveBeenCalled(); expect(f.controller.getSnapshot().ready).toBe(false);
+    const g = fixture({ tasks: [], results: [{ ...corrupt, taskId: "task-1" }] }); g.files.discardRecovery = vi.fn(async () => undefined);
     await g.controller.initialize();
     vi.mocked(g.repository.load).mockResolvedValueOnce({ tasks: [{ id: "future", status: "new-unknown-status", parameters } as unknown as DrawingTask], results: [] });
     await g.controller.deleteResults([file.id]);
@@ -188,63 +191,72 @@ describe("application drawing task controller", () => {
   it("unknown durable ownership also prevents imported-reference cleanup after draft clear", async () => {
     const f = fixture(); await prepare(f);
     await f.controller.addReferences([new File(["synthetic"], "input.png", { type: "image/png" })]);
+    await f.controller.generate(settings);
     vi.mocked(f.files.removeReferences).mockClear();
     vi.mocked(f.repository.load).mockResolvedValueOnce({ results: [], tasks: [{ id: "future", status: "future-status" } as unknown as DrawingTask] });
     await f.controller.clearReferences();
     expect(f.files.removeReferences).not.toHaveBeenCalled();
-    expect(f.controller.getSnapshot().draft.references).toEqual([]);
+    expect(f.controller.getSnapshot().references).toEqual([]);
     expect(f.controller.getSnapshot().error).toContain("参考图读取或保存失败");
   });
-  it("imports a batch, skips duplicate bytes, reorders and persists references across reload", async () => {
+  it("stages a batch, reorders, deduplicates on submission and restores only task inputs across reload", async () => {
     const f = fixture(); await prepare(f);
     const first = new File(["first"], "first.png", { type: "image/png" });
     const second = new File(["second"], "second.bmp", { type: "image/bmp" });
     await f.controller.addReferences([first, second, first]);
-    expect(f.controller.getSnapshot().draft.references?.map(item => item.name)).toEqual(["first.png", "second.bmp"]);
-    expect(f.controller.getSnapshot().error).toContain("重复");
-    const id = f.controller.getSnapshot().draft.references![1].id;
+    expect(f.controller.getSnapshot().references.map(item => item.name)).toEqual(["first.png", "second.bmp", "first.png"]);
+    expect(f.files.importReference).not.toHaveBeenCalled();
+    const id = f.controller.getSnapshot().references[1].id;
     await f.controller.moveReference(id, -1);
+    await f.controller.generate(settings);
+    expect(f.controller.getSnapshot().notice).toContain("重复");
+    expect(f.files.importReference).toHaveBeenCalledTimes(2);
     const restored = fixture(f.saved()); await restored.controller.initialize();
-    expect(restored.controller.getSnapshot().draft.references?.map(item => item.name)).toEqual(["second.bmp", "first.png"]);
-    expect(f.transport.generate).not.toHaveBeenCalled();
-    await f.controller.removeReference(id);
-    expect(f.files.removeReferences).toHaveBeenCalledWith([expect.stringContaining("drawing/references/")]);
+    expect(restored.controller.getSnapshot().references).toEqual([]);
+    expect(restored.controller.getSnapshot().tasks[0].parameters.references?.map(item => item.name)).toEqual(["second.bmp", "first.png"]);
+    await f.controller.clearReferences();
+    expect(f.files.removeReferences).not.toHaveBeenCalled();
   });
   it("pins submission references while the draft is edited, and failed tasks retain their inputs", async () => {
     const f = fixture(); await prepare(f);
     await f.controller.addReferences([new File(["first"], "first.png", { type: "image/png" })]);
-    const reference = f.controller.getSnapshot().draft.references![0];
+    const selection = f.controller.getSnapshot().references[0];
     let release!: () => void;
     const reading = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(f.files.read).mockImplementation(async () => { await reading; return images[0]; });
+    const read = vi.mocked(f.files.read).getMockImplementation()!;
+    vi.mocked(f.files.read).mockImplementation(async path => { await reading; return read(path); });
     vi.mocked(f.transport.generate).mockRejectedValue(new ImageGenerationError("synthetic failure"));
     const running = f.controller.generate(settings);
     await vi.waitFor(() => expect(f.files.read).toHaveBeenCalled());
-    await f.controller.removeReference(reference.id);
+    const reference = f.saved().tasks[0].parameters.references![0];
+    await f.controller.removeReference(selection.id);
     f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "next prompt" });
     expect(f.files.removeReferences).not.toHaveBeenCalled();
     release(); await running;
-    expect(f.transport.generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: "synthetic prompt", references: [reference] }), "synthetic-secret", expect.any(AbortSignal), images);
+    expect(f.transport.generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: "synthetic prompt", references: [reference] }), "synthetic-secret", expect.any(AbortSignal), [{ mime: "image/png", data: btoa("first") }]);
     expect(f.saved().tasks[0]).toMatchObject({ status: "failed", parameters: { references: [reference] } });
-    expect(f.saved().draft).toMatchObject({ prompt: "next prompt", references: [] });
+    expect(f.saved().draft).toMatchObject({ prompt: "next prompt" });
+    expect(f.controller.getSnapshot().references).toEqual([]);
     expect(f.files.removeReferences).not.toHaveBeenCalled();
   });
   it("cleans an uncommitted batch on import failure and blocks unreadable task inputs before dispatch", async () => {
     const f = fixture(); await prepare(f);
     vi.mocked(f.files.importReference).mockRejectedValueOnce(new Error("synthetic corrupt image"));
     await f.controller.addReferences([new File(["bad"], "bad.png")]);
+    await f.controller.generate(settings);
     expect(f.controller.getSnapshot().error).toContain("参考图");
     expect(f.controller.getSnapshot().draft.references).toBeUndefined();
-    await f.controller.addReferences([new File(["first"], "first.png")]);
-    vi.mocked(f.files.importReference).mockResolvedValueOnce({ ...file, id: "orphan", reference: "drawing/references/orphan.png", digest: "another" })
+    await f.controller.clearReferences();
+    vi.mocked(f.files.importReference).mockResolvedValueOnce({ ...file, id: "orphan", reference: "drawing/references/orphan.png", digest: await referenceDigest(new TextEncoder().encode("another")) })
       .mockRejectedValueOnce(new Error("failure"));
     await f.controller.addReferences([new File(["another"], "other.png"), new File(["bad"], "bad.png")]);
-    // Existing draft is unaffected by the rejected batch.
-    expect(f.controller.getSnapshot().draft.references).toHaveLength(1);
+    await f.controller.generate(settings);
+    expect(f.controller.getSnapshot().references).toHaveLength(2);
+    expect(f.saved().tasks).toEqual([]);
     expect(f.files.removeReferences).toHaveBeenCalledWith(["drawing/references/orphan.png"]);
     vi.mocked(f.files.read).mockRejectedValue(new Error("unavailable"));
     await f.controller.generate(settings);
-    expect(f.controller.getSnapshot().error).toContain("参考图读取失败");
+    expect(f.saved().tasks[0].error).toContain("参考图读取失败");
     expect(f.transport.generate).not.toHaveBeenCalled();
     expect(f.saved().tasks).toEqual([expect.objectContaining({ status: "failed", parameters: expect.objectContaining({ references: expect.any(Array) }) })]);
   });
@@ -253,8 +265,8 @@ describe("application drawing task controller", () => {
     f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "next prompt" });
     vi.mocked(f.transport.generate).mockClear();
     await f.controller.useAsReference("file-1"); await f.controller.useAsReference("file-1");
-    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: "next prompt", modelId: "image-model", references: [{ reference: file.reference }] });
-    expect(f.controller.getSnapshot().draft.references).toHaveLength(1);
+    expect(f.controller.getSnapshot().draft).toMatchObject({ prompt: "next prompt", modelId: "image-model" });
+    expect(f.controller.getSnapshot().references).toMatchObject([{ reference: file.reference }]);
     expect(f.files.importReference).not.toHaveBeenCalled(); expect(f.transport.generate).not.toHaveBeenCalled();
     await f.controller.removeReference("file-1");
     expect(f.files.removeReferences).not.toHaveBeenCalled();
@@ -368,7 +380,7 @@ describe("application drawing task controller", () => {
   it("cancel before dispatch is cancelled, cancel after dispatch is unknown and never retried", async () => {
     const f = fixture(); await prepare(f);
     const before = f.controller.generate(settings); f.controller.cancel(); await before;
-    expect(f.saved().tasks[0].status).toBe("cancelled");
+    expect(f.saved().tasks).toEqual([]);
     expect(f.transport.generate).not.toHaveBeenCalled();
     vi.mocked(f.transport.generate).mockImplementation(async (_, __, signal) => new Promise((_, reject) => {
       signal.addEventListener("abort", () => reject(new Error("provider exception synthetic-secret")), { once: true });

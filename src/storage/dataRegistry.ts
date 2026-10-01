@@ -12,8 +12,8 @@ export const dataModules = {
   search: { version: 2, capabilities: [], resources: "separate Exa credentials; legacy v1 migrates to MCP" },
   drawingSettings: { version: 2, capabilities: [], resources: "allowlisted settings including optional Gemini controls; no prompt or image bindings" },
   drawingPresets: { version: 1, capabilities: [], resources: "explicit text only; dedicated drawing.presets projection" },
-  drawingHistory: { version: 1, capabilities: [], resources: "excluded; retained local task/result/image ownership" },
-  recovery: { version: 1, capabilities: [], resources: "private journals; never portable" },
+  drawingHistory: { version: 1, capabilities: [], resources: "excluded; retained local task/result/image ownership; #110 session selections excluded, legacy draft bindings retained until explicit removal" },
+  recovery: { version: 1, capabilities: [], resources: "private journals; origin-scoped native drawing import receipts v1; never portable" },
 } as const;
 
 /** Every Dexie table, including intentionally excluded tables, must be registered. */

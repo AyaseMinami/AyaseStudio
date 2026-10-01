@@ -15,7 +15,10 @@ export function DrawingResultThumbnail({ reference, label, read }: {
       return;
     }
     const observer = new IntersectionObserver(entries => {
-      setVisible(entries.some(entry => entry.isIntersecting));
+      if (entries.some(entry => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
     });
     observer.observe(container.current);
     return () => observer.disconnect();

@@ -2812,3 +2812,19 @@ textarea:disabled {
 @media (max-width: 860px) {
   .conversation-workspace-body { --assistant-pane-width: min(11.5rem, calc(42% - 1.5 * var(--navigation-gap))); --conversation-pane-width: min(13rem, calc(58% - 1.5 * var(--navigation-gap))); }
 }
+
+/* Drawing keeps its compact title bar independent of settings styling. */
+.drawing-header {
+  display: flex;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgb(var(--color-border));
+  background: transparent;
+  padding-left: 0.75rem;
+}
+.drawing-header .window-controls > button { min-height: 0; }
+@media (max-width: 600px) { .drawing-header { padding-left: 0.5rem; } }

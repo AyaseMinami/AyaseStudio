@@ -4,6 +4,7 @@ import { DrawingController } from "./controller";
 import { ImageGenerationError } from "./geminiImage";
 import type { DrawingRepository, DrawingSnapshot } from "./repository";
 import type { DrawingFiles, DrawingImageInput, DrawingTask, ImageGenerationTransport } from "./types";
+import { initialDrawingDraft } from "./types";
 
 const pixels: DrawingImageInput[] = [{ mime: "image/png", data: "AQID" }];
 const reference = { id: "ref", name: "synthetic.png", reference: "drawing/references/ref.png", mime: "image/png", size: 3, width: 1, height: 1 };
@@ -36,7 +37,7 @@ function fixture(snapshot: DrawingSnapshot = { tasks: [], results: [] }) {
     }),
   };
   const files: DrawingFiles = {
-    save: vi.fn(async id => [{ ...reference, id: `result-${id}`, reference: `drawing/${id}/result.png` }]),
+    save: vi.fn(async id => [{ id: `result-${id}`, reference: `drawing/${id}/result.png`, mime: reference.mime, size: 3, width: 1, height: 1 }]),
     recover: vi.fn(async () => null), read: vi.fn(async () => pixels[0]), export: vi.fn(async () => true),
     importReference: vi.fn(async () => ({ ...reference, digest: "synthetic-digest" })), removeReferences: vi.fn(async () => undefined),
   };
@@ -64,8 +65,7 @@ describe("task lifecycle and history ownership #88", () => {
     f.controller.pause(); expect(await f.controller.regenerate("task-1")).toBe("task-3");
   });
   it("deleting a source preserves a queued replacement and independent results with all input references", async () => {
-    const f = fixture(); await prepare(f);
-    f.controller.setDraft({ ...f.controller.getSnapshot().draft, references: [reference] });
+    const f = fixture({ draft: { ...initialDrawingDraft, references: [reference] }, tasks: [], results: [] }); await prepare(f);
     await f.controller.generate(f.settings); f.controller.pause();
     await f.controller.regenerate("task-1");
     const discard = f.files.discardRecovery = vi.fn(async () => undefined);
@@ -292,20 +292,19 @@ describe("durable drawing queue", () => {
   });
 
   it("counts reference preparation and local file/database saving as occupied concurrency slots", async () => {
-    const f = fixture(); await prepare(f, 2);
-    f.controller.setDraft({ ...f.controller.getSnapshot().draft, references: [reference] });
+    const f = fixture({ draft: { ...initialDrawingDraft, references: [reference] }, tasks: [], results: [] }); await prepare(f, 2);
     const reading = deferred<DrawingImageInput>(), saving = deferred<Awaited<ReturnType<DrawingFiles["save"]>>>(), committing = deferred<void>();
-    vi.mocked(f.files.read).mockReturnValueOnce(reading.promise);
+    vi.mocked(f.files.read).mockResolvedValueOnce(pixels[0]).mockReturnValueOnce(reading.promise);
     vi.mocked(f.files.save).mockReturnValueOnce(saving.promise);
     const complete = vi.mocked(f.repository.complete).getMockImplementation()!;
     vi.mocked(f.repository.complete).mockImplementationOnce(async (task, results) => { await committing.promise; await complete(task, results); });
     const submitted = f.controller.generate(f.settings);
     await vi.waitFor(() => expect(taskById(f, "task-1").status).toBe("preparing"));
-    expect(f.files.read).toHaveBeenCalledOnce(); expect(taskById(f, "task-2").status).toBe("queued");
+    expect(f.files.read).toHaveBeenCalledTimes(2); expect(taskById(f, "task-2").status).toBe("queued");
     expect(f.transport.generate).not.toHaveBeenCalled();
     reading.resolve(pixels[0]); await vi.waitFor(() => expect(f.files.save).toHaveBeenCalledOnce());
     expect(taskById(f, "task-1").status).toBe("saving"); expect(f.transport.generate).toHaveBeenCalledOnce();
-    saving.resolve([{ ...reference, id: "result-1" }]); await vi.waitFor(() => expect(f.repository.complete).toHaveBeenCalledOnce());
+    saving.resolve([{ ...reference, id: "result-1", reference: "drawing/task-1/result.png" }]); await vi.waitFor(() => expect(f.repository.complete).toHaveBeenCalledOnce());
     expect(f.transport.generate).toHaveBeenCalledOnce();
     committing.resolve(); await submitted; expect(f.transport.generate).toHaveBeenCalledTimes(2);
   });
@@ -343,11 +342,10 @@ describe("durable drawing queue", () => {
   });
 
   it("cancels preparation without sending, then releases the slot for the next task", async () => {
-    const f = fixture(); await prepare(f, 2);
-    f.controller.setDraft({ ...f.controller.getSnapshot().draft, references: [reference] });
-    const reading = deferred<DrawingImageInput>(); vi.mocked(f.files.read).mockReturnValueOnce(reading.promise);
+    const f = fixture({ draft: { ...initialDrawingDraft, references: [reference] }, tasks: [], results: [] }); await prepare(f, 2);
+    const reading = deferred<DrawingImageInput>(); vi.mocked(f.files.read).mockResolvedValueOnce(pixels[0]).mockReturnValueOnce(reading.promise);
     const submitted = f.controller.generate(f.settings);
-    await vi.waitFor(() => expect(f.files.read).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(f.files.read).toHaveBeenCalledTimes(2));
     f.controller.cancel("task-1"); reading.resolve(pixels[0]); await submitted;
     expect(taskById(f, "task-1").status).toBe("cancelled"); expect(taskById(f, "task-2").status).toBe("completed");
     expect(f.transport.generate).toHaveBeenCalledOnce();
@@ -366,15 +364,16 @@ describe("durable drawing queue", () => {
   });
 
   it("freezes draft/reference snapshots and active keys, while later queued tasks use the current key", async () => {
-    const f = fixture(); await prepare(f, 2);
-    const refs = [{ ...reference }]; f.controller.setDraft({ ...f.controller.getSnapshot().draft, references: refs });
+    const refs = [{ ...reference }];
+    const f = fixture({ draft: { ...initialDrawingDraft, references: refs }, tasks: [], results: [] }); await prepare(f, 2);
     const request = deferred<DrawingImageInput[]>(); vi.mocked(f.transport.generate).mockReturnValueOnce(request.promise);
     const submitted = f.controller.generate(f.settings); await vi.waitFor(() => expect(f.transport.generate).toHaveBeenCalledOnce());
     refs[0].name = "mutated outside";
     f.settings.providers[0].connections[0].apiKey = "rotated-key"; f.controller.updateSettings(f.settings);
-    f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "next draft", references: [] });
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, prompt: "next draft" });
+    await f.controller.clearReferences();
     expect(vi.mocked(f.transport.generate).mock.calls[0]).toEqual([
-      expect.objectContaining({ prompt: "first", references: [{ ...reference }] }), "synthetic-key", expect.any(AbortSignal), pixels,
+      expect.objectContaining({ prompt: "first", references: [expect.objectContaining(reference)] }), "synthetic-key", expect.any(AbortSignal), pixels,
     ]);
     request.resolve(pixels); await submitted;
     expect(vi.mocked(f.transport.generate).mock.calls[1][1]).toBe("rotated-key");

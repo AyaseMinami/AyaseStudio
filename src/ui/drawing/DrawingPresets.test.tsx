@@ -39,7 +39,25 @@ async function fill(selector: "input" | "textarea", value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-async function click(label: string) { await act(async () => button(label).click()); }
+async function click(label: string) {
+  await act(async () => button(label).click());
+}
+
+it("shows four persistent actions and enables selection-dependent actions only after choosing a preset", async () => {
+  await act(async () => root.render(<DrawingPresets {...props()} />));
+  const actions = ["更新预设", "另存预设", "编辑预设", "删除预设"];
+  expect([...host.querySelectorAll("button")].map(item => item.textContent)).toEqual(actions);
+  for (const action of actions) {
+    expect(button(action).closest("[hidden]")).toBeNull();
+    expect(button(action).disabled).toBe(action !== "另存预设");
+  }
+  const select = host.querySelector("select")!;
+  expect(host.querySelector("label")?.htmlFor).toBe(select.id);
+  expect(host.querySelector("label")?.textContent).toBe("提示词预设");
+  await choose();
+  for (const action of actions) expect(button(action).disabled).toBe(false);
+  expect(dialog()).toBeNull();
+});
 
 it("loads the exact ID immediately even when names repeat and never auto binds draft changes", async () => {
   const options = props();
@@ -61,7 +79,7 @@ it("loads the exact ID immediately even when names repeat and never auto binds d
 it("prefills a new preset from the current prompt, validates name and saves only explicit edited input", async () => {
   const options = props();
   await act(async () => root.render(<DrawingPresets {...options} />));
-  await click("新建预设");
+  await click("另存预设");
   expect(dialog()!.querySelector("textarea")!.value).toBe(options.prompt);
   expect(button("保存预设").disabled).toBe(true);
   expect(document.activeElement).toBe(dialog()!.querySelector("input"));
@@ -71,14 +89,16 @@ it("prefills a new preset from the current prompt, validates name and saves only
   await click("保存预设");
   expect(options.onCreate).toHaveBeenCalledExactlyOnceWith({ name: "新画面", content: "修改内容\n第二行" });
   expect(dialog()).toBeNull();
-  expect(document.activeElement).toBe(button("新建预设"));
+  expect(document.activeElement).toBe(button("另存预设"));
 });
 
-it("discards new, save-as, update, edit and delete dialogs on cancel, Escape or close", async () => {
+it("discards unselected save-as and selected save-as, update, edit and delete dialogs on cancel, Escape or close", async () => {
   const options = props();
   await act(async () => root.render(<DrawingPresets {...options} />));
+  await click("另存预设"); await click("取消");
+  expect(dialog()).toBeNull(); expect(document.activeElement).toBe(button("另存预设"));
   await choose();
-  for (const entry of ["新建预设", "另存预设", "更新预设", "编辑预设", "删除预设"]) {
+  for (const entry of ["另存预设", "更新预设", "编辑预设", "删除预设"]) {
     await click(entry);
     await click("取消");
     expect(dialog()).toBeNull();
@@ -90,8 +110,8 @@ it("discards new, save-as, update, edit and delete dialogs on cancel, Escape or 
   await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
   document.removeEventListener("keydown", outer);
   expect(outer).not.toHaveBeenCalled();
-  await click("新建预设"); await click("关闭预设弹窗");
-  await click("新建预设");
+  await click("另存预设"); await click("关闭预设弹窗");
+  await click("另存预设");
   await act(async () => document.querySelector(".drawing-preset-backdrop")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
   expect(dialog()).toBeNull();
   expect(options.onCreate).not.toHaveBeenCalled(); expect(options.onUpdate).not.toHaveBeenCalled(); expect(options.onDelete).not.toHaveBeenCalled();
@@ -134,7 +154,7 @@ it("requires deletion confirmation and retains it on failed deletion", async () 
 it("keeps edited fields after false or rejected saves and closes only after success", async () => {
   const options = props();
   options.onCreate.mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("private internal reason"));
-  await act(async () => root.render(<DrawingPresets {...options} />)); await click("新建预设"); await fill("input", "新名称");
+  await act(async () => root.render(<DrawingPresets {...options} />)); await click("另存预设"); await fill("input", "新名称");
   for (let i = 0; i < 2; i++) {
     await click("保存预设");
     expect(dialog()!.querySelector("input")!.value).toBe("新名称");
@@ -148,7 +168,7 @@ it("keeps edited fields after false or rejected saves and closes only after succ
 it("prevents repeated submissions and dismissal while a save is pending", async () => {
   const options = props(); let resolve!: (success: boolean) => void;
   options.onCreate.mockImplementation(() => new Promise<boolean>(done => { resolve = done; }));
-  await act(async () => root.render(<DrawingPresets {...options} />)); await click("新建预设"); await fill("input", "名称");
+  await act(async () => root.render(<DrawingPresets {...options} />)); await click("另存预设"); await fill("input", "名称");
   const form = dialog()!;
   await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
   expect(options.onCreate).toHaveBeenCalledTimes(1);
@@ -164,7 +184,7 @@ it.each(["false", "rejection"])("keeps focus and values inside a pending save af
   let reject!: (reason: Error) => void;
   options.onCreate.mockImplementation(() => new Promise<boolean>((done, fail) => { resolve = done; reject = fail; }));
   await act(async () => root.render(<DrawingPresets {...options} />));
-  await click("新建预设"); await fill("input", "保留名称"); await fill("textarea", "保留内容\n第二行");
+  await click("另存预设"); await fill("input", "保留名称"); await fill("textarea", "保留内容\n第二行");
   const form = dialog()!;
   await click("保存预设");
   expect(form.tabIndex).toBe(-1);
@@ -188,7 +208,7 @@ it.each(["false", "rejection"])("keeps focus and values inside a pending save af
   expect(document.activeElement).toBe(button("关闭预设弹窗"));
   await click("取消");
   expect(dialog()).toBeNull();
-  expect(document.activeElement).toBe(button("新建预设"));
+  expect(document.activeElement).toBe(button("另存预设"));
   expect(options.onCreate).toHaveBeenCalledTimes(1);
 });
 

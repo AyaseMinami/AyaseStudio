@@ -10,7 +10,7 @@ The durable `dispatching` marker covers the possible-send boundary. Abort ends l
 
 ## Drawing queue dispatch (#87)
 
-Queue entries freeze protocol, target IDs, actual model, validated Base URL, parameters and ordered private reference descriptors. Dispatch resolves the same target again, blocks changed/missing targets, reads images only inside its slot, and freezes the current Key only in memory. A durable possible-send marker precedes transport invocation. No automatic retry/fallback requests are introduced; local-save retry never invokes transport. Adapter formats remain unchanged. See [queue contract](ISSUE-87-IMPLEMENTATION.md).
+Queue entries freeze protocol, target IDs, actual model, validated Base URL, parameters and ordered private reference descriptors. #110 prepares the final ordered session snapshot and saves all required originals before atomic batch registration; an unreadable/changed managed input or a failed import prevents that entire batch from sending. Files are captured as byte-backed Blobs at selection; raw binary IPC replaces Base64 on the new import path, without re-encoding the image. Dispatch resolves the same target again, blocks changed/missing targets, reads and verifies original digests inside its slot, and freezes the current Key only in memory. A durable possible-send marker precedes transport invocation. No automatic retry/fallback requests are introduced; local-save retry never invokes transport. Adapter formats remain unchanged. See [queue contract](ISSUE-87-IMPLEMENTATION.md) and [#110](ISSUE-110-IMPLEMENTATION.md).
 
 ## Planned drawing protocol boundary (#83)
 

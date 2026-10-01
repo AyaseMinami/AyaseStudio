@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { DrawingPresetInput, DrawingPromptPreset } from "../../drawing/presets";
 
 type PresetDialog = {
-  kind: "create" | "save-as" | "update" | "edit" | "delete";
+  kind: "save-as" | "update" | "edit" | "delete";
   targetId?: string;
   name: string;
   content: string;
@@ -112,14 +112,14 @@ export function DrawingPresets({ presets, prompt, disabled = false, onApply, onC
     onDialogChange?.(false);
   }
   function open(kind: PresetDialog["kind"], opener: HTMLButtonElement) {
-    if (disabled || dialog || (kind !== "create" && !selected)) return;
-    setDialog({ kind, opener, targetId: kind === "create" || kind === "save-as" ? undefined : selected?.id,
-      name: kind === "create" ? "" : kind === "save-as" ? `${selected!.name} 副本` : selected!.name,
+    if (disabled || dialog || (kind !== "save-as" && !selected)) return;
+    setDialog({ kind, opener, targetId: kind === "save-as" ? undefined : selected?.id,
+      name: kind === "save-as" ? (selected ? `${selected.name} 副本` : "") : selected!.name,
       content: kind === "edit" || kind === "delete" ? selected!.content : prompt });
     onDialogChange?.(true);
   }
   return <section className="drawing-presets" aria-label="提示词预设">
-    <div className="drawing-field" inert={dialogOpen}>
+    <div className="drawing-field drawing-preset-controls" inert={dialogOpen}>
       <label className="drawing-label" htmlFor={selectId}>提示词预设</label>
       <select id={selectId} value={selected?.id ?? ""} disabled={disabled} onChange={event => {
         const id = event.target.value;
@@ -131,9 +131,9 @@ export function DrawingPresets({ presets, prompt, disabled = false, onApply, onC
       </select>
       <div className="drawing-actions">
         {([
-          ["create", "新建预设"], ["update", "更新预设"], ["save-as", "另存预设"], ["edit", "编辑预设"], ["delete", "删除预设"],
+          ["update", "更新预设"], ["save-as", "另存预设"], ["edit", "编辑预设"], ["delete", "删除预设"],
         ] as const).map(([kind, label]) => <button key={kind} type="button" className="drawing-button"
-          disabled={disabled || (kind !== "create" && !selected)} onClick={event => open(kind, event.currentTarget)}>{label}</button>)}
+          disabled={disabled || (kind !== "save-as" && !selected)} onClick={event => open(kind, event.currentTarget)}>{label}</button>)}
       </div>
     </div>
     {dialog && <PresetEditor initial={dialog} disabled={disabled}

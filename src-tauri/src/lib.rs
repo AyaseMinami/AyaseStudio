@@ -75,6 +75,8 @@ pub fn run() {
             drawing::export_drawing_result,
             drawing::open_drawing_output_directory,
             drawing::import_drawing_reference,
+            drawing::import_drawing_reference_bytes,
+            drawing::list_drawing_references,
             drawing::remove_drawing_references,
             background::select_background_image,
             background::resolve_background_image,
