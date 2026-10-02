@@ -38,6 +38,8 @@ export interface ChatWorkspaceProps {
   contextPlan?: ContextSummary;
   error?: string;
   isHydrated: boolean;
+  /** Visual hint only; never changes hydration or action guards. */
+  isWorkspaceBusy?: boolean;
   isGenerating: boolean;
   messages: StoredChatMessage[];
   messageActions?: MessageActions;
@@ -50,6 +52,7 @@ export interface ChatWorkspaceProps {
   protocol?: ChatProtocol;
   onClear(): void;
   onDraftChange(draft: string): void;
+  onDraftActivate?(): void;
   onFiles?(files: File[]): void;
   onRemoveAttachment?(id: string): void;
   onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment>;
@@ -77,6 +80,7 @@ export function ChatWorkspace({
   contextPlan,
   error,
   isHydrated,
+  isWorkspaceBusy = false,
   isGenerating,
   messages,
   messageActions,
@@ -89,6 +93,7 @@ export function ChatWorkspace({
   protocol,
   onClear,
   onDraftChange,
+  onDraftActivate,
   onFiles,
   onRemoveAttachment,
   onReadAttachment,
@@ -123,6 +128,7 @@ export function ChatWorkspace({
         onToggleLayout={onToggleLayout}
         title={title}
         isHydrated={isHydrated}
+        isWorkspaceBusy={isWorkspaceBusy}
         isGenerating={isGenerating}
         onClear={onClear}
       />}
@@ -133,7 +139,7 @@ export function ChatWorkspace({
         </div>
       )}
       <MessageList assistant={assistant} userAvatarUrl={userAvatarUrl} messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
-        actionsDisabled={messageActionsDisabled} actionError={messageActionError} />
+        actionsDisabled={messageActionsDisabled} actionsTemporarilyDisabled={isWorkspaceBusy && !isGenerating} actionError={messageActionError} />
       {draftAttachments && (attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
         attachmentCapabilityNotice(modelId ?? "", draftAttachments)) &&
         <p className="attachment-capability-notice" role="status">{
@@ -148,10 +154,10 @@ export function ChatWorkspace({
           ? <ModelSelector label={modelLabel ?? "选择模型"} fullLabel={protocolLabel} {...modelPicker} />
           : <span className="composer-model-label">{protocolLabel}</span>}
         searchControl={onSearchModeChange ? <WebSearchToolbarControl mode={searchMode}
-          disabled={!isHydrated} onChange={onSearchModeChange} /> : undefined}
+          disabled={!isHydrated} busyOnly={isWorkspaceBusy && !isHydrated} onChange={onSearchModeChange} /> : undefined}
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
-          disabled={!isHydrated} scope="当前会话" hint="当前会话 · 自动保存，下次请求生效" onChange={onThinkingChange} /> : undefined}
+          disabled={!isHydrated} busyOnly={isWorkspaceBusy && !isHydrated} scope="当前会话" hint="当前会话 · 自动保存，下次请求生效" onChange={onThinkingChange} /> : undefined}
         draft={draft}
         draftSelection={draftSelection}
         onDraftSelectionChange={onDraftSelectionChange}
@@ -161,8 +167,10 @@ export function ChatWorkspace({
         attachmentBlockReason={draftAttachments ? attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) : undefined}
         error={error}
         isHydrated={isHydrated}
+        isWorkspaceBusy={isWorkspaceBusy}
         isGenerating={isGenerating}
         onDraftChange={onDraftChange}
+        onDraftActivate={onDraftActivate}
         onFiles={onFiles}
         onRemoveAttachment={onRemoveAttachment}
         onSend={onSend}

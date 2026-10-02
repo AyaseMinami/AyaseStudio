@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { avatarLibrary, type AvatarLibraryEntry, type AvatarUsage } from "../../avatar/library";
-import { assistantAvatarDefaults } from "../../avatar/assistantDefaults";
 import { centeredCrop, decodeAvatar, renderAvatar } from "../../avatar/image";
 import type { UserAvatar } from "../../avatar/repository";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
@@ -23,10 +22,10 @@ export function AvatarModal({ title, children, busy = false, onClose }: { title:
 }
 
 type View = { type: "crop"; draft: Draft; entry?: AvatarLibraryEntry } | { type: "delete"; entries: AvatarLibraryEntry[] };
-type Choice = { type: "library"; id: string } | { type: "builtin"; id: string };
+type Choice = { type: "library"; id: string } | { type: "automatic" };
 
-export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvatar, onApply, onClose, onBusyChange }: {
-  avatar?: UserAvatarState; inline?: boolean; value?: UserAvatar; defaultAvatar?: string;
+export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvatar, legacyIcon, assistantName, assistantId, onApply, onClose, onBusyChange }: {
+  avatar?: UserAvatarState; inline?: boolean; value?: UserAvatar; defaultAvatar?: string; legacyIcon?: string; assistantName?: string; assistantId?: string;
   onApply?(avatar: UserAvatar | undefined, defaultAvatar?: string): void; onClose?(): void; onBusyChange?(busy: boolean): void;
 }) {
   const [entries, setEntries] = useState<AvatarLibraryEntry[]>([]);
@@ -95,7 +94,7 @@ export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvata
   async function apply() {
     if (!choice) return;
     await run(async () => {
-      if (choice.type === "builtin") { onApply?.(undefined, choice.id); return; }
+      if (choice.type === "automatic") { onApply?.(undefined, undefined); return; }
       const selected = await avatarLibrary.select(choice.id);
       if (!active.current) return;
       if (onApply) onApply(selected);
@@ -139,7 +138,7 @@ export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvata
       {!inline && avatar && <AvatarSettings avatar={avatar} onImport={startImport} importBusy={busy || managing} />}
       <div className={`avatar-card-heading${!inline && avatar ? " avatar-library-subheading" : ""}`}><h3 id={inline ? undefined : "avatar-library-heading"} tabIndex={-1}>头像库</h3><div className="avatar-library-heading-actions">{(inline || !avatar) && <button data-import-avatar type="button" className="settings-button" disabled={blocked || managing} onClick={startImport}>导入图片</button>}{!inline && <button type="button" className="settings-button" aria-pressed={managing} disabled={blocked} onClick={(event) => { returnTarget.current = event.currentTarget; setManaging(!managing); setMarked([]); }}>{managing ? "完成管理" : "管理"}</button>}</div></div>
       <p className="avatar-library-note">{managing ? `已选择 ${markedEntries.length} 张，点击头像可多选。` : inline ? "选择候选头像后点击使用。导入只保存到本机头像库，不会自动应用。" : "选择图片后，点击用作用户头像。"}</p>
-      {inline && <div className="assistant-avatar-defaults avatar-library-builtins" aria-label="内置助手头像">{assistantAvatarDefaults.map((item) => <button type="button" key={item.id} className="assistant-avatar-default-choice" disabled={blocked} aria-pressed={choice?.type === "builtin" && choice.id === item.id} onClick={() => setChoice({ type: "builtin", id: item.id })}><AssistantAvatar defaultAvatar={item.id} />{item.label}{!value && defaultAvatar === item.id && <small>当前草稿</small>}</button>)}</div>}
+      {inline && <div className="assistant-avatar-defaults avatar-library-builtins" aria-label="自动助手头像"><button type="button" className="assistant-avatar-default-choice" disabled={blocked} aria-label="选择自动头像" aria-pressed={choice?.type === "automatic"} onClick={() => setChoice({ type: "automatic" })}><AssistantAvatar assistantName={assistantName} assistantId={assistantId} />自动头像{!value && !defaultAvatar && !legacyIcon && <small>当前草稿</small>}</button></div>}
       <div className="avatar-library-grid">{entries.map((entry) => {
         const selected = managing ? marked.includes(entry.id) : choice?.type === "library" && choice.id === entry.id;
         const usage = usages[entry.id]?.length ? `使用中 · ${usages[entry.id].map((item) => item.name).join("、")}` : "";
@@ -172,11 +171,11 @@ export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvata
   </section>;
 }
 
-export function AssistantAvatarSelector({ assistantName, value, defaultAvatar, onApply, onClose, onBusyChange }: {
-  assistantName: string; value?: UserAvatar; defaultAvatar?: string; onApply(avatar: UserAvatar | undefined, defaultAvatar?: string): void; onClose(): void; onBusyChange?(busy: boolean): void;
+export function AssistantAvatarSelector({ assistantName, assistantId, value, defaultAvatar, legacyIcon, onApply, onClose, onBusyChange }: {
+  assistantName: string; assistantId?: string; value?: UserAvatar; defaultAvatar?: string; legacyIcon?: string; onApply(avatar: UserAvatar | undefined, defaultAvatar?: string): void; onClose(): void; onBusyChange?(busy: boolean): void;
 }) {
   const [busy, setBusy] = useState(false);
   return <AvatarModal title={`为 ${assistantName.trim() || "新助手"} 选择头像`} busy={busy} onClose={onClose}>
-    <AvatarLibraryPanel inline value={value} defaultAvatar={defaultAvatar} onApply={onApply} onClose={onClose} onBusyChange={(next) => { setBusy(next); onBusyChange?.(next); }} />
+    <AvatarLibraryPanel inline assistantName={assistantName} assistantId={assistantId} value={value} defaultAvatar={defaultAvatar} legacyIcon={legacyIcon} onApply={onApply} onClose={onClose} onBusyChange={(next) => { setBusy(next); onBusyChange?.(next); }} />
   </AvatarModal>;
 }

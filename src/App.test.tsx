@@ -321,6 +321,7 @@ describe("App navigation", () => {
   async function clickButtonWithText(text: string): Promise<void> {
     if (text === "编辑助手") {
       if (!container.querySelector('#assistant-navigation:not([inert])')) await clickButtonWithText("助手与对话");
+      await clickButton("默认助手");
       await clickButton("管理助手 默认助手");
       const assistant = document.querySelector<HTMLButtonElement>('[aria-label="编辑助手 默认助手"]');
       await act(async () => assistant!.click());

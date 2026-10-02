@@ -74,9 +74,10 @@ export function AppearanceSettings({
 
     <div className="appearance-layout">
     <div className="appearance-preview-column">
+    <div className="appearance-group-card appearance-preview-card">
     <p className="appearance-preview-caption">1920 × 1080 · 16:9 等比预览 · {backgroundEnabled && backgroundUrl ? "本地背景已应用" : "当前使用纯色画布"}</p>
     <AppearanceChatPreview url={backgroundUrl} focus={backgroundFocus} fit={backgroundFit} mask={backgroundMask} blur={backgroundBlur} />
-
+    </div>
     </div>
     <div className="appearance-controls">
     <div className="appearance-group appearance-group-card">
@@ -126,7 +127,7 @@ export function AppearanceSettings({
     </section>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-transparency-title">
-      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。</GroupHeading>
+      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。侧栏透明度同时控制聊天的助手栏、对话栏和设置分类导航。</GroupHeading>
       <div className="appearance-rows">
         <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖三个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
         <div className="appearance-row appearance-range-row"><RowCopy title="侧栏透明度" /><RangeControl value={`${sidebarTransparency}%`} ariaLabel="侧栏透明度" valueNumber={sidebarTransparency} onChange={onSidebarTransparencyChange} onReset={() => onSidebarTransparencyChange(defaultAppearancePreferences.sidebarTransparency)} max="100" min="0" /></div>
@@ -136,7 +137,7 @@ export function AppearanceSettings({
     </section>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-background-title">
-      <GroupHeading id="appearance-background-title" title="聊天背景">图片仅保存在本机，不上传。支持 PNG、JPEG、WebP，最大 20 MB。删除或替换库图片不影响当前背景。</GroupHeading>
+      <GroupHeading id="appearance-background-title" title="全局背景">聊天、绘图与设置共用此背景。图片仅保存在本机，不上传。支持 PNG、JPEG、WebP，最大 20 MB。删除或替换库图片不影响当前背景。</GroupHeading>
       {backgroundReference && <div className="appearance-current-background">{thumbnailUrl && <img src={thumbnailUrl} alt="当前背景缩略图" />}<span title={backgroundName ?? "当前背景"}>{backgroundName ?? "当前背景"}<small>{backgroundEnabled ? "已启用" : "已停用，图片和参数已保留"}</small></span></div>}
       <div className="appearance-background-actions">
         <button className="settings-button settings-button-primary" disabled={backgroundBusy} onClick={() => setLibraryOpen(true)} type="button"><ImagePlus size={16} />选择背景</button>

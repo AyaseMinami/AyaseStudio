@@ -32,6 +32,25 @@ async function mount(selector = false) { await act(async () => root.render(selec
 async function click(label: string) { const button = [...host.querySelectorAll("button")].find((button) => button.textContent === label || button.getAttribute("aria-label") === label); expect(button, label).toBeTruthy(); await act(async () => button!.click()); }
 async function file(next = new File(["source"], "photo.png", { type: "image/png" })) { const input = host.querySelector<HTMLInputElement>('input[type="file"]')!; Object.defineProperty(input, "files", { configurable: true, value: [next] }); await act(async () => input.dispatchEvent(new Event("change", { bubbles: true }))); }
 
+it("offers one name-based automatic candidate and applies it only after explicit use", async () => {
+  await act(async () => root.render(<AssistantAvatarSelector assistantName="晴" assistantId="a" value={entry.avatar} defaultAvatar="green" onApply={apply} onClose={close} />));
+  expect(host.querySelectorAll(".assistant-avatar-default-choice")).toHaveLength(1);
+  expect(host.querySelector(".assistant-avatar-default-choice .assistant-avatar-initial")?.textContent).toBe("晴");
+  expect(host.textContent).not.toContain("晴蓝"); expect(host.textContent).not.toContain("当前草稿");
+  await click("选择自动头像"); expect(apply).not.toHaveBeenCalled();
+  await click("清除选择");
+  expect([...host.querySelectorAll("button")].find((button) => button.textContent === "使用此头像")?.disabled).toBe(true);
+  await click("选择自动头像"); await click("使用此头像");
+  expect(apply).toHaveBeenCalledWith(undefined, undefined);
+  expect(avatarLibrary.select).not.toHaveBeenCalled(); expect(avatarLibrary.removeMany).not.toHaveBeenCalled();
+});
+
+it("does not label the automatic candidate as the draft when a legacy emoji is present", async () => {
+  await act(async () => root.render(<AssistantAvatarSelector assistantName="晴" assistantId="a" legacyIcon="😀" onApply={apply} onClose={close} />));
+  expect(host.textContent).not.toContain("当前草稿");
+  await click("选择自动头像"); await click("取消"); expect(apply).not.toHaveBeenCalled(); expect(close).toHaveBeenCalled();
+});
+
 it("imports with crop and name without applying, then explicitly applies a selected candidate", async () => {
   await mount();
   expect(host.querySelectorAll(".avatar-card")).toHaveLength(1);

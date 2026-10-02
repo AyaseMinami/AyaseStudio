@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useNavigationListDrag } from "./useNavigationListDrag";
+import { useNavigationListDrag, type NavigationDragItem } from "./useNavigationListDrag";
 
 describe("navigation list drag gestures", () => {
   let container: HTMLDivElement;
@@ -10,16 +10,19 @@ describe("navigation list drag gestures", () => {
   const onMove = vi.fn();
   const onStart = vi.fn();
   const onClick = vi.fn();
-  function Harness({ disabled = false, hidden = false, source = true, dialog = false }) {
+  function Harness({ disabled = false, hidden = false, source = true, dialog = false, kind = "conversation" }: {
+    disabled?: boolean; hidden?: boolean; source?: boolean; dialog?: boolean; kind?: NavigationDragItem["kind"];
+  }) {
     const drag = useNavigationListDrag({ disabled, onMove, onStart });
+    const item: NavigationDragItem = kind === "assistant" ? { kind, id: "a" } : { kind, id: "a", assistantId: "owner" };
     return <div onClickCapture={drag.suppressClick}>
       {dialog && <div role="dialog" />}
       <ul className="chat-navigation-list" inert={hidden}>
-        {source && <li data-navigation-sort-id="a" data-navigation-sort-kind="conversation" data-navigation-sort-scope="owner">
-          <button className="handle" onPointerDown={event => drag.begin(event, { kind: "conversation", id: "a", assistantId: "owner" }, "A", true)} />
-          <button className="name" onClick={onClick} onPointerDown={event => drag.begin(event, { kind: "conversation", id: "a", assistantId: "owner" }, "A", false)} />
+        {source && <li data-navigation-sort-id="a" data-navigation-sort-kind={kind} data-navigation-sort-scope="owner">
+          <button className="handle" onClick={onClick} onPointerDown={event => drag.begin(event, item, "A")} />
+          <button className="name" onClick={onClick} onPointerDown={event => drag.begin(event, item, "A")} />
         </li>}
-        <li className="target" data-navigation-sort-id="b" data-navigation-sort-kind="conversation" data-navigation-sort-scope="owner" />
+        <li className="target" data-navigation-sort-id="b" data-navigation-sort-kind={kind} data-navigation-sort-scope="owner" />
       </ul>
       <span data-active={!!drag.drag}>{drag.announcement}</span>
     </div>;
@@ -41,40 +44,57 @@ describe("navigation list drag gestures", () => {
   });
   afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-  it("starts handles at six pixels and saves only on release of the original pointer", async () => {
-    const button = container.querySelector<HTMLButtonElement>(".handle")!;
+  const dragCases: { kind: NavigationDragItem["kind"]; source: "handle" | "name" }[] = [
+    { kind: "assistant", source: "handle" }, { kind: "assistant", source: "name" },
+    { kind: "conversation", source: "handle" }, { kind: "conversation", source: "name" },
+  ];
+  it.each(dragCases)("starts $kind $source at six pixels without waiting and suppresses its release click", async ({ kind, source }) => {
+    await render({ kind });
+    const button = container.querySelector<HTMLButtonElement>(`.${source}`)!;
     await act(async () => { pointer(button, "pointerdown"); pointer(window, "pointermove", 15); });
     expect(active()).toBe(false);
     await act(async () => pointer(window, "pointermove", 16));
-    expect(active()).toBe(true); expect(onMove).not.toHaveBeenCalled();
+    expect(active()).toBe(true); expect(onStart).toHaveBeenCalledTimes(1); expect(onMove).not.toHaveBeenCalled();
     await act(async () => pointer(window, "pointerup", 60, 2));
     expect(active()).toBe(true); expect(onMove).not.toHaveBeenCalled();
-    await act(async () => pointer(window, "pointerup", 60));
-    expect(onMove).toHaveBeenCalledExactlyOnceWith({ kind: "conversation", id: "a", assistantId: "owner" }, "b", "before");
+    await act(async () => { pointer(window, "pointerup", 60); mouseClick(button); });
+    const item = kind === "assistant" ? { kind, id: "a" } : { kind, id: "a", assistantId: "owner" };
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(item, "b", "before");
+    expect(onClick).not.toHaveBeenCalled();
+    expect(active()).toBe(false);
   });
 
-  it("keeps short clicks, waits four hundred milliseconds for name holds, and suppresses drag clicks", async () => {
-    const button = container.querySelector<HTMLButtonElement>(".name")!;
+  it.each(dragCases)("keeps short and long stationary $kind $source presses as clicks", async ({ kind, source }) => {
+    await render({ kind });
+    const button = container.querySelector<HTMLButtonElement>(`.${source}`)!;
     await act(async () => { pointer(button, "pointerdown"); vi.advanceTimersByTime(100); pointer(window, "pointerup"); mouseClick(button); });
     expect(onClick).toHaveBeenCalledTimes(1);
-    await act(async () => { pointer(button, "pointerdown"); vi.advanceTimersByTime(399); });
+    await act(async () => { pointer(button, "pointerdown"); vi.advanceTimersByTime(1000); });
     expect(active()).toBe(false);
-    await act(async () => vi.advanceTimersByTime(1));
+    await act(async () => { pointer(window, "pointerup"); mouseClick(button); });
+    expect(onClick).toHaveBeenCalledTimes(2);
+    expect(onStart).not.toHaveBeenCalled(); expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("uses the release position when a name drag crosses the target midpoint", async () => {
+    const button = container.querySelector<HTMLButtonElement>(".name")!;
+    await act(async () => { pointer(button, "pointerdown"); pointer(window, "pointermove", 16); });
     expect(active()).toBe(true);
     await act(async () => { pointer(window, "pointerup", 80); mouseClick(button); });
-    expect(onClick).toHaveBeenCalledTimes(1);
     expect(onMove).toHaveBeenCalledExactlyOnceWith({ kind: "conversation", id: "a", assistantId: "owner" }, "b", "after");
+    expect(onClick).not.toHaveBeenCalled();
   });
 
-  it("cancels early name movement together with its click", async () => {
-    const button = container.querySelector<HTMLButtonElement>(".name")!;
-    await act(async () => { pointer(button, "pointerdown"); pointer(window, "pointermove", 16); vi.advanceTimersByTime(500); pointer(window, "pointerup", 60); mouseClick(button); });
-    expect(active()).toBe(false); expect(onStart).not.toHaveBeenCalled(); expect(onMove).not.toHaveBeenCalled(); expect(onClick).not.toHaveBeenCalled();
+  it.each(dragCases)("keeps $kind $source movement below six pixels as a click", async ({ kind, source }) => {
+    await render({ kind });
+    const button = container.querySelector<HTMLButtonElement>(`.${source}`)!;
+    await act(async () => { pointer(button, "pointerdown"); pointer(window, "pointermove", 15); vi.advanceTimersByTime(1000); pointer(window, "pointerup", 15); mouseClick(button); });
+    expect(active()).toBe(false); expect(onStart).not.toHaveBeenCalled(); expect(onMove).not.toHaveBeenCalled(); expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["Escape", "blur", "resize", "pointercancel", "hidden", "missing", "busy", "dialog"])("cancels an active hold on %s and does not select or save", async reason => {
+  it.each(["Escape", "blur", "resize", "pointercancel", "hidden", "missing", "busy", "dialog"])("cancels an active drag on %s and does not select or save", async reason => {
     const button = container.querySelector<HTMLButtonElement>(".name")!;
-    await act(async () => { pointer(button, "pointerdown"); vi.advanceTimersByTime(400); });
+    await act(async () => { pointer(button, "pointerdown"); pointer(window, "pointermove", 16); });
     expect(active()).toBe(true);
     if (reason === "hidden") await render({ hidden: true });
     else if (reason === "missing") await render({ source: false });
@@ -103,7 +123,7 @@ describe("navigation list drag gestures", () => {
     expect(list.scrollTop).toBe(scrollTop); expect(onMove).not.toHaveBeenCalled();
   });
 
-  it("cleans up a hold on unmount", async () => {
+  it("cleans up a pending gesture on unmount", async () => {
     await act(async () => { pointer(container.querySelector(".name")!, "pointerdown"); root.unmount(); vi.advanceTimersByTime(500); pointer(window, "pointerup", 60); });
     expect(onStart).not.toHaveBeenCalled(); expect(onMove).not.toHaveBeenCalled();
     root = createRoot(container);

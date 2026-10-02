@@ -492,7 +492,8 @@ it("keeps empty previews and queue defaults while connecting settings", async ()
   expect(button("添加参考图").disabled).toBe(false);
   expect([...host.querySelectorAll<HTMLInputElement>('input[type="number"]')].map(input => input.value)).toEqual(["1", "1"]);
   expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
-  expect(host.querySelector("header h1")?.hasAttribute("data-tauri-drag-region")).toBe(true);
+  expect(host.querySelector("header")?.hasAttribute("data-tauri-drag-region")).toBe(true);
+  expect(host.querySelector("header h1")).toBeNull();
   await act(async () => button("前往设置").click());
   expect(options.onConfigure).toHaveBeenCalledOnce();
 });

@@ -9,7 +9,7 @@
 ## 已确认结论
 
 - Exa 官方提供 `https://mcp.exa.ai/mcp`，声明支持受限的匿名访问；OAuth 或 API Key 可提高限额。默认工具为 `web_search_exa`、`web_fetch_exa`。[Exa README][exa-readme]
-- 可以将 Exa MCP 封装成应用内部的固定搜索适配器。使用 MCP 传输不要求向用户开放通用 MCP、模型任意调用工具或 Agent；这是本项目的设计边界，详见 [Issue #80 设计](ISSUE-80-EXA-SEARCH-PLAN.md)。
+- 可以将 Exa MCP 封装成应用内部的固定搜索适配器。使用 MCP 传输不要求向用户开放通用 MCP、模型任意调用工具或 Agent；这是本项目的设计边界，详见 [Issue #80 设计](archive/ISSUE-80-EXA-SEARCH-PLAN.md)。
 - 两项默认工具返回格式化文本；可选 `web_search_advanced_exa` 则在 MCP 文本块中返回 JSON 编码的归一化响应，仍非 `structuredContent`。首期选择后者以保留字段边界。[搜索源码][exa-search]、[抓取源码][exa-fetch]、[高级搜索源码][exa-advanced]
 - Cherry 旧版“本地搜索”依赖隐藏 Electron 页面抓取；当前实现是模型可反复调用的搜索工具。两者都不能直接作为 Ayase 固定搜索流程的完整实现蓝本。[旧主进程服务][cherry-old-service]、[当前搜索工具][cherry-tool]
 - DeepSeek 的原生联网能力需区分 API：Responses 文档注明忽略 `web_search`，Claude Code 接入文档则注明 DeepSeek API 支持其 Web Search。不能推导为“DeepSeek 所有接口都不支持搜索”。[Responses][deepseek-responses]、[Claude Code][deepseek-claude]

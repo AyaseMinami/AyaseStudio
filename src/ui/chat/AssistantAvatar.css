@@ -5,10 +5,17 @@
 .assistant-avatar-green { background: #dcfce7; color: #166534; }
 .assistant-avatar-violet { background: #ede9fe; color: #6d28d9; }
 .assistant-avatar-legacy { font-size: 20px; line-height: 1; }
+.assistant-avatar-initial { font-size: 1.125rem; font-weight: 600; line-height: 1; }
 .assistant-avatar-editor { display: grid; gap: 12px; }
 .assistant-avatar-editor-profile { display: flex; align-items: center; gap: 14px; }
 .assistant-avatar-editor-preview { width: 64px; height: 64px; border-radius: 12px; }
 .assistant-avatar-editor-preview .assistant-avatar-legacy { font-size: 32px; }
+.assistant-avatar-editor-preview .assistant-avatar-initial { font-size: 2rem; }
+.message-assistant-avatar .assistant-avatar-initial { font-size: 1.375rem; }
+.empty-state-avatar .assistant-avatar-initial { font-size: 2rem; }
+.avatar-library-choice .assistant-avatar-initial { font-size: 2rem; }
+.appearance-preview-sidebar .assistant-avatar { height: 32px; padding: 0; }
+.appearance-preview-sidebar .assistant-avatar-initial { height: auto; padding: 0; }
 .assistant-avatar-editor .avatar-buttons { gap: 6px; }
 .assistant-avatar-editor-note { margin: 0; font-size: var(--font-caption); color: rgb(var(--color-muted)); line-height: 1.6; }
 .assistant-avatar-defaults { display: flex; flex-wrap: wrap; gap: 8px; }

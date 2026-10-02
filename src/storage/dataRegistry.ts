@@ -37,6 +37,7 @@ export const DATA_COMPATIBILITY_KEY = "ayase-studio.data-compatibility.v1";
 export const persistentPreferences = {
   "ayase-studio.appearance.v1": { module: "appearance", backup: "included" },
   "ayase-studio.chat-layout.v1": { module: "workspace", backup: "included" },
+  // Historical compatibility only since #81; new assistants no longer consume it.
   "ayase-studio.assistant-default-avatar": { module: "avatars", backup: "included" },
   "ayase-studio.connection-settings.v3": { module: "connections", backup: "included" },
   "ayase-studio.search.v1": { module: "search", backup: "included" },

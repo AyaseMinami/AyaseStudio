@@ -14,8 +14,6 @@ type Gesture = {
   startY: number;
   active: boolean;
   cancelled: boolean;
-  immediate: boolean;
-  timer?: ReturnType<typeof setTimeout>;
   frame?: number;
   removeListeners(): void;
 };
@@ -35,7 +33,6 @@ export function useNavigationListDrag({ disabled, onMove, onStart }: {
   const [announcement, setAnnouncement] = useState("");
 
   function stopResources(current: Gesture) {
-    clearTimeout(current.timer);
     if (current.frame !== undefined) cancelAnimationFrame(current.frame);
   }
   function release(current: Gesture) {
@@ -94,7 +91,7 @@ export function useNavigationListDrag({ disabled, onMove, onStart }: {
     updateDrop(current);
     current.frame = requestAnimationFrame(() => autoScroll(current));
   }
-  function begin(event: ReactPointerEvent<HTMLElement>, item: NavigationDragItem, label: string, immediate: boolean) {
+  function begin(event: ReactPointerEvent<HTMLElement>, item: NavigationDragItem, label: string) {
     if (options.current.disabled || event.button !== 0 || !event.isPrimary) return;
     const list = event.currentTarget.closest<HTMLElement>(".chat-navigation-list");
     if (!list || event.currentTarget.closest('[hidden], [inert], [aria-hidden="true"]') || document.querySelector('[role="dialog"]')) return;
@@ -104,7 +101,7 @@ export function useNavigationListDrag({ disabled, onMove, onStart }: {
     const current: Gesture = {
       item, label, list, element: event.currentTarget, pointerId: event.pointerId,
       x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
-      active: false, cancelled: false, immediate, removeListeners: () => {},
+      active: false, cancelled: false, removeListeners: () => {},
     };
     gesture.current = current;
     const move = (pointer: PointerEvent) => {
@@ -113,7 +110,6 @@ export function useNavigationListDrag({ disabled, onMove, onStart }: {
       if (!available(current)) { cancel(); return; }
       if (!current.active) {
         if (Math.hypot(current.x - current.startX, current.y - current.startY) < 6) return;
-        if (!current.immediate) { cancel(); return; }
         activate(current);
       }
       if (current.active) { pointer.preventDefault(); updateDrop(current); }
@@ -164,7 +160,6 @@ export function useNavigationListDrag({ disabled, onMove, onStart }: {
       window.removeEventListener("resize", cancel);
       document.removeEventListener("visibilitychange", hide);
     };
-    if (!immediate) current.timer = setTimeout(() => activate(current), 400);
   }
   useEffect(() => { if (disabled) cancel(); }, [disabled]);
   useEffect(() => () => {

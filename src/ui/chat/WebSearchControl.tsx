@@ -21,8 +21,8 @@ export function WebSearchControl({ config, disabled, onChange }: {
   </label>;
 }
 
-export function WebSearchToolbarControl({ mode, disabled, onChange }: {
-  mode: SearchMode; disabled: boolean; onChange(mode: SearchMode): void;
+export function WebSearchToolbarControl({ mode, disabled, busyOnly = false, onChange }: {
+  mode: SearchMode; disabled: boolean; busyOnly?: boolean; onChange(mode: SearchMode): void;
 }) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -47,7 +47,7 @@ export function WebSearchToolbarControl({ mode, disabled, onChange }: {
     <button ref={trigger} type="button" className={`composer-tool-button${mode !== "off" ? " is-active" : ""}`}
       aria-label={`联网搜索：${labelFor(mode)}`} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? panelId : undefined}
       title={`联网搜索：${labelFor(mode)}。修改仅影响当前会话下次请求。搜索可能产生费用；搜索专用模型可能始终联网。`}
-      disabled={disabled} onClick={() => setOpen((value) => !value)} onKeyDown={(event) => {
+      disabled={disabled} data-busy-only={disabled && busyOnly} onClick={() => setOpen((value) => !value)} onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }
       }}><Globe size={17} aria-hidden="true" /></button>
     {open && <div id={panelId} className="web-search-popover" role="menu" aria-label="联网搜索" onKeyDown={(event) => {

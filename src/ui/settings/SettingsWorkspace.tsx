@@ -3,7 +3,6 @@ import { NetworkSearchSettings } from "./NetworkSearchSettings";
 import { DataImportSettings, type DataImportSettingsProps } from "./DataImportSettings";
 import { AvatarPreview } from "./AvatarSettings";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
-import { AssistantAvatarDefaults } from "./AssistantAvatarDefaults";
 import { AvatarLibraryPanel } from "../avatar/AvatarLibrary";
 import { AboutSettings } from "./AboutSettings";
 import { WindowControls } from "../window/WindowControls";
@@ -46,10 +45,6 @@ export function SettingsWorkspace({
   return (
     <div className="settings-workspace">
       <header className="settings-header" data-tauri-drag-region>
-        <div data-tauri-drag-region>
-          <h1 data-tauri-drag-region>设置</h1>
-          <p className="muted-text" data-tauri-drag-region>管理连接、网络搜索、外观、头像、数据与应用信息</p>
-        </div>
         <WindowControls />
       </header>
 
@@ -67,12 +62,6 @@ export function SettingsWorkspace({
               <strong>连接配置</strong>
               <small>协议、地址与模型</small>
             </span>
-          </button>
-          <button className="settings-navigation-button" aria-label="网络搜索"
-            aria-current={activeSection === "search" ? "page" : undefined}
-            onClick={() => onSectionChange("search")} type="button">
-            <Globe size={18} />
-            <span><strong>网络搜索</strong><small>Exa API / MCP 与搜索凭据</small></span>
           </button>
           <button
             className="settings-navigation-button"
@@ -92,6 +81,12 @@ export function SettingsWorkspace({
             onClick={() => onSectionChange("avatars")} type="button">
             <UserRound size={18} />
             <span><strong>头像</strong><small>用户头像与裁切</small></span>
+          </button>
+          <button className="settings-navigation-button" aria-label="网络搜索"
+            aria-current={activeSection === "search" ? "page" : undefined}
+            onClick={() => onSectionChange("search")} type="button">
+            <Globe size={18} />
+            <span><strong>网络搜索</strong><small>Exa API / MCP 与搜索凭据</small></span>
           </button>
           <button className="settings-navigation-button" aria-label="数据管理"
             aria-current={activeSection === "data" ? "page" : undefined}
@@ -141,7 +136,6 @@ export function SettingsWorkspace({
               <div className="avatar-settings-layout">
                 <div className="avatar-settings-preview">{avatar && <AvatarPreview avatar={avatar} />}</div>
                 <div className="avatar-settings-controls">
-                  <AssistantAvatarDefaults />
                   {avatar && <AvatarLibraryPanel avatar={avatar} />}
                 </div>
               </div>

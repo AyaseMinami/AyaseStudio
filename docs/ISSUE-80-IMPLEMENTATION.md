@@ -42,4 +42,4 @@
 
 本轮未访问真实 Exa MCP、读取真实 Key 或调用模型；托管部署的工具/schema、匿名高级工具额度、认证、输出格式、代理及实际 Tauri HTTP 待明确授权后做最小探测。窗口操作和原生重启恢复待人工验收。模拟请求成功不能作为真实服务可用的证据。
 
-#18 继续负责 OpenAI 原生搜索线路兼容性；#80 的外部路径不构成 #18 验收。方案依据见 [设计](ISSUE-80-EXA-SEARCH-PLAN.md)、[调查](ISSUE-80-SEARCH-RESEARCH.md)，接口合同见 [PROTOCOLS.md](PROTOCOLS.md)，备份行为见 [AYASE-BACKUP.md](AYASE-BACKUP.md)。
+#18 继续负责 OpenAI 原生搜索线路兼容性；#80 的外部路径不构成 #18 验收。方案依据见 [设计](archive/ISSUE-80-EXA-SEARCH-PLAN.md)、[调查](ISSUE-80-SEARCH-RESEARCH.md)，接口合同见 [PROTOCOLS.md](PROTOCOLS.md)，备份行为见 [AYASE-BACKUP.md](AYASE-BACKUP.md)。

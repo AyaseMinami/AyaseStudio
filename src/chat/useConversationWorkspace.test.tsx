@@ -24,6 +24,50 @@ describe("workspace failure recovery", () => {
     await act(async () => root.render(<Probe />)); await wait(() => current.isReady);
   }
 
+  it.each([false, true])("distinguishes the first transcript read from later busy guards (readFails=%s)", async readFails => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const repo = createChatRepository(`BusyPresentation-${crypto.randomUUID()}`);
+    const load = repo.load.bind(repo);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(repo, "load").mockImplementationOnce(async id => {
+      await gate;
+      if (readFails) throw new Error("synthetic initial read failure");
+      return load(id);
+    });
+    function Probe() { current = useConversationWorkspace(repo, null, [], () => false); return null; }
+    container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+    try {
+      await act(async () => root.render(<Probe />));
+      await wait(() => !!current.snapshot);
+      expect(current.busy).toBe(true);
+      expect(current.isReady).toBe(false);
+      expect(current.isTemporarilyBusy).toBe(false);
+      expect(current.canSend()).toBe(false);
+    } finally { await act(async () => release()); }
+    await wait(() => !current.busy);
+    expect(current.isTemporarilyBusy).toBe(false);
+    if (readFails) {
+      expect(current.loadError).toContain("无法读取本地工作区");
+      await act(async () => current.retry());
+    }
+    await wait(() => current.isReady);
+    const execute = repo.execute.bind(repo);
+    let finish!: () => void;
+    const operation = new Promise<void>(resolve => { finish = resolve; });
+    vi.spyOn(repo, "execute").mockImplementationOnce(async command => { await operation; return execute(command); });
+    let result!: Promise<boolean>;
+    try {
+      await act(async () => { result = current.execute({ type: "create-conversation", id: "next", assistantId: "default" }); });
+      expect(current.busy).toBe(true);
+      expect(current.isTemporarilyBusy).toBe(true);
+      expect(current.isReady).toBe(false);
+      expect(current.canSend()).toBe(false);
+    } finally { await act(async () => { finish(); await result; }); }
+    await wait(() => current.isReady);
+    expect(current.isTemporarilyBusy).toBe(false);
+  });
+
   it("isolates history, edits, original drafts and delayed send consumption by conversation", async () => {
     const repo = createChatRepository(`History-${crypto.randomUUID()}`);
     await repo.initializeWorkspace(null, []);

@@ -1,7 +1,7 @@
 import { check, decode64, sha256 } from "./codec";
 import { backupTables, preferenceKeys } from "./types";
 import { validateSessionConfig, type SessionConfig } from "../chat/sessionConfig";
-import { isAssistantDefaultAvatar } from "../avatar/assistantDefaults";
+import { isAssistantDefaultAvatar, readAssistantAvatarSelection } from "../avatar/assistantDefaults";
 import { isThinkingSettings } from "../chat/thinking";
 import { isGeminiThinkingSettings } from "../chat/geminiThinking";
 import { readAppearancePreferences } from "../appearance/appearance";
@@ -185,7 +185,7 @@ export async function validateDocument(raw: unknown): Promise<void> {
   for (const table of backupTables) { list(raw.rows[table]); const seen = new Set<string>(); for (const row of raw.rows[table]) { object(row);
     if (table === "cherryImports") cherryImportId(row.id); else id(row.id);
     check(!seen.has(row.id)); seen.add(row.id); } ids.set(table, seen); }
-  for (const a of raw.rows.assistants) { fields(a, ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig", "avatar", "defaultAvatar"], ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig"]); text(a.name, 4096); text(a.icon, 4096); number(a.sortOrder); model(a.defaultModelId); config(a.defaultConfig, version); optional(a, "avatar", avatar); optional(a, "defaultAvatar", v => check(isAssistantDefaultAvatar(v))); }
+  for (const a of raw.rows.assistants) { fields(a, ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig", "avatar", "defaultAvatar"], ["id", "name", "icon", "sortOrder", "defaultModelId", "defaultConfig"]); text(a.name, 4096); text(a.icon, 4096); readAssistantAvatarSelection(a); number(a.sortOrder); model(a.defaultModelId); config(a.defaultConfig, version); optional(a, "avatar", avatar); }
   for (const c of raw.rows.conversations) { fields(c, ["id", "assistantId", "title", "titleNaming", "createdAt", "updatedAt", "sortOrder", "settings", "creationConfig"], ["id", "assistantId", "title", "createdAt", "updatedAt", "settings"]); check(ids.get("assistants")!.has(c.assistantId)); text(c.title, 4096); time(c.createdAt); time(c.updatedAt); optional(c, "sortOrder", number); conversationConfig(c.settings, version); optional(c, "creationConfig", c => conversationConfig(c, version)); if (c.titleNaming !== undefined) check(c.titleNaming === "manual"); }
   for (const c of raw.rows.chats) { fields(c, ["id", "updatedAt", "messages"]); check(ids.get("conversations")!.has(c.id)); time(c.updatedAt); list(c.messages); c.messages.forEach((m: unknown) => message(m)); const seen = new Set<string>(), present = new Set(c.messages.map((m: JsonRecord) => m.id)); for (const m of c.messages) { check(!seen.has(m.id) && (!m.replyToId || !present.has(m.replyToId) || seen.has(m.replyToId))); seen.add(m.id); } }
   check(raw.rows.workspace.length <= 1); for (const s of raw.rows.workspace) { fields(s, ["id", "activeAssistantId", "lastSelected"]); check(s.id === "selection" && ids.get("assistants")!.has(s.activeAssistantId)); object(s.lastSelected); for (const [a, c] of Object.entries(s.lastSelected)) check(ids.get("assistants")!.has(a) && (c === null || raw.rows.conversations.some((v: JsonRecord) => v.id === c && v.assistantId === a))); }

@@ -73,6 +73,8 @@ npm.cmd run build:windows
 
 ## 文档与反馈
 
+完整入口见 [文档索引](docs/README.md)；早期提案和模拟草图保存在 [历史归档](docs/archive/README.md)，不作为当前开发规则。
+
 - [Cherry 聊天导入指南](docs/CHERRY-IMPORT.md)：设置入口、支持格式、重复导入和附件限制。
 - [Ayase 备份与恢复](docs/AYASE-BACKUP.md)：本地自有格式、连接／密钥选项、密码及恢复策略。
 

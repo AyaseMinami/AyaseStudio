@@ -1,16 +1,18 @@
 # #31 自动命名对话：调研与可行性
 
-调研日期：2026-09-27。Ayase 调研基线：`eec776370a8a01bd55d8291b4337c569189f59e9`，分支 `dev`。以下保留当时的研究与建议。后续用户已确认并授权两步命名：原文标题先显示，AI 成功再替换，失败保留原文，附件无正文用文件名。当前实施契约见 [ARCHITECTURE.md](ARCHITECTURE.md) 的 Issue #31 节；下文的未实施表述、推荐单阶段方案与待确认选择仅是调研时状态。
+> 已归档：历史可行性研究（2026-09-27），2026-10-02 归档。自动命名已实施；当前合同见 [架构说明](../ARCHITECTURE.md#issue-31-对话自动命名)，下文建议不构成当前待办。
+
+调研日期：2026-09-27。Ayase 调研基线：`eec776370a8a01bd55d8291b4337c569189f59e9`，分支 `dev`。以下保留当时的研究与建议。后续用户已确认并授权两步命名：原文标题先显示，AI 成功再替换，失败保留原文，附件无正文用文件名。当前实施契约见 [ARCHITECTURE.md](../ARCHITECTURE.md) 的 Issue #31 节；下文的未实施表述、推荐单阶段方案与待确认选择仅是调研时状态。
 
 ## Issue 的实际边界
 
 已读取 [#31 自动补充空白新对话标题](https://github.com/AyaseMinami/AyaseStudio/issues/31)：发送首条用户消息后，从该消息生成简洁标题；仅更新仍为“新对话”的对话；不覆盖手动命名、不随后续消息重复更新；失败保留原标题，不影响发送、导航和持久化。Issue 没有指定必须用 LLM，也未指定命名模型、长度及附件策略。
 
-当前 [PLAN.md](PLAN.md) 的旧范围仍将自动标题列为不支持，[ARCHITECTURE.md](ARCHITECTURE.md) 也描述尚无此功能。#31 是待实施的新需求，本轮记录差异，未改动既有契约或远端 Issue。
+当前 [PLAN.md](../PLAN.md) 的旧范围仍将自动标题列为不支持，[ARCHITECTURE.md](../ARCHITECTURE.md) 也描述尚无此功能。#31 是待实施的新需求，本轮记录差异，未改动既有契约或远端 Issue。
 
 ## 其他工具的实现
 
-Open WebUI 与 LibreChat 的一手源码调查见 [外部实现笔记](ISSUE-31-EXTERNAL-RESEARCH.md)。以下是 Cherry Studio 当前 `main` 源码快照，不代表其所有已发布版本。
+Open WebUI 与 LibreChat 的一手源码调查见 [外部实现笔记](../ISSUE-31-EXTERNAL-RESEARCH.md)。以下是 Cherry Studio 当前 `main` 源码快照，不代表其所有已发布版本。
 
 Cherry Studio，提交 `de2bc0aed0e805f1129e2ae7307a7af226f405c3`：
 
@@ -27,13 +29,13 @@ Cherry Studio，提交 `de2bc0aed0e805f1129e2ae7307a7af226f405c3`：
 
 | 现有位置 | 已确认的事实 | 接入建议 |
 | --- | --- | --- |
-| [workspace.ts](../src/chat/workspace.ts) | Conversation 目前只有 title，没有命名来源或尝试状态 | 增加最小可选元数据，区分手动编辑和是否已尝试自动命名 |
-| [useChatSession.ts](../src/chat/useChatSession.ts) | 首次发送先保存用户消息与回复占位，再核对附件提交，之后请求模型 | 只在新用户消息已提交、附件核对成功后登记命名；重试、续接和编辑重发不算新首条 |
-| [types.ts](../src/chat/types.ts)、[runtime.ts](../src/chat/runtime.ts) | ChatTransport 已统一四协议请求与正文/错误/终态事件 | 命名复用此接口，以独立短请求聚合正文，不另写 SDK 或 URL 规则 |
-| [repository.ts](../src/chat/repository.ts) | 消息保存只更新 transcript 和 updatedAt；标题由工作区命令写入 | 新增有条件的命名写回，在事务内检查当前记录；绝不能写回旧的整份 Conversation |
-| [useConversationWorkspace.ts](../src/chat/useConversationWorkspace.ts) | execute 将异步操作纳入全局 busy 队列 | 网络等待放在队列之外；只有短数据库更新串行化，结果按目标 ID 刷新 |
+| [workspace.ts](../../src/chat/workspace.ts) | Conversation 目前只有 title，没有命名来源或尝试状态 | 增加最小可选元数据，区分手动编辑和是否已尝试自动命名 |
+| [useChatSession.ts](../../src/chat/useChatSession.ts) | 首次发送先保存用户消息与回复占位，再核对附件提交，之后请求模型 | 只在新用户消息已提交、附件核对成功后登记命名；重试、续接和编辑重发不算新首条 |
+| [types.ts](../../src/chat/types.ts)、[runtime.ts](../../src/chat/runtime.ts) | ChatTransport 已统一四协议请求与正文/错误/终态事件 | 命名复用此接口，以独立短请求聚合正文，不另写 SDK 或 URL 规则 |
+| [repository.ts](../../src/chat/repository.ts) | 消息保存只更新 transcript 和 updatedAt；标题由工作区命令写入 | 新增有条件的命名写回，在事务内检查当前记录；绝不能写回旧的整份 Conversation |
+| [useConversationWorkspace.ts](../../src/chat/useConversationWorkspace.ts) | execute 将异步操作纳入全局 busy 队列 | 网络等待放在队列之外；只有短数据库更新串行化，结果按目标 ID 刷新 |
 
-实现时还应查阅 [协议契约](PROTOCOLS.md)；本次没有验证真实供应商调用或模型命名质量。
+实现时还应查阅 [协议契约](../PROTOCOLS.md)；本次没有验证真实供应商调用或模型命名质量。
 
 ## 可选方案与建议
 

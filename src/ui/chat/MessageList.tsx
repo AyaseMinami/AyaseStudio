@@ -28,11 +28,11 @@ function actionKey(kind: string, id: string) { return `${kind}:${id}`; }
 
 const FOLLOW_BOTTOM_DISTANCE = 48;
 
-function MessageActionButton({ label, title, disabled, busy, onClick, children }: {
-  label: string; title?: string; disabled?: boolean; busy?: boolean; onClick(): void; children: React.ReactNode;
+function MessageActionButton({ label, title, disabled, busy, busyOnly = false, onClick, children }: {
+  label: string; title?: string; disabled?: boolean; busy?: boolean; busyOnly?: boolean; onClick(): void; children: React.ReactNode;
 }) {
   return <button type="button" className="message-action" aria-label={label} aria-busy={busy || undefined} title={busy ? `${label}：处理中…` : title ?? label}
-    disabled={disabled || busy} onClick={onClick}>{busy ? <LoaderCircle size={15} className="spin" aria-hidden="true" /> : children}</button>;
+    disabled={disabled || busy} data-busy-only={!!disabled && !busy && busyOnly} onClick={onClick}>{busy ? <LoaderCircle size={15} className="spin" aria-hidden="true" /> : children}</button>;
 }
 
 function ConfirmationDialog({ busy, disabled, error, onClose, onConfirm }: {
@@ -65,12 +65,13 @@ function ConfirmationDialog({ busy, disabled, error, onClose, onConfirm }: {
   </section></div>;
 }
 
-export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachment, actions, actionsDisabled = false, actionError }: { messages: StoredChatMessage[];
+export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachment, actions, actionsDisabled = false, actionsTemporarilyDisabled = false, actionError }: { messages: StoredChatMessage[];
   assistant?: import("../../chat/workspace").AssistantPreset;
   userAvatarUrl?: string;
   onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment>;
   actions?: MessageActions;
   actionsDisabled?: boolean;
+  actionsTemporarilyDisabled?: boolean;
   actionError?: string;
 }) {
   const scrollRegionRef = useRef<HTMLDivElement>(null);
@@ -153,12 +154,13 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
       }
     }}><div className="message-list">
     {messages.length === 0 ? <div className="empty-state">
-      <AssistantAvatar className="empty-state-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} />
+      <AssistantAvatar className="empty-state-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} assistantName={assistant?.name} assistantId={assistant?.id} />
       <p className="empty-state-prompt">发送消息以开始对话。</p>
     </div> : <div className="space-y-7">{messages.map((message, index) => {
       const isEditing = editing?.id === message.id;
       const retryTarget = retryUser(messages, message.id);
       const disabled = actionsDisabled || !actions;
+      const busyOnly = actionsTemporarilyDisabled && actionsDisabled && !!actions && !pending;
       const versions = message.role === "assistant" && index === messages.length - 1 && messages[index - 1]?.role === "user"
         ? messages[index - 1].roundVersions : undefined;
       const versionCount = versions?.pairs.length ?? 0;
@@ -187,9 +189,9 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
             <p className="message-editor-hint">Enter 仅保存 · Shift+Enter 换行 · Esc 取消。{message.role === "user" && (index >= messages.length - 2
               ? "Ctrl+Enter 保存并发送，保留本轮问答版本。" : "Ctrl+Enter 保存并发送，会移除后续历史并生成新回复。")}</p>
             <div><button type="button" disabled={!!pending} onClick={() => setEditing(undefined)}>取消</button>
-              <button type="button" className="settings-button" disabled={actionsDisabled || !!pending}
+              <button type="button" className="settings-button" disabled={actionsDisabled || !!pending} data-busy-only={busyOnly}
                 onClick={save}>保存</button>
-              {message.role === "user" && <button type="button" className="settings-button message-editor-send" disabled={actionsDisabled || !!pending}
+              {message.role === "user" && <button type="button" className="settings-button message-editor-send" disabled={actionsDisabled || !!pending} data-busy-only={busyOnly}
                 onClick={editAndSend}>保存并发送</button>}</div>
           </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
@@ -216,30 +218,30 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
           {message.status === "incomplete" && <p className="message-status message-status-warning">回复未完整；下次请求不会带入这一轮</p>}
           {message.status === "paused" && <p className="message-status message-status-warning">回复已暂停，可以继续生成。</p>}
           {message.status === "paused" && index === messages.length - 1 && message.continuation && actions?.continue &&
-            <button type="button" className="settings-button" disabled={actionsDisabled || !!pending}
+            <button type="button" className="settings-button" disabled={actionsDisabled || !!pending} data-busy-only={busyOnly}
               onClick={() => void run(actionKey("continue", message.id), () => actions.continue!(message.id))}>继续生成</button>}
           {message.status === "failed" && <p className="message-status message-status-error">生成失败</p>}
       </>;
       const controls = <>
           <div className="message-actions" aria-label="消息操作">
             <MessageActionButton label="复制" busy={copyingId === message.id} onClick={() => void copy(message)}><Copy size={15} /></MessageActionButton>
-            <MessageActionButton label="编辑" disabled={disabled || !!pending} busy={pending === actionKey("edit", message.id)} onClick={() => setEditing({ id: message.id, content: message.content })}><Pencil size={15} /></MessageActionButton>
-            <MessageActionButton label="删除" disabled={disabled || !!pending} busy={pending === actionKey("delete", message.id)} onClick={() => setConfirmation({ kind: "delete", message })}><Trash2 size={15} /></MessageActionButton>
-            <MessageActionButton label="重新生成" disabled={disabled || !!pending || !retryTarget} busy={pending === actionKey("retry", message.id)} title={retryTarget ? "重新生成这轮回复" : "此消息没有可重新生成的用户提问"}
+            <MessageActionButton label="编辑" disabled={disabled || !!pending} busyOnly={busyOnly} busy={pending === actionKey("edit", message.id)} onClick={() => setEditing({ id: message.id, content: message.content })}><Pencil size={15} /></MessageActionButton>
+            <MessageActionButton label="删除" disabled={disabled || !!pending} busyOnly={busyOnly} busy={pending === actionKey("delete", message.id)} onClick={() => setConfirmation({ kind: "delete", message })}><Trash2 size={15} /></MessageActionButton>
+            <MessageActionButton label="重新生成" disabled={disabled || !!pending || !retryTarget} busyOnly={busyOnly && !!retryTarget} busy={pending === actionKey("retry", message.id)} title={retryTarget ? "重新生成这轮回复" : "此消息没有可重新生成的用户提问"}
               onClick={() => retryTarget && void run(actionKey("retry", message.id), () => actions!.retry(retryTarget.id))}><RefreshCw size={15} /></MessageActionButton>
-            <MessageActionButton label="分支" disabled={disabled || !!pending} busy={pending === actionKey("branch", message.id)} onClick={() => void run(actionKey("branch", message.id), () => actions!.branch(message.id))}><GitBranch size={15} /></MessageActionButton>
+            <MessageActionButton label="分支" disabled={disabled || !!pending} busyOnly={busyOnly} busy={pending === actionKey("branch", message.id)} onClick={() => void run(actionKey("branch", message.id), () => actions!.branch(message.id))}><GitBranch size={15} /></MessageActionButton>
             {versionCount > 1 && <span className="message-version-pager" aria-label="问答版本">
-              <MessageActionButton label="上一版问答" disabled={!canPage || versions!.selected <= 0} busy={pending === actionKey("version", message.id)}
+              <MessageActionButton label="上一版问答" disabled={!canPage || versions!.selected <= 0} busyOnly={busyOnly && !editing && !confirmation && !!actions?.selectVersion && versions!.selected > 0} busy={pending === actionKey("version", message.id)}
                 onClick={() => { pageFocus.current = "上一版问答"; void run(actionKey("version", message.id), () => actions!.selectVersion!(versions!.selected - 1)); }}><ChevronLeft size={15} /></MessageActionButton>
               <span className="message-version-count" aria-live="polite">{versions!.selected + 1}/{versionCount}</span>
-              <MessageActionButton label="下一版问答" disabled={!canPage || versions!.selected >= versionCount - 1} busy={pending === actionKey("version", message.id)}
+              <MessageActionButton label="下一版问答" disabled={!canPage || versions!.selected >= versionCount - 1} busyOnly={busyOnly && !editing && !confirmation && !!actions?.selectVersion && versions!.selected < versionCount - 1} busy={pending === actionKey("version", message.id)}
                 onClick={() => { pageFocus.current = "下一版问答"; void run(actionKey("version", message.id), () => actions!.selectVersion!(versions!.selected + 1)); }}><ChevronRight size={15} /></MessageActionButton>
             </span>}
           </div>
           {copyFeedback[message.id] && <p className="message-copy-feedback" role="status">{copyFeedback[message.id]}</p>}
       </>;
       return <article key={message.id} className={message.role === "user" ? "message-row message-row-user" : "message-row"}>
-        {message.role === "assistant" && assistant && <AssistantAvatar className="message-assistant-avatar" avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} />}
+        {message.role === "assistant" && assistant && <AssistantAvatar className="message-assistant-avatar" avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} assistantName={assistant.name} assistantId={assistant.id} />}
         {message.role === "user" ? <div className="user-message-group">
           <div className="user-message markdown">{body}</div>
           {controls}

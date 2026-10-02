@@ -364,9 +364,6 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
       if (canEditReferences) onAddReferences(files);
     }}>
       <header className="drawing-header" data-tauri-drag-region inert={Boolean(confirmation) || presetDialogOpen}>
-        <div data-tauri-drag-region>
-          <h1 data-tauri-drag-region>绘图</h1>
-        </div>
         <WindowControls />
       </header>
 

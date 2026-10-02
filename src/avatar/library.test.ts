@@ -184,7 +184,7 @@ describe("avatar snapshots and ownership", () => {
     expect((await library.select(entry.id)).source?.version).toBe(replacement.version);
     const latest = await library.select(entry.id);
     latest.crop = { x: 0.1, y: 0.9, zoom: 3 };
-    await workspace.execute({ type: "create-assistant", id: "b", input: { ...input(latest, "Newest"), defaultAvatar: "person" } });
+    await workspace.execute({ type: "create-assistant", id: "b", input: { ...input(latest, "Newest"), defaultAvatar: "blue" } });
     const unrelated = await library.import("Unrelated", image("unrelated"));
     const unrelatedAvatar = await library.select(unrelated.id);
     await workspace.execute({ type: "create-assistant", id: "c", input: input(unrelatedAvatar) });
@@ -207,7 +207,7 @@ describe("avatar snapshots and ownership", () => {
     await expectImage(await createAvatarRepository(name, legacyName).load(), recropped);
     const assistantRecrop = { ...standalone(latest), crop: { x: 0.8, y: 0.2, zoom: 4 },
       thumbnail: new Blob(["assistant new crop"], { type: "image/png" }) };
-    await workspace.execute({ type: "edit-assistant", id: "b", input: { ...input(assistantRecrop, "Newest"), defaultAvatar: "person" } });
+    await workspace.execute({ type: "edit-assistant", id: "b", input: { ...input(assistantRecrop, "Newest"), defaultAvatar: "blue" } });
     const recropReload = await createChatRepository(name).initializeWorkspace(null, []);
     await expectImage(recropReload.assistants.find(item => item.id === "b")?.avatar, assistantRecrop);
     await expect(library.select(entry.id)).rejects.toThrow("已不存在");

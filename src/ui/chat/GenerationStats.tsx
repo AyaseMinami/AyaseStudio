@@ -2,12 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { Database, Gauge, Hash, Timer } from "lucide-react";
 import type { StoredChatMessage } from "../../chat/repository";
 import type { GenerationMetrics } from "../../chat/generationMetrics";
+import { SettingsHelp } from "../settings/SettingsHelp";
 import "./GenerationStats.css";
 
 const unavailable = "未提供";
 const count = (value?: number) => value === undefined ? unavailable : value.toLocaleString("zh-CN");
 const duration = (value?: number) => value === undefined ? unavailable : `${(value / 1000).toFixed(2)} s`;
 const statusLabels = { streaming: "生成中", complete: "已完成", incomplete: "未完整", paused: "已暂停", aborted: "已停止", failed: "失败" };
+const explanation = [
+  "输入 Token：接口返回的输入用量，包含缓存；不按正文长度估算。",
+  "输出 Token：接口返回的输出用量，包含思考；不按正文长度估算。",
+  "缓存命中率：缓存读取 ÷ 总输入。缺失字段显示「未提供」，与明确零值不同。",
+  "正文首字时间：从聊天请求开始到首个非空正文增量。非流式或没有正文时不可测。",
+  "思考首字时间：从聊天请求开始到首个非空思考增量，单独记录；非流式或思考被隐藏时不可测。",
+  "请求总耗时：包含等待、思考与模型搜索，不含外部检索和本地准备。",
+  "平均速度：输出 Token ÷ 请求总耗时，为端到端速度。停止／失败不计算。",
+  "继续生成：每次请求分别记录，可在详情中选择查看。",
+].join("\n\n");
 
 export function cacheHit(metrics: GenerationMetrics): string {
   const { inputTokens, cacheReadTokens } = metrics.usage ?? {};
@@ -58,7 +69,7 @@ function StatsBar({ replies, latest }: { replies: StoredChatMessage[]; latest: S
     ["思考首字时间", metrics.streaming ? duration(metrics.firstThinkingMs) : "非流式不可测"],
     ["平均速度（端到端）", averageSpeed(metrics)],
   ];
-  return <details ref={details} className="generation-stats" onKeyDown={event => {
+  return <div className="generation-stats-row"><details ref={details} className="generation-stats" onKeyDown={event => {
     if (event.key === "Escape" && details.current?.open) {
       event.preventDefault(); event.stopPropagation(); details.current.open = false; summary.current?.focus();
     }
@@ -82,9 +93,6 @@ function StatsBar({ replies, latest }: { replies: StoredChatMessage[]; latest: S
       </div>
       <p className="generation-stats-state">{statusLabels[metrics.status]} · {metrics.streaming ? "流式" : "非流式"} · {metrics.usageComplete ? "供应商终态用量" : metrics.usage ? "供应商部分用量" : "供应商未返回用量"}</p>
       <dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-      <p className="generation-stats-note">Token 用量来自接口返回，不按正文长度估算。缓存命中率为缓存读取 ÷ 总输入，缺失字段与零不同。</p>
-      <p className="generation-stats-note">首字从聊天请求开始计时，取首个非空正文增量；思考单独记录。非流式、没有正文或被隐藏的思考没有对应首字时间。</p>
-      <p className="generation-stats-note">平均速度为输出 Token ÷ 请求总耗时，含等待、思考与模型搜索，不是纯正文输出速度。外部检索与本地准备不计入。停止／失败仅保留已返回用量，不计算平均速度；继续生成逐次记录。</p>
     </section>
-  </details>;
+  </details><SettingsHelp label="生成统计">{explanation}</SettingsHelp></div>;
 }

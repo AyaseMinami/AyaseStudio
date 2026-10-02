@@ -52,3 +52,31 @@ it("shows latest reply below composer, browses earlier/continued requests, and r
     expect(host.querySelector("details")).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it("keeps the explanation in external help and the expanded panel limited to data", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<GenerationStats messages={[reply("a", [metrics])]} />));
+    const details = host.querySelector("details")!;
+    const help = host.querySelector<HTMLButtonElement>('[aria-label="生成统计说明"]')!;
+    expect(details.contains(help)).toBe(false);
+    expect(host.querySelector(".generation-stats-panel")!.textContent).not.toContain("不按正文长度估算");
+    expect(host.querySelectorAll("dl > div")).toHaveLength(12);
+    await act(async () => help.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    const tooltip = document.querySelector('[role="tooltip"]')!;
+    expect(tooltip.textContent!.split("\n\n").map(item => item.split("：")[0])).toEqual([
+      "输入 Token", "输出 Token", "缓存命中率", "正文首字时间", "思考首字时间", "请求总耗时", "平均速度", "继续生成",
+    ]);
+    expect(tooltip.textContent).toContain("平均速度：输出 Token ÷ 请求总耗时");
+    expect(help.getAttribute("aria-describedby")).toBe(tooltip.id);
+    await act(async () => help.click());
+    expect(details.open).toBe(false);
+    await act(async () => help.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    await act(async () => help.focus());
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+    await act(async () => help.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

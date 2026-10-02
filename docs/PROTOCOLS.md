@@ -16,7 +16,7 @@ The durable `dispatching` marker covers the possible-send boundary. Abort ends l
 
 Queue entries freeze protocol, target IDs, actual model, validated Base URL, parameters and ordered private reference descriptors. #110 prepares the final ordered session snapshot and saves all required originals before atomic batch registration; an unreadable/changed managed input or a failed import prevents that entire batch from sending. Files are captured as byte-backed Blobs at selection; raw binary IPC replaces Base64 on the new import path, without re-encoding the image. Dispatch resolves the same target again, blocks changed/missing targets, reads and verifies original digests inside its slot, and freezes the current Key only in memory. A durable possible-send marker precedes transport invocation. No automatic retry/fallback requests are introduced; local-save retry never invokes transport. Adapter formats remain unchanged. See [queue contract](ISSUE-87-IMPLEMENTATION.md) and [#110](ISSUE-110-IMPLEMENTATION.md).
 
-## Planned drawing protocol boundary (#83)
+## Drawing protocol boundary (#83)
 
 ### Implemented drawing protocol completion (#101, 2026-10-01)
 
@@ -40,9 +40,9 @@ Gemini appends ordered `inlineData` parts after the prompt using the actual imag
 
 [Current official GPT Image guidance](https://developers.openai.com/api/docs/guides/image-generation) adds xhigh/max for 2.5 Sunburst/Flare and documents GPT Image 2/2.5 custom-size constraints. Gemini's [ImageConfig](https://ai.google.dev/api/generate-content#ImageConfig) still records imageConfig, 14 ratios and `512`/1K/2K/4K, so this integration retains that seam and updates its options. Model-specific restrictions and the Flash Lite guide inconsistency are documented in [#85 implementation](ISSUE-85-IMPLEMENTATION.md). Explicit settings may fail for earlier models/relays; never silently remove or retry them. Official contracts and offline fixtures do not establish live compatibility.
 
-The independent drawing design proposes `gemini-image` (GenerateContent) and `openai-images` (Images generations/edits) as explicit service-connection protocols. Existing four `ChatProtocol` adapters and chat history remain unchanged. A dedicated image transport owns request mapping, authentication, bounded image responses and redacted errors; an application-owned queue handles scheduling and persistence. Shared configuration and deterministic endpoint preview/resolution must distinguish chat and drawing targets, without guessing capability from model names. Optional image parameters are protocol-specific and omitted in automatic mode.
+Independent drawing uses `gemini-image` (GenerateContent) and `openai-images` (Images generations/edits) as explicit service-connection protocols. Existing four `ChatProtocol` adapters and chat history remain unchanged. A dedicated image transport owns request mapping, authentication, bounded image responses and redacted errors; an application-owned queue handles scheduling and persistence. Shared configuration and deterministic endpoint preview/resolution must distinguish chat and drawing targets, without guessing capability from model names. Optional image parameters are protocol-specific and omitted in automatic mode.
 
-No API adapter is implemented or live compatibility claimed in #83. #84/#85 will pin official fields and test sanitized contracts. One requested image per task does not justify discarding extra returned images. Unknown URL-only relays are outside the initial byte-response contract. TLS verification remains enabled, credentials stay in headers/runtime snapshots, and uncertain failures never trigger automatic retries or fallback. [#83](ISSUE-83-DRAWING-SPEC.md) separates confirmed product scope from the pending detailed proposal.
+#83 is the scope index; adapter implementations and deterministic validation are recorded in #84/#85/#86/#101. Those records retain their own live-compatibility boundaries. One requested image per task does not justify discarding extra returned images. Unknown URL-only relays are outside the initial byte-response contract. TLS verification remains enabled, credentials stay in headers/runtime snapshots, and uncertain failures never trigger automatic retries or fallback. [#83](ISSUE-83-DRAWING-SPEC.md) links current contracts and the separate historical proposal.
 
 ### Implemented Gemini image slice (#84, 2026-10-01)
 
@@ -66,7 +66,7 @@ JSON/SSE responses require matching JSON-RPC IDs and negotiated session/version 
 
 Query is only current trimmed user text (1–2000 Unicode codepoints); `numResults` is 1–10 and `textMaxCharacters` 1500. Ordered URL-deduplicated results retain at most 10 sources, 300-codepoint titles, 2048-character URLs, 1500-codepoint excerpts each and 8000 excerpt codepoints total. Final budgeting may reduce data further. JSON data/instructions enter only the latest user request copy; stored original content is unchanged. External mode suppresses native search fields in all adapters; Responses remains `store:false`. Ordinary future history projects citations into readable source URLs and omits external replay. Explicit Anthropic continuation reuses prepared messages/sources without re-search.
 
-Pinned public source supports this contract; hosted deployment, anonymous advanced-tool access, authentication and proxy behavior remain subject to authorized live acceptance. See [design](ISSUE-80-EXA-SEARCH-PLAN.md) and [verification](ISSUE-80-IMPLEMENTATION.md).
+Pinned public source supports this contract; hosted deployment, anonymous advanced-tool access, authentication and proxy behavior remain subject to authorized live acceptance. See [design](archive/ISSUE-80-EXA-SEARCH-PLAN.md) and [verification](ISSUE-80-IMPLEMENTATION.md).
 
 ## Lightweight files (#63)
 

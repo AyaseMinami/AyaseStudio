@@ -47,7 +47,13 @@ describe("assistant workspace public behavior", () => {
   async function click(text: string) {
     if (text.startsWith("编辑对话 ") && !container.querySelector(".conversation-cascade-pane:not([inert])")) await click("默认助手");
     const assistantAction = /^(?:编辑|删除|上移|下移)助手 (.+)$/.exec(text);
-    if (assistantAction && !document.querySelector('[role="menu"]')) await click(`管理助手 ${assistantAction[1]}`);
+    if (assistantAction && !document.querySelector('[role="menu"]')) {
+      if (container.querySelector('.conversation-workspace-body')?.getAttribute("data-assistant-expanded") !== "true") {
+        const current = container.querySelector('.assistant-branch-toggle[aria-pressed="true"]')?.getAttribute("aria-label");
+        expect(current).toBeTruthy(); await click(current!);
+      }
+      await click(`管理助手 ${assistantAction[1]}`);
+    }
     const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text);
     expect(button, text).toBeTruthy(); expect(button!.disabled, text).toBe(false);
     await act(async () => button!.click());
@@ -169,7 +175,8 @@ describe("assistant workspace public behavior", () => {
 
   it("couples both columns to the main toggle and allows collapsing only conversations", async () => {
     expect(container.querySelectorAll(".chat-navigation-pane")).toHaveLength(1);
-    expect(container.querySelector(".conversation-cascade-pane:not([inert])")).toBeNull();
+    expect(container.querySelector(".conversation-cascade-pane:not([inert])")).not.toBeNull();
+    expect(container.querySelector(".conversation-workspace-body")?.getAttribute("data-assistant-expanded")).toBe("false");
     await fill(".composer-input", "keep my draft");
     await click("默认助手");
     const panel = container.querySelector('[aria-label="默认助手的对话"]');

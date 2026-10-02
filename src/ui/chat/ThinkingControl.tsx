@@ -5,6 +5,7 @@ import { defaultThinking, isThinkingSettings, thinkingOptions, thinkingLabels,
   validateThinkingSelection, type ThinkingSettings, type ThinkingChoice } from "../../chat/thinking";
 
 interface ThinkingControlProps {
+  busyOnly?: boolean;
   protocol?: ChatProtocol; model: string; value?: ThinkingSettings; disabled: boolean;
   hint?: string;
   optionList?: boolean;
@@ -37,6 +38,7 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
       aria-label="思考设置" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
       title={`思考：${thinkingLabels[settings.choice]}`}
       disabled={props.disabled}
+      data-busy-only={props.disabled && props.busyOnly === true}
       onClick={() => setOpen((current) => !current)}><Lightbulb size={18} />
     </button>
     {open && <div id={panelId} className="thinking-popover" role="dialog" aria-label="思考设置">

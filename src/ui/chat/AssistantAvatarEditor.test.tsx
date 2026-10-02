@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.mocked(avatarLibrary.usages).mockResolvedValue([]); vi.mocked(avatarLibrary.select).mockReset().mockResolvedValue(value);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); });
-async function mount(avatar?: UserAvatar, parentKeyDown = vi.fn()) { await act(async () => root.render(<div onKeyDown={parentKeyDown}><AssistantAvatarEditor assistantName="晴" value={avatar} defaultAvatar="blue" onChange={change} onDefaultChange={defaultChange} onBusyChange={busyChange} /></div>)); }
+async function mount(avatar?: UserAvatar, parentKeyDown = vi.fn()) { await act(async () => root.render(<div onKeyDown={parentKeyDown}><AssistantAvatarEditor assistantName="晴" assistantId="a" value={avatar} defaultAvatar="blue" onChange={change} onDefaultChange={defaultChange} onBusyChange={busyChange} /></div>)); }
 async function click(label: string) { const button = [...host.querySelectorAll("button")].find((button) => button.textContent === label || button.getAttribute("aria-label") === label); expect(button, label).toBeTruthy(); await act(async () => button!.click()); }
 
 it("names the selector and separates candidates, cancellation, and explicit draft application", async () => {
@@ -38,14 +38,20 @@ it("names the selector and separates candidates, cancellation, and explicit draf
   await click("选择头像"); await click("选择 照片"); await click("使用此头像");
   expect(change).toHaveBeenCalledWith(value); expect(host.querySelector("dialog")).toBeNull(); expect(busyChange).toHaveBeenLastCalledWith(false);
 });
-it("requires explicit use for built-ins", async () => {
-  await mount(value); await click("选择头像"); await click("青绿"); expect(defaultChange).not.toHaveBeenCalled();
-  await click("使用此头像"); expect(defaultChange).toHaveBeenCalledWith("green"); expect(change).toHaveBeenCalledWith(undefined);
+it("requires explicit use for automatic avatars and clears image and legacy default only on apply", async () => {
+  await mount(value); await click("选择头像"); await click("选择自动头像");
+  expect(host.querySelector('.assistant-avatar-default-choice .assistant-avatar-initial')?.textContent).toBe("晴");
+  expect(defaultChange).not.toHaveBeenCalled(); expect(change).not.toHaveBeenCalled();
+  await click("取消"); expect(defaultChange).not.toHaveBeenCalled(); expect(change).not.toHaveBeenCalled();
+  await click("选择头像"); await click("选择自动头像"); await click("使用此头像");
+  expect(defaultChange).toHaveBeenCalledWith(undefined); expect(change).toHaveBeenCalledWith(undefined);
+  expect(avatarLibrary.remove).not.toHaveBeenCalled();
 });
 it("recrops legacy or library snapshots and preserves source metadata", async () => {
   await mount(value); await click("重新裁切"); expect(decodeAvatar).toHaveBeenCalledWith(value.original);
   await click("应用头像"); expect(change).toHaveBeenCalledWith({ ...value, thumbnail: expect.any(Blob) });
   await click("移除图片"); expect(change).toHaveBeenLastCalledWith(undefined);
+  expect(defaultChange).toHaveBeenLastCalledWith(undefined); expect(avatarLibrary.remove).not.toHaveBeenCalled();
 });
 it("retains the prior value on crop failure and releases cancelled previews", async () => {
   await mount(value); await click("重新裁切"); vi.mocked(renderAvatar).mockRejectedValueOnce(new Error("canvas"));
@@ -67,4 +73,15 @@ it("blocks Escape while a rendered crop is pending", async () => {
   expect(host.querySelector("dialog")).not.toBeNull(); expect(change).not.toHaveBeenCalled();
   await act(async () => resolve(new Blob(["rendered"])));
   expect(change).toHaveBeenCalledTimes(1); expect(host.querySelector("dialog")).toBeNull();
+});
+
+it("previews the current edited name with a stable identity color", async () => {
+  const render = (assistantName: string) => root.render(<AssistantAvatarEditor assistantName={assistantName} assistantId="a" onChange={change} onDefaultChange={defaultChange} />);
+  await act(async () => render("alice"));
+  const background = host.querySelector<HTMLElement>(".assistant-avatar-editor-preview")!.style.background;
+  expect(host.querySelector(".assistant-avatar-initial")?.textContent).toBe("A");
+  await act(async () => render("晴"));
+  expect(host.querySelector(".assistant-avatar-initial")?.textContent).toBe("晴");
+  expect(host.querySelector<HTMLElement>(".assistant-avatar-editor-preview")!.style.background).toBe(background);
+  expect(change).not.toHaveBeenCalled(); expect(defaultChange).not.toHaveBeenCalled();
 });

@@ -14,13 +14,10 @@ type Gesture = {
   startY: number;
   active: boolean;
   cancelled: boolean;
-  immediate: boolean;
-  timer?: ReturnType<typeof setTimeout>;
   frame?: number;
   removeListeners(): void;
 };
 
-const holdDelay = 400;
 const movementThreshold = 6;
 
 /** Pointer gestures for the settings tree; the owner retains selection and persistence. */
@@ -38,7 +35,6 @@ export function useConnectionTreeDrag({ disabled, onMove, onStart }: {
   const [announcement, setAnnouncement] = useState("");
 
   function stopResources(current: Gesture) {
-    clearTimeout(current.timer);
     if (current.frame !== undefined) cancelAnimationFrame(current.frame);
   }
 
@@ -56,7 +52,7 @@ export function useConnectionTreeDrag({ disabled, onMove, onStart }: {
     current.cancelled = true;
     setDrag(null);
     if (current.active) setAnnouncement("已取消拖动。");
-    // Keep the release listener so a cancelled long press cannot become a row click.
+    // Keep the release listener so a cancelled gesture cannot become a row click.
   }
 
   function findDrop(current: Gesture): Drop | null {
@@ -108,7 +104,7 @@ export function useConnectionTreeDrag({ disabled, onMove, onStart }: {
     current.frame = requestAnimationFrame(() => autoScroll(current));
   }
 
-  function begin(event: ReactPointerEvent<HTMLElement>, item: TreeDragItem, label: string, immediate: boolean) {
+  function begin(event: ReactPointerEvent<HTMLElement>, item: TreeDragItem, label: string) {
     if (options.current.disabled || event.button !== 0 || !event.isPrimary) return;
     if (gesture.current) release(gesture.current);
     clearTimeout(clickTimer.current);
@@ -116,7 +112,7 @@ export function useConnectionTreeDrag({ disabled, onMove, onStart }: {
     const current: Gesture = {
       item, label, element: event.currentTarget, pointerId: event.pointerId,
       x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
-      active: false, cancelled: false, immediate, removeListeners: () => {},
+      active: false, cancelled: false, removeListeners: () => {},
     };
     gesture.current = current;
 
@@ -128,7 +124,6 @@ export function useConnectionTreeDrag({ disabled, onMove, onStart }: {
       if (!current.active) {
         const distance = Math.hypot(current.x - current.startX, current.y - current.startY);
         if (distance < movementThreshold) return;
-        if (!current.immediate) { cancel(); return; }
         activate(current);
       }
       if (current.active) { pointer.preventDefault(); updateDrop(current); }
@@ -186,7 +181,6 @@ export function useConnectionTreeDrag({ disabled, onMove, onStart }: {
       window.removeEventListener("resize", cancel);
       document.removeEventListener("visibilitychange", hide);
     };
-    if (!immediate) current.timer = setTimeout(() => activate(current), holdDelay);
   }
 
   useEffect(() => { if (disabled) cancel(); }, [disabled]);

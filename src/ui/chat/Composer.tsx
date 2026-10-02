@@ -31,8 +31,10 @@ export interface ComposerProps {
   attachmentBlockReason?: string;
   error?: string;
   isHydrated: boolean;
+  isWorkspaceBusy?: boolean;
   isGenerating: boolean;
   onDraftChange(draft: string): void;
+  onDraftActivate?(): void;
   onFiles?(files: File[]): void;
   onRemoveAttachment?(id: string): void;
   onSend(): void;
@@ -56,8 +58,10 @@ export function Composer({
   attachmentBlockReason,
   error,
   isHydrated,
+  isWorkspaceBusy = false,
   isGenerating,
   onDraftChange,
+  onDraftActivate,
   onFiles,
   onRemoveAttachment,
   onSend,
@@ -84,6 +88,7 @@ export function Composer({
   useEffect(() => { if (preview && !previewItem) setPreview(undefined); }, [preview, previewItem]);
   const canSend = !isGenerating && isHydrated && !attachmentBusy && !attachmentBlockReason &&
     (!!draft.trim() || draftAttachments.length > 0);
+  const busyOnly = isWorkspaceBusy && !isHydrated;
   function resizeTo(height: number, parentHeight: number, expandedMode: boolean): void {
     if (parentHeight <= 0) return;
     const max = Math.max(0, parentHeight - 48);
@@ -182,12 +187,13 @@ export function Composer({
             {draftAttachments.map((item) => <span className="composer-attachment" key={item.id}
               title={`${item.name} · ${item.mimeType} · ${(item.size / 1_000_000).toFixed(2)} MB`}>
               {item.mimeType.startsWith("image/") ? <button type="button" className="composer-attachment-open"
-                aria-label={`预览待发送图片 ${item.name}`} disabled={!isHydrated}
+                aria-label={`预览待发送图片 ${item.name}`} disabled={!isHydrated} data-busy-only={busyOnly}
                 onClick={(event) => setPreview({ id: item.id, opener: event.currentTarget })}>
                 <FileImage size={14} aria-hidden="true" /><span className="composer-attachment-name">{item.name}</span>
               </button> : <><FileText size={14} aria-hidden="true" /><span className="composer-attachment-name">{item.name}</span></>}
               <button className="attachment-remove" type="button" aria-label={`移除附件 ${item.name}`}
                 disabled={!isHydrated}
+                data-busy-only={busyOnly}
                 onClick={() => onRemoveAttachment?.(item.id)}><X size={13} /></button>
             </span>)}
           </div>}
@@ -195,6 +201,7 @@ export function Composer({
             ref={input}
             className="composer-input"
             value={draft}
+            onClick={(event) => { if (event.button === 0 && event.detail > 0 && isHydrated) onDraftActivate?.(); }}
             onChange={(event) => {
               historySelectionPending.current = false;
               caretAffinity.current = (event.nativeEvent as InputEvent).inputType?.startsWith("insert") ? "upstream" : undefined;
@@ -241,6 +248,7 @@ export function Composer({
             placeholder={`输入消息，Enter / Ctrl+Enter 发送，Shift+Enter 换行${onBrowseHistory ? "；首行 ↑ / 末行 ↓ 浏览历史" : ""}`}
             title={onBrowseHistory ? "首行按 ↑ 浏览历史输入，末行按 ↓ 返回较新输入或草稿" : undefined}
             disabled={!isHydrated}
+            data-busy-only={busyOnly}
           />
           {attachmentBusy && <p className="attachment-loading" role="status">正在读取附件，完成后才能发送…</p>}
           <div className="composer-toolbar">
@@ -248,6 +256,7 @@ export function Composer({
             <button className="composer-tool-button" type="button" aria-label="添加附件"
               title={`添加图片、PDF、文本/代码${protocol === "openai-responses" ? "、Office 原文件" : "（Office 需 Responses）"}；点击发送后才请求`}
               disabled={!isHydrated}
+              data-busy-only={busyOnly}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
             {thinkingControl}
             {onToggleLayout && <button className="composer-tool-button composer-layout-button" type="button"
@@ -284,6 +293,7 @@ export function Composer({
                 className="send-button"
                 onClick={onSend}
                 disabled={!canSend}
+                data-busy-only={busyOnly && !attachmentBusy && !attachmentBlockReason && (!!draft.trim() || draftAttachments.length > 0)}
                 aria-label="发送"
                 type="button"
               >

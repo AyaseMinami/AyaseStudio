@@ -35,6 +35,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   const fallback = useRef(emptyView());
   const queue = useRef(Promise.resolve());
   const pending = useRef(0);
+  const hasHydratedView = useRef(false);
   const initial = useRef({ legacyModelId, validModelIds });
   const latestModelIds = useRef(validModelIds);
   latestModelIds.current = validModelIds;
@@ -47,6 +48,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     const state = await store.hydrate();
     stores.current.set(id, store);
     views.current.set(id, { ...(views.current.get(id) ?? emptyView()), messages: state.messages });
+    hasHydratedView.current = true;
   }
 
   async function publish(next: WorkspaceSnapshot): Promise<void> {
@@ -185,6 +187,8 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
 
   return {
     snapshot, conversation, assistant, effective, view, busy, loadError, operationError, execute, updateAutomaticTitle, retry: initialize,
+    // Presentation only: the first transcript load remains visibly unavailable.
+    isTemporarilyBusy: busy && hasHydratedView.current,
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
     isSettled: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     canSend: () => !maintenanceLocked() && pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,

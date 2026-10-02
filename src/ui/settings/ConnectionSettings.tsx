@@ -785,7 +785,7 @@ export function ConnectionSettings({
                   onKeyDown={(event) => openKeyboardMenu(event, { kind: "provider", id: provider.id })}>
                   <button type="button" className="provider-drag-handle" disabled={isStreaming}
                     aria-label={`拖动排序 ${provider.name}`} title="拖动排序，也可在菜单中上移或下移"
-                    onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name, true)}>
+                    onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name)}>
                     <GripVertical size={14} aria-hidden="true" />
                   </button>
                   <button type="button" className="connection-tree-disclosure" aria-label={`${expanded ? "收起" : "展开"}供应商 ${provider.name}`}
@@ -798,10 +798,10 @@ export function ConnectionSettings({
                     <ChevronDown size={15} />
                   </button>
                   <button type="button" className="connection-tree-provider" aria-label={provider.name}
-                    title="单击查看供应商，长按可拖动排序"
+                    title="单击查看供应商，按住移动可拖动排序"
                     ref={(element) => { if (element) providerRowRefs.current.set(provider.id, element); else providerRowRefs.current.delete(provider.id); }}
                     aria-current={selectedProviderId === provider.id && !selectedConnectionId ? "true" : undefined}
-                    onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name, false)}
+                    onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name)}
                     onDragStart={(event) => event.preventDefault()}
                     onClick={() => { void selectProvider(provider.id); }}>
                     <span title={provider.name}>{provider.name}</span><small>{provider.connections.length}</small>
@@ -823,14 +823,14 @@ export function ConnectionSettings({
                         onKeyDown={(event) => openKeyboardMenu(event, { kind: "connection", providerId: provider.id, id: connection.id })}>
                         <button type="button" className="provider-drag-handle connection-drag-handle" disabled={isStreaming}
                           aria-label={`拖动排序连接 ${connection.name}`} title="在当前供应商内拖动排序，也可在菜单中上移或下移"
-                          onPointerDown={(event) => treeDrag.begin(event, { kind: "connection", id: connection.id, providerId: provider.id }, connection.name, true)}>
+                          onPointerDown={(event) => treeDrag.begin(event, { kind: "connection", id: connection.id, providerId: provider.id }, connection.name)}>
                           <GripVertical size={14} aria-hidden="true" />
                         </button>
                         <button type="button" className="connection-tree-link" aria-label={`查看连接 ${connection.name}`}
-                          title="单击查看连接，长按可在当前供应商内拖动排序"
+                          title="单击查看连接，按住移动可在当前供应商内拖动排序"
                           aria-current={selectedConnectionId === connection.id ? "true" : undefined}
                           ref={(element) => { if (element) connectionRowRefs.current.set(connection.id, element); else connectionRowRefs.current.delete(connection.id); }}
-                          onPointerDown={(event) => treeDrag.begin(event, { kind: "connection", id: connection.id, providerId: provider.id }, connection.name, false)}
+                          onPointerDown={(event) => treeDrag.begin(event, { kind: "connection", id: connection.id, providerId: provider.id }, connection.name)}
                           onDragStart={(event) => event.preventDefault()}
                           onClick={() => selectConnection(provider.id, connection.id)}>
                           <span title={connection.name}>{connection.name}</span>

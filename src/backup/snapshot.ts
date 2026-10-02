@@ -1,4 +1,5 @@
 import { readAppearancePreferences } from "../appearance/appearance";
+import { readAssistantAvatarSelection } from "../avatar/assistantDefaults";
 import { loadConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
 import { bytesToBase64 } from "../chat/attachments";
 import { check, decode64, sha256 } from "./codec";
@@ -64,7 +65,10 @@ export function exportConnections(state: ConnectionSettingsState, credentials: b
 export async function createBackupDocument(snapshot: LocalSnapshot, options: BackupOptions, files: BackupFiles): Promise<BackupDocument> {
   check(typeof options.connections === "boolean" && typeof options.credentials === "boolean" && (!options.credentials || options.connections));
   const rows: Record<string, unknown[]> = {};
-  rows.assistants = snapshot.rows.assistants.map(a => ({ ...pick(a, backupFields(dataPolicies.assistants)), defaultConfig: session(a.defaultConfig), ...(a.avatar ? { avatar: avatar(a.avatar) } : {}) }));
+  rows.assistants = snapshot.rows.assistants.map(a => {
+    readAssistantAvatarSelection(a);
+    return { ...pick(a, backupFields(dataPolicies.assistants)), defaultConfig: session(a.defaultConfig), ...(a.avatar ? { avatar: avatar(a.avatar) } : {}) };
+  });
   rows.conversations = snapshot.rows.conversations.map(c => ({ ...pick(c, backupFields(dataPolicies.conversations)), titleNaming: "manual", settings: settings(c.settings!), ...(c.creationConfig ? { creationConfig: settings(c.creationConfig) } : {}) }));
   rows.chats = snapshot.rows.chats.map(c => ({ ...pick(c, backupFields(dataPolicies.chats)), messages: c.messages.map(m => message(m)) }));
   rows.workspace = snapshot.rows.workspace.map(s => pick(s, backupFields(dataPolicies.workspace)));

@@ -1,6 +1,6 @@
 # #88 绘图任务生命周期与历史管理
 
-以 [#88](https://github.com/AyaseMinami/AyaseStudio/issues/88) 2026-10-01 正文及 [#83 全面核对记录](ISSUE-83-DRAWING-SPEC.md#14-2026-10-01-全面核对与需求修订) 为需求基线，在工作区已有 [#87 队列](ISSUE-87-IMPLEMENTATION.md) 上补齐。保存失败继续队列、结果未知提示后可删、重启手动继续均沿用已确认决定。GNBP 桌面 `0c07f22` 的新任务重试／清理操作与 Android `efb5cb7` 的结果日志及所有权为既有核对依据；不移植 Android 的未知结果禁删、永久替代链限制或自动恢复派发。
+以 [#88](https://github.com/AyaseMinami/AyaseStudio/issues/88) 2026-10-01 正文及 [#83 全面核对记录](archive/ISSUE-83-DRAWING-DESIGN-HISTORY.md#14-2026-10-01-全面核对与需求修订) 为需求基线，在工作区已有 [#87 队列](ISSUE-87-IMPLEMENTATION.md) 上补齐。保存失败继续队列、结果未知提示后可删、重启手动继续均沿用已确认决定。GNBP 桌面 `0c07f22` 的新任务重试／清理操作与 Android `efb5cb7` 的结果日志及所有权为既有核对依据；不移植 Android 的未知结果禁删、永久替代链限制或自动恢复派发。
 
 ## 生命周期与恢复
 

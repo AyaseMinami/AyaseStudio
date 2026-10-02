@@ -1,5 +1,6 @@
 .data-management-page { display: flex; flex-direction: column; gap: 1rem; }
-.data-management-page > .settings-page-heading { margin-bottom: 0.5rem; }
+/* Offset the 16px flex gap so the title-to-content spacing matches other pages. */
+.data-management-page > .settings-page-heading { margin-bottom: -0.25rem; }
 .data-management-page > .settings-page-heading h2 { margin-top: 0; }
 .data-management-page .settings-card { padding: 1.25rem; border-radius: 0.5rem; box-shadow: none; }
 .data-management-intro { display: flex; flex-direction: column; gap: 0.75rem; }

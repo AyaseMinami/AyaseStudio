@@ -25,6 +25,7 @@ export function AboutSettings() {
       }}>{children}</a>;
   }
   return <section className="settings-page about-page" aria-label="关于 Ayase Studio">
+    <div className="about-card">
     <header className="about-brand">
       <img src={appIcon} alt="" width="80" height="80" />
       <h2>Ayase Studio</h2>
@@ -60,5 +61,6 @@ export function AboutSettings() {
       </div>
     </footer>
     {notice.target === "link" && <p className="about-notice" role="status">{notice.text}</p>}
+    </div>
   </section>;
 }

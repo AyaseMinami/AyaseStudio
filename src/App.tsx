@@ -16,6 +16,7 @@ import { openDrawingOutputDirectory } from "./drawing/runtime";
 import { getDrawingModels } from "./chat/settings";
 import { ChatHeader } from "./ui/chat/ChatHeader";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
+import { useConversationNavigation } from "./ui/chat/useConversationNavigation";
 import { useChatLayout } from "./ui/chat/useChatLayout";
 import {
   SettingsWorkspace,
@@ -29,6 +30,7 @@ function App() {
   const appearance = useAppearance();
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
+  const navigation = useConversationNavigation();
   const drawing = useDrawingWorkspace(activePage === "drawing");
   const [backupError, setBackupError] = useState<string>();
   const chat = useChatSession({
@@ -53,12 +55,14 @@ function App() {
         onConfirm={(focus) => void appearance.confirmBackgroundFocus(focus)}
         onCancel={() => void appearance.cancelBackgroundFocus()} />}
       {activePage === "chat" ? (
-        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingIds={chat.generatingConversationIds}
-          toolbar={<ChatHeader key={chat.workspace.conversation?.id ?? "loading"} title={chat.workspace.conversation?.title ?? "新对话"}
+        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingIds={chat.generatingConversationIds} navigation={navigation}
+          toolbar={<ChatHeader conversationId={chat.workspace.conversation?.id} title={chat.workspace.conversation?.title ?? "新对话"}
             layout={chatLayout.layout} onToggleLayout={chatLayout.toggleLayout} isHydrated={chat.isHydrated}
             isGenerating={chat.isGenerating}
+            isWorkspaceBusy={chat.workspace.isTemporarilyBusy}
             onClear={chat.clearConversation} />}>
         <ChatWorkspace hideHeader
+          onDraftActivate={navigation.activateDraft}
           userAvatarUrl={avatar.url}
           assistant={chat.workspace.assistant}
           layout={chatLayout.layout}
@@ -74,6 +78,7 @@ function App() {
           contextPlan={chat.contextPlan}
           error={chat.error}
           isHydrated={chat.isHydrated}
+          isWorkspaceBusy={chat.workspace.isTemporarilyBusy}
           isGenerating={chat.isGenerating}
           messages={chat.messages}
           messageActions={{ edit: chat.editMessage, editAndSend: chat.editAndSendMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage, continue: chat.continueMessage, selectVersion: chat.selectRoundVersion }}

@@ -132,16 +132,23 @@ describe("ConnectionSettings", () => {
     if (element) vi.spyOn(element, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 40));
   }
 
-  it("drags a provider from its handle without selecting or collapsing it", async () => {
+  it.each(["handle", "name"])("drags a provider from its %s at six pixels without waiting, selecting or collapsing it", async (entry) => {
     const props = withSecondaryConnection();
     props.connectionSettings.providers.push({ id: "provider-b", name: "另一供应商", connections: [] });
     await render(props);
     hitRow(button("示例供应商"));
     vi.spyOn(button("示例供应商").closest(".connection-provider-row")!, "getBoundingClientRect")
       .mockReturnValue(new DOMRect(0, 100, 200, 40));
-    const source = button("拖动排序 另一供应商");
+    const source = button(entry === "handle" ? "拖动排序 另一供应商" : "另一供应商");
     await act(async () => {
       pointer(source, "pointerdown", 170);
+      pointer(window, "pointermove", 165);
+    });
+    expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+    await act(async () => pointer(window, "pointermove", 164));
+    expect(container.querySelector('[data-sorting="true"]')).not.toBeNull();
+    expect(props.onProviderMove).not.toHaveBeenCalled();
+    await act(async () => {
       pointer(window, "pointermove");
     });
     expect(container.querySelector('[data-sort-provider="provider-a"]')?.getAttribute("data-drop")).toBe("before");
@@ -154,19 +161,19 @@ describe("ConnectionSettings", () => {
     expect(button("收起供应商 示例供应商").getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("arms a connection name only after the hold delay and suppresses its release click", async () => {
-    vi.useFakeTimers();
+  it.each(["handle", "name"])("drags a connection from its %s at six pixels without waiting and suppresses its release click", async (entry) => {
     const props = withSecondaryConnection();
     await render(props);
     hitRow(button("查看连接 主线路").closest<HTMLElement>("[data-sort-connection]"));
-    const source = button("查看连接 备用线路");
+    const source = button(entry === "handle" ? "拖动排序连接 备用线路" : "查看连接 备用线路");
     await act(async () => {
       pointer(source, "pointerdown", 170);
-      vi.advanceTimersByTime(399);
+      pointer(window, "pointermove", 165);
     });
     expect(container.querySelector('[data-sorting="true"]')).toBeNull();
-    await act(async () => vi.advanceTimersByTime(1));
+    await act(async () => pointer(window, "pointermove", 164));
     expect(container.querySelector('[data-sorting="true"]')).not.toBeNull();
+    expect(props.onConnectionMove).not.toHaveBeenCalled();
     await act(async () => {
       pointer(window, "pointermove");
       pointer(window, "pointerup");
@@ -177,34 +184,35 @@ describe("ConnectionSettings", () => {
     expect(container.querySelector('[data-sorting="true"]')).toBeNull();
   });
 
-  it("keeps a short name click usable and cancels a hold when the pointer moves early", async () => {
+  it.each([
+    { kind: "provider", elapsed: 100, movement: 0 },
+    { kind: "provider", elapsed: 1000, movement: 0 },
+    { kind: "provider", elapsed: 1000, movement: 5 },
+    { kind: "connection", elapsed: 100, movement: 0 },
+    { kind: "connection", elapsed: 1000, movement: 0 },
+    { kind: "connection", elapsed: 1000, movement: 5 },
+  ])("keeps a $kind name press of $elapsed ms with $movement px movement as a click", async ({ kind, elapsed, movement }) => {
     vi.useFakeTimers();
     const props = withSecondaryConnection();
     await render(props);
-    const source = button("查看连接 备用线路");
+    const source = button(kind === "provider" ? "示例供应商" : "查看连接 备用线路");
     await act(async () => {
       pointer(source, "pointerdown");
-      vi.advanceTimersByTime(100);
-      pointer(window, "pointerup");
-      source.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
-      vi.advanceTimersByTime(500);
-    });
-    expect(source.getAttribute("aria-current")).toBe("true");
-    expect(props.onConnectionMove).not.toHaveBeenCalled();
-    const original = button("查看连接 主线路");
-    await act(async () => {
-      pointer(original, "pointerdown");
-      pointer(window, "pointermove", 150);
-      vi.advanceTimersByTime(500);
-      pointer(window, "pointerup", 150);
-      original.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      pointer(window, "pointermove", 110 + movement);
+      vi.advanceTimersByTime(elapsed);
     });
     expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+    await act(async () => {
+      pointer(window, "pointerup", 110 + movement);
+      source.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
+    expect(container.querySelector('[data-sorting="true"]')).toBeNull();
+    expect(props.onProviderMove).not.toHaveBeenCalled();
     expect(props.onConnectionMove).not.toHaveBeenCalled();
     expect(source.getAttribute("aria-current")).toBe("true");
   });
 
-  it.each(["escape", "blur", "pointercancel"])("cancels an active long press on %s without selecting a row", async (reason) => {
+  it.each(["escape", "blur", "pointercancel"])("cancels an active drag on %s without selecting a row", async (reason) => {
     vi.useFakeTimers();
     const props = withSecondaryConnection();
     await render(props);
@@ -212,7 +220,6 @@ describe("ConnectionSettings", () => {
     const source = button("查看连接 备用线路");
     await act(async () => {
       pointer(source, "pointerdown", 170);
-      vi.advanceTimersByTime(400);
       pointer(window, "pointermove");
       if (reason === "escape") window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       else if (reason === "blur") window.dispatchEvent(new Event("blur"));
@@ -225,12 +232,16 @@ describe("ConnectionSettings", () => {
     expect(container.querySelector('[data-sorting="true"]')).toBeNull();
   });
 
-  it.each([100, 400])("cancels a pending or active hold when generation starts at %i ms", async (elapsed) => {
+  it.each(["pending", "active"])("cancels a %s gesture when generation starts", async (phase) => {
     vi.useFakeTimers();
     const props = withSecondaryConnection();
     await render(props);
     hitRow(button("查看连接 主线路").closest<HTMLElement>("[data-sort-connection]"));
-    await act(async () => { pointer(button("查看连接 备用线路"), "pointerdown", 170); vi.advanceTimersByTime(elapsed); });
+    await act(async () => {
+      pointer(button("查看连接 备用线路"), "pointerdown", 170);
+      if (phase === "active") pointer(window, "pointermove");
+    });
+    expect(container.querySelector('[data-sorting="true"]') !== null).toBe(phase === "active");
     props.isStreaming = true;
     await render(props);
     await act(async () => { vi.advanceTimersByTime(500); pointer(window, "pointermove"); pointer(window, "pointerup"); });
@@ -245,7 +256,7 @@ describe("ConnectionSettings", () => {
     await render(props);
     await act(async () => {
       pointer(button("查看连接 备用线路"), "pointerdown");
-      vi.advanceTimersByTime(400);
+      pointer(window, "pointermove", 116);
       window.dispatchEvent(new Event("blur"));
     });
     const disclosure = button("收起供应商 示例供应商");
@@ -258,7 +269,7 @@ describe("ConnectionSettings", () => {
     expect(props.onConnectionMove).not.toHaveBeenCalled();
   });
 
-  it("does not open a connection after Escape cancels a pending name hold", async () => {
+  it("does not open a connection after Escape cancels a pending name gesture", async () => {
     vi.useFakeTimers();
     const props = withSecondaryConnection();
     await render(props);

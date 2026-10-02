@@ -8,16 +8,17 @@ import { AssistantAvatarSelector } from "../avatar/AvatarLibrary";
 
 export interface AssistantAvatarEditorProps {
   assistantName?: string;
+  assistantId?: string;
   value?: UserAvatar;
   defaultAvatar?: string;
   legacyIcon?: string;
   disabled?: boolean;
   onChange(value: UserAvatar | undefined): void;
-  onDefaultChange(value: string): void;
+  onDefaultChange(value: string | undefined): void;
   onBusyChange?(busy: boolean): void;
 }
 
-export function AssistantAvatarEditor({ assistantName = "新助手", value, defaultAvatar, legacyIcon, disabled = false, onChange, onDefaultChange, onBusyChange }: AssistantAvatarEditorProps) {
+export function AssistantAvatarEditor({ assistantName = "新助手", assistantId, value, defaultAvatar, legacyIcon, disabled = false, onChange, onDefaultChange, onBusyChange }: AssistantAvatarEditorProps) {
   const active = useRef(false);
   const operation = useRef(0);
   const [draft, setDraft] = useState<Draft>();
@@ -62,19 +63,19 @@ export function AssistantAvatarEditor({ assistantName = "新助手", value, defa
 
   return <section className="assistant-avatar-editor" aria-label="助手头像">
     <div className="assistant-avatar-editor-profile">
-      <AssistantAvatar avatar={value} defaultAvatar={defaultAvatar} legacyIcon={legacyIcon} className="assistant-avatar-editor-preview" />
+      <AssistantAvatar avatar={value} defaultAvatar={defaultAvatar} legacyIcon={legacyIcon} assistantName={assistantName} assistantId={assistantId} className="assistant-avatar-editor-preview" />
       <div className="avatar-buttons">
         <button type="button" className="settings-button" disabled={blocked} onClick={() => setSelecting(true)}><ImagePlus size={15} />选择头像</button>
         {value && <><button type="button" className="settings-button" disabled={blocked} onClick={() => void open(value.original, value.crop)}><Crop size={15} />重新裁切</button>
-          <button type="button" className="settings-button" disabled={blocked} onClick={() => { setError(undefined); onChange(undefined); }}>移除图片</button></>}
+          <button type="button" className="settings-button" disabled={blocked} onClick={() => { setError(undefined); onChange(undefined); onDefaultChange(undefined); }}>移除图片</button></>}
       </div>
     </div>
     <p className="assistant-avatar-editor-note">PNG、JPEG 或 WebP · 最大 20 MB · 图片仅在本机保存</p>
     {error && <p className="avatar-error" role="alert">{error}</p>}
     {draft && <AvatarCropDialog draft={draft} saving={saving || disabled} error={error} onCancel={() => { operation.current++; setError(undefined); setDraft(undefined); }} onSave={apply} />}
-    {selecting && <AssistantAvatarSelector assistantName={assistantName} value={value} defaultAvatar={defaultAvatar}
+    {selecting && <AssistantAvatarSelector assistantName={assistantName} assistantId={assistantId} value={value} defaultAvatar={defaultAvatar} legacyIcon={legacyIcon}
       onBusyChange={onBusyChange} onClose={() => setSelecting(false)} onApply={(next, builtin) => {
-        onChange(next); if (builtin) onDefaultChange(builtin); setSelecting(false);
+        onChange(next); if (!next) onDefaultChange(builtin); setSelecting(false);
       }} />}
   </section>;
 }

@@ -1,6 +1,6 @@
 .settings-help { display: inline-flex; align-items: center; flex: 0 0 20px; width: 20px; height: 20px; vertical-align: middle; }
 .settings-help-trigger { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; color: rgb(var(--color-muted)); background: transparent; cursor: help; }
 .settings-help-trigger:hover, .settings-help-trigger:focus-visible { color: rgb(var(--color-text)); background: rgb(var(--color-hover)); }
-.settings-help-tooltip { position: fixed; z-index: 100; width: max-content; max-width: min(280px, calc(100vw - 16px)); padding: 8px 10px; border: 1px solid rgb(var(--color-border)); border-radius: 6px; background: rgb(var(--color-text)); color: rgb(var(--color-panel)); font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; pointer-events: none; box-shadow: 0 3px 12px rgb(0 0 0 / 0.12); }
+.settings-help-tooltip { position: fixed; z-index: 100; width: max-content; max-width: min(280px, calc(100vw - 16px)); padding: 8px 10px; border: 1px solid rgb(var(--color-border)); border-radius: 6px; background: rgb(var(--color-text)); color: rgb(var(--color-panel)); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; box-shadow: 0 3px 12px rgb(0 0 0 / 0.12); }
 .settings-label-help { display: flex; align-items: center; gap: 4px; }
 .settings-label-help .field-label { margin: 0; }

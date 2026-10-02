@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, MouseEvent, ReactNode } from "react";
+import { memo, type ComponentPropsWithoutRef, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -152,7 +152,7 @@ function CodePre({ node, children, ...props }: ComponentPropsWithoutRef<"pre"> &
   return <pre {...props}>{children}</pre>;
 }
 
-export function SafeMarkdown({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
+function SafeMarkdownContent({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
   const citations = validCitations(search, children);
   const remarkPlugins: PluggableList = [[remarkGfm, { singleTilde: false }], remarkMath, remarkMathSyntax, remarkCodeBlocks,
     ...(isExternalSearch(search?.provider)
@@ -165,3 +165,6 @@ export function SafeMarkdown({ children, search }: { children: string; search?: 
     span: ({ node: _node, ...props }) => search ? CitationSpan(props, search) : <span {...props} />,
   }}>{children}</ReactMarkdown>;
 }
+
+/** Unchanged history skips parsing; changed text or search data still renders. */
+export const SafeMarkdown = memo(SafeMarkdownContent);

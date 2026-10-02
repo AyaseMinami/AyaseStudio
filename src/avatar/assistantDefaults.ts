@@ -1,3 +1,5 @@
+import { dataCheck } from "../storage/dataContract";
+
 export const assistantAvatarDefaults = [
   { id: "system", label: "系统默认" },
   { id: "blue", label: "晴蓝" },
@@ -10,6 +12,13 @@ const preferenceKey = "ayase-studio.assistant-default-avatar";
 
 export function isAssistantDefaultAvatar(value: unknown): value is AssistantDefaultAvatar {
   return assistantAvatarDefaults.some((avatar) => avatar.id === value);
+}
+
+/** The existing empty selection means automatic; no new persisted enum or mode. */
+export function readAssistantAvatarSelection(value: { icon?: unknown; defaultAvatar?: unknown }) {
+  dataCheck(value.icon === undefined || typeof value.icon === "string", "助手头像结构不受支持；原数据已保留。");
+  dataCheck(value.defaultAvatar === undefined || isAssistantDefaultAvatar(value.defaultAvatar), "助手头像选择不受支持；原数据已保留。");
+  return structuredClone({ icon: value.icon ?? "", defaultAvatar: value.defaultAvatar });
 }
 
 export function readAssistantDefaultAvatar(): AssistantDefaultAvatar {

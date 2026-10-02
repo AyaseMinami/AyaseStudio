@@ -1,5 +1,6 @@
 import { AyaseDatabase } from "../storage/database";
 import { resolveAvatarSource, withoutAvatarSource } from "../avatar/repository";
+import { readAssistantAvatarSelection } from "../avatar/assistantDefaults";
 import { retainedRoundMessages, selectRoundVersion, withoutVersions } from "./roundVersions";
 import { titleFromText } from "./conversationTitle";
 import { copyAssistantConfig, resolveConversationConfig, assertLegacyOverrides, readConversationConfigData } from "./conversationConfig";
@@ -130,7 +131,10 @@ class DexieChatRepository implements WorkspaceRepository {
       // Reject unsupported data before initialization can publish defaults or repair any rows.
       // The enclosing transaction also rolls back any later migration/selection failure.
       for (const chat of await db.chats.toArray()) readMessagesGenerationMetrics(chat.messages);
-      for (const assistant of await db.assistants.toArray()) readSessionConfigData(assistant.defaultConfig);
+      for (const assistant of await db.assistants.toArray()) {
+        readSessionConfigData(assistant.defaultConfig);
+        readAssistantAvatarSelection(assistant);
+      }
       for (const conversation of await db.conversations.toArray()) {
         if (conversation.settings !== undefined) readConversationConfigData(conversation.settings);
         if (conversation.creationConfig !== undefined) readConversationConfigData(conversation.creationConfig);
@@ -215,6 +219,7 @@ class DexieChatRepository implements WorkspaceRepository {
       switch (action.type) {
         case "create-assistant":
         case "edit-assistant": {
+          readAssistantAvatarSelection(action.input);
           if (!action.input.name.trim()) throw new Error("请输入助手名称。");
           const existing = action.type === "edit-assistant" ? await requireAssistant(action.id) : undefined;
           const avatar = await resolveAvatarSource(db, action.input.avatar);

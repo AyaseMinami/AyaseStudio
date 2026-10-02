@@ -1,6 +1,8 @@
 # Issue #80：Exa MCP 外部联网搜索调查与设计方案
 
-日期：2026-09-30。本记录为编码前设计交接；后续本地实现和验证见 [实现记录](ISSUE-80-IMPLEMENTATION.md)。下文未编码状态、建议和未勾选清单保留为历史设计快照，不代表当前代码未实现。
+> 已归档：历史 Exa MCP 首期设计（2026-09-30），2026-10-02 归档。后续已扩展为独立 Exa API／MCP 两种接入；当前合同见 [协议说明](../PROTOCOLS.md#independent-exa-api-and-mcp-profiles-80-revision) 与 [实施记录](../ISSUE-80-IMPLEMENTATION.md)。
+
+日期：2026-09-30。本记录为编码前设计交接；后续本地实现和验证见 [实现记录](../ISSUE-80-IMPLEMENTATION.md)。下文未编码状态、建议和未勾选清单保留为历史设计快照，不代表当前代码未实现。
 
 本方案依据用户本次决定：首版只接 Exa MCP；新增独立网络搜索设置；本次先完成调查和 Issue 更新，新对话开始编码。数值、模块名和字段名是本方案的实施建议，不表示已经存在的代码或经过真实线路验证的行为。
 
@@ -14,7 +16,7 @@
 
 ## 2. 已确认的调查结论
 
-详见同目录 [调查记录](ISSUE-80-SEARCH-RESEARCH.md)。主要结论及来源：
+详见同目录 [调查记录](../ISSUE-80-SEARCH-RESEARCH.md)。主要结论及来源：
 
 1. Exa 托管 MCP 的官方端点为 `https://mcp.exa.ai/mcp`，支持匿名调用但有限流，支持 API Key/OAuth 的认证途径。首版采用匿名为默认、API Key 选填，不实现 OAuth。不承诺匿名无限额度或永久可用。[Exa 官方仓库](https://github.com/exa-labs/exa-mcp-server)
 2. 远程服务执行搜索/抓取，客户端可以只增加网络协议适配和结果处理。Ayase 已有 Tauri HTTP 插件和 SSE 基础；无需启动本地 Exa 服务、打包 Node.js、安装浏览器引擎或建立通用工具运行时。包体、内存、延迟的增量必须在实现后测量，当前只是架构判断。

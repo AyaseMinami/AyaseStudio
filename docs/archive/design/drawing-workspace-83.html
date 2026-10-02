@@ -13,7 +13,7 @@ body.dark{color-scheme:dark;--bg:#17212b;--panel:#202e3b;--ink:#e7eef6;--muted:#
 </style>
 </head>
 <body>
-<div class="notice">#83 可评审草图 · 合成图片／手动模拟事件 · 不联网、不保存真实数据 · 布局与细则待确认</div>
+<div class="notice">已归档：2026-09-30 的 #83 模拟草图，不代表当前界面或验收范围。当前布局见 <a href="../../UI-DESIGN.md">UI 约定</a> 与 <a href="../../ISSUE-111-IMPLEMENTATION.md">#111 实施记录</a>。</div>
 <div class="app">
 <aside class="nav" aria-label="主要功能"><div class="brand" aria-hidden="true">A</div><button data-page="chat">聊天</button><button data-page="drawing" class="selected" aria-current="page">绘图</button><button data-page="settings" class="settings">设置</button></aside>
 <main class="work">
@@ -38,7 +38,7 @@ body.dark{color-scheme:dark;--bg:#17212b;--panel:#202e3b;--ink:#e7eef6;--muted:#
 <section id="chat" class="panel info hidden"><h2>聊天保持独立</h2><p>此处展示工作区切换关系。绘图任务由应用级服务继续运行，聊天拥有自己的模型、草稿和生成任务。</p><p>首版不提供“发送到聊天”或“从聊天添加参考图”；后续由 #91 单独交付。</p><button data-page="drawing">返回绘图</button></section>
 <section id="settings" class="panel info hidden"><h2>共用服务设置</h2><p>供应商 → 连接 → 已添加模型。聊天和绘图使用明确不同的协议及模型选择。</p><div class="callout">示例供应商<br>├ Gemini 聊天连接 · gemini-native<br>├ Gemini 绘图连接 · gemini-image<br>└ Images 绘图连接 · openai-images</div><p>这是配置入口关系草图，未接入真实配置。参数按协议区分，“自动”省略可选字段；兼容服务支持情况以实际响应为准。</p><button data-page="drawing">返回绘图</button></section>
 <p class="status" role="status" aria-live="polite" id="status">示例素材已载入；草图仅在本页面内保留状态，刷新会重置。</p>
-<p class="muted"><a href="../ISSUE-83-DRAWING-SPEC.md">查看 #83 完整范围与数据契约</a></p>
+<p class="muted"><a href="../../ISSUE-83-DRAWING-SPEC.md">查看 #83 完整范围与数据契约</a></p>
 </main></div>
 <dialog id="detail" aria-labelledby="detail-title"><div class="section-heading"><h2 id="detail-title">成果预览</h2><button id="close-detail" aria-label="关闭成果预览">关闭</button></div><div class="preview"><div><div id="detail-art"></div><p class="muted art-label">代码绘制合成素材，非 API 生成</p></div><div><p class="muted" id="detail-meta"></p><p id="detail-prompt"></p><div class="row"><button id="reuse">复用参数</button><button id="reference">作为参考图</button><button id="export">导出图片</button><button id="export-params">带参数导出</button><button id="delete" class="danger">删除成果</button></div><p class="muted" id="detail-status" role="status"></p></div></div></dialog>
 <dialog id="confirm" aria-labelledby="confirm-title"><h2 id="confirm-title">确认操作</h2><p id="confirm-copy" style="margin:18px 0;line-height:1.7"></p><div class="row"><button id="confirm-no">取消</button><button id="confirm-yes" class="primary">确认</button></div></dialog>
