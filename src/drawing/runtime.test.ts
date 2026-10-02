@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createRuntimeImageTransport, openDrawingOutputDirectory } from "./runtime";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
+import { initialGrokDrawingOptions } from "./grokImages";
+import { initialSeedreamDrawingOptions } from "./seedreamImages";
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: vi.fn(() => true), invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-http", () => ({ fetch: vi.fn() }));
 describe("native image transport", () => {
@@ -14,10 +16,12 @@ describe("native image transport", () => {
     await expect(openDrawingOutputDirectory()).rejects.toThrow("桌面应用");
     expect(invoke).not.toHaveBeenCalled();
   });
-  it.each(["gemini-image", "openai-images"] as const)("disables native redirect following for %s before sending the key header", async protocol => {
+  it.each(["gemini-image", "openai-images", "grok-images", "seedream-images"] as const)("disables native redirect following for %s before sending the key header", async protocol => {
     vi.mocked(fetch).mockResolvedValue(new Response("", { status: 302 }));
     const transport = await createRuntimeImageTransport();
-    await expect(transport.generate({ prompt: "test", ...(protocol === "gemini-image" ? { protocol, aspectRatio: "auto", resolution: "auto" } : { protocol, size: "auto", quality: "auto" }), baseUrl: "https://example.test",
+    await expect(transport.generate({ prompt: "test", ...(protocol === "gemini-image" ? { protocol, aspectRatio: "auto", resolution: "auto" }
+      : protocol === "openai-images" ? { protocol, size: "auto", quality: "auto" }
+      : protocol === "grok-images" ? { protocol, ...initialGrokDrawingOptions } : { protocol, ...initialSeedreamDrawingOptions }), baseUrl: "https://example.test",
       providerId: "p", connectionId: "c", configuredModelId: "m", modelId: "test", modelName: "test" }, "synthetic-key", new AbortController().signal)).rejects.toMatchObject({ outcome: "unknown", message: expect.stringContaining("302") });
     expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ maxRedirections: 0, redirect: "error", credentials: "omit" }));
   });

@@ -214,6 +214,8 @@ function App() {
             onAddConnection: chat.addConnection,
             onAddModel: chat.addModel,
             onAddProvider: chat.addProvider,
+            onProviderAvatarChange: chat.changeProviderAvatar,
+            onResetConnection: chat.resetPresetConnection,
             onCancelModelCatalogRefresh: chat.cancelModelCatalogRefresh,
             onCancelModelTest: chat.cancelModelTest,
             onConnectionChange: chat.updateConnection,

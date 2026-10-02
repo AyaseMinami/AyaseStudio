@@ -3,6 +3,14 @@ import type { DrawingExportParameters, DrawingParameters } from "./types";
 /** Match submitted option fields, not provider defaults or arbitrary stored keys. */
 export function drawingExportParameters(parameters: DrawingParameters): DrawingExportParameters {
   const common = { prompt: parameters.prompt, model: parameters.modelId, protocol: parameters.protocol };
+  if (parameters.protocol === "grok-images") return { ...common, model_version: parameters.modelVersion,
+    ...(parameters.aspectRatio !== "auto" ? { aspect_ratio: parameters.aspectRatio } : {}),
+    ...(parameters.resolution !== "auto" ? { resolution: parameters.resolution } : {}),
+    ...(parameters.quality !== "auto" ? { quality: parameters.quality } : {}) };
+  if (parameters.protocol === "seedream-images") return { ...common, model_version: parameters.modelVersion,
+    ...(parameters.size !== "auto" ? { size: parameters.size } : {}),
+    ...(parameters.outputFormat !== "auto" ? { output_format: parameters.outputFormat } : {}),
+    ...(parameters.watermark !== "auto" ? { watermark: parameters.watermark === "on" } : {}) };
   return parameters.protocol === "gemini-image"
     ? { ...common, api_type: "gemini",
       ...(parameters.aspectRatio !== "auto" ? { aspect_ratio: parameters.aspectRatio } : {}),

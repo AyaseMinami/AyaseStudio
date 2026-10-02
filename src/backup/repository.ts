@@ -29,7 +29,12 @@ export class BackupRepository {
     });
   }
   private async replaceRows(rows: BackupRows) {
-    for (const t of backupTables) { await this.database.table(t).clear(); if (rows[t].length) await this.database.table(t).bulkPut(rows[t]); }
+    for (const t of backupTables) {
+      // Old rollback journals did not capture provider images: preserve that scope.
+      if (t === "providerAvatars" && rows[t] === undefined) continue;
+      const values = rows[t] ?? [];
+      await this.database.table(t).clear(); if (values.length) await this.database.table(t).bulkPut(values);
+    }
   }
   private async replaceDrawing(drawing: LocalSnapshot["drawing"]) {
     if (!drawing) return; // Historical journals never captured this scope.

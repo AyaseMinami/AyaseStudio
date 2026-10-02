@@ -170,6 +170,7 @@ describe("connection settings", () => {
       connectionIds: {
         "openai-chat": "connection-chat",
         "openai-responses": "connection-responses",
+        "openai-images": "connection-images",
       },
     });
 
@@ -177,11 +178,13 @@ describe("connection settings", () => {
       {
         id: "provider-openai",
         name: "OpenAI",
+        presetId: "openai",
         connections: [
           {
             id: "connection-chat",
             name: "OpenAI Chat",
             protocol: "openai-chat",
+            presetProtocol: "openai-chat",
             baseUrl: "https://api.openai.com/v1",
             apiKey: "",
             models: [],
@@ -190,6 +193,16 @@ describe("connection settings", () => {
             id: "connection-responses",
             name: "OpenAI Responses",
             protocol: "openai-responses",
+            presetProtocol: "openai-responses",
+            baseUrl: "https://api.openai.com/v1",
+            apiKey: "",
+            models: [],
+          },
+          {
+            id: "connection-images",
+            name: "OpenAI 绘图",
+            protocol: "openai-images",
+            presetProtocol: "openai-images",
             baseUrl: "https://api.openai.com/v1",
             apiKey: "",
             models: [],

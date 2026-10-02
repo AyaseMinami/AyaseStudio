@@ -3,6 +3,10 @@ import type { ChatProtocol } from "./types";
 import type { DrawingModelOption, DrawingProtocol } from "../drawing/types";
 import { dataCheck, dataRecord, backupFields, migrateData, type DataMigration } from "../storage/dataContract";
 import { dataPolicies } from "../storage/dataPolicies";
+import { isBrandId, type BrandId, type ProviderAvatarSelection } from "../avatar/brandIds";
+import { providerTemplates, getConnectionTemplate, type ProviderTemplateId } from "./providerPresets";
+export { providerTemplates } from "./providerPresets";
+export type { ProviderTemplateId, ProviderTemplate } from "./providerPresets";
 export type { ServiceProtocol } from "./protocolOptions";
 
 export interface ConfiguredModel {
@@ -18,18 +22,22 @@ export interface ConnectionProfile {
   baseUrl: string;
   apiKey: string;
   models: ConfiguredModel[];
+  presetProtocol?: ServiceProtocol;
 }
 
 export interface ProviderGroup {
   id: string;
   name: string;
   connections: ConnectionProfile[];
+  presetId?: BrandId;
+  avatar?: ProviderAvatarSelection;
 }
 
 export interface ConnectionSettingsState {
   version: 3;
   providers: ProviderGroup[];
   activeModelId: string | null;
+  builtinsInitialized?: true;
 }
 
 export interface ActiveModelTarget {
@@ -45,20 +53,6 @@ export interface SettingsStorage {
 
 export type ConnectionField = "name" | "protocol" | "baseUrl" | "apiKey";
 export type ModelField = "modelId" | "displayName";
-export type ProviderTemplateId = "openai" | "gemini" | "anthropic" | "custom";
-
-interface ConnectionTemplate {
-  name: string;
-  protocol: ServiceProtocol;
-  baseUrl: string;
-}
-
-export interface ProviderTemplate {
-  id: ProviderTemplateId;
-  label: string;
-  providerName: string;
-  connections: readonly ConnectionTemplate[];
-}
 
 export const connectionSettingsStorageKey =
   "ayase-studio.connection-settings.v3";
@@ -73,55 +67,6 @@ export const emptyConnectionSettings: ConnectionSettingsState = {
   activeModelId: null,
 };
 
-export const providerTemplates: readonly ProviderTemplate[] = [
-  {
-    id: "openai",
-    label: "OpenAI",
-    providerName: "OpenAI",
-    connections: [
-      {
-        name: "OpenAI Chat",
-        protocol: "openai-chat",
-        baseUrl: "https://api.openai.com/v1",
-      },
-      {
-        name: "OpenAI Responses",
-        protocol: "openai-responses",
-        baseUrl: "https://api.openai.com/v1",
-      },
-    ],
-  },
-  {
-    id: "gemini",
-    label: "Gemini",
-    providerName: "Google Gemini",
-    connections: [
-      {
-        name: "Gemini Native",
-        protocol: "gemini-native",
-        baseUrl: "https://generativelanguage.googleapis.com",
-      },
-    ],
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    providerName: "Anthropic",
-    connections: [
-      {
-        name: "Anthropic Native",
-        protocol: "anthropic-native",
-        baseUrl: "https://api.anthropic.com",
-      },
-    ],
-  },
-  {
-    id: "custom",
-    label: "自定义",
-    providerName: "自定义供应商",
-    connections: [],
-  },
-];
 
 const protocolValues = new Set<ServiceProtocol>(
   protocolOptions.map((option) => option.value),
@@ -150,6 +95,7 @@ function allModels(state: ConnectionSettingsState): ConfiguredModel[] {
 function repairActiveModel(
   providers: ProviderGroup[],
   requestedId: string | null,
+  original?: ConnectionSettingsState,
 ): ConnectionSettingsState {
   const activeModelId = providers.some((provider) =>
     provider.connections.some((connection) =>
@@ -159,7 +105,7 @@ function repairActiveModel(
     ? requestedId
     : null;
 
-  return { version: 3, providers, activeModelId };
+  return { ...original, version: 3, providers, activeModelId };
 }
 
 export function getConnection(
@@ -299,6 +245,7 @@ function sanitizeConnection(
     baseUrl,
     apiKey,
     models: sanitizedModels,
+    ...(value.presetProtocol !== undefined ? { presetProtocol: value.presetProtocol as ServiceProtocol } : {}),
   };
 }
 
@@ -341,6 +288,8 @@ function sanitizeProviders(value: unknown): ProviderGroup[] | undefined {
       id,
       name: name.trim(),
       connections: sanitizedConnections,
+      ...(candidate.presetId !== undefined ? { presetId: candidate.presetId as BrandId } : {}),
+      ...(candidate.avatar !== undefined ? { avatar: structuredClone(candidate.avatar) as ProviderAvatarSelection } : {}),
     });
   }
   return providers;
@@ -356,7 +305,7 @@ function parseVersionThree(value: unknown): ConnectionSettingsState | undefined 
   }
   const requestedId =
     typeof value.activeModelId === "string" ? value.activeModelId : null;
-  return repairActiveModel(providers, requestedId);
+  return { ...repairActiveModel(providers, requestedId), ...(value.builtinsInitialized === true ? { builtinsInitialized: true as const } : {}) };
 }
 
 interface PreviousConnectionProfile {
@@ -571,16 +520,26 @@ function assertConnectionStructure(raw: unknown, version: 2 | 3): void {
       "连接配置含不支持的字段或结构；原数据未被修改，请升级应用或修复数据。");
   }
   record(raw, version === 3 ? backupFields(dataPolicies.connections) : ["version", "providers", "activeConnectionId"], ["version", "providers"]);
+  if (version === 3) dataCheck(raw.builtinsInitialized === undefined || raw.builtinsInitialized === true);
   dataCheck(Array.isArray(raw.providers));
   const ids = new Set<string>();
   function unique(value: unknown) {
     dataCheck(typeof value === "string" && value.trim().length > 0 && !ids.has(value)); ids.add(value);
   }
   for (const provider of raw.providers) {
-    record(provider, backupFields(dataPolicies.provider)); unique(provider.id);
+    record(provider, version === 3 ? backupFields(dataPolicies.provider) : ["id", "name", "connections"], ["id", "name", "connections"]); unique(provider.id);
+    if (version === 3) {
+      dataCheck(provider.presetId === undefined || isBrandId(provider.presetId));
+      if (provider.avatar !== undefined) {
+        record(provider.avatar, ["kind", "id"]);
+        dataCheck(provider.avatar.kind === "builtin" ? isBrandId(provider.avatar.id)
+          : provider.avatar.kind === "image" && typeof provider.avatar.id === "string" && !!provider.avatar.id.trim());
+      }
+    }
     dataCheck(typeof provider.name === "string" && provider.name.trim() && Array.isArray(provider.connections));
     for (const connection of provider.connections) {
-      record(connection, version === 3 ? backupFields(dataPolicies.connection, true) : ["id", "protocol", "baseUrl", "apiKey", "model"]);
+      record(connection, version === 3 ? backupFields(dataPolicies.connection, true) : ["id", "protocol", "baseUrl", "apiKey", "model"], version === 3 ? ["id", "name", "protocol", "baseUrl", "apiKey", "models"] : ["id", "protocol", "baseUrl", "apiKey", "model"]);
+      if (version === 3) dataCheck(connection.presetProtocol === undefined || !!getConnectionTemplate(provider.presetId, connection.presetProtocol), "内置连接身份无效，原数据未被修改。");
       unique(connection.id);
       dataCheck(isProtocol(connection.protocol) && (version === 3 || !isDrawingProtocol(connection.protocol)),
         "连接协议不受支持；原数据未被修改，请升级应用。");
@@ -604,7 +563,9 @@ export function saveConnectionSettings(
   state: ConnectionSettingsState,
   storage: SettingsStorage = localStorage,
 ): void {
-  storage.setItem(connectionSettingsStorageKey, JSON.stringify(state));
+  // Strictly preflight both the original durable record and the replacement.
+  loadConnectionSettings(storage);
+  storage.setItem(connectionSettingsStorageKey, JSON.stringify(readConnectionSettingsData(state)));
 }
 
 export function createProviderFromTemplate(
@@ -614,6 +575,7 @@ export function createProviderFromTemplate(
     providerId: string;
     connectionIds?: Partial<Record<ServiceProtocol, string>>;
     name?: string;
+    prepend?: boolean;
   },
 ): ConnectionSettingsState {
   const template = providerTemplates.find((candidate) => candidate.id === templateId);
@@ -644,13 +606,52 @@ export function createProviderFromTemplate(
       baseUrl: connectionTemplate.baseUrl,
       apiKey: "",
       models: [],
+      ...(templateId !== "custom" ? { presetProtocol: connectionTemplate.protocol } : {}),
     });
   }
 
-  return {
-    ...state,
-    providers: [...state.providers, { id: options.providerId, name, connections }],
-  };
+  const provider: ProviderGroup = { id: options.providerId, name, connections, ...(templateId !== "custom" ? { presetId: templateId } : {}) };
+  return { ...state, providers: options.prepend ? [provider, ...state.providers] : [...state.providers, provider] };
+}
+
+/** Explicit application initialization, never run by backup readers or migrations. */
+export function initializeProviderPresets(state: ConnectionSettingsState): ConnectionSettingsState {
+  if (state.builtinsInitialized) return state;
+  let next = readConnectionSettingsData(state);
+  const used = new Set(next.providers.flatMap(p => [p.id, ...p.connections.flatMap(c => [c.id, ...c.models.map(m => m.id)])]));
+  function allocate(base: string) {
+    let id = base, suffix = 1;
+    while (used.has(id)) id = `${base}:${suffix++}`;
+    used.add(id); return id;
+  }
+  for (const template of providerTemplates.filter(p => p.id !== "custom")) {
+    if (next.providers.some(p => p.presetId === template.id)) continue;
+    next = createProviderFromTemplate(next, template.id, {
+      providerId: allocate(`builtin:provider:${template.id}`),
+      connectionIds: Object.fromEntries(template.connections.map(c => [c.protocol, allocate(`builtin:connection:${template.id}:${c.protocol}`)])),
+    });
+  }
+  return { ...next, builtinsInitialized: true };
+}
+
+export function setProviderAvatar(state: ConnectionSettingsState, providerId: string, avatar: ProviderAvatarSelection | undefined): ConnectionSettingsState {
+  const next = { ...state, providers: state.providers.map(p => {
+    if (p.id !== providerId) return p;
+    const { avatar: _old, ...provider } = p;
+    return { ...provider, ...(avatar ? { avatar } : {}) };
+  }) };
+  return readConnectionSettingsData(next);
+}
+
+export function resetPresetConnection(state: ConnectionSettingsState, connectionId: string): ConnectionSettingsState {
+  let changed = false;
+  const providers = state.providers.map(p => ({ ...p, connections: p.connections.map(c => {
+    if (c.id !== connectionId) return c;
+    const defaults = getConnectionTemplate(p.presetId, c.presetProtocol);
+    if (!defaults) return c;
+    changed = true; return { ...c, name: defaults.name, protocol: defaults.protocol, baseUrl: defaults.baseUrl };
+  }) }));
+  return changed ? repairActiveModel(providers, state.activeModelId, state) : state;
 }
 
 export function renameProvider(
@@ -680,7 +681,7 @@ export function deleteProvider(
   const providers = state.providers.filter((provider) => provider.id !== providerId);
   return providers.length === state.providers.length
     ? state
-    : repairActiveModel(providers, state.activeModelId);
+    : repairActiveModel(providers, state.activeModelId, state);
 }
 
 export function moveProvider(
@@ -789,7 +790,7 @@ export function updateConnection(
     }),
   }));
   if (!changed) return state;
-  return field === "protocol" ? repairActiveModel(providers, state.activeModelId) : { ...state, providers };
+  return field === "protocol" ? repairActiveModel(providers, state.activeModelId, state) : { ...state, providers };
 }
 
 export function deleteConnection(
@@ -808,7 +809,7 @@ export function deleteConnection(
     return { ...provider, connections };
   });
   return changed
-    ? repairActiveModel(providers, state.activeModelId)
+    ? repairActiveModel(providers, state.activeModelId, state)
     : state;
 }
 
@@ -926,7 +927,7 @@ export function deleteModel(
       return { ...connection, models };
     }),
   }));
-  return changed ? repairActiveModel(providers, state.activeModelId) : state;
+  return changed ? repairActiveModel(providers, state.activeModelId, state) : state;
 }
 
 export function selectModel(

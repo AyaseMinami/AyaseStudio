@@ -9,13 +9,44 @@ import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
 /** Check the original stamps before normalization replaces them with current versions. */
 export function validateGenerationMetricsCompatibility(raw: unknown): void {
   dataRecord(raw);
+  validateAdditionalSearchCompatibility(raw);
   dataRecord(raw.rows);
+  const supplierSupport = (raw.version === 4 || raw.version === 5) && (() => {
+    dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.connections);
+    return (raw.compatibility.modules.connections.version as number) >= 5;
+  })();
+  if (raw.rows.providerAvatars !== undefined) dataCheck(supplierSupport, "供应商头像与连接模块版本不匹配，请升级应用。");
+  if (raw.connections !== undefined && raw.connections !== null) {
+    dataRecord(raw.connections); dataCheck(Array.isArray(raw.connections.providers));
+    if ("builtinsInitialized" in raw.connections) dataCheck(supplierSupport, "内置供应商与模块版本不匹配。");
+    for (const provider of raw.connections.providers) {
+      dataRecord(provider); dataCheck(Array.isArray(provider.connections));
+      if ("presetId" in provider || "avatar" in provider) dataCheck(supplierSupport, "供应商身份与模块版本不匹配。");
+      for (const connection of provider.connections) {
+        dataRecord(connection);
+        if ("presetProtocol" in connection) dataCheck(supplierSupport, "内置连接与模块版本不匹配。");
+      }
+    }
+  }
   dataCheck(Array.isArray(raw.rows.chats));
   const modern = raw.version === 4 || raw.version === 5;
   let permitted = false;
   if (modern) {
     dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.chat);
     permitted = (raw.compatibility.modules.chat.version as number) >= 2;
+    if (raw.connections !== undefined && raw.connections !== null) {
+      dataRecord(raw.connections); dataCheck(Array.isArray(raw.connections.providers));
+      for (const provider of raw.connections.providers) {
+        dataRecord(provider); dataCheck(Array.isArray(provider.connections));
+        for (const connection of provider.connections) {
+          dataRecord(connection);
+          if (connection.protocol === "grok-images" || connection.protocol === "seedream-images") {
+            dataRecord(raw.compatibility.modules.connections);
+            dataCheck((raw.compatibility.modules.connections.version as number) >= 4, "新绘图连接与模块版本不匹配，请升级应用。");
+          }
+        }
+      }
+    }
   }
   function visit(message: unknown): void {
     dataRecord(message);
@@ -28,6 +59,51 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   }
   for (const chat of raw.rows.chats) {
     dataRecord(chat); dataCheck(Array.isArray(chat.messages)); chat.messages.forEach(visit);
+  }
+}
+
+/** The search module owns provider identities wherever selections/results are stored. */
+function validateAdditionalSearchCompatibility(raw: Record<string, unknown>): void {
+  const modern = raw.version === 4 || raw.version === 5;
+  let permitted = false;
+  if (modern) {
+    dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.search);
+    permitted = typeof raw.compatibility.modules.search.version === "number" && raw.compatibility.modules.search.version >= 3;
+  }
+  const newProvider = (value: unknown) => value === "tavily" || value === "zhipu";
+  const requireSupport = () => dataCheck(permitted, "新增搜索服务与搜索模块版本不匹配，请升级应用。");
+  if (raw.searchSettings !== undefined) {
+    dataRecord(raw.searchSettings);
+    if (raw.searchSettings.version === 3 || "tavily" in raw.searchSettings || "zhipu" in raw.searchSettings) requireSupport();
+  }
+  dataRecord(raw.rows);
+  function config(value: unknown) {
+    if (value === undefined) return;
+    dataRecord(value);
+    if (newProvider(value.webSearchProvider)) requireSupport();
+  }
+  function message(value: unknown) {
+    dataRecord(value);
+    if (value.search !== undefined) {
+      dataRecord(value.search);
+      if (newProvider(value.search.provider)) requireSupport();
+    }
+    if (value.roundVersions !== undefined) {
+      dataRecord(value.roundVersions); dataCheck(Array.isArray(value.roundVersions.pairs));
+      for (const pair of value.roundVersions.pairs) { dataCheck(Array.isArray(pair)); pair.forEach(message); }
+    }
+  }
+  for (const table of ["assistants", "conversations", "legacyConversationConfigs", "chats"]) {
+    const rows = raw.rows[table]; dataCheck(Array.isArray(rows));
+    for (const row of rows) {
+      dataRecord(row);
+      if (table === "assistants") config(row.defaultConfig);
+      if (table === "legacyConversationConfigs") config(row.generationConfig);
+      if (table === "conversations") for (const key of ["settings", "creationConfig"]) {
+        if (row[key] !== undefined) { dataRecord(row[key]); config(row[key].config); }
+      }
+      if (table === "chats") { dataCheck(Array.isArray(row.messages)); row.messages.forEach(message); }
+    }
   }
 }
 
@@ -116,6 +192,8 @@ export function normalizeCompatibleParameters(raw: unknown): void {
       let settings: unknown = raw.drawing.settings;
       dataRecord(settings);
       dataCheck(stamp.version !== 1 || !("gemini" in settings), "Gemini 高级参数与绘图模块版本不匹配，请升级应用。");
+      dataCheck(stamp.version >= 3 || (!("grok" in settings) && !("seedream" in settings)
+        && settings.reusedProtocol !== "grok-images" && settings.reusedProtocol !== "seedream-images"), "新绘图协议参数与模块版本不匹配，请升级应用。");
       if (stamp.version > dataModules.drawingSettings.version) {
         dataRecord(settings);
         dataCheck(!Object.keys(settings).some(key => dataPolicies.drawingDraft[key as keyof typeof dataPolicies.drawingDraft] === "exclude"),
@@ -136,6 +214,11 @@ export function normalizeCompatibleParameters(raw: unknown): void {
           refuseUnknownSafety(next.gemini, backupFields(dataPolicies.drawingGemini));
           next.gemini = filterOptionalParameters(next.gemini,
             backupFields(dataPolicies.drawingGemini), "drawing.settings.gemini", filtered);
+        }
+        for (const key of ["grok", "seedream"] as const) if (next[key] !== undefined) {
+          const policy = key === "grok" ? dataPolicies.drawingGrok : dataPolicies.drawingSeedream;
+          refuseUnknownSafety(next[key], backupFields(policy));
+          next[key] = filterOptionalParameters(next[key], backupFields(policy), `drawing.settings.${key}`, filtered);
         }
         settings = next;
       }

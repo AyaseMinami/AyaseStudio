@@ -1,5 +1,21 @@
 # Ayase Studio Development Guide
 
+## Supplier verification (#100)
+
+The isolated supplier fixture includes a transparency acceptance mode: it materializes all 11 bundled marks through the actual PNG encoder, checks transparent and opaque pixels, crops a synthetic Alpha PNG and renders the real supplier/assistant/user avatar components. Check both themes, image and crop container backgrounds, and 24px tree versus library sizing. The fixture owns only temporary image URLs and memory state; it does not rewrite existing user snapshots.
+
+Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks. Supplier, avatar, backup and hook tests use synthetic state. The [supplier fixture](../scripts/providers100/README.md) supports in-app browser light/dark and responsive acceptance without production storage or provider probes. Persistence/interface changes require independent Sol/high review. See [#100 scope, sources and evidence](ISSUE-100-IMPLEMENTATION.md).
+
+## Search providers verification (#82)
+
+Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and `git diff --check`. Search adapter/runtime, chat preflight, UI settings/selectors and backup search82 tests use synthetic credentials without provider calls. [The isolated search fixture](../scripts/search82/README.md) supports in-app browser acceptance and separate native startup; real account/API, billing and native interactions remain separate. Independent Sol/high review is required for protocol and persistence changes. See [implementation evidence](ISSUE-82-IMPLEMENTATION.md).
+
+## Grok/Seedream verification (#103, 2026-10-02)
+
+Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks. Adapter tests cover generation/ordered JSON reference edits, explicit profiles, MIME/budgets and uncertain errors. `compatibility103.test.ts` covers durable frozen batches, restart, reuse/export, owner retention and local-save retry. Drawing backup integration covers old/current stamps, missing groups and zero-write refusal. Independent Sol/high review is required.
+
+The [#103 fixture](../scripts/drawing103/README.md) mounts real UI with synthetic inputs and injected adapter responses, without production settings, credentials or databases. Native startup uses a separate application identifier. Browser interactions, startup, native file dialogs/export and live service/relay acceptance remain separate evidence; see [#103 record](ISSUE-103-IMPLEMENTATION.md).
+
 ## Adaptive navigation docking (#97, 2026-10-02)
 
 User acceptance (2026-10-02): the user confirmed the desktop reading experience and accepted the current 560/576px rule, then authorized committing/pushing this scope and closing #97. The screenshot feedback confirmed that further narrowing already affects reading, so insufficient-space navigation should overlay. This confirms the user's current experience without extending the synthetic checks to all native interactions or arbitrary content.

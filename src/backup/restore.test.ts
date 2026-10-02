@@ -13,7 +13,8 @@ import { sha256 } from "./codec";
 import { encodeBackup, decodeBackup } from "./codec";
 import { createBackupDocument } from "./snapshot";
 import { createChatRepository } from "../chat/repository";
-import { SEARCH_SETTINGS_KEY } from "../search/settings";
+import { SEARCH_SETTINGS_KEY, validateSearchConfiguration } from "../search/settings";
+import { currentModuleVersions } from "../storage/dataRegistry";
 import { object } from "./validation";
 
 const databases: AyaseDatabase[] = [];
@@ -39,6 +40,8 @@ function searchConfiguration(prefix = "existing") {
 }
 function document(credentials = false, included = true): BackupDocument {
   const local = state();
+  // Legacy backup formats predate supplier-owned image rows.
+  delete local.rows.providerAvatars;
   local.rows.assistants[0]!.name = "backup"; local.rows.chats[0]!.messages[0]!.content = "backup";
   local.rows.cherryImports = [{ id: "marker", conversationIds: ["chat"] }];
   const config = connections("backup-key");
@@ -53,7 +56,7 @@ function storage(values: Record<string, string | null>): BackupStorage & { value
 async function setup() {
   const db = new AyaseDatabase(`backup-test-${crypto.randomUUID()}`); databases.push(db);
   const before = state(), store = storage(before.preferences);
-  for (const t of backupTables) if (before.rows[t].length) await db.table(t).bulkPut(before.rows[t]);
+  for (const t of backupTables) if (before.rows[t]?.length) await db.table(t).bulkPut(before.rows[t] ?? []);
   const repository = new BackupRepository(db, store);
   before.drawing = { draft: undefined, presets: [], targets: [] };
   const saved = new Map<string, string>();
@@ -86,9 +89,9 @@ describe("restore conflict strategies", () => {
       doc.searchSettings = exported;
       const preview = await decodeBackup(await encodeBackup(doc));
       const plan = createRestorePlan(preview.document, before, mode), result = JSON.parse(plan.after.preferences[SEARCH_SETTINGS_KEY]!);
-      expect(result).toEqual(mode === "replace" ? { ...exported,
+      expect(result).toEqual(mode === "replace" ? validateSearchConfiguration({ ...exported,
         exaMcp: { ...exported.exaMcp, apiKey: credentials ? "backup-mcp-key" : "existing-mcp-key" },
-        exaApi: { ...exported.exaApi, apiKey: credentials ? "backup-api-key" : "existing-api-key" } } : current);
+        exaApi: { ...exported.exaApi, apiKey: credentials ? "backup-api-key" : "existing-api-key" } }) : current);
     }
   });
   it("v2 replace migrates only MCP while retaining API configuration and key", async () => {
@@ -252,14 +255,15 @@ describe("multi-store restore journal", () => {
     const test = await setup();
     const corrupt = "corrupt-local-search-json";
     test.before.preferences[SEARCH_SETTINGS_KEY] = corrupt; test.store.setItem(SEARCH_SETTINGS_KEY, corrupt);
-    const doc = document(true); doc.version = 3; doc.searchSettings = searchConfiguration("backup");
+    const doc = document(true); doc.version = 5; doc.searchSettings = validateSearchConfiguration(searchConfiguration("backup"));
+    doc.compatibility = { minimumReaderVersion: 5, requiredCapabilities: [], modules: currentModuleVersions() };
     const validated = (await decodeBackup(await encodeBackup(doc))).document;
     const plan = createRestorePlan(validated, test.before, "replace");
     vi.spyOn(test.db.backupJournal, "delete").mockRejectedValueOnce(Error("injected"));
     await expect(test.repository.restore(plan, test.before, test.files)).rejects.toThrow("已回滚");
     expect(test.store.getItem(SEARCH_SETTINGS_KEY)).toBe(corrupt);
     await test.repository.restore(plan, test.before, test.files);
-    expect(JSON.parse(test.store.getItem(SEARCH_SETTINGS_KEY)!)).toEqual(doc.searchSettings);
+    expect(JSON.parse(test.store.getItem(SEARCH_SETTINGS_KEY)!)).toEqual(validateSearchConfiguration(doc.searchSettings));
     expect(await test.db.backupJournal.count()).toBe(0);
   });
   it.each(["storage", "commit"])("v3 rolls back both profile configs/keys after %s failure, then commits retry", async failure => {
@@ -272,7 +276,7 @@ describe("multi-store restore journal", () => {
     await expect(test.repository.restore(plan, test.before, test.files)).rejects.toThrow("已回滚");
     expect(await test.repository.snapshot()).toEqual(test.before);
     await test.repository.restore(plan, test.before, test.files);
-    expect(JSON.parse(test.store.getItem(SEARCH_SETTINGS_KEY)!)).toEqual(doc.searchSettings);
+    expect(JSON.parse(test.store.getItem(SEARCH_SETTINGS_KEY)!)).toEqual(validateSearchConfiguration(doc.searchSettings));
     expect(await test.db.backupJournal.count()).toBe(0);
   });
   it("commits v2 search settings and rolls them back when commit-point deletion fails", async () => {
@@ -343,7 +347,7 @@ describe("multi-store restore journal", () => {
     const test = await setup(), plan = createRestorePlan(await assetDocument(), test.before, "replace");
     await test.db.backupJournal.put({ id: "restore", before: test.before, references: plan.writes.map(w => w.reference), phase });
     test.saved.set(plan.writes[0]!.reference, "partial");
-    if (phase === "applying") { for (const t of backupTables) { await test.db.table(t).clear(); if (plan.after.rows[t].length) await test.db.table(t).bulkPut(plan.after.rows[t]); } test.store.setItem(connectionSettingsStorageKey, "partial settings"); }
+    if (phase === "applying") { for (const t of backupTables) { await test.db.table(t).clear(); if (plan.after.rows[t]?.length) await test.db.table(t).bulkPut(plan.after.rows[t] ?? []); } test.store.setItem(connectionSettingsStorageKey, "partial settings"); }
     const name = test.db.name;
     test.db.close();
     const reopened = new AyaseDatabase(name); databases.push(reopened);

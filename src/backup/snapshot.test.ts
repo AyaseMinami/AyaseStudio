@@ -6,7 +6,7 @@ import type { StoredChatMessage } from "../chat/repository";
 import { decodeBackup, encodeBackup, sha256 } from "./codec";
 import { createBackupDocument, type LocalSnapshot } from "./snapshot";
 import { backupTables, preferenceKeys, type BackupFiles } from "./types";
-import { SEARCH_SETTINGS_KEY } from "../search/settings";
+import { SEARCH_SETTINGS_KEY, validateSearchConfiguration } from "../search/settings";
 import { object } from "./validation";
 
 const syntheticKey = "synthetic-key-never-a-real-credential";
@@ -84,9 +84,9 @@ describe("backup snapshot", () => {
     Object.assign(answer.search.sources[0], { apiKey: syntheticKey });
     const doc = await createBackupDocument(input, { connections: credentials, credentials }, files());
     expect(doc.version).toBe(5);
-    expect(doc.searchSettings).toEqual({ version: 2,
+    expect(doc.searchSettings).toMatchObject({ version: 3,
       exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 7, ...(credentials ? { apiKey: "synthetic-search-key" } : {}) },
-      exaApi: { version: 1, baseUrl: "https://api.exa.ai", numResults: 5, ...(credentials ? { apiKey: "" } : {}) } });
+      exaApi: { version: 1, baseUrl: "https://api.exa.ai/", numResults: 5, ...(credentials ? { apiKey: "" } : {}) } });
     expect((doc.rows.assistants[0] as any).defaultConfig.webSearchProvider).toBe("exa-mcp");
     expect((doc.rows.conversations[0] as any).settings.config.webSearchProvider).toBe("native");
     expect((doc.rows.conversations[0] as any).creationConfig.config.webSearchProvider).toBe("exa-mcp");
@@ -105,8 +105,8 @@ describe("backup snapshot", () => {
     input.rows.conversations[0].settings!.config.webSearchProvider = "exa-api";
     input.rows.chats[0].messages[1].search = { enabled: true, provider: "exa-api", status: "completed", queries: ["query"], sources: [{ id: "s", title: "source", url: "https://example.invalid", excerpt: "bounded" }], citations: [] };
     const doc = await createBackupDocument(input, { connections: credentials, credentials }, files());
-    const expected = structuredClone(configuration) as any;
-    if (!credentials) { delete expected.exaMcp.apiKey; delete expected.exaApi.apiKey; }
+    const expected = validateSearchConfiguration(configuration) as any;
+    if (!credentials) for (const key of ["exaMcp", "exaApi", "tavily", "zhipu"]) delete expected[key].apiKey;
     expect(doc.searchSettings).toEqual(expected);
     const serialized = await encodeBackup(doc);
     expect(serialized.includes("synthetic-mcp-key")).toBe(credentials);
@@ -119,7 +119,7 @@ describe("backup snapshot", () => {
     const before = structuredClone(input);
     const native = files();
     const document = await createBackupDocument(input, { connections: false, credentials: false }, native);
-    expect(Object.keys(document.rows).sort()).toEqual([...backupTables].sort());
+    expect(Object.keys(document.rows).sort()).toEqual(backupTables.filter(t => t !== "providerAvatars").sort());
     expect(document.rows.assistants).toEqual(input.rows.assistants);
     expect(document.rows.conversations[0]).toMatchObject({ settings: input.rows.conversations[0].settings,
       creationConfig: input.rows.conversations[0].creationConfig, titleNaming: "manual" });

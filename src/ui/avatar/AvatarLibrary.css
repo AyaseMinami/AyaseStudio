@@ -1,6 +1,7 @@
 .avatar-library-content { margin-top: 16px; }
 .avatar-library-subheading { border-top: 1px solid rgb(var(--color-border)); border-bottom: 0; }
 .avatar-library-note { margin: 16px 20px; font-size: var(--font-small); color: rgb(var(--color-muted)); line-height: 1.7; }
+.avatar-library-section-heading { margin: 16px 20px 8px; font-size: var(--font-small); font-weight: 500; color: rgb(var(--color-muted)); }
 .avatar-library-grid { display: grid; grid-template-columns: repeat(auto-fill, 64px); gap: 6px; padding: 0 20px; }
 .avatar-library-choice { position: relative; display: block; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: rgb(var(--color-text)); cursor: pointer; }
 .avatar-library-choice[aria-pressed="true"], .avatar-library-choice[aria-checked="true"] { outline: 2px solid rgb(var(--color-accent)); outline-offset: 1px; }
@@ -13,6 +14,7 @@
 .avatar-library-builtins { margin: 16px 20px; }
 .avatar-library-dialog footer { flex-wrap: wrap; }
 .avatar-library-dialog .avatar-library-note, .avatar-library-dialog .avatar-library-builtins { margin-left: 0; margin-right: 0; }
+.avatar-library-dialog .avatar-library-section-heading { margin-left: 0; margin-right: 0; }
 .avatar-library-dialog .avatar-library-grid, .avatar-library-dialog .avatar-card-heading, .avatar-library-dialog .avatar-library-actions { padding-left: 0; padding-right: 0; }
 .avatar-library-choice:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
 .avatar-library-choice:disabled { opacity: .5; cursor: default; }

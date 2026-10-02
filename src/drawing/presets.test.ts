@@ -112,7 +112,7 @@ describe("pure-text drawing preset persistence", () => {
     legacy.close();
     const db = new AyaseDatabase(name); databases.push(db);
     const repository = new DexieDrawingPresetRepository(db);
-    expect(await repository.load()).toEqual([]); expect(db.verno).toBe(8);
+    expect(await repository.load()).toEqual([]); expect(db.verno).toBe(9);
     for (const [table, row] of Object.entries(rows)) expect(await db.table(table).toArray()).toEqual([row]);
     await repository.create({ name: "new preset", content: "text" });
     for (const [table, row] of Object.entries(rows)) expect(await db.table(table).toArray()).toEqual([row]);

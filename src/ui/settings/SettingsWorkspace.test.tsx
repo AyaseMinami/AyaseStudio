@@ -108,12 +108,12 @@ const sharedProps = {
 };
 
 describe("SettingsWorkspace", () => {
-  it("places an independent Exa search destination after avatars and before data management", () => {
+  it("places an independent search destination after avatars and before data management", () => {
     const html = renderToStaticMarkup(<SettingsWorkspace {...sharedProps} activeSection="search" />);
     expect(html).toMatch(/<button[^>]*aria-label="网络搜索"[^>]*aria-current="page"/);
     const navigationLabels = [...html.matchAll(/<button[^>]*class="settings-navigation-button"[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
     expect(navigationLabels).toEqual(["连接配置", "外观", "头像", "网络搜索", "数据管理", "关于"]);
-    expect(html).toContain("Exa API / MCP");
+    expect(html).toContain("Exa、Tavily、智谱");
     expect(html).toContain("网络搜索");
     expect(html).not.toContain('aria-label="供应商列表"');
   });

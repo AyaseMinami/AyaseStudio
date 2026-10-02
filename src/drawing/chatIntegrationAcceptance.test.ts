@@ -35,7 +35,7 @@ function deferred<T>() {
 
 const pixels: DrawingImageInput[] = [{ mime: "image/png", data: "AQID" }];
 const settings: ConnectionSettingsState = {
-  version: 3, activeModelId: "chat-model", providers: [{ id: "provider", name: "synthetic", connections: [
+  version: 3, activeModelId: "chat-model", builtinsInitialized: true, providers: [{ id: "provider", name: "synthetic", connections: [
     { id: "chat", name: "chat", protocol: "openai-chat", baseUrl: "https://chat.example.test", apiKey: "synthetic-chat-key",
       models: [{ id: "chat-model", modelId: "synthetic-chat" }] },
     { id: "drawing", name: "drawing", protocol: "gemini-image", baseUrl: "https://drawing.example.test", apiKey: "synthetic-drawing-key",

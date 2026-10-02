@@ -1,9 +1,10 @@
 import type { ChatProtocol } from "./types";
+import type { DrawingProtocol } from "../drawing/types";
 
-export type ServiceProtocol = ChatProtocol | "gemini-image" | "openai-images";
+export type ServiceProtocol = ChatProtocol | DrawingProtocol;
 
-export function isDrawingProtocol(protocol: unknown): protocol is "gemini-image" | "openai-images" {
-  return protocol === "gemini-image" || protocol === "openai-images";
+export function isDrawingProtocol(protocol: unknown): protocol is DrawingProtocol {
+  return protocol === "gemini-image" || protocol === "openai-images" || protocol === "grok-images" || protocol === "seedream-images";
 }
 
 export interface ProtocolOption {
@@ -13,6 +14,8 @@ export interface ProtocolOption {
 }
 
 export const protocolOptions: readonly ProtocolOption[] = [
+  { value: "grok-images", label: "Grok 绘图", hint: "xAI Images JSON 生成／编辑；HTTPS Base URL 通常以 /v1 结尾" },
+  { value: "seedream-images", label: "Seedream 绘图", hint: "火山方舟图片生成／编辑；HTTPS Base URL 通常以 /api/v3 结尾，手动添加模型" },
   {
     value: "openai-images",
     label: "OpenAI 绘图",

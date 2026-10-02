@@ -1,9 +1,9 @@
-import { loadConnectionSettings, connectionSettingsStorageKey, emptyConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
+import { loadConnectionSettings, readConnectionSettingsData, connectionSettingsStorageKey, emptyConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
 import { readAppearancePreferences } from "../appearance/appearance";
 import { decode64 } from "./codec";
 import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
 import { backupTables, preferenceKeys, type BackupDocument, type BackupRows, type RestoreMode } from "./types";
-import { loadSearchConfiguration, SEARCH_SETTINGS_KEY, type SearchConfiguration } from "../search/settings";
+import { defaultSearchConfiguration, loadSearchConfiguration, validateSearchConfiguration, SEARCH_SETTINGS_KEY } from "../search/settings";
 import { DATA_COMPATIBILITY_KEY } from "../storage/dataRegistry";
 import { compatibilityWarnings, validateFilteredParameters } from "./compatibility";
 import { initialDrawingDraft } from "../drawing/types";
@@ -15,6 +15,8 @@ export interface RestorePlan { after: LocalSnapshot; writes: { reference: string
 export function createRestorePlan(document: BackupDocument, before: LocalSnapshot, mode: RestoreMode): RestorePlan {
   const incoming = structuredClone(document.rows) as Record<string, any[]>;
   const rows = structuredClone(before.rows) as unknown as Record<string, any[]>;
+  incoming.providerAvatars ??= [];
+  rows.providerAvatars ??= [];
   const preferences = { ...before.preferences };
   let conflicts = 0, missingModels = 0;
   const warnings: string[] = compatibilityWarnings(document.compatibility);
@@ -40,25 +42,27 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
   if (document.version === 1 || !document.searchSettings) {
     warnings.push("此备份不含网络搜索设置：保留本机搜索配置与 API Key；尚未配置时使用默认匿名配置，不自动开启或执行搜索。");
   } else if (mode === "replace") {
-    const restoreProfile = (profile: { version: 1; baseUrl: string; numResults: number; apiKey?: string }, key: string) => ({ ...profile, apiKey: document.options.credentials ? profile.apiKey! : key });
     const imported = document.searchSettings;
-    let configuration: SearchConfiguration;
-    if (imported.version === 2 && document.options.credentials) {
-      // A complete replacement can repair corrupt local data; nothing local is retained.
-      configuration = { version: 2, exaMcp: restoreProfile(imported.exaMcp, ""), exaApi: restoreProfile(imported.exaApi, "") };
-    } else {
-      const current = loadSearchConfiguration(currentStorage);
-      configuration = imported.version === 1
-        ? { ...current, exaMcp: restoreProfile(imported, current.exaMcp.apiKey) }
-        : { version: 2, exaMcp: restoreProfile(imported.exaMcp, current.exaMcp.apiKey), exaApi: restoreProfile(imported.exaApi, current.exaApi.apiKey) };
+    // Only a complete v3 replacement with credentials can repair unreadable local data.
+    const configuration = imported.version === 3 && document.options.credentials
+      ? defaultSearchConfiguration() : loadSearchConfiguration(currentStorage);
+    const profiles = imported.version === 1 ? { exaMcp: imported } : imported;
+    for (const key of ["exaMcp", "exaApi", "tavily", "zhipu"] as const) {
+      if (!(key in profiles)) continue;
+      const profile = (profiles as unknown as Record<string, { apiKey?: string }>)[key];
+      Object.assign(configuration, { [key]: { ...profile, apiKey: document.options.credentials ? profile.apiKey! : configuration[key].apiKey } });
     }
-    preferences[SEARCH_SETTINGS_KEY] = JSON.stringify(configuration);
+    preferences[SEARCH_SETTINGS_KEY] = JSON.stringify(validateSearchConfiguration(configuration));
     warnings.push(document.options.credentials
       ? "替换备份包含的网络搜索设置及对应搜索 API Key；恢复不会自动执行搜索。"
       : "替换备份包含的网络搜索设置，保留本机对应搜索 API Key；恢复不会自动执行搜索。");
     if (document.version === 2) warnings.push("此旧 v2 备份只包含 Exa MCP 配置；保留本机 Exa API 配置与 Key。");
+    if (imported.version !== 3) warnings.push("此旧备份不含 Tavily／智谱配置：保留本机对应设置、开关和 Key。");
   } else warnings.push("保留本机全局网络搜索设置及搜索 API Key；恢复不会自动执行搜索。");
   const targetConnections: ConnectionSettingsState = structuredClone(currentConnections);
+  const providerImageMap = new Map<string, string>((incoming.providerAvatars as { id: string }[]).map(a => [a.id,
+    mode === "copy" || rows.providerAvatars.some(r => r.id === a.id) ? crypto.randomUUID() : a.id]));
+  const usedIncomingImages = new Set<string>();
   const modelMap = new Map<string, string>();
   if (document.options.connections) {
     const exported = document.connections as ConnectionSettingsState;
@@ -69,19 +73,29 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
       let target = mode === "merge" ? targetConnections.providers.find(p => p.id === provider.id) : undefined;
       if (target) conflicts++;
       else { const providerId = mode === "copy" || ids.has(provider.id) ? crypto.randomUUID() : provider.id; ids.add(providerId);
-        target = { id: providerId, name: provider.name, connections: [] }; targetConnections.providers.push(target); }
+        const selectedAvatar = provider.avatar?.kind === "image" ? { ...provider.avatar, id: providerImageMap.get(provider.avatar.id)! } : provider.avatar;
+        if (provider.avatar?.kind === "image") usedIncomingImages.add(provider.avatar.id);
+        target = { ...provider, id: providerId, connections: [], ...(selectedAvatar ? { avatar: selectedAvatar } : {}) }; targetConnections.providers.push(target); }
       for (const connection of provider.connections) {
         const existing = mode === "merge" ? targetConnections.providers.flatMap(p => p.connections).find(c => c.id === connection.id) : undefined;
         if (existing) { conflicts++; for (const m of connection.models) if (existing.models.some(v => v.id === m.id)) modelMap.set(m.id, m.id); continue; }
         const connectionId = mode === "copy" || ids.has(connection.id) ? crypto.randomUUID() : connection.id; ids.add(connectionId);
         const models = connection.models.map(m => { const id = mode === "copy" || ids.has(m.id) ? crypto.randomUUID() : m.id; ids.add(id); modelMap.set(m.id, id); return { ...m, id }; });
-        target.connections.push({ ...connection, id: connectionId, apiKey: document.options.credentials ? connection.apiKey : "", models });
+        // Merge keeps the local supplier identity; a foreign preset connection becomes ordinary configuration.
+        const { presetProtocol, ...ordinary } = connection;
+        target.connections.push({ ...ordinary, id: connectionId, apiKey: document.options.credentials ? connection.apiKey : "", models,
+          ...(presetProtocol && target.presetId === provider.presetId ? { presetProtocol } : {}) });
       }
     }
     if (mode === "replace") targetConnections.activeModelId = exported.activeModelId ? modelMap.get(exported.activeModelId) ?? null : null;
-    preferences[connectionSettingsStorageKey] = JSON.stringify(targetConnections);
+    if (mode === "replace") {
+      if (exported.builtinsInitialized) targetConnections.builtinsInitialized = true;
+      else delete targetConnections.builtinsInitialized;
+    }
+    preferences[connectionSettingsStorageKey] = JSON.stringify(readConnectionSettingsData(targetConnections));
     if (!document.options.credentials && exported.providers.some(p => p.connections.length)) warnings.push("新恢复的连接不含 API Key，请在连接配置中重新填写；保留的连接密钥未被清空。");
   } else warnings.push("此备份不含连接配置：现有连接保持不变，导入对象的模型设为未选择，请手动配置。");
+  incoming.providerAvatars = incoming.providerAvatars.filter(a => usedIncomingImages.has(a.id)).map(a => ({ ...a, id: providerImageMap.get(a.id)! }));
   const maps = new Map<string, Map<string, string>>();
   for (const table of ["assistants", "conversations", "avatarLibrary", "legacyConversationConfigs"]) {
     const existing = new Set(rows[table].map(r => r.id));
@@ -134,6 +148,7 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
     warnings.push("保留现有外观、显示偏好、当前背景、用户头像和工作区选择；仅追加图库资源。");
   }
   for (const table of backupTables) {
+    if (table === "providerAvatars" && !document.options.connections) continue;
     if (mode === "replace") rows[table] = incoming[table];
     else if (table === "cherryImports") {
       for (const m of incoming[table]) { const existing = rows[table].find(r => r.id === m.id);
@@ -160,6 +175,8 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
     if (settings.modelId && !target) warnings.push("绘图模型引用不可用，已设为未选择；请手动选择绘图模型，不自动替换协议或生成。");
     drawingAfter.draft = { ...(drawingAfter.draft ?? initialDrawingDraft), ...settings, modelId: target?.id ?? null };
     if (settings.gemini === undefined) delete drawingAfter.draft.gemini;
+    if (settings.grok === undefined) delete drawingAfter.draft.grok;
+    if (settings.seedream === undefined) delete drawingAfter.draft.seedream;
     if (settings.reusedProtocol === undefined) delete drawingAfter.draft.reusedProtocol;
     warnings.push("仅替换绘图参数、数量、并发及提示音设置；保留本机自动草稿提示词和参考图，参考图不从备份恢复，不创建生成任务。");
   } else warnings.push(document.drawing?.settings !== undefined
@@ -191,7 +208,7 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
   function hydrate(table: string, value: any) {
     const v = structuredClone(value);
     if (table === "assistants" || table === "avatarLibrary") hydrateAvatar(v.avatar);
-    if (table === "userAvatar") hydrateAvatar(v.value);
+    if (table === "userAvatar" || table === "providerAvatars") hydrateAvatar(v.value);
     if (table === "chats") v.messages.forEach(hydrateMessage);
     return v;
   }

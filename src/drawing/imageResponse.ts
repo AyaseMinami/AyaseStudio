@@ -35,6 +35,22 @@ export function normalizeImageResponseData(raw: unknown, mime: unknown): { data:
   return { data, bytes };
 }
 
+/** Inspect only the signature; complete decoding and image validation still belong to native saving. */
+export function normalizeVerifiedImageResponseData(raw: unknown, declaredMime?: string): { data: string; bytes: number; mime: string } {
+  const wrapper = typeof raw === "string" && raw.startsWith("data:")
+    ? /^data:(image\/(?:png|jpeg|webp));base64,/.exec(raw)?.[1] : undefined;
+  const normalized = normalizeImageResponseData(raw, wrapper ?? declaredMime ?? "image/png");
+  const prefix = atob(normalized.data.slice(0, 16));
+  const bytes = Array.from(prefix, character => character.charCodeAt(0));
+  const mime = [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte) ? "image/png"
+    : bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 ? "image/jpeg"
+      : prefix.slice(0, 4) === "RIFF" && prefix.slice(8, 12) === "WEBP" ? "image/webp" : undefined;
+  if (!mime || wrapper !== undefined && wrapper !== mime || declaredMime !== undefined && declaredMime !== mime) {
+    throw new ImageGenerationError("绘图服务返回了无效或不匹配的图片格式。");
+  }
+  return { ...normalized, mime };
+}
+
 export async function readBoundedImageResponse(response: Response, signal: AbortSignal): Promise<string> {
   if (Number(response.headers.get("content-length")) > maxBodyBytes) {
     await response.body?.cancel().catch(() => undefined);

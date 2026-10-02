@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultSearchConfiguration, defaultSearchSettings, loadSearchConfiguration, loadSearchSettings, saveSearchConfiguration, saveSearchSettings, SEARCH_SETTINGS_KEY, validateSearchConfiguration, validateSearchQuery, validateSearchSettings } from "./settings";
 
 describe("independent search settings", () => {
@@ -7,7 +7,7 @@ describe("independent search settings", () => {
     let encoded = JSON.stringify(legacy);
     const storage = { getItem: () => encoded, setItem: (_key: string, value: string) => { encoded = value; } };
     const loaded = loadSearchConfiguration(storage);
-    expect(loaded).toEqual({ version: 2, exaMcp: legacy, exaApi: defaultSearchSettings("exa-api") });
+    expect(loaded).toEqual(validateSearchConfiguration({ ...defaultSearchConfiguration(), exaMcp: legacy }));
     expect(JSON.parse(encoded)).toEqual(legacy);
     saveSearchConfiguration({ ...loaded, exaApi: { ...loaded.exaApi, apiKey: "api-only-key", numResults: 2 } }, storage);
     saveSearchSettings({ ...legacy, numResults: 3 }, storage);
@@ -20,7 +20,7 @@ describe("independent search settings", () => {
     expect(() => validateSearchConfiguration({ ...config, exaApi: { ...config.exaApi, baseUrl: "http://invalid.test" } })).toThrow();
     expect(() => validateSearchConfiguration({ ...config, exaMcp: undefined })).toThrow();
     expect(() => validateSearchConfiguration({ ...config, arbitraryService: config.exaApi })).toThrow();
-    expect(() => validateSearchConfiguration({ ...config, version: 3 })).toThrow();
+    expect(() => validateSearchConfiguration({ ...config, version: 4 })).toThrow();
   });
   it("uses anonymous defaults without writing and round trips explicit saves", () => {
     const values = new Map<string, string>();
@@ -66,5 +66,31 @@ describe("independent search settings", () => {
     expect(validateSearchQuery(`  ${"😀".repeat(2000)}  `)).toBe("😀".repeat(2000));
     expect(() => validateSearchQuery("😀".repeat(2001))).toThrow("2000");
     expect(() => validateSearchQuery(" \n ")).toThrow("请输入");
+  });
+});
+
+describe("additional provider configuration migration", () => {
+  it.each([1, 2])("migrates v%s without writing or enabling new services and reads repeatedly", version => {
+    const legacy = { ...defaultSearchSettings(), apiKey: "synthetic-old" };
+    const raw = version === 1 ? legacy : { version: 2, exaMcp: legacy, exaApi: defaultSearchSettings("exa-api") };
+    const encoded = JSON.stringify(raw); const setItem = vi.fn();
+    const storage = { getItem: () => encoded, setItem };
+    const loaded = loadSearchConfiguration(storage);
+    expect(loaded.version).toBe(3); expect(loaded.tavily.enabled).toBe(false); expect(loaded.zhipu.enabled).toBe(false);
+    expect(loaded.tavily.apiKey).toBe(""); expect(loaded.zhipu.apiKey).toBe("");
+    expect(loadSearchConfiguration(storage)).toEqual(loaded); expect(validateSearchConfiguration(loaded)).toEqual(loaded);
+    expect(setItem).not.toHaveBeenCalled(); expect(JSON.stringify(raw)).toBe(encoded);
+  });
+  it.each(["future", "unknown legacy", "unknown profile", "missing", "wrong toggle", "wrong engine"])("preserves %s data on rejected saves", scenario => {
+    const config = defaultSearchConfiguration(); let raw: unknown = config;
+    if (scenario === "future") raw = { ...config, version: 4 };
+    if (scenario === "unknown legacy") raw = { version: 2, exaMcp: config.exaMcp, exaApi: config.exaApi, security: { key: "synthetic" } };
+    if (scenario === "unknown profile") raw = { ...config, tavily: { ...config.tavily, token: "synthetic" } };
+    if (scenario === "missing") raw = { ...config, zhipu: undefined };
+    if (scenario === "wrong toggle") raw = { ...config, tavily: { ...config.tavily, enabled: "false" } };
+    if (scenario === "wrong engine") raw = { ...config, zhipu: { ...config.zhipu, searchEngine: "future" } };
+    const encoded = JSON.stringify(raw); const setItem = vi.fn(); const storage = { getItem: () => encoded, setItem };
+    expect(() => loadSearchConfiguration(storage)).toThrow();
+    expect(() => saveSearchConfiguration(raw as typeof config, storage)).toThrow(); expect(setItem).not.toHaveBeenCalled();
   });
 });

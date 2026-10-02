@@ -32,6 +32,7 @@
 .avatar-profile strong { font-size: var(--font-ui); font-weight: 500; }
 .avatar-profile p { margin: 6px 0 14px; font-size: var(--font-small); }
 .avatar-large { width: 80px; height: 80px; flex-shrink: 0; border-radius: 16px; overflow: hidden; display: grid; place-items: center; color: rgb(var(--color-muted)); background: rgb(var(--color-hover)); }
+.avatar-large.avatar-large-image { background: transparent; }
 .avatar-large img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .avatar-buttons button { display: inline-flex; align-items: center; gap: 6px; }
@@ -40,6 +41,7 @@
 .avatar-preview-label { margin-bottom: 20px; }
 .avatar-preview-user { display: flex; justify-content: flex-end; gap: 8px; align-items: flex-start; }
 .avatar-preview-user img, .message-user-avatar { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; object-fit: cover; }
+.avatar-preview-user img, img.message-user-avatar { background: transparent; }
 .message-user-avatar svg { width: 25px; height: 25px; }
 .message-avatar-fallback { display: inline-flex; align-items: center; justify-content: center; background: rgb(var(--color-hover)); color: rgb(var(--color-muted)); }
 .avatar-preview-bubble { background: rgb(var(--color-user-message) / var(--message-bubble-opacity)); color: rgb(var(--color-user-message-text)); border-radius: 12px; padding: 10px 14px; font-size: var(--font-ui); }
@@ -50,7 +52,7 @@
 .avatar-crop-dialog::backdrop { background: #0006; }
 .avatar-crop-dialog h2 { margin: 0; font-size: var(--font-section); font-weight: 600; }
 .avatar-crop-dialog header p { font-size: var(--font-small); margin: 8px 0 20px; }
-.avatar-crop-stage { display: block; width: min(280px, 100%); aspect-ratio: 1; margin: 0 auto 24px; overflow: hidden; background: rgb(var(--color-hover)); border-radius: 4px; outline: 1px solid rgb(var(--color-border)); touch-action: none; cursor: grab; }
+.avatar-crop-stage { display: block; width: min(280px, 100%); aspect-ratio: 1; margin: 0 auto 24px; overflow: hidden; background: transparent; border-radius: 4px; outline: 1px solid rgb(var(--color-border)); touch-action: none; cursor: grab; }
 .avatar-crop-stage:active { cursor: grabbing; }
 .avatar-crop-sliders label { display: grid; grid-template-columns: 64px minmax(0, 1fr) 42px; gap: 12px; align-items: center; margin: 14px 0; font-size: var(--font-small); }
 .avatar-crop-sliders input { width: 100%; accent-color: rgb(var(--color-accent)); }

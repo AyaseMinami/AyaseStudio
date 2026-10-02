@@ -1,8 +1,12 @@
 # Ayase Studio Domain Language
 
-Ayase Studio 是一个本地优先的多协议客户端，聊天之外有独立绘图模块，支持 Gemini 与 OpenAI Images。本词汇表约束模型服务配置中的对象归属，避免把供应商、连接渠道、协议和模型混为同一个概念。
+**内置供应商身份**（`presetId`）表示默认来源，不限制名称、头像或协议。**内置连接来源**（`presetProtocol`）标识原始重置模板，与实际 `protocol` 独立。**供应商头像**引用只读品牌 ID 或供应商拥有的独立图片快照，不决定品牌和协议。缺失可选字段的旧供应商保持自定义。见 [#100](docs/ISSUE-100-IMPLEMENTATION.md)。
+
+Ayase Studio 是一个本地优先的多协议客户端，聊天之外有独立绘图模块，支持 Gemini、OpenAI Images、Grok / xAI 和 Seedream / 火山方舟。本词汇表约束模型服务配置中的对象归属，避免把供应商、连接渠道、协议和模型混为同一个概念。
 
 ## 绘图领域
+
+#103 新增 `grok-images` 与 `seedream-images`。**版本契约**是用户明确选择的请求参数合同，与真实模型 ID／中转别名独立；不根据名称猜测能力。草稿各自保存 Grok 比例／分辨率／画质及 Seedream 尺寸／输出格式／水印，任务只冻结所选协议组。直接连续编辑以成果作为下一次参考图，不保留 Responses 会话上下文；Seedream 关联组图不是多轮会话。见 [#103 实施](docs/ISSUE-103-IMPLEMENTATION.md)。
 
 2026-10-01，#85 本地接入 OpenAI Images 文生图。绘图协议包括 `gemini-image` 与 `openai-images`；绘图草稿分别保存 Gemini 宽高比／分辨率与 OpenAI 尺寸／画质，任务仅冻结当前协议的参数。共享连接配置不把绘图模型纳入聊天对象；具体支持边界见 [#85 实施](docs/ISSUE-85-IMPLEMENTATION.md)。
 

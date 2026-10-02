@@ -8,6 +8,7 @@ import type { AvatarLibraryEntry } from "../avatar/library";
 import type { BackupJournal } from "../backup/repository";
 import type { DrawingDraft, DrawingTask, DrawingResult } from "../drawing/types";
 import type { DrawingPromptPreset } from "../drawing/presets";
+import type { ProviderAvatarEntry } from "../avatar/providerAvatars";
 
 export type CherryImportRecord =
   | { id: string; conversationIds: string[] }
@@ -21,6 +22,7 @@ export class AyaseDatabase extends Dexie {
   workspace!: EntityTable<WorkspaceSelection, "id">;
   avatarLibrary!: EntityTable<AvatarLibraryEntry, "id">;
   userAvatar!: EntityTable<{ id: string; value?: UserAvatar }, "id">;
+  providerAvatars!: EntityTable<ProviderAvatarEntry, "id">;
   cherryImports!: Table<CherryImportRecord, string>;
   backupJournal!: Table<BackupJournal, string>;
   drawingDrafts!: EntityTable<DrawingDraft, "id">;
@@ -62,5 +64,6 @@ export class AyaseDatabase extends Dexie {
     this.version(6).stores({ backupJournal: "id" });
     this.version(7).stores({ drawingDrafts: "id", drawingTasks: "id,createdAt", drawingResults: "id,taskId,createdAt" });
     this.version(8).stores({ drawingPromptPresets: "id,createdAt" });
+    this.version(9).stores({ providerAvatars: "id" });
   }
 }

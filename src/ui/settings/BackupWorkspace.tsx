@@ -17,7 +17,8 @@ export interface BackupWorkspaceApi {
 function keyCount(preview: BackupPreview) {
   if (!preview.document.options.credentials) return 0;
   const search = preview.document.searchSettings;
-  const searchKeys = !search ? [] : search.version === 2 ? [search.exaApi.apiKey, search.exaMcp.apiKey] : [search.apiKey];
+  const searchKeys = !search ? [] : search.version === 1 ? [search.apiKey]
+    : [search.exaApi.apiKey, search.exaMcp.apiKey, ...(search.version === 3 ? [search.tavily.apiKey, search.zhipu.apiKey] : [])];
   const searchCount = searchKeys.filter((key) => typeof key === "string" && key.length > 0).length;
   const config = preview.document.connections;
   if (!config || typeof config !== "object" || !("providers" in config) || !Array.isArray(config.providers)) return searchCount;

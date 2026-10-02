@@ -5,10 +5,12 @@ import type { SearchRecord, SearchSource } from "../../chat/nativeSearch";
 import { openExternal, safeExternalUrl } from "../../chat/externalLinks";
 import "./SearchResults.css";
 import { bindDefaultContextMenuPolicy } from "../ActionMenu";
+import { isExternalSearch } from "../../search/mode";
+import { searchProviderNames } from "../../search/settings";
 
 function searchLabel(search: SearchRecord): string {
-  if (search.provider === "exa-mcp" || search.provider === "exa-api") {
-    if (search.status === "searching") return `正在搜索 · ${search.provider === "exa-api" ? "Exa API" : "Exa MCP"}`;
+  if (isExternalSearch(search.provider)) {
+    if (search.status === "searching") return `正在搜索 · ${searchProviderNames[search.provider]}`;
     if (search.status === "completed") return `已检索 · ${search.sources.length} 个来源`;
   }
   switch (search.status) {
@@ -72,7 +74,7 @@ function GeminiSuggestion({ html }: { html: string }) {
 
 export function SearchResults({ search, showCitationNotice = true }: { search: SearchRecord; showCitationNotice?: boolean }) {
   const sources = search.sources;
-  const external = search.provider === "exa-mcp" || search.provider === "exa-api";
+  const external = isExternalSearch(search.provider);
   const status = <span className={`search-status search-status-${search.status}`}><Globe size={13} aria-hidden="true" />{searchLabel(search)}</span>;
   return <aside className="search-results" aria-label="搜索结果">
     {sources.length > 0 ? <details className="search-sources"><summary>{status}{!external && <><span aria-hidden="true">·</span><span>{sources.length} 个来源</span></>}<ChevronRight className="search-source-chevron" size={13} aria-hidden="true" /></summary><ol>{sources.map((source, index) => <SourceLink key={source.id} source={source} index={index} />)}</ol></details> : status}

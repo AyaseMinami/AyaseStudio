@@ -1,0 +1,5 @@
+{
+  "identifier": "io.github.ayaseminami.ayasestudio.drawing103",
+  "build": { "beforeDevCommand": "", "devUrl": "http://127.0.0.1:1532/scripts/drawing103/index.html" },
+  "app": { "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1532; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:" } }
+}

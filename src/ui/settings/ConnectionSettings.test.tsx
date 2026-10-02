@@ -53,6 +53,60 @@ function makeProps(): ConnectionSettingsProps {
 }
 
 describe("ConnectionSettings", () => {
+  it("selects both image protocols and previews Grok edits and Seedream reference requests", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    const connection = props.connectionSettings.providers[0].connections[0];
+    Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
+    await render(props);
+    const select = container.querySelector<HTMLSelectElement>("#connection-protocol")!;
+    expect([...select.options].map(option => option.value)).toEqual(expect.arrayContaining(["grok-images", "seedream-images"]));
+    for (const protocol of ["grok-images", "seedream-images"] as const) {
+      await act(async () => { select.value = protocol; select.dispatchEvent(new Event("change", { bubbles: true })); });
+      expect(props.onConnectionChange).toHaveBeenLastCalledWith(connection.id, "protocol", protocol);
+      connection.protocol = protocol;
+      connection.baseUrl = protocol === "grok-images" ? "https://api.x.ai" : "https://ark.example.invalid";
+      await render(props);
+      const codes = [...container.querySelectorAll(".endpoint-preview code")].map(code => code.textContent);
+      expect(codes).toEqual(protocol === "grok-images"
+        ? ["https://api.x.ai/v1", "https://api.x.ai/v1/images/generations", "https://api.x.ai/v1/images/edits"]
+        : ["https://ark.example.invalid/api/v3", "https://ark.example.invalid/api/v3/images/generations", "https://ark.example.invalid/api/v3/images/generations"]);
+      expect(container.textContent).toContain("参考图编辑端点");
+      expect(container.querySelector('button[aria-label="测试模型 alpha-model"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="选择模型 alpha-model"]')).toBeNull();
+      if (protocol === "grok-images") {
+        await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent?.includes("获取模型列表"))!.click());
+        expect(container.querySelector(".model-catalog-dialog")).not.toBeNull();
+      } else {
+        expect(container.querySelector(".model-catalog-dialog")).toBeNull();
+      }
+    }
+    expect(props.onRefreshModelCatalog).toHaveBeenCalledExactlyOnceWith(connection.id);
+    expect(props.onRunModelTest).not.toHaveBeenCalled();
+  });
+
+  it("disables the unsupported Seedream model catalog and permits manual model IDs", async () => {
+    const props = makeProps();
+    props.connectionSettings = structuredClone(connectionSettings);
+    props.connectionSettings.providers[0].connections[0].protocol = "seedream-images";
+    await render(props);
+    const catalog = [...container.querySelectorAll("button")].find(button => button.textContent?.includes("获取模型列表"))!;
+    expect(catalog.disabled).toBe(true);
+    expect(catalog.getAttribute("aria-describedby")).toBe("seedream-catalog-hint");
+    expect(container.querySelector("#seedream-catalog-hint")?.textContent).toContain("请手动添加模型 ID");
+    await act(async () => catalog.click());
+    expect(container.querySelector(".model-catalog-dialog")).toBeNull();
+    expect(props.onRefreshModelCatalog).not.toHaveBeenCalled();
+    await act(async () => button("手动添加模型").click());
+    const form = container.querySelector<HTMLInputElement>('input[name="modelId"]')!.form!;
+    await act(async () => {
+      form.querySelector<HTMLInputElement>('input[name="modelId"]')!.value = "custom-seedream-model";
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(props.onAddModel).toHaveBeenCalledExactlyOnceWith("connection-a", "custom-seedream-model", undefined);
+    expect(props.onRefreshModelCatalog).not.toHaveBeenCalled();
+  });
+
   it("previews Images generations and keeps its models away from chat actions", async () => {
     const props = makeProps();
     props.connectionSettings = structuredClone(connectionSettings);

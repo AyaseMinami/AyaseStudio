@@ -2,14 +2,15 @@ import type { AssistantPreset, Conversation, WorkspaceSelection } from "../chat/
 import type { ChatSnapshot } from "../chat/repository";
 import type { AvatarLibraryEntry } from "../avatar/library";
 import type { UserAvatar } from "../avatar/repository";
+import type { ProviderAvatarEntry } from "../avatar/providerAvatars";
 import type { CherryImportRecord } from "../storage/database";
 import type { SessionConfig } from "../chat/sessionConfig";
-import type { SearchSettings } from "../search/settings";
+import type { SearchSettings, TavilySearchSettings, ZhipuSearchSettings } from "../search/settings";
 import type { DataVersion } from "../storage/dataContract";
 import type { DrawingPromptPreset } from "../drawing/presets";
 import type { DrawingSettingsData } from "../drawing/settingsData";
 
-export const backupTables = ["assistants", "conversations", "chats", "workspace", "avatarLibrary", "userAvatar", "cherryImports", "legacyConversationConfigs"] as const;
+export const backupTables = ["assistants", "conversations", "chats", "workspace", "avatarLibrary", "userAvatar", "cherryImports", "legacyConversationConfigs", "providerAvatars"] as const;
 /** These tables are projected into dedicated portable areas, never exported as raw rows. */
 export const projectedBackupTables = ["drawingDrafts", "drawingPromptPresets"] as const;
 export type BackupTable = typeof backupTables[number];
@@ -20,6 +21,7 @@ export interface BackupRows {
   workspace: WorkspaceSelection[];
   avatarLibrary: AvatarLibraryEntry[];
   userAvatar: { id: string; value?: UserAvatar }[];
+  providerAvatars?: ProviderAvatarEntry[];
   cherryImports: CherryImportRecord[];
   legacyConversationConfigs: { id: string; generationConfig?: SessionConfig; lastUsedModelId?: string | null }[];
 }
@@ -29,14 +31,17 @@ export interface BackupOptions { connections: boolean; credentials: boolean }
 export interface BackupExportOptions { encrypted: boolean }
 export interface BackupAsset { id: string; mime: string; data: string; size: number; sha256: string }
 export type BackupSearchProfile = Omit<SearchSettings, "apiKey"> & { apiKey?: string };
-export interface BackupSearchConfiguration { version: 2; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile }
+export type BackupSearchConfiguration = { version: 2; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile }
+  | { version: 3; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile;
+      tavily: Omit<TavilySearchSettings, "apiKey"> & { apiKey?: string };
+      zhipu: Omit<ZhipuSearchSettings, "apiKey"> & { apiKey?: string } };
 export interface BackupDocument {
   format: "ayase-studio-backup";
   version: 1 | 2 | 3 | 4 | 5;
   createdAt: string;
   options: BackupOptions;
   // JSON data only. Avatar Blobs are encoded as {$blob: assetId, type: mime}.
-  rows: Record<BackupTable, unknown[]>;
+  rows: Record<Exclude<BackupTable, "providerAvatars">, unknown[]> & { providerAvatars?: unknown[] };
   preferences: BackupPreferences;
   connections: unknown | null;
   searchSettings?: BackupSearchProfile | BackupSearchConfiguration;

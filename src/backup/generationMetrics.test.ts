@@ -69,7 +69,7 @@ describe("generation metrics backup contract", () => {
   it.each([{ version: 2 }, { future: true }, { elapsedMs: -1 }, { usage: { future: 1 } }])(
     "rejects unsupported nested statistics %# before resources or durable writes", async patch => {
       const input = state(), db = new AyaseDatabase(`metrics-backup-${crypto.randomUUID()}`);
-      for (const table of backupTables) if (input.rows[table].length) await db.table(table).bulkPut(input.rows[table]);
+      for (const table of backupTables) if (input.rows[table]?.length) await db.table(table).bulkPut(input.rows[table] ?? []);
       const repository = new BackupRepository(db, { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn() });
       const before = await repository.snapshot(), document = await createBackupDocument(input, options, files);
       Object.assign(messages(document)[0].roundVersions!.pairs[0][1].generationMetrics![0], patch);
@@ -84,7 +84,7 @@ describe("generation metrics backup contract", () => {
   it("retains exact stats in private native rollback snapshots even when unsupported", async () => {
     const db = new AyaseDatabase(`metrics-rollback-${crypto.randomUUID()}`), input = state();
     Object.assign(input.rows.chats[0].messages[1].generationMetrics![0], { future: "preserve-original" });
-    for (const table of backupTables) if (input.rows[table].length) await db.table(table).bulkPut(input.rows[table]);
+    for (const table of backupTables) if (input.rows[table]?.length) await db.table(table).bulkPut(input.rows[table] ?? []);
     const repository = new BackupRepository(db, { getItem: () => null, setItem: () => {}, removeItem: () => {} });
     const before = await repository.snapshot();
     await db.backupJournal.put({ id: "restore", before, phase: "applying", references: [] });

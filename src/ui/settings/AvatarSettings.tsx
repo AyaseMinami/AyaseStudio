@@ -28,7 +28,7 @@ export function AvatarSettings({ avatar, onImport, importBusy = false }: { avata
   return <>
       <div className="avatar-card-heading"><h3 id="user-avatar-title">用户头像</h3><span>仅在本机</span></div>
       <div className="avatar-profile">
-        <div className="avatar-large">{avatar.url ? <img src={avatar.url} alt="当前用户头像" /> : <UserRound size={32} strokeWidth={1.5} />}</div>
+        <div className={`avatar-large${avatar.url || avatar.value ? " avatar-large-image" : ""}`}>{avatar.url ? <img src={avatar.url} alt="当前用户头像" /> : <UserRound size={32} strokeWidth={1.5} />}</div>
         <div><strong>{avatar.url ? "你的聊天头像" : "默认用户头像"}</strong><p className="muted-text">显示在用户消息右侧，所有对话共用。</p>
           <div className="avatar-buttons"><button data-import-avatar type="button" className="settings-button settings-button-primary" disabled={busy} onClick={onImport}><ImagePlus size={15} />导入图片</button>
             {avatar.value && <button className="settings-button" disabled={busy} onClick={() => void open(avatar.value!.original, avatar.value!.crop)}><Crop size={15} />重新裁切</button>}
@@ -48,7 +48,7 @@ export function AvatarSettings({ avatar, onImport, importBusy = false }: { avata
 
 export function AvatarPreview({ avatar }: { avatar: UserAvatarState }) {
   return <section className="avatar-preview" aria-label="头像聊天效果预览"><div className="avatar-preview-label">聊天效果</div>
-    <div className="avatar-preview-user"><div className="avatar-preview-bubble">今天也聊点有趣的吧。</div>{avatar.url ? <img src={avatar.url} alt="" /> : <span className="message-user-avatar message-avatar-fallback" role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>}</div>
+    <div className="avatar-preview-user"><div className="avatar-preview-bubble">今天也聊点有趣的吧。</div>{avatar.url ? <img src={avatar.url} alt="" /> : <span className="message-user-avatar message-avatar-fallback" style={avatar.value ? { background: "transparent" } : undefined} role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>}</div>
     <div className="avatar-preview-reply">好呀，你想从哪里开始？</div>
   </section>;
 }

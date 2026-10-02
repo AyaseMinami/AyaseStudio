@@ -19,7 +19,7 @@ export type NumericField =
 export interface SessionConfig {
   version: 1;
   webSearch?: boolean;
-  webSearchProvider?: "native" | "exa-mcp" | "exa-api";
+  webSearchProvider?: "native" | import("../search/settings").ExternalSearchProvider;
   geminiThinking?: import("./geminiThinking").GeminiThinkingSettings;
   thinking?: Partial<Record<Exclude<ChatProtocol, "gemini-native">, import("./thinking").ThinkingSettings>>;
   systemInstruction: string;
@@ -91,7 +91,7 @@ export function readSessionConfigData(raw: unknown): SessionConfig {
     dataCheck(value[key].mode !== "custom" || typeof value[key].value === "string");
   }
   dataCheck(value.webSearch === undefined || typeof value.webSearch === "boolean");
-  dataCheck(value.webSearchProvider === undefined || ["native", "exa-mcp", "exa-api"].includes(value.webSearchProvider as string));
+  dataCheck(value.webSearchProvider === undefined || ["native", "exa-mcp", "exa-api", "tavily", "zhipu"].includes(value.webSearchProvider as string));
   dataCheck(value.invalidStoredConfig === undefined || typeof value.invalidStoredConfig === "string");
   if (value.geminiThinking !== undefined) {
     dataRecord(value.geminiThinking);

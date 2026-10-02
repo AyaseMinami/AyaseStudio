@@ -1,5 +1,15 @@
 # 持久数据契约
 
+## #100 供应商默认配置与图片（2026-10-02）
+
+connections 模块 v5／最低读者 5，Dexie v9 增加 `providerAvatars`；本机连接 v3、文档 v5／信封 v1 保持。可选品牌、头像、重置来源、初始化标记严格校验，缺失为旧自定义／未初始化；纯读取不初始化厂商。图片行／值／裁切共享严格克隆入口，未知结构不投影或覆盖。仅连接备份引用的图片导出；原始模块声明在重标前拒绝旧版本混入新字段。来源冲突、重映射、回滚和旧日志范围见 [#100 合同](ISSUE-100-IMPLEMENTATION.md)。下文 Dexie v8／connections v4 的历史说明由此接续。
+
+## #82 搜索配置与模块 v3（2026-10-02）
+
+`ayase-studio.search.v1` 键内配置升为 v3，保持旧 Exa MCP／API 并增加 Tavily／智谱独立 profile；新 profile 的 `enabled` 默认 false、Key 默认空，深度／引擎为严格枚举。纯克隆迁移 v1→v2→v3，普通读取零写入，未知结构保留原始值并拒绝。四组凭据投影遵循各自 FieldPolicy，不含凭据时省略，恢复仅保留本机对应 Key；旧单／双配置不覆盖缺失的新服务配置。
+
+搜索模块 v3／最低读者 3 拥有新增配置与会话／历史 provider 标识。新增标识必须匹配 v4／v5 文档的原始 search 模块声明，检查先于兼容重标版本；旧 v1–v3 文档不能包含新增服务。chat v2、session v1、Dexie v8、文档 v5／信封 v1 保持。完整凭据替换及失败日志回滚、原始门禁与正向对照都有确定性覆盖。见 [#82 详细合同](ISSUE-82-IMPLEMENTATION.md)。下文 #105 历史记录中的搜索 v2 由本次升级接续。
+
 ## #107 回复生成统计（2026-10-02）
 
 `StoredChatMessage.generationMetrics` 为可选的逐请求数组，嵌套指标版本 1／最低读者 1，缺失表示旧消息无统计；不补零，不按正文估算。共享 `generationMetricsData.ts` 通过纯克隆迁移入口校验本机及备份读取，没有语义转换步骤。未知版本、字段、协议和非法数值拒绝并保留原记录；初始化、保存及恢复均先校验后写入。流式遗留记录递归恢复为 aborted／部分用量，保留最后已保存耗时。
@@ -26,7 +36,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。#93 当前新导出是文档 v5／信封 v1，不新增 Dexie schema；连接模块 v3、搜索模块 v2、chat 模块 v2（最低读者 2）、绘图设置模块 v2（最低读者 2），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。#93 当前新导出是文档 v5／信封 v1，不新增 Dexie schema；连接模块 v4（本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v2（最低读者 2）、绘图设置模块 v3（最低读者 3），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 
@@ -48,17 +58,19 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 
 嵌套持久对象有自己的类型和策略；新增嵌套字段同步更新对应策略、投影和读取校验。凭据不得进入普通消息／偏好；资源字段仍必须经过受管路径、字节预算、MIME、摘要、所有权和引用重映射校验。协议映射、模型／助手／对话 ID、版本和能力是结构，不是可丢弃参数。动态 JSON、供应商回放和用户自定义参数仍遵循各自既有边界；类型策略不提供自动语义验证。
 
-绘图设置／预设使用 `projected` 策略，`src/backup/types.ts` 中 `projectedBackupTables` 是独立于原始可移植 `backupTables` 的静态清单；真实设置及嵌套 OpenAI 投影、预设读取均使用字段策略。设置仅包含比例、分辨率、模型 ID、OpenAI 尺寸／画质、可选 Gemini temperature／safetyThreshold／outputMode、数量、并发、提示音和可选复用协议；预设仅包含 id、name、content、createdAt、updatedAt。同名不同 ID 独立保存，正文空白不规范化。自动草稿提示词、参考图、任务／结果历史和图片排除；原始当前草稿／预设仅参与私有日志与回滚，不加入可移植 rows。#93 维护协调取代旧广泛绘图禁用规则，本地代码门禁、定向回归及独立 Sol/high 审查已完成；不得按旧 #83 整图库提案扩大实现。
+绘图设置／预设使用 `projected` 策略，`src/backup/types.ts` 中 `projectedBackupTables` 是独立于原始可移植 `backupTables` 的静态清单；真实设置及嵌套 OpenAI 投影、预设读取均使用字段策略。设置仅包含比例、分辨率、模型 ID、OpenAI 尺寸／画质、可选 Gemini temperature／safetyThreshold／outputMode、Grok／Seedream 明确版本参数组、数量、并发、提示音和可选复用协议；预设仅包含 id、name、content、createdAt、updatedAt。同名不同 ID 独立保存，正文空白不规范化。自动草稿提示词、参考图、任务／结果历史和图片排除；原始当前草稿／预设仅参与私有日志与回滚，不加入可移植 rows。#93 维护协调取代旧广泛绘图禁用规则，本地代码门禁、定向回归及独立 Sol/high 审查已完成；不得按旧 #83 整图库提案扩大实现。
 
 ## 迁移、默认值与失败
+
+#103 的 Grok／Seedream 可选组缺失时保留缺失，不自动写回；提交时分别使用 legacy／4.5 合同和自动参数。设置模块 v1/v2 不可携带新组或新复用协议；连接模块低于 v4 不可携带新协议。旧值保持原含义，无需语义迁移；本机及备份均走现有私有克隆读入口。新组严格校验所有嵌套字段，Seedream 尺寸继续保留可编辑中间文本，生成时按明确版本验证；不支持组合保留供修正，不静默删掉。替换旧设置清除缺失新组，合并／副本保留本机设置，私有日志回滚保护完整草稿。任务／成果新增版本字段仍排除于可移植备份，历史模块 v2 不增加图片备份；旧历史原样保留。未知协议／结构在文件恢复、修复写入和清理前拒绝。见 [#103](ISSUE-103-IMPLEMENTATION.md)。
 
 #110 将新参考图选择移至 `DrawingState.references` 会话内存，不增加持久字段、表、偏好、schema 或备份模块版本；绘图设置仍 v2、历史 v1、备份文档 v5／信封 v1。Blob、机器源路径、预览 URL 和准备进度均不序列化。旧 `DrawingDraft.references` 继续由原纯克隆读入口严格读取，并保留原始持久绑定；提示词／参数修改不会清掉它们。用户显式移除、清空或替换参考图时，才释放不再选择的旧绑定；新添加或历史复用的选择不写入此字段。无旧字段仍为空，不做启动静默迁移，不改写未知／损坏记录。自动草稿与参考图依旧排除于可移植备份，私有恢复日志保留旧绑定以支持回滚；需要重载的数据维护在有仅会话选择时拒绝进入，要求先显式清空。任务／成果与其输入所有权保持原合同，见 [#110](ISSUE-110-IMPLEMENTATION.md)。
 
 `migrateData` 对输入做私有克隆，只接受已声明的起始版本，按连续迁移函数前进；每步必须恰好增加一个版本。缺少步骤、无效结构或不支持版本都失败。函数本身不写数据库、偏好或源文件，调用方在整次转换和校验成功后才提交。
 
-本机读取与备份读取复用同一迁移规则：搜索单配置 v1 → 双配置 v2 只将旧值保留为 MCP，并补齐 API 默认值；连接 v2 → v3 保持既有配置含义；会话配置目前 v1，没有凭空制造的升级步骤。正常读取不自动写回，不改变协议／目标、不请求网络、不自动启用功能。
+本机读取与备份读取复用同一迁移规则：搜索单配置 v1 → 双配置 v2 只将旧值保留为 MCP，并补齐 API 默认值，#82 再由 v2 → v3 补齐空 Key、关闭的 Tavily／智谱配置；连接 v2 → v3 保持既有配置含义；会话配置目前 v1，没有凭空制造的升级步骤。正常读取不自动写回，不改变协议／目标、不请求网络、不自动启用功能。
 
-绘图设置当前模块 v2、最低读者 2，预设仍 v1；无版本本机记录保持共享纯克隆读入口，新增可选 Gemini 组缺失时温度／安全省略、输出 TEXT+IMAGE，不自动写回。新字段是附加设置，不转换原字段含义；v1 备份声明携带新组拒绝。缺失字段默认 auto 比例／分辨率、未选模型、OpenAI auto／auto、数量 1、并发 1、提示音开启；存在但非法的字段严格拒绝。本机草稿连同被排除的 prompt／references 结构在控制器任务恢复前校验，失败保留原数据。OpenAI 自定义尺寸沿用可编辑字符串合同，包括中间无效输入，不新增每字段长度限制；transport 在生成时验证能力和尺寸，备份总预算照常执行。
+绘图设置当前模块 v3、最低读者 3，预设仍 v1；无版本本机记录保持共享纯克隆读入口，新增可选 Gemini 组缺失时温度／安全省略、输出 TEXT+IMAGE，不自动写回。新字段是附加设置，不转换原字段含义；v1 备份声明携带新组拒绝。缺失字段默认 auto 比例／分辨率、未选模型、OpenAI auto／auto、数量 1、并发 1、提示音开启；存在但非法的字段严格拒绝。本机草稿连同被排除的 prompt／references 结构在控制器任务恢复前校验，失败保留原数据。OpenAI 自定义尺寸沿用可编辑字符串合同，包括中间无效输入，不新增每字段长度限制；transport 在生成时验证能力和尺寸，备份总预算照常执行。
 
 新增字段要明确缺省语义及何时应用，不能将未知结构当成缺失字段。可编辑的无效数值文本仍可保留供用户修正；结构错误不能因恢复默认而抹去原值。工作区初始化在事务内预检助手默认、对话配置、分支创建配置和历史配置，失败先于默认助手创建或行修复，事务保持原数据。界面显示的错误／临时默认值不授权持久覆盖。
 
@@ -78,7 +90,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 
 文档 v5 要求 `compatibility.minimumReaderVersion: 5`，当前顶层必需能力为空，模块集合必须恰好匹配基础模块和实际存在的绘图类别。旧 v4 仍要求最低读者 4 及固定七模块。模块声明包含 `version`、`minimumReaderVersion`、`requiredCapabilities`；最低读者超过当前读者或未知必需能力时要求升级。只有版本较新的 `session` 或 `drawingSettings` 模块声明可由当前读者读取时，才允许在已声明参数区过滤未知可选项，然后按当前语义校验。
 
-允许区限于助手 `defaultConfig`、对话 `settings.config`／`creationConfig.config` 和历史 `generationConfig` 内的会话参数、数值设置及已知协议的思考参数，以及 `drawing.settings` 与嵌套 `openai`／`gemini` 参数。未知安全／输出模式／响应结构字段拒绝，不作为普通可选项过滤。未知协议、模型 ID、凭据、安全字段、资源引用、草稿身份／prompt／references、预设正文结构、任意顶层／行字段及不支持的结构变化仍严格拒绝。可选字段名称受格式与安全词限制；未知值不进入请求、日志或兼容报告。
+允许区限于助手 `defaultConfig`、对话 `settings.config`／`creationConfig.config` 和历史 `generationConfig` 内的会话参数、数值设置及已知协议的思考参数，以及 `drawing.settings` 与嵌套 `openai`／`gemini`／`grok`／`seedream` 参数。未知安全／输出模式／响应结构字段拒绝，不作为普通可选项过滤。未知协议、模型 ID、凭据、安全字段、资源引用、草稿身份／prompt／references、预设正文结构、任意顶层／行字段及不支持的结构变化仍严格拒绝。可选字段名称受格式与安全词限制；未知值不进入请求、日志或兼容报告。
 
 先检查原始文档预算，再克隆、转换、完整校验，最后形成恢复计划。过滤报告只含路径和计数，预览／结果说明再次保存或导出可能丢失参数，并要求保留原始备份文件。私有偏好 `ayase-studio.data-compatibility.v1` 保留路径，纳入恢复日志的快照／回滚；再次导出将路径加入兼容元数据并持续警告。它不保存被过滤值，也不改写源文件。恢复不下载 URL、不访问来源路径、不发送供应商请求。
 

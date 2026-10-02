@@ -4,8 +4,8 @@ export type ExaSearchResult = { sources: SearchSource[]; warning?: string };
 /** Only fixed messages created locally may be displayed by a search caller. */
 export class ExaResultError extends Error {}
 
-export function normalizeExaResults(results: unknown[], count: number): ExaSearchResult {
-  if (!results.length) throw new ExaResultError("Exa 未找到可用搜索资料。");
+export function normalizeExaResults(results: unknown[], count: number, displayName = "Exa"): ExaSearchResult {
+  if (!results.length) throw new ExaResultError(`${displayName} 未找到可用搜索资料。`);
   const sources: SearchSource[] = [];
   const seen = new Set<string>();
   const prefix = crypto.randomUUID();
@@ -31,6 +31,6 @@ export function normalizeExaResults(results: unknown[], count: number): ExaSearc
     seen.add(url.href);
     sources.push({ id: `${prefix}-${sources.length + 1}`, title: title.slice(0, 300).join(""), url: url.href, excerpt });
   }
-  if (!sources.length) throw new ExaResultError("Exa 未返回包含正文的有效搜索资料。");
+  if (!sources.length) throw new ExaResultError(`${displayName} 未返回包含正文的有效搜索资料。`);
   return { sources, ...(limited ? { warning: "部分搜索资料无效、重复或超过上限，已限制采用范围。" } : {}) };
 }

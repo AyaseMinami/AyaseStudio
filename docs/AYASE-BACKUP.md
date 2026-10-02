@@ -1,5 +1,7 @@
 # Ayase 备份与恢复
 
+#100 connections 模块 v5 增加内置身份、初始化标记、供应商头像引用。仅选择连接才导出其引用图片；内置图标保留 ID，不含连接的恢复保留本机供应商图片。合并保留本机供应商身份，清除新增连接不适用的重置来源，保留实际配置。旧结构兼容、未来字段拒绝和新表回滚见 [#100](ISSUE-100-IMPLEMENTATION.md)。
+
 对应 [Issue #79](https://github.com/AyaseMinami/AyaseStudio/issues/79)。本地实现使用 Ayase 自有 `.ayase` 格式，与 Cherry 备份不互通。设置 → 数据管理保留原有 Cherry 导入区块，另提供 Ayase 入口；最终主观视觉验收仍待用户确认。
 
 #105 的持久数据规则见 [DATA-CONTRACTS.md](DATA-CONTRACTS.md)。#93 本地实现将新导出升级为文档 v5／信封 v1，加入无提示词的绘图设置和显式保存的纯文本预设，替代旧的绘图数据存在即禁止维护的保护。自动草稿提示词、参考图、任务／批次、成果及图片不进入备份。本地代码门禁、相关回归和独立 Sol/high 审查已完成；#105 的绘图接入与确定性跨版本样例已补齐，剩余实际原生验收与 #94 压力／原生交互另行记录。见 [#93 实施记录](ISSUE-93-IMPLEMENTATION.md)。
@@ -31,23 +33,23 @@
 
 绘图模型通过连接／模型 ID 映射，必须解析为绘图协议，否则取消导入设置中的选择并提示手动选择。共享连接替换可能影响保留的草稿及历史目标；预览比较历史冻结的供应商／连接 ID、协议、地址和实际上游模型 ID 并报告变化，不改写历史、不猜测替代、不发请求。任务／批次、成果、图片和原生未决保存日志始终保留；备份不绑定参考图，跨设备使用时需自行选择输入图片，恢复资源计划不读写或删除绘图文件。
 
-全局搜索设置独立于聊天连接，两种 Exa 服务的地址、结果数量及 Key 也相互独立。合并／另存副本保留本机全部搜索配置和 Key；替换才应用文件中包含的配置。v3/v4/v5 替换应用 MCP 与 API 两组配置；旧 v2 只有 MCP 配置，替换时更新 MCP 并保留本机 API 配置与 Key。不含凭据的 v2–v5 文件替换时保留每组对应的本机 Key，不会互相复用；本机没有配置时使用空 Key。v1 或缺失搜索设置的文件，三种模式均保留本机搜索配置／Key，没有本机配置时才使用默认配置：MCP 允许匿名，API 需要另行填写 Key 才能执行。恢复预览说明这些行为；缺失字段不会自动开启会话搜索，旧 `webSearch: true` 且无新模式字段仍表示模型原生搜索。读取旧本机单配置只在内存补齐 API 默认值，不自动写回。
+全局搜索设置独立于聊天连接，Exa API／MCP、Tavily／智谱的地址、结果数量及 Key 相互独立。合并／另存副本保留本机全部搜索配置和 Key；替换才应用文件中包含的配置。新四组配置替换应用四组；旧单／双 Exa 配置只更新包含的组，并保留本机缺失组的配置及 Key。不含凭据的 v2–v5 文件替换时保留每组对应的本机 Key，不会互相复用；本机没有配置时使用空 Key。v1 或缺失搜索设置的文件，三种模式均保留本机搜索配置／Key，没有本机配置时才使用默认配置：MCP 允许匿名，其他 API 需另行填写 Key，Tavily／智谱默认关闭。恢复预览说明这些行为；缺失字段不会自动开启会话搜索，旧 `webSearch: true` 且无新模式字段仍表示模型原生搜索。读取旧本机配置只在内存补齐新默认值，不自动写回。
 
 ## 文档格式 5，信封格式 1
 
-UTF-8 JSON 外层：`format: ayase-studio-envelope`、`version: 1`、`encrypted` 和 `payload`。明文 payload 是含 `document`（JSON 文本）和 `sha256` 的容器。新文档为 `format: ayase-studio-backup`、`version: 5`、创建时间、导出选项、显式表数据、允许的偏好、可选连接、独立 `searchSettings`、可选 `drawing`、资源清单及 `compatibility`。v3/v4/v5 的 `searchSettings` 为 `version: 2` 和 `exaMcp`／`exaApi` 两组配置，每组只允许 `version: 1`、HTTPS `baseUrl`、1–10 的 `numResults`，以及包含凭据时的 `apiKey`；不含凭据时两组 Key 都省略。v2 的同字段仍是原来的单 MCP 配置。配置不会混入普通偏好或消息记录。资源清单逐项包含 ID、MIME、原始大小、Base64 字节和 SHA-256；头像 Blob 以受约束标记引用清单。原生引用仅允许专用目录中的规范 UUID v4 文件名；恢复时重映射。备份不是整目录归档，也不直接复制原始 localStorage。
+UTF-8 JSON 外层：`format: ayase-studio-envelope`、`version: 1`、`encrypted` 和 `payload`。明文 payload 是含 `document`（JSON 文本）和 `sha256` 的容器。新文档为 `format: ayase-studio-backup`、`version: 5`、创建时间、导出选项、显式表数据、允许的偏好、可选连接、独立 `searchSettings`、可选 `drawing`、资源清单及 `compatibility`。旧 v3/v4/v5 的 `searchSettings` 继续接受 `version: 2` 和 `exaMcp`／`exaApi` 两组配置；新 v4/v5 可在原始搜索模块 v3 声明下使用 `version: 3`，增加 Tavily／智谱配置与会话、历史中的 provider 标识。每组 profile 为 `version: 1`，含 HTTPS `baseUrl`、1–10 `numResults`，以及包含凭据时的独立 `apiKey`；新增两组还含 `enabled` 和深度／引擎枚举。未包含凭据时所有 Key 省略。v2 同字段仍是原来的单 MCP 配置。配置不会混入普通偏好或消息记录。资源清单逐项包含 ID、MIME、原始大小、Base64 字节和 SHA-256；头像 Blob 以受约束标记引用清单。原生引用仅允许专用目录中的规范 UUID v4 文件名；恢复时重映射。备份不是整目录归档，也不直接复制原始 localStorage。
 
-v5 的 `compatibility` 必须包含 `minimumReaderVersion: 5`、`requiredCapabilities`（当前为空）和 `modules`。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`，`drawing.settings` 和 `drawing.presets` 存在时分别增加 `drawingSettings` 和 `drawingPresets`，内容与模块声明必须一致。两类独立可选，缺失不表示空数据，非空 `drawing` 至少包含一类；新导出明确包含设置及预设，即使预设为空数组。每个模块声明 `version`、`minimumReaderVersion` 和 `requiredCapabilities`。当前连接 v3、搜索 v2、chat v2／最低读者 2、绘图设置 v2／最低读者 2、绘图预设及其余模块 v1；#101 不升级 Dexie schema。旧绘图设置模块 v1 继续读取，但不能声明新增 Gemini 组。旧 v4 仍固定原七模块、最低文档读者 4，不接受绘图区或绘图模块。未知模块、未知必需能力、超出最低读者要求或不支持结构都拒绝并提示升级。
+v5 的 `compatibility` 必须包含 `minimumReaderVersion: 5`、`requiredCapabilities`（当前为空）和 `modules`。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`，`drawing.settings` 和 `drawing.presets` 存在时分别增加 `drawingSettings` 和 `drawingPresets`，内容与模块声明必须一致。两类独立可选，缺失不表示空数据，非空 `drawing` 至少包含一类；新导出明确包含设置及预设，即使预设为空数组。每个模块声明 `version`、`minimumReaderVersion` 和 `requiredCapabilities`。当前连接 v4（本机记录仍 v3）、搜索 v3／最低读者 3、chat v2／最低读者 2、绘图设置 v3／最低读者 3、绘图预设及其余模块 v1；#103 不升级 Dexie schema。旧绘图设置模块 v1 继续读取，但不能声明新增 Gemini 组。旧 v4 仍固定原七模块、最低文档读者 4，不接受绘图区或绘图模块。未知模块、未知必需能力、超出最低读者要求或不支持结构都拒绝并提示升级。
 
 #107 新回复保存逐请求的 Token、缓存与耗时统计，聊天备份包括这些指标及轮次历史，旧消息缺失时仍保持缺失。该字段要求原始 chat 模块声明支持 v2；旧模块无统计兼容，不将未知指标静默丢弃或在重标版本后伪装支持。它不包含凭据、地址或资源引用。详情见 [#107 数据与验收记录](ISSUE-107-IMPLEMENTATION.md)。
 
-只有未来 `session` 或 `drawingSettings` 模块明确允许当前读者读取、外层结构相同时，才在声明参数区过滤未知可选项：会话的助手默认／对话配置／分支创建配置／历史配置，包括数值和已知协议思考参数；绘图的设置及其 OpenAI／Gemini 参数区。未知安全和输出结构一律拒绝；新字段缺失时沿用温度／安全省略和 TEXT+IMAGE。替换旧设置会移除本机新 Gemini 覆盖，缺失设置类别仍保留本机数据。协议、模型／对象引用、安全、凭据、资源、预设正文结构及任意顶层字段不属于可过滤参数；草稿身份、提示词、参考图及非法／安全字段仍拒绝。原始预算检查先于克隆与过滤，完整语义／资源校验先于计划和所有持久写入。绘图本机读取与备份读取复用纯克隆读入口，旧缺失字段补齐 auto 比例／分辨率、未选模型、OpenAI auto／auto、数量及并发 1、提示音开启，不自动写回。OpenAI 自定义尺寸保留可编辑字符串，包括尚未有效的尺寸，不新增字段长度上限；生成时由 transport 校验，备份总文本预算保持。
+只有未来 `session` 或 `drawingSettings` 模块明确允许当前读者读取、外层结构相同时，才在声明参数区过滤未知可选项：会话的助手默认／对话配置／分支创建配置／历史配置，包括数值和已知协议思考参数；绘图的设置及其 OpenAI／Gemini／Grok／Seedream 参数区。未知安全和输出结构一律拒绝；新字段缺失时沿用温度／安全省略和 TEXT+IMAGE。替换旧设置会移除本机缺失的 Gemini／Grok／Seedream 覆盖，缺失设置类别仍保留本机数据。协议、模型／对象引用、安全、凭据、资源、预设正文结构及任意顶层字段不属于可过滤参数；草稿身份、提示词、参考图及非法／安全字段仍拒绝。原始预算检查先于克隆与过滤，完整语义／资源校验先于计划和所有持久写入。绘图本机读取与备份读取复用纯克隆读入口，旧缺失字段补齐 auto 比例／分辨率、未选模型、OpenAI auto／auto、数量及并发 1、提示音开启，不自动写回。OpenAI 自定义尺寸保留可编辑字符串，包括尚未有效的尺寸，不新增字段长度上限；生成时由 transport 校验，备份总文本预算保持。
 
 `filteredParameters` 仅报告路径，预览／结果说明被过滤项不会发送，再次保存或导出可能丢失参数，并要求保留原始备份文件。私有偏好 `ayase-studio.data-compatibility.v1` 保留路径并参与恢复日志／回滚，后续导出仍携带路径并提示；不保留或披露被过滤值，不改写源文件、不下载 URL、不调用供应商。此限定降级不承诺任意未来结构或语义迁移。
 
 开启加密时外层固定 `kdf: PBKDF2-SHA256`、`iterations: 600000`、`cipher: AES-256-GCM`，含随机 16 字节盐、12 字节 IV 及 Base64 密文。密码按 UTF-8 原值使用，派生不可导出的 256 位密钥；GCM 128 位认证标签及固定附加数据 `ayase-studio-backup|1|PBKDF2-SHA256|600000|AES-256-GCM|128` 绑定格式和算法。每次导出生成新盐与 IV。SHA-256 覆盖文档和各资源原始字节；普通备份的校验用于检测损坏，不提供来源真实性保证。含密钥的明文包可以读取；未知版本、未知加密参数和不支持字段仍拒绝。加密状态只在外层 `encrypted` 字段记录，文档 `options` 仅记录连接与密钥选择；信封、KDF、AAD 和密码语义保持 v1。仍接受文档 v1–v4 的明文与加密包，并按各自原合同读取：拒绝向 v1 塞入搜索字段、向 v2 塞入双配置和 `exa-api` 模式／记录、向 v1–v3 塞入兼容元数据、向 v1–v4 塞入绘图区。v1–v3 不获得未来参数宽松过滤，v4 保留限定会话兼容规则和原七模块。只支持文档 v1–v4 的旧客户端无法读取新 v5 文件，需要更新应用；兼容声明不能改变已发布旧客户端的行为。早期实现拒绝含密钥的明文包，也需要更新后的应用读取。不会执行迁移脚本、导入代码或工具。
 
-外部搜索快照最多 10 个来源、1 条最多 2000 个 Unicode 字符的查询、每条最多 1500 个 Unicode 字符且合计最多 8000 字符的摘录、每条最多 300 字符的标题、2048 UTF-16 单元的地址，以及最多 1000 字符的提示。v2 只接受 MCP 标识，v3/v4/v5 同样约束 MCP／API 两种标识。旧原生搜索沿用既有边界；所有数据仍受文档总预算约束。
+外部搜索快照最多 10 个来源、1 条最多 2000 个 Unicode 字符的查询、每条最多 1500 个 Unicode 字符且合计最多 8000 字符的摘录、每条最多 300 字符的标题、2048 UTF-16 单元的地址，以及最多 1000 字符的提示。v2 只接受 MCP 标识，v3/v4/v5 接受 MCP／API；v4/v5 的原始搜索模块 v3 才接受 Tavily／智谱标识。备份历史保留上述查询预算，智谱实时请求单独限制 70 字符。旧原生搜索沿用既有边界；所有数据仍受文档总预算约束。见 [#82 兼容和凭据恢复](ISSUE-82-IMPLEMENTATION.md)。
 
 密码派生和认证加密通过 Web Crypto 实现，依据 [W3C Web Cryptography](https://www.w3.org/TR/WebCryptoAPI/)；迭代值参考 [OWASP PBKDF2-HMAC-SHA256 指引](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2)。这不代表获得任何认证。
 

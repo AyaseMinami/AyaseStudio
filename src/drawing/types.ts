@@ -8,6 +8,8 @@ export interface DrawingDraft {
   openai?: { size: string; quality: string };
   /** Missing old fields preserve service defaults and TEXT+IMAGE output. */
   gemini?: GeminiDrawingOptions;
+  grok?: GrokDrawingOptions;
+  seedream?: SeedreamDrawingOptions;
   /** Legacy durable bindings only. New selections live in DrawingState.references, never here. */
   references?: DrawingReference[];
   count?: number;
@@ -33,7 +35,9 @@ interface DrawingParameterBase {
   references?: DrawingReference[];
 }
 
-export type DrawingProtocol = "gemini-image" | "openai-images";
+export type DrawingProtocol = "gemini-image" | "openai-images" | "grok-images" | "seedream-images";
+export interface GrokDrawingOptions { modelVersion: "legacy" | "2.0"; aspectRatio: string; resolution: string; quality: string }
+export interface SeedreamDrawingOptions { modelVersion: "4.0" | "4.5" | "5.0-lite" | "5.0-pro" | "5.0-flash"; size: string; outputFormat: "auto" | "png" | "jpeg"; watermark: "auto" | "on" | "off" }
 export type GeminiSafetyThreshold = "BLOCK_NONE" | "BLOCK_ONLY_HIGH" | "BLOCK_MEDIUM_AND_ABOVE" | "BLOCK_LOW_AND_ABOVE" | "OFF";
 export interface GeminiDrawingOptions {
   temperature?: number;
@@ -43,6 +47,8 @@ export interface GeminiDrawingOptions {
 export type DrawingParameters = DrawingParameterBase & (
   | { protocol: "gemini-image"; aspectRatio: string; resolution: string; gemini?: GeminiDrawingOptions }
   | { protocol: "openai-images"; size: string; quality: string }
+  | ({ protocol: "grok-images" } & GrokDrawingOptions)
+  | ({ protocol: "seedream-images" } & SeedreamDrawingOptions)
 );
 
 export type DrawingTaskStatus = "queued" | "preparing" | "dispatching" | "running" | "saving" | "completed" | "failed" | "cancelled" | "unknown" | "save-failed";
@@ -96,7 +102,10 @@ export interface DrawingExportParameters {
   prompt: string;
   model: string;
   protocol: DrawingProtocol;
-  api_type: "gemini" | "gpt";
+  api_type?: "gemini" | "gpt";
+  model_version?: string;
+  output_format?: string;
+  watermark?: boolean;
   aspect_ratio?: string;
   resolution?: string;
   size?: string;

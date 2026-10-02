@@ -6,7 +6,8 @@ import { avatarLibrary } from "../../avatar/library";
 import { centeredCrop, decodeAvatar, renderAvatar } from "../../avatar/image";
 import type { AvatarLibraryEntry } from "../../avatar/library";
 import { AvatarLibraryPanel, AssistantAvatarSelector } from "./AvatarLibrary";
-import { AvatarSettings } from "../settings/AvatarSettings";
+import { AvatarSettings, AvatarPreview } from "../settings/AvatarSettings";
+import { readFileSync } from "node:fs";
 
 vi.mock("../../avatar/library", () => ({ avatarLibrary: { list: vi.fn(), usages: vi.fn(), select: vi.fn(), import: vi.fn(), rename: vi.fn(), replace: vi.fn(), remove: vi.fn(), removeMany: vi.fn() } }));
 vi.mock("../../avatar/image", async (original) => ({ ...await original<typeof import("../../avatar/image")>(), decodeAvatar: vi.fn(), renderAvatar: vi.fn() }));
@@ -149,6 +150,27 @@ it("restores a user default without removing library resources and recrops with 
   expect(host.querySelector('input[type="file"]')).toBeNull();
   await click("重新裁切"); await click("应用头像"); expect(save).toHaveBeenCalledWith(expect.objectContaining({ source: current.source, original: current.original }));
   await click("恢复默认"); expect(save).toHaveBeenLastCalledWith(); expect(avatarLibrary.remove).not.toHaveBeenCalled();
+});
+
+it("keeps user image and crop containers transparent while retaining the crop overlay", async () => {
+  const stylesheet = document.createElement("style"); stylesheet.textContent = readFileSync("src/ui/settings/AvatarSettings.css", "utf8"); document.head.append(stylesheet);
+  const state = { value: entry.avatar, url: "blob:alpha", busy: false, error: undefined, save };
+  try {
+    await act(async () => root.render(<><AvatarSettings avatar={state} onImport={() => {}} /><AvatarPreview avatar={state} /></>));
+    expect(getComputedStyle(host.querySelector(".avatar-large")!).background).toBe("transparent");
+    expect(getComputedStyle(host.querySelector(".avatar-preview-user img")!).background).toBe("transparent");
+    await click("重新裁切");
+    const stage = host.querySelector(".avatar-crop-stage")!;
+    expect(getComputedStyle(stage).background).toBe("transparent");
+    expect(stage.querySelector("path")?.getAttribute("stroke")).toBe("#ffffff80");
+    await click("取消");
+    const pending = { ...state, url: undefined };
+    await act(async () => root.render(<><AvatarSettings avatar={pending} onImport={() => {}} /><AvatarPreview avatar={pending} /></>));
+    expect(getComputedStyle(host.querySelector(".avatar-large")!).background).toBe("transparent");
+    expect(getComputedStyle(host.querySelector(".message-user-avatar")!).background).toBe("transparent");
+    await act(async () => root.render(<AvatarSettings avatar={{ ...pending, value: undefined }} onImport={() => {}} />));
+    expect(host.querySelector(".avatar-large-image")).toBeNull();
+  } finally { stylesheet.remove(); }
 });
 
 it("drains a usage refresh queued by user restore during the initial load", async () => {

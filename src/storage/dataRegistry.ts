@@ -8,11 +8,11 @@ export const dataModules = {
   workspace: { version: 1, capabilities: [], resources: "model/assistant/conversation IDs remapped by restore plan" },
   avatars: { version: 1, capabilities: [], resources: "encoded Blobs and library ownership" },
   appearance: { version: 1, capabilities: [], resources: "managed background originals; derived thumbnails excluded" },
-  connections: { version: 3, capabilities: [], resources: "credentials only in the explicit credential section" },
-  search: { version: 2, capabilities: [], resources: "separate Exa credentials; legacy v1 migrates to MCP" },
-  drawingSettings: { version: 2, capabilities: [], resources: "allowlisted settings including optional Gemini controls; no prompt or image bindings" },
+  connections: { version: 5, capabilities: [], resources: "built-in preset identities and initialization marker; bundled brand IDs; immutable provider avatar snapshots exported only with selected connections; local record remains v3" },
+  search: { version: 3, capabilities: [], resources: "independent Exa/Tavily/Zhipu credentials; disabled new providers; v1 MCP and v2 Exa migrate without writes; governs new provider selections and records across modules" },
+  drawingSettings: { version: 3, capabilities: [], resources: "allowlisted Gemini/Grok/Seedream controls with explicit version contracts; no prompt or image bindings" },
   drawingPresets: { version: 1, capabilities: [], resources: "explicit text only; dedicated drawing.presets projection" },
-  drawingHistory: { version: 1, capabilities: [], resources: "excluded; retained local task/result/image ownership; #110 session selections excluded, legacy draft bindings retained until explicit removal" },
+  drawingHistory: { version: 2, capabilities: [], resources: "excluded; Grok/Seedream frozen parameters; retained local task/result/image ownership; #110 session selections excluded, legacy draft bindings retained until explicit removal" },
   recovery: { version: 1, capabilities: [], resources: "private journals; origin-scoped native drawing import receipts v1; never portable" },
 } as const;
 
@@ -24,6 +24,7 @@ export const persistentTables = {
   workspace: { module: "workspace", fields: "workspace", backup: "included" },
   avatarLibrary: { module: "avatars", fields: "avatarLibrary", backup: "included" },
   userAvatar: { module: "avatars", fields: "userAvatar", backup: "included" },
+  providerAvatars: { module: "connections", fields: "providerAvatars", backup: "included" },
   cherryImports: { module: "workspace", fields: "cherryImports", backup: "included" },
   legacyConversationConfigs: { module: "session", fields: "legacyConversationConfigs", backup: "included" },
   drawingDrafts: { module: "drawingSettings", fields: "drawingDraft", backup: "projected" },

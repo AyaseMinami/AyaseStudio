@@ -86,7 +86,7 @@ export function SettingsWorkspace({
             aria-current={activeSection === "search" ? "page" : undefined}
             onClick={() => onSectionChange("search")} type="button">
             <Globe size={18} />
-            <span><strong>网络搜索</strong><small>Exa API / MCP 与搜索凭据</small></span>
+            <span><strong>网络搜索</strong><small>Exa、Tavily、智谱与搜索凭据</small></span>
           </button>
           <button className="settings-navigation-button" aria-label="数据管理"
             aria-current={activeSection === "data" ? "page" : undefined}

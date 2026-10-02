@@ -480,6 +480,101 @@ it("switches protocol fields, preserves both drafts and offers current sizes/qua
   expect([...host.querySelectorAll("select")].map(select => select.value)).toEqual(["openai", "custom", "max"]);
 });
 
+it("preserves all protocol drafts and requires explicit Grok and Seedream version contracts", async () => {
+  const options = props();
+  let currentDraft: DrawingDraft = initialDrawingDraft;
+  function Harness() {
+    const [draft, setDraft] = useState<DrawingDraft>({ ...initialDrawingDraft, modelId: "grok", prompt: "synthetic" });
+    currentDraft = draft;
+    return <DrawingWorkspace {...options} draft={draft} onDraftChange={setDraft} models={[
+      ...options.models,
+      { id: "grok", label: "Model ID contains 2.0", protocol: "grok-images" },
+      { id: "grok-other", label: "Unrelated model ID", protocol: "grok-images" },
+      { id: "seedream", label: "Model ID contains 5.0-pro", protocol: "seedream-images" },
+      { id: "openai", label: "OpenAI", protocol: "openai-images" },
+    ]} />;
+  }
+  await act(async () => root.render(<Harness />));
+  const select = (label: string) => host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
+  const change = async (element: HTMLSelectElement | HTMLInputElement, value: string) => {
+    await act(async () => {
+      if (element instanceof HTMLInputElement) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
+        element.dispatchEvent(new Event("input", { bubbles: true }));
+      } else { element.value = value; element.dispatchEvent(new Event("change", { bubbles: true })); }
+    });
+  };
+  const model = () => host.querySelector<HTMLSelectElement>("#drawing-model")!;
+  expect(select("Grok 版本契约").value).toBe("legacy");
+  expect(select("Grok 画质").querySelector<HTMLOptionElement>('[value="medium"]')?.disabled).toBe(true);
+  await change(select("Grok 版本契约"), "2.0");
+  await change(select("Grok 宽高比"), "16:9");
+  await change(select("Grok 分辨率"), "2k");
+  await change(select("Grok 画质"), "medium");
+  await change(model(), "grok-other");
+  expect(select("Grok 版本契约").value).toBe("2.0");
+  expect(select("Grok 画质").value).toBe("medium");
+  await change(select("Grok 版本契约"), "legacy");
+  expect(select("Grok 画质").value).toBe("medium");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("不支持画质参数");
+  expect(button("生成图片").disabled).toBe(true);
+  await change(select("Grok 版本契约"), "2.0");
+  expect(button("生成图片").disabled).toBe(false);
+  await change(select("Grok 画质"), "auto");
+  await change(select("Grok 宽高比"), "21:9");
+  await change(select("Grok 版本契约"), "legacy");
+  expect(select("Grok 宽高比").value).toBe("21:9");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("宽高比仅支持 2.0");
+  expect(button("生成图片").disabled).toBe(true);
+  await change(select("Grok 版本契约"), "2.0");
+  await change(select("Grok 宽高比"), "16:9");
+  await change(select("Grok 画质"), "medium");
+  await change(model(), "seedream");
+  expect(select("Seedream 版本契约").value).toBe("4.5");
+  expect([...select("Seedream 尺寸").options].map(option => option.value)).toEqual(["auto", "2K", "4K", "custom"]);
+  expect(select("Seedream 输出格式").querySelector<HTMLOptionElement>('[value="png"]')?.disabled).toBe(true);
+  await change(select("Seedream 版本契约"), "5.0-pro");
+  expect([...select("Seedream 尺寸").options].map(option => option.value)).toEqual(["auto", "1K", "1.5K", "2K", "custom"]);
+  await change(select("Seedream 尺寸"), "custom");
+  await change(host.querySelector<HTMLInputElement>('[aria-label="Seedream 自定义尺寸"]')!, "2048x2048");
+  await change(select("Seedream 输出格式"), "jpeg");
+  await change(select("Seedream 水印"), "off");
+  await change(select("Seedream 版本契约"), "4.0");
+  expect(select("Seedream 输出格式").value).toBe("jpeg");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("输出格式仅支持 5.0");
+  expect(button("生成图片").disabled).toBe(true);
+  await change(select("Seedream 版本契约"), "5.0-pro");
+  for (const id of ["openai", "configured-image-model", "grok"]) await change(model(), id);
+  expect(select("Grok 宽高比").value).toBe("16:9");
+  expect(select("Grok 分辨率").value).toBe("2k");
+  expect(select("Grok 画质").value).toBe("medium");
+  await change(model(), "seedream");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Seedream 自定义尺寸"]')?.value).toBe("2048x2048");
+  expect(select("Seedream 输出格式").value).toBe("jpeg");
+  expect(select("Seedream 水印").value).toBe("off");
+  expect(currentDraft.modelId).toBe("seedream");
+  expect(currentDraft.grok).toEqual({ modelVersion: "2.0", aspectRatio: "16:9", resolution: "2k", quality: "medium" });
+  expect(options.onGenerate).not.toHaveBeenCalled();
+});
+
+it.each(["grok-images", "seedream-images"] as const)("shows frozen %s parameters and keeps unavailable model controls", async protocol => {
+  const options = props();
+  const frozen: DrawingParameters = protocol === "grok-images"
+    ? { ...parameters, protocol, modelVersion: "2.0", aspectRatio: "16:9", resolution: "2k", quality: "medium" }
+    : { ...parameters, protocol, modelVersion: "5.0-lite", size: "3K", outputFormat: "png", watermark: "off" };
+  const expected = protocol === "grok-images" ? "版本：2.0 · 宽高比：16:9 · 分辨率：2k · 画质：medium"
+    : "版本：5.0-lite · 尺寸：3K · 输出格式：png · 水印：off";
+  await act(async () => root.render(<DrawingWorkspace {...options} models={[]} draft={{ ...initialDrawingDraft, reusedProtocol: protocol }}
+    tasks={[{ ...task, parameters: frozen }]} results={[{ ...result, parameters: frozen }]} selectedResultId={result.id} previewUrl="blob:synthetic" />));
+  expect(host.textContent).toContain(`已保留 ${protocol === "grok-images" ? "Grok Images" : "Seedream Images"} 协议参数`);
+  expect(host.querySelector(".drawing-task-row")?.textContent).toContain(expected);
+  await act(async () => button("展开任务 task-one 详情").click());
+  expect(host.querySelector(".drawing-task-parameters")?.textContent).toContain(expected);
+  expect(host.querySelector(".drawing-result-details")?.textContent).toContain(expected);
+  expect(host.textContent).not.toContain(parameters.baseUrl);
+  expect(button("生成图片").disabled).toBe(true);
+});
+
 it("keeps empty previews and queue defaults while connecting settings", async () => {
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} models={[]} />));
@@ -487,7 +582,7 @@ it("keeps empty previews and queue defaults while connecting settings", async ()
   expect(host.querySelectorAll("img")).toHaveLength(0);
   expect(host.textContent).toContain("生成后的图片会自动显示在这里");
   expect(host.textContent).toContain("暂无生成历史");
-  expect(host.textContent).toContain("请在设置中添加 Gemini 或 OpenAI 绘图连接和模型。");
+  expect(host.textContent).toContain("请在设置中添加 Gemini、OpenAI、Grok 或 Seedream 绘图连接和模型。");
   expect(button("生成图片").disabled).toBe(true);
   expect(button("添加参考图").disabled).toBe(false);
   expect([...host.querySelectorAll<HTMLInputElement>('input[type="number"]')].map(input => input.value)).toEqual(["1", "1"]);

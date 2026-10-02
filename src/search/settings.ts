@@ -5,43 +5,88 @@ export interface SearchSettings {
   numResults: number;
 }
 
-export type ExternalSearchProvider = "exa-mcp" | "exa-api";
+export type ExternalSearchProvider = "exa-mcp" | "exa-api" | "tavily" | "zhipu";
+export interface TavilySearchSettings extends SearchSettings { enabled: boolean; searchDepth: "basic" | "advanced" }
+export type ZhipuSearchEngine = "search_std" | "search_pro" | "search_pro_sogou" | "search_pro_quark";
+export interface ZhipuSearchSettings extends SearchSettings { enabled: boolean; searchEngine: ZhipuSearchEngine }
+export type SearchProfile = SearchSettings | TavilySearchSettings | ZhipuSearchSettings;
 export interface SearchConfiguration {
-  version: 2;
+  version: 3;
   exaMcp: SearchSettings;
   exaApi: SearchSettings;
+  tavily: TavilySearchSettings;
+  zhipu: ZhipuSearchSettings;
 }
 
 export const SEARCH_SETTINGS_KEY = "ayase-studio.search.v1";
+export const SEARCH_SETTINGS_CHANGED = "ayase-search-settings-changed";
+export const searchProfileKeys = { "exa-api": "exaApi", "exa-mcp": "exaMcp", tavily: "tavily", zhipu: "zhipu" } as const;
+export const searchProviderNames: Record<ExternalSearchProvider, string> = { "exa-api": "Exa API", "exa-mcp": "Exa MCP", tavily: "Tavily", zhipu: "智谱" };
 
 type SettingsStorage = Pick<Storage, "getItem" | "setItem">;
 
-export function defaultSearchSettings(provider: ExternalSearchProvider = "exa-mcp"): SearchSettings {
+export function defaultSearchSettings(provider: "exa-mcp" | "exa-api" = "exa-mcp"): SearchSettings {
   return { version: 1, baseUrl: provider === "exa-api" ? "https://api.exa.ai" : "https://mcp.exa.ai/mcp", apiKey: "", numResults: 5 };
 }
 
 export function defaultSearchConfiguration(): SearchConfiguration {
-  return { version: 2, exaMcp: defaultSearchSettings(), exaApi: defaultSearchSettings("exa-api") };
+  return { version: 3, exaMcp: defaultSearchSettings(), exaApi: defaultSearchSettings("exa-api"),
+    tavily: { version: 1, baseUrl: "https://api.tavily.com", apiKey: "", numResults: 5, enabled: false, searchDepth: "basic" },
+    zhipu: { version: 1, baseUrl: "https://open.bigmodel.cn", apiKey: "", numResults: 5, enabled: false, searchEngine: "search_std" } };
 }
 
 export function validateSearchConfiguration(raw: unknown): SearchConfiguration {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("网络搜索配置格式无效。");
   const value = migrateData(raw, searchDataMigration);
-  // The legacy conversion already validates its MCP profile; retain the untouched API default.
-  if ((raw as Record<string, unknown>).version === 1) return value as unknown as SearchConfiguration;
-  if (value.version !== 2 || Object.keys(value).some(key => !["version", "exaMcp", "exaApi"].includes(key))) {
+  if (value.version !== 3 || Object.keys(value).some(key => !backupFields(dataPolicies.search, true).includes(key))) {
     throw new Error("网络搜索配置版本或字段不受支持。");
   }
-  return { version: 2, exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi) };
+  return { version: 3, exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi),
+    tavily: validateTavilySettings(value.tavily), zhipu: validateZhipuSettings(value.zhipu) };
 }
 
 export const searchDataMigration: DataMigration = {
-  version: 2, oldestVersion: 1,
-  migrations: { 1: value => ({ ...defaultSearchConfiguration(), exaMcp: validateSearchSettings(value) }) },
+  version: 3, oldestVersion: 1,
+  migrations: {
+    1: value => ({ version: 2, exaMcp: validateSearchSettings(value), exaApi: defaultSearchSettings("exa-api") }),
+    2: value => {
+      if (Object.keys(value).some(key => !["version", "exaMcp", "exaApi"].includes(key))) throw new Error("网络搜索配置字段不受支持。");
+      return { ...defaultSearchConfiguration(), exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi) };
+    },
+  },
 };
 
-export function searchSettingsFor(config: SearchConfiguration, provider: ExternalSearchProvider): SearchSettings {
-  return provider === "exa-api" ? config.exaApi : config.exaMcp;
+export function searchSettingsFor(config: SearchConfiguration, provider: ExternalSearchProvider): SearchProfile {
+  return config[searchProfileKeys[provider]];
+}
+
+function validateAdditionalSettings(raw: unknown, policy: typeof dataPolicies.tavilyProfile | typeof dataPolicies.zhipuProfile) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("网络搜索配置格式无效。");
+  const value = raw as Record<string, unknown>;
+  if (Object.keys(value).some(key => !backupFields(policy, true).includes(key))) throw new Error("网络搜索配置字段不受支持。");
+  if (typeof value.enabled !== "boolean") throw new Error("搜索服务启用设置无效。");
+  const base = validateSearchSettings({ version: value.version, baseUrl: value.baseUrl, apiKey: value.apiKey, numResults: value.numResults });
+  const url = new URL(base.baseUrl);
+  if (url.search || base.baseUrl.includes("?") || base.baseUrl.includes("#")) throw new Error("搜索服务基础地址不能包含查询参数或片段。");
+  return { value, base, enabled: value.enabled };
+}
+
+export function validateTavilySettings(raw: unknown): TavilySearchSettings {
+  const { value, base, enabled } = validateAdditionalSettings(raw, dataPolicies.tavilyProfile);
+  if (value.searchDepth !== "basic" && value.searchDepth !== "advanced") throw new Error("Tavily 搜索深度不受支持。");
+  return { ...base, enabled, searchDepth: value.searchDepth };
+}
+
+export function validateZhipuSettings(raw: unknown): ZhipuSearchSettings {
+  const { value, base, enabled } = validateAdditionalSettings(raw, dataPolicies.zhipuProfile);
+  if (!["search_std", "search_pro", "search_pro_sogou", "search_pro_quark"].includes(value.searchEngine as string)) throw new Error("智谱搜索引擎不受支持。");
+  return { ...base, enabled, searchEngine: value.searchEngine as ZhipuSearchEngine };
+}
+
+export function assertSearchEnabled(provider: ExternalSearchProvider, settings: SearchProfile): void {
+  if ((provider === "tavily" || provider === "zhipu") && (!("enabled" in settings) || !settings.enabled)) {
+    throw new Error(`${searchProviderNames[provider]} 搜索已关闭，请在网络搜索设置中启用并保存，或重新选择搜索方式。`);
+  }
 }
 
 export function validateSearchSettings(raw: unknown): SearchSettings {
@@ -84,7 +129,7 @@ export function loadSearchConfiguration(storage?: SettingsStorage): SearchConfig
   return validateSearchConfiguration(value);
 }
 
-export function loadSearchSettings(storage?: SettingsStorage, provider: ExternalSearchProvider = "exa-mcp"): SearchSettings {
+export function loadSearchSettings(storage?: SettingsStorage, provider: ExternalSearchProvider = "exa-mcp"): SearchProfile {
   return searchSettingsFor(loadSearchConfiguration(storage), provider);
 }
 
@@ -92,6 +137,7 @@ export function saveSearchConfiguration(config: SearchConfiguration, storage?: S
   const validated = validateSearchConfiguration(config);
   try { (storage ?? localStorage).setItem(SEARCH_SETTINGS_KEY, JSON.stringify(validated)); }
   catch { throw new Error("无法保存网络搜索配置，请重试。"); }
+  if (!storage && typeof window !== "undefined") window.dispatchEvent(new Event(SEARCH_SETTINGS_CHANGED));
   return validated;
 }
 
@@ -107,7 +153,7 @@ export function saveSearchSettings(settings: SearchSettings, storage?: SettingsS
 
 export function validateSearchQuery(text: string): string {
   const query = text.trim();
-  if (!query) throw new Error("请输入搜索问题，或关闭 Exa 搜索。");
+  if (!query) throw new Error("请输入搜索问题，或关闭外部搜索。");
   if (Array.from(query).length > 2000) throw new Error("搜索问题不能超过 2000 个字符，请缩短后重试。");
   return query;
 }

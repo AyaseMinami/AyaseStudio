@@ -1,5 +1,21 @@
 # Ayase Studio Architecture
 
+## Built-in suppliers and avatars (#100)
+
+Image avatar containers are transparent across suppliers, assistants and users. Local crop encoding and bundled-brand PNG materialization preserve Alpha without a background fill; bundled marks use the same 216px contained artwork within a 256px snapshot as their 7.8125% display padding. Five monochrome marks adapt to the active theme; an independent PNG snapshot captures that selected appearance, and later theme changes do not rewrite its pixels. Automatic initials and legacy named fallback colors remain derived display choices. Existing independently owned image snapshots are not rewritten. This changes assets and rendering only, with no schema, preference, reference or backup-format change.
+
+`providerPresets.ts` owns 11 editable default suppliers. Explicit runtime initialization appends defaults once without name inference; reads and backup migrations stay pure. Optional preset identities own reset provenance independently of actual protocols and avatars. Shared bundled brands are read-only; `providerAvatars.ts` owns immutable images and strict clone-based reads. Avatar updates fence settings and maintenance through image and synchronous preference commits. Connections module v5 conditionally backs up referenced images; Dexie v9 adds their registered table. Merge keeps local supplier identity, clears foreign reset provenance and strictly validates final configuration. See [#100](ISSUE-100-IMPLEMENTATION.md).
+
+## External search providers (#82)
+
+Tavily and Zhipu are explicit client-managed search steps alongside Exa API/MCP. Their adapters own endpoint/auth/payload/response handling behind the existing search runtime; shared JSON reception enforces cancellation, timeout, response budgets and redirection refusal. Session preflight freezes the selected independent profile and blocks disabled services before chat writes. Settings save events update both chat selectors. Search configuration/module v3 owns the new identities across settings, sessions and history; old records migrate in memory with new services disabled. See [scope, contracts and verification](ISSUE-82-IMPLEMENTATION.md).
+
+## Grok and Seedream drawing integration (#103)
+
+`grok-images` and `seedream-images` join the shared service protocol registry, while `isDrawingProtocol` keeps their targets out of chat. Settings previews and adapters share `urlResolution.ts`; Seedream model IDs are added manually. Adapters own JSON reference mapping and explicit version contracts. `jsonImages.ts` owns bounded responses, authentication and unknown-outcome handling; signature-based MIME recognition precedes mandatory native decoding/saving. The existing application-owned queue, frozen snapshots and resource ownership remain in control.
+
+Drafts add optional `grok` and `seedream` groups; history stores the selected protocol fields only. Connection module v4 (local record v3), drawing settings v3 and excluded history v2 record the contracts; Dexie v8, backup document v5 and envelope v1 remain. Shared clone-based readers preserve old records without writes; unknown structures fail before recovery/cleanup. Explicit new protocol PNG parameters use `ayase_parameters`, with no invented GNBP mapping. See [implementation and acceptance](ISSUE-103-IMPLEMENTATION.md).
+
 ## Chat generation statistics (#107)
 
 Protocol adapters own usage normalization; the neutral `ChatEvent` exposes cumulative `usage-update` and completed usage. `GenerationMeasurement` uses a monotonic clock starting immediately before the chat transport invocation, records nonempty visible text and observable thinking separately, and freezes at terminal processing. The captured conversation store owns each invocation; switching views cannot move its measurements. Replies store a versioned `generationMetrics` array, continuation appends a request and regeneration retains the old measurement in round history. The shared pure reader validates local and backup records before writes; recursive restart recovery marks streaming measurements aborted without inventing offline duration. `GenerationStats` renders the current conversation's latest invocation below the composer and exposes reply/request details. See [#107](ISSUE-107-IMPLEMENTATION.md).

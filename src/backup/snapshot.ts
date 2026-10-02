@@ -1,4 +1,5 @@
 import { readAppearancePreferences } from "../appearance/appearance";
+import { readProviderAvatarEntry } from "../avatar/providerAvatars";
 import { readAssistantAvatarSelection } from "../avatar/assistantDefaults";
 import { loadConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
 import { bytesToBase64 } from "../chat/attachments";
@@ -59,6 +60,7 @@ function message(v: Record<string, any>, pair = false): Record<string, any> {
 }
 export function exportConnections(state: ConnectionSettingsState, credentials: boolean) {
   return { ...pick(state, backupFields(dataPolicies.connections)), providers: state.providers.map(p => ({ ...pick(p, backupFields(dataPolicies.provider)),
+    ...(p.avatar ? { avatar: pick(p.avatar, backupFields(dataPolicies.providerAvatar)) } : {}),
     connections: p.connections.map(c => ({ ...pick(c, backupFields(dataPolicies.connection, credentials)),
       models: c.models.map(m => pick(m, backupFields(dataPolicies.model))) })) })) };
 }
@@ -74,6 +76,13 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
   rows.workspace = snapshot.rows.workspace.map(s => pick(s, backupFields(dataPolicies.workspace)));
   rows.avatarLibrary = snapshot.rows.avatarLibrary.map(a => ({ ...pick(a, backupFields(dataPolicies.avatarLibrary)), avatar: avatar(a.avatar) }));
   rows.userAvatar = snapshot.rows.userAvatar.map(a => ({ ...pick(a, backupFields(dataPolicies.userAvatar)), ...(a.value ? { value: avatar(a.value) } : {}) }));
+  const connectionState = options.connections ? loadConnectionSettings({ getItem: key => snapshot.preferences[key] ?? null, setItem: () => {} }) : undefined;
+  const providerImageIds = new Set(connectionState?.providers.flatMap(p => p.avatar?.kind === "image" ? [p.avatar.id] : []) ?? []);
+  const providerImages = (snapshot.rows.providerAvatars ?? []).map(readProviderAvatarEntry);
+  check([...providerImageIds].every(id => providerImages.some(a => a.id === id)), "供应商头像缺失，未生成备份。");
+  if (providerImageIds.size) rows.providerAvatars = providerImages.filter(a => providerImageIds.has(a.id)).map(a => ({
+    ...pick(a, backupFields(dataPolicies.providerAvatars)), value: avatar(a.value),
+  }));
   rows.cherryImports = snapshot.rows.cherryImports.map(m => pick(m, backupFields(dataPolicies.cherryImports)));
   rows.legacyConversationConfigs = snapshot.rows.legacyConversationConfigs.map(l => ({ ...pick(l, backupFields(dataPolicies.legacyConversationConfigs)), ...(l.generationConfig ? { generationConfig: session(l.generationConfig) } : {}) }));
   const storage = { getItem: (key: string) => snapshot.preferences[key] ?? null, setItem: () => {} };
@@ -121,7 +130,9 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
   }
   const configuration = loadSearchConfiguration(storage);
   const profileFields = backupFields(dataPolicies.searchProfile, options.credentials);
-  const searchSettings = { version: 2, exaMcp: pick(configuration.exaMcp, profileFields), exaApi: pick(configuration.exaApi, profileFields) } as BackupDocument["searchSettings"];
+  const searchSettings = { version: 3, exaMcp: pick(configuration.exaMcp, profileFields), exaApi: pick(configuration.exaApi, profileFields),
+    tavily: pick(configuration.tavily, backupFields(dataPolicies.tavilyProfile, options.credentials)),
+    zhipu: pick(configuration.zhipu, backupFields(dataPolicies.zhipuProfile, options.credentials)) } as BackupDocument["searchSettings"];
   const encodedReport = snapshot.preferences[DATA_COMPATIBILITY_KEY];
   const filteredParameters: unknown = encodedReport ? JSON.parse(encodedReport) : [];
   validateFilteredParameters(filteredParameters);

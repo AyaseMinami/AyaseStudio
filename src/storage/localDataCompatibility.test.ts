@@ -9,7 +9,7 @@ import {
 } from "../chat/settings";
 import {
   defaultSearchConfiguration, defaultSearchSettings, loadSearchConfiguration,
-  saveSearchConfiguration, saveSearchSettings, SEARCH_SETTINGS_KEY,
+  saveSearchConfiguration, saveSearchSettings, SEARCH_SETTINGS_KEY, validateSearchConfiguration,
 } from "../search/settings";
 import { AyaseDatabase } from "./database";
 import { DataContractError } from "./dataContract";
@@ -34,15 +34,16 @@ function legacyConnections() {
 }
 
 describe("shared local preference compatibility", () => {
-  it("migrates search v1 to v2 in memory, preserves MCP configuration and isolates the new API default", () => {
+  it("migrates search v1 through v2 to v3 in memory, preserves MCP and leaves new providers disabled", () => {
     const legacy = { version: 1, baseUrl: "https://search.example.invalid/mcp", apiKey: "synthetic-search", numResults: 8 };
     const encoded = JSON.stringify(legacy);
     const storage = memoryStorage({ [SEARCH_SETTINGS_KEY]: encoded });
     const first = loadSearchConfiguration(storage);
-    expect(first).toEqual({ version: 2, exaMcp: legacy, exaApi: defaultSearchConfiguration().exaApi });
+    expect(first).toEqual(validateSearchConfiguration(legacy));
+    expect(first.tavily.enabled).toBe(false); expect(first.zhipu.enabled).toBe(false);
     first.exaApi.numResults = 1;
     first.exaMcp.apiKey = "modified-in-memory";
-    expect(loadSearchConfiguration(storage)).toEqual({ version: 2, exaMcp: legacy, exaApi: defaultSearchConfiguration().exaApi });
+    expect(loadSearchConfiguration(storage)).toEqual(validateSearchConfiguration(legacy));
     expect(storage.entries.get(SEARCH_SETTINGS_KEY)).toBe(encoded);
     expect(storage.setItem).not.toHaveBeenCalled();
     expect(legacy).toEqual(JSON.parse(encoded));

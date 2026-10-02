@@ -2,6 +2,9 @@ import type { ConnectionSettingsState } from "../chat/settings";
 import { getDrawingTarget } from "../chat/settings";
 import { ImageGenerationError, validateDrawingParameters } from "./geminiImage";
 import { validateOpenAIImagesParameters } from "./openaiImages";
+import { initialGrokDrawingOptions, validGrokDrawingOptions, validateGrokImagesParameters } from "./grokImages";
+import { initialSeedreamDrawingOptions, validSeedreamDrawingOptions, validateSeedreamImagesParameters } from "./seedreamImages";
+import { isDrawingProtocol } from "../chat/protocolOptions";
 import { captureReference, managedReferences, prepareReferences, readVerifiedReference } from "./referenceSession";
 import { drawingExportParameters } from "./exportParameters";
 import { validGeminiDrawingOptions } from "./geminiOptions";
@@ -61,7 +64,15 @@ function validateOwnership(saved: DrawingSnapshot): void {
   };
   const parameters = (item: DrawingParameters) => {
     fields(item, dataPolicies.drawingParameters);
-    if (!item || !["gemini-image", "openai-images"].includes(item.protocol)) throw new Error("Unknown drawing protocol");
+    if (!item || !isDrawingProtocol(item.protocol)) throw new Error("Unknown drawing protocol");
+    const common = ["prompt", "providerId", "connectionId", "configuredModelId", "modelId", "modelName", "baseUrl", "references", "protocol"];
+    const protocolFields = item.protocol === "gemini-image" ? ["aspectRatio", "resolution", "gemini"]
+      : item.protocol === "openai-images" ? ["size", "quality"]
+      : item.protocol === "grok-images" ? ["modelVersion", "aspectRatio", "resolution", "quality"]
+      : ["modelVersion", "size", "outputFormat", "watermark"];
+    if (Object.keys(item).some(key => ![...common, ...protocolFields].includes(key))) throw new Error("Mismatched drawing protocol fields");
+    if (item.protocol === "grok-images" && !validGrokDrawingOptions({ modelVersion: item.modelVersion, aspectRatio: item.aspectRatio, resolution: item.resolution, quality: item.quality })) throw new Error("Invalid Grok drawing settings");
+    if (item.protocol === "seedream-images" && !validSeedreamDrawingOptions({ modelVersion: item.modelVersion, size: item.size, outputFormat: item.outputFormat, watermark: item.watermark })) throw new Error("Invalid Seedream drawing settings");
     for (const [key, value] of Object.entries(item)) if (key !== "references" && key !== "gemini" && value !== undefined && typeof value !== "string")
       throw new Error("Invalid drawing parameter structure");
     if ("gemini" in item && item.gemini !== undefined && (item.protocol !== "gemini-image" || !validGeminiDrawingOptions(item.gemini))) throw new Error("Invalid Gemini drawing settings");
@@ -209,6 +220,9 @@ export class DrawingController {
       this.publish({ error: "Gemini 高级参数无效，请检查温度、安全阈值和输出模式。" });
       return;
     }
+    if ((draft.grok !== undefined && !validGrokDrawingOptions(draft.grok)) || (draft.seedream !== undefined && !validSeedreamDrawingOptions(draft.seedream))) {
+      this.publish({ error: "绘图协议参数结构无效，请检查版本和选项。" }); return;
+    }
     // Session inputs are never implicitly written by a prompt/settings change.
     this.storeDraft({ ...draft, references: this.state.draft.references, ...(draft.modelId ? { reusedProtocol: undefined } : {}) });
     this.pump();
@@ -220,6 +234,8 @@ export class DrawingController {
       ...(draft.reusedProtocol ? { reusedProtocol: draft.reusedProtocol } : {}),
       ...(draft.openai ? { openai: { size: draft.openai.size, quality: draft.openai.quality } } : {}),
       ...(draft.gemini ? { gemini: structuredClone(draft.gemini) } : {}),
+      ...(draft.grok ? { grok: structuredClone(draft.grok) } : {}),
+      ...(draft.seedream ? { seedream: structuredClone(draft.seedream) } : {}),
       ...(draft.references ? { references: draft.references.map(reference => ({ ...reference })) } : {}) };
     this.publish({ draft: next, hasData: true });
     this.draftWrites = this.draftWrites.then(async () => {
@@ -410,7 +426,9 @@ export class DrawingController {
       reusedProtocol: invalid ? parameters.protocol : undefined, references: this.state.draft.references,
       ...(parameters.protocol === "gemini-image" ? { aspectRatio: parameters.aspectRatio, resolution: parameters.resolution,
         gemini: structuredClone(parameters.gemini ?? {}) }
-        : { openai: { size: parameters.size, quality: parameters.quality } }) };
+        : parameters.protocol === "openai-images" ? { openai: { size: parameters.size, quality: parameters.quality } }
+        : parameters.protocol === "grok-images" ? { grok: { modelVersion: parameters.modelVersion, aspectRatio: parameters.aspectRatio, resolution: parameters.resolution, quality: parameters.quality } }
+        : { seedream: { modelVersion: parameters.modelVersion, size: parameters.size, outputFormat: parameters.outputFormat, watermark: parameters.watermark } }) };
     const priorDraft = this.state.draft;
     this.storeDraft(next);
     const reusedDraft = this.state.draft;
@@ -528,13 +546,17 @@ export class DrawingController {
       ...(target.connection.protocol === "gemini-image"
         ? { protocol: "gemini-image" as const, aspectRatio: draft.aspectRatio, resolution: draft.resolution,
           ...(draft.gemini ? { gemini: structuredClone(draft.gemini) } : {}) }
-        : { protocol: "openai-images" as const, size: draft.openai?.size ?? "auto", quality: draft.openai?.quality ?? "auto" }),
+        : target.connection.protocol === "openai-images" ? { protocol: "openai-images" as const, size: draft.openai?.size ?? "auto", quality: draft.openai?.quality ?? "auto" }
+        : target.connection.protocol === "grok-images" ? { protocol: "grok-images" as const, ...structuredClone(draft.grok ?? initialGrokDrawingOptions) }
+        : { protocol: "seedream-images" as const, ...structuredClone(draft.seedream ?? initialSeedreamDrawingOptions) }),
     };
     try {
       if (!Number.isInteger(draft.count ?? 1) || (draft.count ?? 1) < 1 || (draft.count ?? 1) > 99)
         throw new ImageGenerationError("每批数量须为 1–99 的整数。");
       if (parameters.protocol === "gemini-image") validateDrawingParameters(parameters);
-      else validateOpenAIImagesParameters(parameters);
+      else if (parameters.protocol === "openai-images") validateOpenAIImagesParameters(parameters);
+      else if (parameters.protocol === "grok-images") validateGrokImagesParameters(parameters);
+      else validateSeedreamImagesParameters(parameters);
       if (!target.connection.apiKey.trim() || /[\u0000-\u001f\u007f]/.test(target.connection.apiKey)) throw new ImageGenerationError("请先在设置中填写有效的绘图 API Key。");
     } catch (error) { this.publish({ error: error instanceof ImageGenerationError ? error.message
       : "请检查绘图连接；需要有效的 HTTPS 地址、模型与 API Key。" }); return Promise.resolve(); }

@@ -64,6 +64,12 @@ pub struct DrawingExportParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
     api_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    model_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    watermark: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     aspect_ratio: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     resolution: Option<String>,
@@ -104,6 +110,8 @@ impl DrawingExportParameters {
                 &self.resolution,
                 &self.size,
                 &self.quality,
+                &self.model_version,
+                &self.output_format,
             ]
             .iter()
             .any(|value| value.as_ref().is_some_and(|value| value.trim().is_empty()))
@@ -130,6 +138,9 @@ impl DrawingExportParameters {
             "gemini-image"
                 if self.size.is_none()
                     && self.quality.is_none()
+                    && self.model_version.is_none()
+                    && self.output_format.is_none()
+                    && self.watermark.is_none()
                     && self
                         .api_type
                         .as_deref()
@@ -143,7 +154,69 @@ impl DrawingExportParameters {
                     && self.temperature.is_none()
                     && self.safety_threshold.is_none()
                     && self.response_modalities.is_none()
+                    && self.model_version.is_none()
+                    && self.output_format.is_none()
+                    && self.watermark.is_none()
                     && self.api_type.as_deref().is_none_or(|value| value == "gpt") =>
+            {
+                Ok(())
+            }
+            "grok-images"
+                if matches!(self.model_version.as_deref(), Some("legacy" | "2.0"))
+                    && self.aspect_ratio.as_deref().is_none_or(|value| {
+                        matches!(
+                            value,
+                            "auto"
+                                | "1:1"
+                                | "16:9"
+                                | "9:16"
+                                | "4:3"
+                                | "3:4"
+                                | "3:2"
+                                | "2:3"
+                                | "2:1"
+                                | "1:2"
+                                | "19.5:9"
+                                | "9:19.5"
+                                | "20:9"
+                                | "9:20"
+                        ) || (self.model_version.as_deref() == Some("2.0")
+                            && matches!(value, "21:9" | "5:2"))
+                    })
+                    && self
+                        .resolution
+                        .as_deref()
+                        .is_none_or(|value| matches!(value, "auto" | "1k" | "2k"))
+                    && self.quality.as_deref().is_none_or(|value| {
+                        self.model_version.as_deref() == Some("2.0")
+                            && matches!(value, "auto" | "low" | "medium")
+                    })
+                    && self.size.is_none()
+                    && self.output_format.is_none()
+                    && self.watermark.is_none()
+                    && self.api_type.is_none()
+                    && self.temperature.is_none()
+                    && self.safety_threshold.is_none()
+                    && self.response_modalities.is_none() =>
+            {
+                Ok(())
+            }
+            "seedream-images"
+                if matches!(
+                    self.model_version.as_deref(),
+                    Some("4.0" | "4.5" | "5.0-lite" | "5.0-pro" | "5.0-flash")
+                ) && self.output_format.as_deref().is_none_or(|value| {
+                    matches!(
+                        self.model_version.as_deref(),
+                        Some("5.0-lite" | "5.0-pro" | "5.0-flash")
+                    ) && matches!(value, "auto" | "png" | "jpeg")
+                }) && self.aspect_ratio.is_none()
+                    && self.resolution.is_none()
+                    && self.quality.is_none()
+                    && self.api_type.is_none()
+                    && self.temperature.is_none()
+                    && self.safety_threshold.is_none()
+                    && self.response_modalities.is_none() =>
             {
                 Ok(())
             }
@@ -158,18 +231,21 @@ impl DrawingExportParameters {
         fields.retain(|key, value| {
             !matches!(
                 key.as_str(),
-                "aspect_ratio" | "resolution" | "size" | "quality"
+                "aspect_ratio" | "resolution" | "size" | "quality" | "output_format"
             ) || value != "auto"
         });
-        fields.insert(
-            "api_type".into(),
-            if self.protocol == "gemini-image" {
-                "gemini".into()
-            } else {
-                "gpt".into()
-            },
-        );
+        if let Some(api_type) = self.gnbp_api_type() {
+            fields.insert("api_type".into(), api_type.into());
+        }
         serde_json::to_vec(&value).map_err(|_| Error::InvalidParameters)
+    }
+
+    fn gnbp_api_type(&self) -> Option<&'static str> {
+        match self.protocol.as_str() {
+            "gemini-image" => Some("gemini"),
+            "openai-images" => Some("gpt"),
+            _ => None,
+        }
     }
 }
 
@@ -1116,6 +1192,13 @@ fn export_png_with_parameters(
     destination: &Path,
     parameters: Option<&DrawingExportParameters>,
 ) -> Result<(), Error> {
+    let parameter_keyword = parameters.map(|parameters| {
+        if parameters.gnbp_api_type().is_some() {
+            "parameters"
+        } else {
+            "ayase_parameters"
+        }
+    });
     let parameters = parameters.map(DrawingExportParameters::json).transpose()?;
     let input = read(root, value)?;
     let bytes = STANDARD.decode(input.data).map_err(|_| Error::Corrupt)?;
@@ -1127,9 +1210,11 @@ fn export_png_with_parameters(
         .map_err(|_| Error::Storage)?;
     let mut png = png.into_inner();
     if let Some(parameters) = parameters {
-        // Uncompressed iTXt supports Unicode and Pillow's info["parameters"].
+        // Only mapped protocols use GNBP's parameters namespace.
+        // Uncompressed iTXt preserves Unicode in both namespaces.
         // Insert after the freshly encoded PNG's fixed IHDR chunk.
-        let mut text = b"parameters\0\0\0\0\0".to_vec();
+        let mut text = parameter_keyword.unwrap().as_bytes().to_vec();
+        text.extend_from_slice(b"\0\0\0\0\0");
         text.extend_from_slice(&parameters);
         png.splice(33..33, png_chunk(b"iTXt", &text)?);
     }
@@ -2362,8 +2447,12 @@ mod tests {
     }
 
     fn exported_parameters(bytes: &[u8]) -> Option<serde_json::Value> {
+        exported_parameter_chunks(bytes).remove("parameters")
+    }
+
+    fn exported_parameter_chunks(bytes: &[u8]) -> serde_json::Map<String, serde_json::Value> {
         let mut offset = 8;
-        let mut result = None;
+        let mut result = serde_json::Map::new();
         while offset < bytes.len() {
             let length = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
             let name = &bytes[offset + 4..offset + 8];
@@ -2376,14 +2465,278 @@ mod tests {
             assert_eq!(checksum, crc32(&bytes[offset + 4..offset + 8 + length]));
             if matches!(name, b"tEXt" | b"zTXt" | b"iTXt" | b"eXIf") {
                 assert_eq!(name, b"iTXt");
-                let prefix = b"parameters\0\0\0\0\0";
-                assert!(data.starts_with(prefix));
-                assert!(result.is_none());
-                result = Some(serde_json::from_slice(&data[prefix.len()..]).unwrap());
+                let separator = data.iter().position(|byte| *byte == 0).unwrap();
+                let keyword = std::str::from_utf8(&data[..separator]).unwrap();
+                assert!(matches!(keyword, "parameters" | "ayase_parameters"));
+                assert_eq!(&data[separator..separator + 5], b"\0\0\0\0\0");
+                assert!(
+                    result
+                        .insert(
+                            keyword.into(),
+                            serde_json::from_slice(&data[separator + 5..]).unwrap()
+                        )
+                        .is_none()
+                );
             }
             offset += length + 12;
         }
         result
+    }
+
+    #[test]
+    fn new_protocol_parameter_png_uses_only_ayase_namespace_and_plain_export_has_no_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let files = save(
+            root.path(),
+            &Uuid::new_v4().to_string(),
+            &[input(20, ImageFormat::Png)],
+        )
+        .unwrap();
+        let original = std::fs::read(root.path().join(&files[0].reference)).unwrap();
+        for (input, expected) in [
+            (
+                serde_json::json!({
+                    "prompt": "透明的猫 🐈", "model": "synthetic-grok", "protocol": "grok-images",
+                    "model_version": "2.0", "aspect_ratio": "21:9", "resolution": "2k", "quality": "medium"
+                }),
+                serde_json::json!({
+                    "prompt": "透明的猫 🐈", "model": "synthetic-grok", "protocol": "grok-images",
+                    "model_version": "2.0", "aspect_ratio": "21:9", "resolution": "2k", "quality": "medium"
+                }),
+            ),
+            (
+                serde_json::json!({
+                    "prompt": "透明的猫 🐈", "model": "synthetic-seedream", "protocol": "seedream-images",
+                    "model_version": "5.0-lite", "size": "2048x1536", "output_format": "jpeg", "watermark": false
+                }),
+                serde_json::json!({
+                    "prompt": "透明的猫 🐈", "model": "synthetic-seedream", "protocol": "seedream-images",
+                    "model_version": "5.0-lite", "size": "2048x1536", "output_format": "jpeg", "watermark": false
+                }),
+            ),
+        ] {
+            let parameters: DrawingExportParameters = serde_json::from_value(input).unwrap();
+            let destination = output.path().join(format!("{}.png", parameters.protocol));
+            export_png_with_parameters(
+                root.path(),
+                &files[0].reference,
+                &destination,
+                Some(&parameters),
+            )
+            .unwrap();
+            let bytes = std::fs::read(&destination).unwrap();
+            let chunks = exported_parameter_chunks(&bytes);
+            assert_eq!(chunks.len(), 1);
+            assert!(!chunks.contains_key("parameters"));
+            assert_eq!(chunks.get("ayase_parameters"), Some(&expected));
+            assert!(chunks["ayase_parameters"].get("api_type").is_none());
+            assert_eq!(
+                decode_image(&bytes, "image/png").unwrap().to_rgba8(),
+                decode_image(&original, "image/png").unwrap().to_rgba8()
+            );
+            export_png(root.path(), &files[0].reference, &destination).unwrap();
+            assert!(exported_parameter_chunks(&std::fs::read(destination).unwrap()).is_empty());
+        }
+        assert_eq!(
+            std::fs::read(root.path().join(&files[0].reference)).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn new_protocol_export_omits_auto_fields_and_preserves_explicit_profiles() {
+        for profile in ["legacy", "2.0"] {
+            for ratio in [
+                "auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "19.5:9",
+                "9:19.5", "20:9", "9:20", "21:9", "5:2",
+            ] {
+                let mut input = serde_json::json!({
+                    "prompt": "test", "model": "synthetic", "protocol": "grok-images",
+                    "model_version": profile, "aspect_ratio": ratio, "resolution": "auto"
+                });
+                if profile == "2.0" {
+                    input["quality"] = "auto".into();
+                }
+                let parameters: DrawingExportParameters = serde_json::from_value(input).unwrap();
+                if profile == "legacy" && matches!(ratio, "21:9" | "5:2") {
+                    assert_eq!(parameters.json(), Err(Error::InvalidParameters));
+                    continue;
+                }
+                let mut expected = serde_json::json!({
+                    "prompt": "test", "model": "synthetic", "protocol": "grok-images", "model_version": profile
+                });
+                if ratio != "auto" {
+                    expected["aspect_ratio"] = ratio.into();
+                }
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&parameters.json().unwrap())
+                        .unwrap(),
+                    expected
+                );
+            }
+        }
+        for profile in ["4.0", "4.5", "5.0-lite", "5.0-pro", "5.0-flash"] {
+            for watermark in [false, true] {
+                let mut input = serde_json::json!({
+                    "prompt": "test", "model": "synthetic", "protocol": "seedream-images",
+                    "model_version": profile, "size": "auto", "watermark": watermark
+                });
+                if profile.starts_with("5.0-") {
+                    input["output_format"] = "auto".into();
+                }
+                let parameters: DrawingExportParameters = serde_json::from_value(input).unwrap();
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&parameters.json().unwrap())
+                        .unwrap(),
+                    serde_json::json!({
+                        "prompt": "test", "model": "synthetic", "protocol": "seedream-images",
+                        "model_version": profile, "watermark": watermark
+                    })
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn new_protocol_export_rejects_invalid_parameters_without_writes() {
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let files = save(
+            root.path(),
+            &Uuid::new_v4().to_string(),
+            &[input(20, ImageFormat::Png)],
+        )
+        .unwrap();
+        let destination = output.path().join("refused.png");
+        let mut cases = Vec::new();
+        for (protocol, profile, forbidden) in [
+            (
+                "grok-images",
+                "2.0",
+                vec![
+                    serde_json::json!({"size": "1024x1024"}),
+                    serde_json::json!({"output_format": "png"}),
+                    serde_json::json!({"watermark": false}),
+                    serde_json::json!({"aspect_ratio": "100:1"}),
+                    serde_json::json!({"aspect_ratio": " "}),
+                    serde_json::json!({"resolution": "2K"}),
+                    serde_json::json!({"quality": "high"}),
+                    serde_json::json!({"model_version": "future"}),
+                    serde_json::json!({"model_version": "legacy", "quality": "auto"}),
+                    serde_json::json!({"model_version": "legacy", "quality": "low"}),
+                    serde_json::json!({"model_version": "legacy", "aspect_ratio": "21:9"}),
+                    serde_json::json!({"model_version": "legacy", "aspect_ratio": "5:2"}),
+                ],
+            ),
+            (
+                "seedream-images",
+                "5.0-lite",
+                vec![
+                    serde_json::json!({"aspect_ratio": "auto"}),
+                    serde_json::json!({"resolution": "auto"}),
+                    serde_json::json!({"quality": "auto"}),
+                    serde_json::json!({"size": " "}),
+                    serde_json::json!({"output_format": "webp"}),
+                    serde_json::json!({"model_version": "future"}),
+                    serde_json::json!({"model_version": "4.0", "output_format": "auto"}),
+                    serde_json::json!({"model_version": "4.5", "output_format": "png"}),
+                ],
+            ),
+        ] {
+            let base = serde_json::json!({
+                "prompt": "test", "model": "synthetic", "protocol": protocol, "model_version": profile
+            });
+            for extra in forbidden.into_iter().chain([
+                serde_json::json!({"api_type": "gpt"}),
+                serde_json::json!({"api_type": "gemini"}),
+                serde_json::json!({"temperature": 1}),
+                serde_json::json!({"safety_threshold": "OFF"}),
+                serde_json::json!({"response_modalities": ["IMAGE"]}),
+                serde_json::json!({"model_version": null}),
+                serde_json::json!({"model": " "}),
+            ]) {
+                let mut value = base.clone();
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(extra.as_object().unwrap().clone());
+                cases.push(value);
+            }
+            for key in [
+                "api_key",
+                "api_url",
+                "base_url",
+                "connectionId",
+                "reference",
+                "output_dir",
+                "unexpected",
+            ] {
+                let mut value = base.clone();
+                value[key] = "SECRET-C:/private/file.png".into();
+                assert!(
+                    serde_json::from_value::<DrawingExportParameters>(value).is_err(),
+                    "{key}"
+                );
+            }
+            for extra in [
+                serde_json::json!({"watermark": "false"}),
+                serde_json::json!({"model_version": 2}),
+                serde_json::json!({"output_format": true}),
+            ] {
+                let mut value = base.clone();
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(extra.as_object().unwrap().clone());
+                assert!(
+                    serde_json::from_value::<DrawingExportParameters>(value).is_err(),
+                    "{extra}"
+                );
+            }
+        }
+        for protocol in ["gemini-image", "openai-images"] {
+            for extra in [
+                serde_json::json!({"model_version": "2.0"}),
+                serde_json::json!({"output_format": "png"}),
+                serde_json::json!({"watermark": false}),
+            ] {
+                let mut value = serde_json::json!({"prompt": "test", "model": "synthetic", "protocol": protocol});
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(extra.as_object().unwrap().clone());
+                cases.push(value);
+            }
+        }
+        for value in cases {
+            let parameters: DrawingExportParameters =
+                serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(
+                export_png_with_parameters(
+                    root.path(),
+                    &files[0].reference,
+                    &destination,
+                    Some(&parameters)
+                ),
+                Err(Error::InvalidParameters),
+                "{value}"
+            );
+            assert!(!destination.exists());
+            std::fs::write(&destination, b"existing-export").unwrap();
+            assert_eq!(
+                export_png_with_parameters(
+                    root.path(),
+                    &files[0].reference,
+                    &destination,
+                    Some(&parameters)
+                ),
+                Err(Error::InvalidParameters),
+                "{value}"
+            );
+            assert_eq!(std::fs::read(&destination).unwrap(), b"existing-export");
+            std::fs::remove_file(&destination).unwrap();
+        }
     }
 
     #[test]

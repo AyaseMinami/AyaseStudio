@@ -15,7 +15,7 @@ export interface SearchCitation {
 }
 
 export interface SearchRecord {
-  provider?: "exa-mcp" | "exa-api";
+  provider?: import("../search/settings").ExternalSearchProvider;
   warning?: string;
   enabled: boolean;
   status: "pending" | "searching" | "completed" | "not-used" | "failed" | "cancelled";

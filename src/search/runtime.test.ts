@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { defaultSearchSettings } from "./settings";
+import { defaultSearchConfiguration, defaultSearchSettings } from "./settings";
 const native = vi.hoisted(() => ({ fetch: vi.fn(), imports: 0 }));
 const nativeFetch = native.fetch;
 vi.mock("@tauri-apps/plugin-http", () => { native.imports += 1; return { fetch: native.fetch }; });
@@ -38,5 +38,15 @@ it("dispatches Exa API explicitly with one REST call and the same native redirec
   expect(init.maxRedirections).toBe(0);
   expect(init.redirect).toBe("error");
   expect(JSON.parse(init.body)).toEqual({ query: "query", numResults: 5, type: "auto", contents: { text: true } });
+});
+
+it.each(["tavily", "zhipu"] as const)("dispatches %s through native HTTP with redirects disabled and independent authentication", async provider => {
+  const settings = { ...defaultSearchConfiguration()[provider], apiKey: "synthetic-new-key" };
+  nativeFetch.mockResolvedValue(new Response(JSON.stringify(provider === "tavily"
+    ? { results: [{ title: "Test", url: "https://source.example", content: "excerpt" }] }
+    : { search_result: [{ title: "Test", link: "https://source.example", content: "excerpt" }] }), { headers: { "content-type": "application/json" } }));
+  expect((await searchExa(settings, "query", undefined, provider)).sources).toHaveLength(1);
+  expect(nativeFetch).toHaveBeenCalledOnce();
+  expect(nativeFetch.mock.calls[0][1]).toMatchObject({ redirect: "error", maxRedirections: 0, credentials: "omit", headers: { Authorization: "Bearer synthetic-new-key" } });
 });
 

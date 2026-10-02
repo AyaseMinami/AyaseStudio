@@ -170,7 +170,7 @@ describe("App navigation", () => {
 
   it("keeps one drawing request running across chat navigation and automatically previews its saved result", async () => {
     const settings: ConnectionSettingsState = {
-      version: 3, activeModelId: "chat-model",
+      version: 3, activeModelId: "chat-model", builtinsInitialized: true,
       providers: [{ id: "synthetic-provider", name: "合成服务", connections: [
         { id: "chat-connection", name: "聊天连接", protocol: "openai-chat", baseUrl: "https://synthetic.example.invalid/v1",
           apiKey: "synthetic-chat-key", models: [{ id: "chat-model", modelId: "synthetic-chat", displayName: "聊天测试模型" }] },
@@ -255,7 +255,7 @@ describe("App navigation", () => {
 
   it("reorders only provider groups through drag and menu actions, retaining the selected connection", async () => {
     saveConnectionSettings({
-      version: 3, activeModelId: "model-a",
+      version: 3, activeModelId: "model-a", builtinsInitialized: true,
       providers: ["a", "b", "c"].map((id) => ({
         id, name: id.toUpperCase(), connections: [{
           id: `connection-${id}`, name: `线路 ${id}`, protocol: "openai-chat",
@@ -590,7 +590,7 @@ describe("App navigation", () => {
     await clickButton("设置");
     expect(container.querySelector("textarea")).toBeNull();
     expect(container.textContent).toContain("连接配置");
-    expect(container.textContent).toContain("添加供应商");
+    expect(container.querySelector('button[aria-label="添加供应商"]')).not.toBeNull();
 
     await clickButton("外观");
     expect(container.textContent).toContain("主题模式");

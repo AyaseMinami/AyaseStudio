@@ -4,6 +4,7 @@
 .assistant-avatar-blue { background: #dbeafe; color: #1d4ed8; }
 .assistant-avatar-green { background: #dcfce7; color: #166534; }
 .assistant-avatar-violet { background: #ede9fe; color: #6d28d9; }
+.assistant-avatar.assistant-avatar-image { background: transparent; }
 .assistant-avatar-legacy { font-size: 20px; line-height: 1; }
 .assistant-avatar-initial { font-size: 1.125rem; font-weight: 600; line-height: 1; }
 .assistant-avatar-editor { display: grid; gap: 12px; }

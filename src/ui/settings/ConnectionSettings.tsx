@@ -42,12 +42,20 @@ import {
   resolveGenerationEndpoint,
   resolveImageGenerationEndpoint,
   resolveOpenAIImagesEndpoint,
+  resolveGrokImagesEndpoint,
+  resolveSeedreamImagesEndpoint,
   UrlResolutionError,
 } from "../../chat/urlResolution";
 import "./ConnectionSettings.css";
 import { SettingsHelp } from "./SettingsHelp";
 import { ActionMenu, isContextMenuKey, isEditableContextTarget, useActionMenu, type ActionMenuItem } from "../ActionMenu";
 import { useConnectionTreeDrag } from "./useConnectionTreeDrag";
+import { getConnectionTemplate, presetCatalogOptions } from "../../chat/providerPresets";
+import type { ProviderAvatarSelection } from "../../avatar/brandIds";
+import type { UserAvatar } from "../../avatar/repository";
+import { ProviderAvatar } from "../avatar/ProviderAvatar";
+import { BrandAvatar } from "../avatar/BrandAvatar";
+import { AvatarModal, AvatarLibraryPanel } from "../avatar/AvatarLibrary";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -67,7 +75,9 @@ export interface ConnectionSettingsProps {
     modelId: string,
     displayName?: string,
   ): string;
-  onAddProvider(templateId: ProviderTemplateId): string;
+  onAddProvider(templateId: ProviderTemplateId, name?: string): string;
+  onProviderAvatarChange?(providerId: string, avatar: ProviderAvatarSelection | UserAvatar | undefined): Promise<boolean>;
+  onResetConnection?(connectionId: string): void;
   onCancelModelCatalogRefresh(connectionId: string): void;
   onCancelModelTest(modelId: string): void;
   onConnectionChange(
@@ -132,6 +142,7 @@ function connectionHost(baseUrl: string): string {
 interface GenerationPreview {
   normalizedBaseUrl?: string;
   resolvedEndpoint?: string;
+  editEndpoint?: string;
   note?: string;
   error?: string;
 }
@@ -147,9 +158,15 @@ function generationPreview(
   try {
     if (isDrawingProtocol(connection.protocol)) {
       const normalizedBaseUrl = normalizeBaseUrl(connection.protocol, connection.baseUrl);
-      return modelId ? { normalizedBaseUrl, resolvedEndpoint: connection.protocol === "openai-images"
-        ? resolveOpenAIImagesEndpoint(connection.baseUrl, modelId) : resolveImageGenerationEndpoint(connection.baseUrl, modelId) }
-        : { normalizedBaseUrl, note: "添加模型后可预览绘图生成端点；请在绘图页生成图片验证。" };
+      if (!modelId) return { normalizedBaseUrl, note: "添加模型后可预览绘图生成端点；请在绘图页生成图片验证。" };
+      if (connection.protocol === "grok-images") return { normalizedBaseUrl,
+        resolvedEndpoint: resolveGrokImagesEndpoint(connection.baseUrl, modelId),
+        editEndpoint: resolveGrokImagesEndpoint(connection.baseUrl, modelId, "edits") };
+      if (connection.protocol === "seedream-images") return { normalizedBaseUrl,
+        resolvedEndpoint: resolveSeedreamImagesEndpoint(connection.baseUrl, modelId),
+        editEndpoint: resolveSeedreamImagesEndpoint(connection.baseUrl, modelId) };
+      return { normalizedBaseUrl, resolvedEndpoint: connection.protocol === "openai-images"
+        ? resolveOpenAIImagesEndpoint(connection.baseUrl, modelId) : resolveImageGenerationEndpoint(connection.baseUrl, modelId) };
     }
     if (connection.protocol === "gemini-native" && !modelId) {
       return {
@@ -255,6 +272,8 @@ export function ConnectionSettings({
   onAddConnection,
   onAddModel,
   onAddProvider,
+  onProviderAvatarChange,
+  onResetConnection,
   onCancelModelCatalogRefresh,
   onCancelModelTest,
   onConnectionChange,
@@ -279,7 +298,18 @@ export function ConnectionSettings({
       null,
   );
   const [isAddingConnection, setIsAddingConnection] = useState(false);
-  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => new Set());
+  const [isAddingProvider, setIsAddingProvider] = useState(false);
+  const [providerDraftError, setProviderDraftError] = useState<string>();
+  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => new Set(
+    connectionSettings.providers.filter(provider => provider.presetId && provider.id !== initialProviderId).map(provider => provider.id)));
+  const [avatarProviderId, setAvatarProviderId] = useState<string>();
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [avatarPanelBusy, setAvatarPanelBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string>();
+  const avatarLock = useRef(false);
+  const mounted = useRef(false);
+  const currentScope = useRef({ connectionSettings, selectedProviderId, selectedConnectionId, isStreaming });
+  currentScope.current = { connectionSettings, selectedProviderId, selectedConnectionId, isStreaming };
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
@@ -297,6 +327,8 @@ export function ConnectionSettings({
     },
   });
   const providerCreateRef = useRef<HTMLDetailsElement>(null);
+  const providerDraftRef = useRef<HTMLInputElement>(null);
+  const providerCreateButtonRef = useRef<HTMLButtonElement>(null);
   const catalogDialogRef = useRef<HTMLElement>(null);
   const catalogTriggerRef = useRef<HTMLButtonElement>(null);
   const providerAddConnectionRef = useRef<HTMLButtonElement>(null);
@@ -311,6 +343,13 @@ export function ConnectionSettings({
   const selectedConnection = selectedProvider?.connections.find(
     (connection) => connection.id === selectedConnectionId,
   );
+  const catalogOptions = presetCatalogOptions(selectedProvider, selectedConnection);
+  const avatarProvider = connectionSettings.providers.find(provider => provider.id === avatarProviderId);
+
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { if (isAddingProvider) providerDraftRef.current?.focus(); }, [isAddingProvider]);
+  useEffect(() => { setAvatarProviderId(undefined); setAvatarError(undefined); }, [selectedProviderId, selectedConnectionId]);
+  useEffect(() => { if (isStreaming || !avatarProvider) setAvatarProviderId(undefined); }, [isStreaming, avatarProvider]);
   const catalog = selectedConnection
     ? (modelCatalogs[selectedConnection.id] ?? idleCatalog)
     : idleCatalog;
@@ -369,6 +408,10 @@ export function ConnectionSettings({
     setIsAddingModel(false);
     setFormError(undefined);
   }, [selectedConnectionId]);
+
+  useEffect(() => {
+    if (selectedConnection?.protocol === "seedream-images" || catalogOptions?.manualCatalog) setCatalogOpen(false);
+  }, [selectedConnection?.protocol, catalogOptions?.manualCatalog]);
 
   useEffect(() => {
     if (!catalogOpen) return;
@@ -464,12 +507,48 @@ export function ConnectionSettings({
     return true;
   }
 
-  function handleCreateProvider(templateId: ProviderTemplateId): void {
-    if (!confirmDiscardModelEdit()) return;
-    const providerId = onAddProvider(templateId);
+  function handleCreateProvider(templateId: ProviderTemplateId, name?: string): void {
+    if (isStreaming || !confirmDiscardModelEdit()) return;
+    if (templateId !== "custom" && connectionSettings.providers.some(provider => provider.presetId === templateId)) return;
+    const providerId = onAddProvider(templateId, name);
     setSelectedProviderId(providerId);
     setSelectedConnectionId(null);
     setIsAddingConnection(false);
+    setIsAddingProvider(false);
+    setProviderDraftError(undefined);
+    setPendingFocus({ kind: "provider", id: providerId });
+  }
+
+  function cancelProviderDraft() {
+    setIsAddingProvider(false); setProviderDraftError(undefined);
+    queueMicrotask(() => providerCreateButtonRef.current?.focus());
+  }
+
+  async function applyProviderAvatar(providerId: string, value: ProviderAvatarSelection | UserAvatar | undefined) {
+    if (avatarLock.current || !onProviderAvatarChange || currentScope.current.isStreaming
+      || !currentScope.current.connectionSettings.providers.some(provider => provider.id === providerId)) return;
+    const scope = currentScope.current;
+    avatarLock.current = true; setAvatarSaving(true); setAvatarError(undefined);
+    try {
+      const saved = await onProviderAvatarChange(providerId, value);
+      if (!mounted.current || currentScope.current.selectedProviderId !== scope.selectedProviderId
+        || currentScope.current.selectedConnectionId !== scope.selectedConnectionId) return;
+      if (saved) setAvatarProviderId(undefined);
+      else setAvatarError("头像未保存，请重试。");
+    } catch (error) {
+      if (mounted.current && currentScope.current.selectedProviderId === scope.selectedProviderId
+        && currentScope.current.selectedConnectionId === scope.selectedConnectionId)
+        setAvatarError(error instanceof Error ? error.message : "头像保存失败，请重试。");
+    } finally {
+      avatarLock.current = false;
+      if (mounted.current) setAvatarSaving(false);
+    }
+  }
+
+  function resetConnection(connection: ConnectionProfile) {
+    const defaults = getConnectionTemplate(selectedProvider?.presetId, connection.presetProtocol);
+    if (isStreaming || !defaults || !onResetConnection) return;
+    if (window.confirm(`将连接“${connection.name}”恢复为内置默认值？\n名称：${defaults.name}\n协议：${getProtocolOption(defaults.protocol).label}\nBase URL：${defaults.baseUrl}\n保留 API Key 和已添加模型。`)) onResetConnection(connection.id);
   }
 
   function handleDeleteProvider(provider: ProviderGroup): void {
@@ -579,6 +658,12 @@ export function ConnectionSettings({
     if (menuConnection) entityItems.push({ id: "edit", label: "编辑", icon: <Pencil size={15} />,
       accessibleLabel: `编辑连接 ${menuConnection.name}`, disabled: isStreaming,
       onSelect: () => { if (!isStreaming) selectConnection(menuProvider.id, menuConnection.id); } });
+    if (!menuConnection && onProviderAvatarChange) {
+      entityItems.push({ id: "avatar", label: "选择头像", disabled: isStreaming || avatarSaving,
+        onSelect: () => { if (!isStreaming && !avatarSaving) { setAvatarError(undefined); setAvatarProviderId(menuProvider.id); } } });
+      entityItems.push({ id: "reset-avatar", label: "恢复默认头像", disabled: isStreaming || avatarSaving || !menuProvider.avatar,
+        onSelect: () => { void applyProviderAvatar(menuProvider.id, undefined); } });
+    }
     entityItems.push({ id: "rename", label: "重命名", icon: <Pencil size={15} />, disabled: isStreaming,
       onSelect: () => {
         if (!isStreaming) entityMenu.open({ ...menuTarget, renaming: true }, state.opener, { x: state.left, y: state.top });
@@ -700,7 +785,7 @@ export function ConnectionSettings({
   }
 
   async function openAndRefreshCatalog(): Promise<void> {
-    if (!selectedConnection) return;
+    if (!selectedConnection || isStreaming || selectedConnection.protocol === "seedream-images" || catalogOptions?.manualCatalog) return;
     setCatalogOpen(true);
     await onRefreshModelCatalog(selectedConnection.id);
   }
@@ -759,16 +844,35 @@ export function ConnectionSettings({
             <span className="sr-only" role="status" aria-live="polite">{treeDrag.announcement}</span>
             <div className="connection-tree-heading">
               <h3>供应商</h3>
-              <details ref={providerCreateRef} className="provider-create-menu" onToggle={(event) => { if (event.currentTarget.open) entityMenu.close(); }}>
-                <summary className="icon-button" aria-label="添加供应商" title="添加供应商"><Plus size={18} /></summary>
-                <div className="provider-template-menu" aria-label="供应商模板">
-                  {providerTemplates.map((template) => <button key={template.id} type="button" disabled={isStreaming}
-                    onClick={(event) => { handleCreateProvider(template.id); event.currentTarget.closest("details")?.removeAttribute("open"); }}>
-                    {template.label}
-                  </button>)}
-                </div>
-              </details>
+              <div className="provider-heading-actions">
+                <button ref={providerCreateButtonRef} type="button" className="icon-button" aria-label="添加供应商" title="添加供应商" disabled={isStreaming}
+                  onClick={() => { if (!isStreaming) { entityMenu.close(); setIsAddingProvider(true); setProviderDraftError(undefined); if (providerCreateRef.current) providerCreateRef.current.open = false; providerDraftRef.current?.focus(); } }}><Plus size={18} /></button>
+                <details ref={providerCreateRef} className="provider-create-menu" onToggle={(event) => { if (event.currentTarget.open) entityMenu.close(); }}
+                  onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector<HTMLElement>("summary")?.focus(); } }}>
+                  <summary className="icon-button" aria-label="管理内置供应商" title="管理内置供应商"><MoreHorizontal size={18} /></summary>
+                  <div className="provider-template-menu" aria-label="内置供应商">
+                    {providerTemplates.filter(template => template.id !== "custom").map((template) => {
+                      const exists = connectionSettings.providers.some(provider => provider.presetId === template.id);
+                      return <button key={template.id} type="button" disabled={isStreaming || exists} aria-label={`${exists ? "已添加" : "添加"} ${template.label}`}
+                        onClick={(event) => { handleCreateProvider(template.id); event.currentTarget.closest("details")?.removeAttribute("open"); }}>
+                        {template.id !== "custom" && <BrandAvatar id={template.id} />}{template.label}{exists && <Check size={14} aria-hidden="true" />}
+                      </button>;
+                    })}
+                  </div>
+                </details>
+              </div>
             </div>
+            {isAddingProvider && <form className="provider-inline-create" onSubmit={(event) => {
+              event.preventDefault(); if (isStreaming) return;
+              const name = String(new FormData(event.currentTarget).get("providerName") ?? "").trim();
+              if (!name) { setProviderDraftError("请输入供应商名称。"); providerDraftRef.current?.focus(); return; }
+              handleCreateProvider("custom", name);
+            }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancelProviderDraft(); } }}>
+              <input ref={providerDraftRef} name="providerName" className="compact-field" aria-label="新供应商名称" placeholder="输入供应商名称" required disabled={isStreaming} />
+              <button type="submit" className="icon-button" aria-label="保存新供应商" disabled={isStreaming}><Check size={16} /></button>
+              <button type="button" className="icon-button" aria-label="取消新供应商" onClick={cancelProviderDraft}><X size={16} /></button>
+              {providerDraftError && <p className="inline-error" role="alert">{providerDraftError}</p>}
+            </form>}
             {connectionSettings.providers.length === 0 && (
               <div className="pane-empty-state connection-tree-empty">
                 <span>还没有供应商，点击右上角加号添加。</span>
@@ -804,7 +908,7 @@ export function ConnectionSettings({
                     onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name)}
                     onDragStart={(event) => event.preventDefault()}
                     onClick={() => { void selectProvider(provider.id); }}>
-                    <span title={provider.name}>{provider.name}</span><small>{provider.connections.length}</small>
+                    <ProviderAvatar provider={provider} className="provider-tree-avatar" /><span title={provider.name}>{provider.name}</span><small>{provider.connections.length}</small>
                   </button>
                   <EntityActions kind="供应商" name={provider.name} disabled={isStreaming}
                     open={menuTarget?.kind === "provider" && menuTarget.id === provider.id}
@@ -951,6 +1055,8 @@ export function ConnectionSettings({
                         </select>
                       </label>
                     </div>
+                    {onResetConnection && getConnectionTemplate(selectedProvider.presetId, connection.presetProtocol) && <button type="button"
+                      className="settings-button connection-reset-default" disabled={isStreaming} onClick={() => resetConnection(connection)}>恢复内置默认值</button>}
                     <div className="connection-field-group">
                     <div className="settings-label-help"><label className="field-label" htmlFor="base-url">Base URL</label><SettingsHelp label="Base URL">{protocol.hint}</SettingsHelp></div>
                     <input id="base-url" className="field" value={connection.baseUrl} disabled={isStreaming}
@@ -964,6 +1070,7 @@ export function ConnectionSettings({
                         {preview.normalizedBaseUrl && <p><strong>归一化 Base URL</strong><code>{preview.normalizedBaseUrl}</code></p>}
                         {preview.resolvedEndpoint ? <p><strong>最终生成端点</strong><code>{preview.resolvedEndpoint}</code></p>
                           : <p>{preview.note ?? "填写有效地址后显示请求地址。"}</p>}
+                        {preview.editEndpoint && <p><strong>参考图编辑端点</strong><code>{preview.editEndpoint}</code></p>}
                       </div>
                     </details>
                     </div>
@@ -994,7 +1101,8 @@ export function ConnectionSettings({
                     ref={catalogTriggerRef}
                     type="button"
                     className="settings-button"
-                    disabled={isStreaming}
+                    disabled={isStreaming || connection.protocol === "seedream-images" || catalogOptions?.manualCatalog}
+                    aria-describedby={connection.protocol === "seedream-images" ? "seedream-catalog-hint" : catalogOptions?.catalogHint ? "preset-catalog-hint" : undefined}
                     onClick={() => void openAndRefreshCatalog()}
                   >
                     <RefreshCw size={15} />
@@ -1010,9 +1118,8 @@ export function ConnectionSettings({
                     <Plus size={16} />
                   </button>
                 </div>
-
-
-
+                {connection.protocol === "seedream-images" && <p id="seedream-catalog-hint" className="muted-text">Seedream 绘图未提供模型目录，请手动添加模型 ID。</p>}
+                {connection.protocol !== "seedream-images" && catalogOptions?.catalogHint && <p id="preset-catalog-hint" className="muted-text">{catalogOptions.catalogHint}</p>}
                 <div className="model-list" aria-label="模型列表">
                   {groupedModels.length ? (
                     groupedModels.map((group) => (
@@ -1036,7 +1143,10 @@ export function ConnectionSettings({
             })() : selectedProvider && !isAddingConnection ? (
               <div className="connection-provider-detail">
                 <p className="muted-text">供应商</p>
-                <h3>{selectedProvider.name}</h3>
+                <div className="provider-overview-identity"><ProviderAvatar provider={selectedProvider} /><h3>{selectedProvider.name}</h3>
+                  <EntityActions kind="供应商" name={selectedProvider.name} disabled={isStreaming}
+                    open={menuTarget?.kind === "provider" && menuTarget.id === selectedProvider.id}
+                    onOpen={(opener) => toggleEntityMenu({ kind: "provider", id: selectedProvider.id }, opener)} /></div>
                 <p className="muted-text">管理此供应商下的连接渠道。连接独立拥有协议、地址、密钥和模型。</p>
                 <button ref={providerAddConnectionRef} className="settings-button settings-button-primary" type="button" disabled={isStreaming}
                   onClick={() => setIsAddingConnection(true)}><Plus size={15} />添加连接</button>
@@ -1087,6 +1197,18 @@ export function ConnectionSettings({
             )}
           </section>
         </div>
+      {avatarError && !avatarProvider && <p className="inline-error" role="alert">{avatarError}</p>}
+      {avatarProvider && <AvatarModal title={`为 ${avatarProvider.name} 选择头像`} busy={avatarSaving || avatarPanelBusy || isStreaming}
+        onClose={() => { if (!avatarLock.current && !avatarPanelBusy) { setAvatarProviderId(undefined); setAvatarError(undefined); } }}>
+        {avatarError && <p className="inline-error" role="alert">{avatarError}</p>}
+        <div inert={avatarSaving || isStreaming}>
+          <AvatarLibraryPanel inline assistantName={avatarProvider.name} assistantId={avatarProvider.id}
+            automaticChoice={{ label: "默认头像", preview: <ProviderAvatar provider={{ ...avatarProvider, avatar: undefined }} />, isCurrent: !avatarProvider.avatar }}
+            onBuiltinApply={(id) => { void applyProviderAvatar(avatarProvider.id, { kind: "builtin", id }); }}
+            onApply={(image) => { void applyProviderAvatar(avatarProvider.id, image); }}
+            onBusyChange={setAvatarPanelBusy} onClose={() => { if (!avatarLock.current) setAvatarProviderId(undefined); }} />
+        </div>
+      </AvatarModal>}
       {entityMenu.state && menuTarget && menuEntity && <ActionMenu state={entityMenu.state}
         label={`${menuEntity.name}的管理菜单`} role={menuTarget.renaming ? "dialog" : "menu"}
         items={menuTarget.renaming ? [] : entityItems} onClose={entityMenu.close}
@@ -1112,7 +1234,7 @@ export function ConnectionSettings({
       </ActionMenu>}
       {isAddingModel && selectedConnection && <AddModelDialog disabled={isStreaming} error={formError} onSubmit={handleAddModel}
         onClose={() => { setIsAddingModel(false); setFormError(undefined); }} />}
-      {catalogOpen && selectedConnection ? (
+      {catalogOpen && selectedConnection && selectedConnection.protocol !== "seedream-images" ? (
         <div
           className="model-catalog-backdrop"
           onMouseDown={(event) => {

@@ -54,7 +54,7 @@ export function AssistantAvatar({ avatar, defaultAvatar, legacyIcon, assistantNa
   const generated = automaticAvatar(assistantName, assistantId);
   const variant = selected ?? (automatic ? "automatic" : "system");
   const Icon = variant === "blue" ? UserRound : variant === "green" ? Sprout : variant === "violet" ? Sparkles : Bot;
-  return <span className={`assistant-avatar assistant-avatar-${variant} ${className}`} aria-hidden="true"
+  return <span className={`assistant-avatar assistant-avatar-${variant}${!showFallback ? " assistant-avatar-image" : ""} ${className}`} aria-hidden="true"
     style={automatic && generated.initial && showFallback ? { background: generated.background, color: generated.color } : undefined}>
     {url ? <img src={url} alt="" onError={() => setFailedUrl(url)} />
       : !showFallback ? null

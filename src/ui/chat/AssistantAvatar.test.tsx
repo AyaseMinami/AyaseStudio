@@ -6,6 +6,7 @@ import { centeredCrop } from "../../avatar/image";
 import type { UserAvatar } from "../../avatar/repository";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { avatarPreviewCache } from "../../avatar/previewCache";
+import { readFileSync } from "node:fs";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -168,4 +169,23 @@ it("uses a fallback after a decode failure without rewriting the avatar", async 
   expect(host.querySelector(".assistant-avatar-initial")?.textContent).toBe("失");
   expect(value.thumbnail.size).toBe(7);
   expect(URL.revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:avatar-1");
+});
+
+it("keeps configured images transparent through decoding and restores legacy fallback colors on failure", async () => {
+  const stylesheet = document.createElement("style"); stylesheet.textContent = readFileSync("src/ui/chat/AssistantAvatar.css", "utf8");
+  document.head.append(stylesheet); document.body.append(host);
+  let finish!: () => void;
+  vi.mocked(HTMLImageElement.prototype.decode).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  try {
+    await act(async () => root.render(<AssistantAvatar avatar={avatar("alpha-image")} defaultAvatar="green" assistantId="alpha" />));
+    expect(host.querySelector("img")).toBeNull();
+    expect(host.querySelector(".assistant-avatar-image")).not.toBeNull();
+    expect(getComputedStyle(host.firstElementChild!).background).toBe("transparent");
+    await act(async () => finish());
+    expect(host.querySelector("img")).not.toBeNull();
+    expect(getComputedStyle(host.firstElementChild!).background).toBe("transparent");
+    await act(async () => host.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(host.querySelector(".assistant-avatar-image")).toBeNull();
+    expect(getComputedStyle(host.firstElementChild!).background).toBe("#dcfce7");
+  } finally { stylesheet.remove(); host.remove(); }
 });

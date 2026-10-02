@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { ChatProtocol } from "./types";
 import {
   normalizeBaseUrl,
+  resolveGrokImagesEndpoint,
+  resolveSeedreamImagesEndpoint,
   resolveGenerationEndpoint,
   resolveImageGenerationEndpoint,
   resolveModelCatalogEndpoint,
@@ -10,6 +12,34 @@ import {
 } from "./urlResolution";
 
 describe("protocol-aware URL resolution", () => {
+  it("uses the documented DeepSeek root without changing explicit or relay paths", () => {
+    for (const protocol of ["openai-chat", "openai-responses"] as const) {
+      const endpoint = protocol === "openai-chat" ? "chat/completions" : "responses";
+      expect(resolveGenerationEndpoint(protocol, "https://api.deepseek.com/").resolvedEndpoint).toBe(`https://api.deepseek.com/${endpoint}`);
+      expect(resolveModelCatalogEndpoint(protocol, "https://api.deepseek.com").resolvedEndpoint).toBe("https://api.deepseek.com/models");
+      expect(resolveGenerationEndpoint(protocol, "https://api.deepseek.com/v1").resolvedEndpoint).toBe(`https://api.deepseek.com/v1/${endpoint}`);
+      expect(resolveGenerationEndpoint(protocol, "https://synthetic.invalid").resolvedEndpoint).toBe(`https://synthetic.invalid/v1/${endpoint}`);
+    }
+  });
+  it.each([
+    ["https://open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4/models"],
+    ["https://ark.cn-beijing.volces.com/api/v3", "https://ark.cn-beijing.volces.com/api/v3/models"],
+    ["https://generativelanguage.googleapis.com/v1beta/openai", "https://generativelanguage.googleapis.com/v1beta/openai/models"],
+    ["https://synthetic.invalid/custom", "https://synthetic.invalid/custom/v1/models"],
+  ])("preserves explicit catalog version prefixes in %s", (base, endpoint) => {
+    expect(resolveModelCatalogEndpoint("openai-chat", base).resolvedEndpoint).toBe(endpoint);
+  });
+  it("shares Grok/Seedream HTTPS routes with settings, preserving relay prefixes", () => {
+    expect(resolveGrokImagesEndpoint("https://api.x.ai", "alias")).toBe("https://api.x.ai/v1/images/generations");
+    expect(resolveGrokImagesEndpoint("https://relay.test/custom///", "alias", "edits")).toBe("https://relay.test/custom/images/edits");
+    expect(resolveSeedreamImagesEndpoint("https://ark.cn-beijing.volces.com", "alias")).toBe("https://ark.cn-beijing.volces.com/api/v3/images/generations");
+    expect(resolveSeedreamImagesEndpoint("https://relay.test/custom/api/v3///", "alias")).toBe("https://relay.test/custom/api/v3/images/generations");
+    expect(() => resolveModelCatalogEndpoint("seedream-images", "https://relay.test")).toThrow("手动添加");
+    for (const resolve of [resolveGrokImagesEndpoint, resolveSeedreamImagesEndpoint]) {
+      for (const base of ["http://relay.test", "https://u:p@relay.test", "https://relay.test?key=x", "https://relay.test#x"]) expect(() => resolve(base, "alias")).toThrow();
+      expect(() => resolve("https://relay.test", " ")).toThrow();
+    }
+  });
   it("resolves drawing to the native non-streaming HTTPS endpoint with a trimmed encoded model", () => {
     expect(resolveImageGenerationEndpoint(" https://relay.example.com/custom/v1beta/// ", "  image/model ?#  "))
       .toBe("https://relay.example.com/custom/v1beta/models/image%2Fmodel%20%3F%23:generateContent");

@@ -40,7 +40,7 @@ it.each([false, true])("exports and restores full connections and credentials wi
   expect(exported.preview.encrypted).toBe(encrypted);
   expect(exported.preview.document.options).toEqual({ connections: true, credentials: true });
   expect(exported.preview.document.version).toBe(5);
-  expect(exported.preview.document.searchSettings).toMatchObject({ version: 2, exaMcp: { apiKey: "synthetic-runtime-search-key" }, exaApi: { apiKey: "" } });
+  expect(exported.preview.document.searchSettings).toMatchObject({ version: 3, exaMcp: { apiKey: "synthetic-runtime-search-key" }, exaApi: { apiKey: "" }, tavily: { enabled: false }, zhipu: { enabled: false } });
   const saved = vi.mocked(invoke).mock.calls[0]!;
   expect(saved[0]).toBe("save_ayase_backup");
   const serialized = (saved[1] as { data: string }).data;

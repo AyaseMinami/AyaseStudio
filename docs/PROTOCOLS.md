@@ -1,5 +1,19 @@
 # Protocol Compatibility Contract
 
+## Official supplier presets (#100)
+
+Defaults cover documented contracts expressible by existing adapters, including #103 images. OpenRouter's Bearer Native API is excluded from x-api-key presets. Directory absence is distinct from generation support. Shared URL resolution preserves explicit catalog version prefixes and the exact HTTPS DeepSeek origin's Chat/Responses root; explicit paths and relays retain existing rules. Preset identities and avatars never choose actual protocols or authentication. See [matrix and limitations](ISSUE-100-IMPLEMENTATION.md).
+
+## Tavily and Zhipu REST search (#82)
+
+Tavily POST `/search` and Zhipu POST `/api/paas/v4/web_search` use separate Bearer Keys. Tavily sends explicitly selected basic/advanced depth with automatic parameters, answers and raw HTML disabled. Zhipu sends the selected four-engine enum, `search_intent:false` and medium content; queries over 70 Unicode characters fail before chat writes, and Sogou requests 10 results upstream before local configured capping. No provider retry/fallback or model tool loop. Both reuse bounded sources/citations and suppress native search in four chat protocols. Shared JSON reception bounds the whole request to 30 seconds/2 MiB and rejects redirects, invalid UTF-8/JSON and provider errors without leaking response bodies or credentials. See [official contracts and evidence](ISSUE-82-IMPLEMENTATION.md).
+
+## Grok and Seedream images (#103)
+
+Grok JSON generation/edit requests use `/v1/images/generations` and `/v1/images/edits`; custom relay prefixes are preserved. Single references map to `image`, multiple references to ordered `images` objects containing original data URIs. Seedream generation/reference edits both use `/api/v3/images/generations`, with `image` as a string or ordered array. Root URLs receive the protocol prefix; explicit prefixes are retained. Both use Bearer authentication, HTTPS and `response_format: b64_json`; automatic options are omitted. Explicit unknown/foreign fields reject before dispatch without switching protocol or model.
+
+User-selected version contracts govern Grok ratios/resolution/quality and Seedream size/output format. Grok requests `n:1`; Seedream explicitly disables optional sequential groups for supporting versions and omits that unsupported field on Pro/Flash. Original references are packaged without conversion. Actual PNG/JPEG/WebP signatures must agree with top/item/data-URI MIME before native full decoding. Existing response/count/aggregate budgets, timeout, redirect rejection and no-download/no-retry rules apply. Result-as-reference editing carries pixels rather than preserved provider conversation state. [Official sources, exact profiles and boundaries](ISSUE-103-IMPLEMENTATION.md).
+
 ## Chat generation statistics (#107)
 
 Adapters normalize provider usage into cumulative `TokenUsage` snapshots and emit `usage-update`, including metadata arriving after text. OpenAI Chat requests streaming usage explicitly; Responses uses terminal response usage, Gemini includes thinking in output where the response permits that derivation, and Anthropic counts ordinary input plus cache read/write as total input. Missing fields remain unknown, explicit zero remains zero. Terminal output must be confirmed before average speed is available; cancellation/failure retains partial observations without automatic retries. See [field mappings, sources and acceptance boundaries](ISSUE-107-IMPLEMENTATION.md).
@@ -56,7 +70,7 @@ The non-stream JSON parser permits one candidate, skips thought image parts, and
 
 The user's later request adds Exa API separately from MCP. API defaults to `https://api.exa.ai`, requires a nonempty independent Key, and sends one POST to normalized base pathname plus `/search`. It rejects query/hash/userinfo/credential URLs and redirects; `x-api-key` is a header. Payload contains only trimmed current query, configured 1–10 `numResults`, `type:auto` and `contents:{text:true}`; no summaries, agent runs, extra queries or model-generated search terms. The [official API contract](https://exa.ai/docs/reference/search) requires authentication and supplies JSON `results` containing URL/title/text. Local normalization uses the same source/excerpt bounds as MCP; unusable/empty JSON blocks answering. Total timeout 30 seconds, response cap 2 MiB, no retry or automatic fallback. No real API request was made for implementation.
 
-Local settings version 2 holds both profiles. Session mode `exa-api` dispatches direct API, `exa-mcp` dispatches the finite MCP adapter below; settings tests use the explicitly selected profile. Both suppress native model tools and share final budget, citations, history projection and Anthropic continuation rules. Each request freezes its selected profile and never uses the other service's Key. Backup document v3 accepts API mode/snapshots and both profiles; v1/v2 readers retain their original schema limits.
+Local settings version 3 retains both Exa profiles and adds default-disabled Tavily/Zhipu profiles. Session mode `exa-api` dispatches direct API, `exa-mcp` dispatches the finite MCP adapter below; settings tests use the explicitly selected profile. All external modes suppress native model tools and share final budget, citations, history projection and Anthropic continuation rules. Each request freezes its selected profile and never uses another service's Key. Backup document v3 accepts Exa API mode/snapshots and both Exa profiles; v1/v2 readers retain their original schema limits. Tavily/Zhipu identities require the original search-module v3 stamp in document v4/v5.
 
 ## Fixed Exa MCP external search (#80)
 

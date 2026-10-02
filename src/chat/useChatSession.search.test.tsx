@@ -34,6 +34,9 @@ describe("external search in session generation", () => {
     saveConnectionSettings({ version: 3, activeModelId: "m", providers: [{ id: "p", name: "Synthetic", connections: [{ id: "c", name: "Test", protocol: "openai-chat", baseUrl: "https://model.example", apiKey: "synthetic-chat-key", models: [{ id: "m", modelId: "any" }] }] }] });
     saveSearchSettings({ ...defaultSearchSettings(), apiKey: "synthetic-search-key" });
     saveSearchConfiguration({ ...loadSearchConfiguration(), exaApi: { ...defaultSearchSettings("exa-api"), apiKey: "synthetic-api-key", numResults: 2 } });
+    const searchConfig = loadSearchConfiguration();
+    saveSearchConfiguration({ ...searchConfig, tavily: { ...searchConfig.tavily, enabled: true, apiKey: "synthetic-tavily-key" },
+      zhipu: { ...searchConfig.zhipu, enabled: true, apiKey: "synthetic-zhipu-key" } });
     await repo.initializeWorkspace("m", ["m"]);
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
@@ -55,7 +58,7 @@ describe("external search in session generation", () => {
     } } satisfies ChatTransport);
   }
   async function draft(value = "current question") { await act(async () => session.setDraft(value)); }
-  it.each((["exa-mcp", "exa-api"] as ExternalSearchProvider[]).flatMap(provider =>
+  it.each((["exa-mcp", "exa-api", "tavily", "zhipu"] as ExternalSearchProvider[]).flatMap(provider =>
     (["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] as ChatProtocol[]).map(protocol => ({ provider, protocol }))))("retrieves once via $provider before $protocol answer and keeps credentials separate", async ({ provider, protocol }) => {
     await act(async () => { await session.setSearchMode(provider); });
     await act(async () => { await session.updateConnection("c", "protocol", protocol); });
@@ -64,17 +67,34 @@ describe("external search in session generation", () => {
     expect(mocks.searchExa).toHaveBeenCalledTimes(1);
     expect(mocks.searchExa.mock.calls[0][1]).toBe("current question");
     expect(mocks.searchExa.mock.calls[0][3]).toBe(provider);
-    expect(mocks.searchExa.mock.calls[0][0].apiKey).toBe(provider === "exa-api" ? "synthetic-api-key" : "synthetic-search-key");
+    expect(mocks.searchExa.mock.calls[0][0].apiKey).toBe(provider === "exa-api" ? "synthetic-api-key" : provider === "exa-mcp" ? "synthetic-search-key" : `synthetic-${provider}-key`);
     const answer = requests.find(request => request.messages.some(message => message.content.includes("Retrieved material")))!;
     expect(answer).toBeDefined(); expect(answer.config?.webSearch).toBe(false);
     expect(answer.apiKey).toBe("synthetic-chat-key");
     expect(JSON.stringify(answer.messages)).not.toContain("synthetic-search-key");
     expect(JSON.stringify(answer.messages)).not.toContain("synthetic-api-key");
+    expect(JSON.stringify(answer.messages)).not.toContain("synthetic-tavily-key");
+    expect(JSON.stringify(answer.messages)).not.toContain("synthetic-zhipu-key");
     expect(session.messages[0].content).toBe("current question");
     expect(session.messages[1].search?.status).toBe("completed");
     expect(session.messages[1].search?.provider).toBe(provider);
     expect(session.messages[1].search?.citations).toHaveLength(1);
     expect(JSON.stringify((await repo.load("current"))?.messages)).not.toContain("synthetic-search-key");
+  });
+  it.each(["tavily", "zhipu"] as const)("blocks disabled %s before durable messages or requests, without changing selection", async provider => {
+    const configuration = loadSearchConfiguration();
+    saveSearchConfiguration({ ...configuration, [provider]: { ...configuration[provider], enabled: false } });
+    await act(async () => session.setSearchMode(provider));
+    await draft(); await act(async () => session.sendMessage());
+    expect(session.error).toContain("已关闭"); expect(session.searchMode).toBe(provider);
+    expect(session.draft).toBe("current question"); expect(session.messages).toHaveLength(0);
+    expect(mocks.searchExa).not.toHaveBeenCalled(); expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+  });
+  it("rejects overlong Zhipu queries before writes without truncating or switching provider", async () => {
+    await act(async () => session.setSearchMode("zhipu"));
+    const text = "🙂".repeat(71); await draft(text); await act(async () => session.sendMessage());
+    expect(session.error).toContain("70"); expect(session.draft).toBe(text); expect(session.messages).toHaveLength(0);
+    expect(mocks.searchExa).not.toHaveBeenCalled(); expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
   });
   it("rejects an unconfigured API profile before search, model, title or message writes", async () => {
     const config = loadSearchConfiguration();

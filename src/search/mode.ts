@@ -1,9 +1,10 @@
 import type { SessionConfig } from "../chat/sessionConfig";
+import type { ExternalSearchProvider } from "./settings";
 
-export type SearchMode = "off" | "native" | "exa-mcp" | "exa-api";
+export type SearchMode = "off" | "native" | ExternalSearchProvider;
 
-export function isExternalSearch(provider: unknown): provider is "exa-mcp" | "exa-api" {
-  return provider === "exa-mcp" || provider === "exa-api";
+export function isExternalSearch(provider: unknown): provider is ExternalSearchProvider {
+  return provider === "exa-mcp" || provider === "exa-api" || provider === "tavily" || provider === "zhipu";
 }
 
 /** Unknown/corrupt choices never activate an external service. */

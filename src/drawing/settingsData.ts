@@ -5,10 +5,13 @@ import { openAIImageQualities } from "./openaiImages";
 import type { DrawingPromptPreset } from "./presets";
 import type { DrawingDraft, DrawingReference } from "./types";
 import { validGeminiDrawingOptions } from "./geminiOptions";
+import { validGrokDrawingOptions } from "./grokImages";
+import { validSeedreamDrawingOptions } from "./seedreamImages";
+import { isDrawingProtocol } from "../chat/protocolOptions";
 
 export type DrawingSettingsData = Required<Pick<DrawingDraft,
   "aspectRatio" | "resolution" | "modelId" | "openai" | "count" | "concurrency" | "completionSound">>
-  & Pick<DrawingDraft, "reusedProtocol" | "gemini">;
+  & Pick<DrawingDraft, "reusedProtocol" | "gemini" | "grok" | "seedream">;
 
 function fields(raw: unknown, allowed: readonly string[]): asserts raw is Record<string, unknown> {
   dataRecord(raw);
@@ -66,8 +69,16 @@ export function readDrawingSettingsData(raw: unknown): DrawingSettingsData {
     result.gemini = value.gemini;
   }
   if ("reusedProtocol" in value) {
-    dataCheck(value.reusedProtocol === "gemini-image" || value.reusedProtocol === "openai-images");
+    dataCheck(isDrawingProtocol(value.reusedProtocol));
     result.reusedProtocol = value.reusedProtocol;
+  }
+  if ("grok" in value) {
+    fields(value.grok, backupFields(dataPolicies.drawingGrok));
+    dataCheck(validGrokDrawingOptions(value.grok)); result.grok = value.grok;
+  }
+  if ("seedream" in value) {
+    fields(value.seedream, backupFields(dataPolicies.drawingSeedream));
+    dataCheck(validSeedreamDrawingOptions(value.seedream)); result.seedream = value.seedream;
   }
   return result;
 }
@@ -90,6 +101,13 @@ export function projectDrawingSettings(draft?: DrawingDraft): DrawingSettingsDat
         dataRecord(value);
         const nested: Record<string, unknown> = {};
         for (const field of backupFields(dataPolicies.drawingGemini)) {
+          if (field in value) nested[field] = (value as Record<string, unknown>)[field];
+        }
+        projected[key] = nested;
+      } else if (key === "grok" || key === "seedream") {
+        dataRecord(value);
+        const nested: Record<string, unknown> = {};
+        for (const field of backupFields(key === "grok" ? dataPolicies.drawingGrok : dataPolicies.drawingSeedream)) {
           if (field in value) nested[field] = (value as Record<string, unknown>)[field];
         }
         projected[key] = nested;

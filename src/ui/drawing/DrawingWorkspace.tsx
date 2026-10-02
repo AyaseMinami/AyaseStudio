@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
-import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingReferenceSelection, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
+import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingParameters, DrawingProtocol, DrawingReferenceSelection, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
 import { DrawingReferences } from "./DrawingReferences";
 import { DrawingPresets } from "./DrawingPresets";
 import { SettingsHelp } from "../settings/SettingsHelp";
@@ -11,6 +11,8 @@ import { DrawingResultPreview } from "./DrawingResultPreview";
 import { drawingAspectRatios, drawingResolutions } from "../../drawing/geminiImage";
 import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImages";
 import { geminiSafetyThresholds } from "../../drawing/geminiOptions";
+import { grokAspectRatios, grokResolutions, grokQualities, initialGrokDrawingOptions } from "../../drawing/grokImages";
+import { initialSeedreamDrawingOptions, seedreamModelVersions, seedreamSizesByVersion } from "../../drawing/seedreamImages";
 import type { GeminiDrawingOptions, GeminiSafetyThreshold } from "../../drawing/types";
 import "./DrawingWorkspace.css";
 
@@ -19,6 +21,15 @@ export type { DrawingDraft } from "../../drawing/types";
 
 const recordsPerPage = 50;
 const taskLabel = (id: string) => id.slice(0, 8);
+const protocolNames: Record<DrawingProtocol, string> = {
+  "gemini-image": "Gemini Image", "openai-images": "OpenAI Images", "grok-images": "Grok Images", "seedream-images": "Seedream Images",
+};
+function parameterSummary(parameters: DrawingParameters): string {
+  if (parameters.protocol === "seedream-images") return `版本：${parameters.modelVersion} · 尺寸：${parameters.size} · 输出格式：${parameters.outputFormat} · 水印：${parameters.watermark}`;
+  if (parameters.protocol === "openai-images") return `尺寸：${parameters.size} · 画质：${parameters.quality}`;
+  const dimensions = `宽高比：${parameters.aspectRatio} · 分辨率：${parameters.resolution}`;
+  return parameters.protocol === "grok-images" ? `版本：${parameters.modelVersion} · ${dimensions} · 画质：${parameters.quality}` : dimensions;
+}
 const HistoryItem = memo(function HistoryItem({ result, number, selected, onSelect, read }: {
   result: DrawingResult; number: number; selected: boolean;
   onSelect(id: string): void; read?: (reference: string) => Promise<DrawingImageInput>;
@@ -104,9 +115,7 @@ function ResultDetails({ result }: { result: DrawingResult }) {
   return <div className="drawing-result-details">
     <p className="drawing-result-prompt">{parameters.prompt}</p>
     <p className="drawing-muted">模型：{parameters.modelId} · 协议：{parameters.protocol}</p>
-    <p className="drawing-muted">{parameters.protocol === "openai-images"
-      ? `尺寸：${parameters.size} · 画质：${parameters.quality}`
-      : `宽高比：${parameters.aspectRatio} · 分辨率：${parameters.resolution}`}</p>
+    <p className="drawing-muted">{parameterSummary(parameters)}</p>
     <p className="drawing-muted">{parameters.modelName} · {result.width} × {result.height} · 参考图 {parameters.references?.length ?? 0} 张</p>
     <p className="drawing-muted">生成时间：<time dateTime={result.createdAt}>{result.createdAt}</time></p>
   </div>;
@@ -117,9 +126,7 @@ function TaskParameters({ task }: { task: DrawingTask }) {
   return <div className="drawing-task-parameters">
     <p className="drawing-task-prompt">{parameters.prompt}</p>
     <p className="drawing-muted">模型：{parameters.modelName}（{parameters.modelId}） · 协议：{parameters.protocol}</p>
-    <p className="drawing-muted">{parameters.protocol === "openai-images"
-      ? `尺寸：${parameters.size} · 画质：${parameters.quality}`
-      : `宽高比：${parameters.aspectRatio} · 分辨率：${parameters.resolution}`}
+    <p className="drawing-muted">{parameterSummary(parameters)}
       {` · 参考图 ${parameters.references?.length ?? 0} 张`}</p>
     {parameters.protocol === "gemini-image" && parameters.gemini && <p className="drawing-muted">
       {`温度：${parameters.gemini.temperature ?? "模型默认"} · 安全阈值：${parameters.gemini.safetyThreshold ?? "服务默认"} · 输出：${parameters.gemini.outputMode === "image" ? "仅图片" : "文字＋图片"}`}
@@ -260,7 +267,22 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
   const selectedResult = results.find((result) => result.id === selectedResultId);
   const selectedModel = models.find(model => model.id === draft.modelId);
   const reusedProtocol = !selectedModel ? draft.reusedProtocol : undefined;
-  const openai = (selectedModel?.protocol ?? reusedProtocol) === "openai-images";
+  const protocol = selectedModel?.protocol ?? reusedProtocol ?? "gemini-image";
+  const openai = protocol === "openai-images", grok = protocol === "grok-images", seedream = protocol === "seedream-images";
+  const grokOptions = draft.grok ?? initialGrokDrawingOptions;
+  const seedreamOptions = draft.seedream ?? initialSeedreamDrawingOptions;
+  const setGrok = (patch: Partial<NonNullable<DrawingDraft["grok"]>>) => onDraftChange({ ...draft, grok: { ...grokOptions, ...patch } });
+  const setSeedream = (patch: Partial<NonNullable<DrawingDraft["seedream"]>>) => onDraftChange({ ...draft, seedream: { ...seedreamOptions, ...patch } });
+  const seedreamSizes: readonly string[] = seedreamSizesByVersion[seedreamOptions.modelVersion];
+  const seedreamPreset = seedreamSizes.includes(seedreamOptions.size);
+  const knownSeedreamSize = Object.values(seedreamSizesByVersion).some(sizes => (sizes as readonly string[]).includes(seedreamOptions.size));
+  const profileError = grok && grokOptions.modelVersion === "legacy" && grokOptions.quality !== "auto"
+    ? "Grok legacy 不支持画质参数，请选择自动或 2.0 版本。"
+    : grok && grokOptions.modelVersion === "legacy" && ["21:9", "5:2"].includes(grokOptions.aspectRatio)
+      ? "Grok 21:9／5:2 宽高比仅支持 2.0，请更换宽高比或版本。"
+    : seedream && !seedreamOptions.modelVersion.startsWith("5.0") && seedreamOptions.outputFormat !== "auto"
+      ? "Seedream 输出格式仅支持 5.0 系列，请选择自动或 5.0 版本。"
+      : seedream && knownSeedreamSize && !seedreamPreset ? "当前 Seedream 版本不支持此尺寸，请重新选择尺寸。" : undefined;
   const size = draft.openai?.size ?? "auto", quality = draft.openai?.quality ?? "auto";
   const presetSize = (openAIImageSizes as readonly string[]).includes(size);
   const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => onDraftChange({ ...draft, openai: { size, quality, ...patch } });
@@ -270,7 +292,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
     onDraftChange({ ...draft, gemini: next });
   };
   const resultNumber = (id: string) => resultNumbers.get(id) ?? 0;
-  const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy && (openai || !temperatureError);
+  const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy && !profileError && (protocol !== "gemini-image" || !temperatureError);
   const canEditReferences = ready && !closing && !referencesBusy && !managementBusy && !confirmation && !presetDialogOpen;
   const managementAllowed = ready && !closing && !submitting && !managementBusy;
   const canManage = managementAllowed && !confirmation && !presetDialogOpen;
@@ -387,13 +409,13 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                       delete next.reusedProtocol;
                       onDraftChange(next);
                     }}>
-                    <option value="">{reusedProtocol ? `选择绘图模型（已复用 ${reusedProtocol === "openai-images" ? "OpenAI" : "Gemini"} 参数）` : "选择绘图模型"}</option>
+                    <option value="">{reusedProtocol ? `选择绘图模型（已复用 ${protocolNames[reusedProtocol]} 参数）` : "选择绘图模型"}</option>
                     {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
                   </select>
                   <button type="button" className="drawing-button" onClick={onConfigure}>前往设置</button>
                 </div>
-                {reusedProtocol && <p className="drawing-muted" role="status">原模型不可用，请重新选择绘图模型。已保留 {reusedProtocol === "openai-images" ? "OpenAI Images" : "Gemini Image"} 协议参数。</p>}
-                {ready && models.length === 0 && <p className="drawing-muted">请在设置中添加 Gemini 或 OpenAI 绘图连接和模型。</p>}
+                {reusedProtocol && <p className="drawing-muted" role="status">原模型不可用，请重新选择绘图模型。已保留 {protocolNames[reusedProtocol]} 协议参数。</p>}
+                {ready && models.length === 0 && <p className="drawing-muted">请在设置中添加 Gemini、OpenAI、Grok 或 Seedream 绘图连接和模型。</p>}
               </div>
               <label className="drawing-field">
                 <span className="drawing-label">提示词</span>
@@ -419,6 +441,55 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     <span className="drawing-label">画质</span>
                     <select value={quality} onChange={event => setOpenAI({ quality: event.target.value })}>
                       {openAIImageQualities.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </> : grok ? <>
+                <label className="drawing-field"><span className="drawing-label">Grok 版本契约</span>
+                  <select aria-label="Grok 版本契约" value={grokOptions.modelVersion} onChange={event => setGrok({ modelVersion: event.target.value as "legacy" | "2.0" })}>
+                    <option value="legacy">legacy</option><option value="2.0">2.0</option>
+                  </select>
+                </label>
+                <div className="drawing-parameters">
+                  <label className="drawing-field"><span className="drawing-label">宽高比</span>
+                    <select aria-label="Grok 宽高比" value={grokOptions.aspectRatio} onChange={event => setGrok({ aspectRatio: event.target.value })}>
+                      {grokAspectRatios.map(value => <option key={value} value={value} disabled={grokOptions.modelVersion === "legacy" && ["21:9", "5:2"].includes(value)}>{value === "auto" ? "自动" : value}</option>)}
+                    </select>
+                  </label>
+                  <label className="drawing-field"><span className="drawing-label">分辨率</span>
+                    <select aria-label="Grok 分辨率" value={grokOptions.resolution} onChange={event => setGrok({ resolution: event.target.value })}>
+                      {grokResolutions.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <label className="drawing-field"><span className="drawing-label">画质</span>
+                  <select aria-label="Grok 画质" value={grokOptions.quality} onChange={event => setGrok({ quality: event.target.value })}>
+                    {grokQualities.map(value => <option key={value} value={value} disabled={value !== "auto" && grokOptions.modelVersion !== "2.0"}>{value === "auto" ? "自动" : value}</option>)}
+                  </select>
+                </label>
+              </> : seedream ? <>
+                <div className="drawing-parameters">
+                  <label className="drawing-field"><span className="drawing-label">Seedream 版本契约</span>
+                    <select aria-label="Seedream 版本契约" value={seedreamOptions.modelVersion} onChange={event => setSeedream({ modelVersion: event.target.value as NonNullable<DrawingDraft["seedream"]>["modelVersion"] })}>
+                      {seedreamModelVersions.map(value => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                  </label>
+                  <label className="drawing-field"><span className="drawing-label">尺寸</span>
+                    <select aria-label="Seedream 尺寸" value={seedreamPreset ? seedreamOptions.size : "custom"} onChange={event => setSeedream({ size: event.target.value === "custom" ? "" : event.target.value })}>
+                      {seedreamSizes.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
+                      <option value="custom">自定义尺寸</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="drawing-parameters">
+                  <label className="drawing-field"><span className="drawing-label">输出格式</span>
+                    <select aria-label="Seedream 输出格式" value={seedreamOptions.outputFormat} onChange={event => setSeedream({ outputFormat: event.target.value as NonNullable<DrawingDraft["seedream"]>["outputFormat"] })}>
+                      <option value="auto">自动</option><option value="png" disabled={!seedreamOptions.modelVersion.startsWith("5.0")}>PNG</option><option value="jpeg" disabled={!seedreamOptions.modelVersion.startsWith("5.0")}>JPEG</option>
+                    </select>
+                  </label>
+                  <label className="drawing-field"><span className="drawing-label">水印</span>
+                    <select aria-label="Seedream 水印" value={seedreamOptions.watermark} onChange={event => setSeedream({ watermark: event.target.value as NonNullable<DrawingDraft["seedream"]>["watermark"] })}>
+                      <option value="auto">自动</option><option value="on">开启</option><option value="off">关闭</option>
                     </select>
                   </label>
                 </div>
@@ -452,10 +523,12 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 </label>
               </div>
               <div className="drawing-parameter-extra drawing-parameter-tools">
-                {!openai && <button type="button" className="drawing-button" aria-expanded={advancedOpen}
+                {protocol === "gemini-image" && <button type="button" className="drawing-button" aria-expanded={advancedOpen}
                   aria-controls="drawing-gemini-advanced" onClick={() => setAdvancedOpen(!advancedOpen)}>Gemini 高级参数</button>}
                 <SettingsHelp label="参数">{openai
                   ? "xhigh／max 需 GPT Image 2.5 或服务支持。自定义尺寸需 GPT Image 2／2.5：边长为 16 的倍数且不超过 3840，比例在 1:3 至 3:1，总像素 655360–8294400；高于 2560 × 1440 为实验性尺寸。旧模型和中转支持范围以服务为准。"
+                  : grok ? "版本契约需手动选择，不根据模型 ID 推断。画质 low／medium 和 21:9／5:2 宽高比仅支持 2.0；自动选项跟随服务默认。"
+                  : seedream ? "版本契约需手动选择，不根据模型 ID 推断。尺寸选项随版本变化，也可输入宽x高；输出格式仅支持 5.0 系列。自动选项跟随服务默认。"
                   : "512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。"}</SettingsHelp>
               <label className="drawing-label drawing-sound">
                 <input type="checkbox" checked={draft.completionSound ?? true} disabled={!ready || submitting}
@@ -467,13 +540,18 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 busy={referencesBusy} read={readReference} readThumbnail={readThumbnail} onAdd={onAddReferences}
                 onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
               </div>
+              {profileError && <p className="drawing-error" role="alert">{profileError}</p>}
+              {seedream && !seedreamPreset && <label className="drawing-field drawing-parameter-extra">
+                <span className="drawing-label">自定义尺寸（宽x高）</span>
+                <input aria-label="Seedream 自定义尺寸" type="text" value={seedreamOptions.size} placeholder="例如：2048x2048" onChange={event => setSeedream({ size: event.target.value })} />
+              </label>}
               {openai ? <>
                 {!presetSize && <label className="drawing-field drawing-parameter-extra">
                   <span className="drawing-label">自定义尺寸（宽x高）</span>
                   <input type="text" value={size} placeholder="1536x864" onChange={event => setOpenAI({ size: event.target.value })} />
                 </label>}
               </> : <>
-              {advancedOpen && <div id="drawing-gemini-advanced" className="drawing-parameter-extra">
+              {protocol === "gemini-image" && advancedOpen && <div id="drawing-gemini-advanced" className="drawing-parameter-extra">
                 <div className="drawing-advanced-columns">
                 <div className="drawing-field">
                 <div className="drawing-temperature-row">
@@ -581,8 +659,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     ((taskSubview === "list" ? activeTaskPage : activeLogPage) + 1) * recordsPerPage).map(task => {
                     const expanded = expandedTasks.has(task.id);
                     const parameters = task.parameters;
-                    const summary = parameters.protocol === "openai-images" ? `${parameters.size} · ${parameters.quality}`
-                      : `${parameters.aspectRatio} · ${parameters.resolution}`;
+                    const summary = parameterSummary(parameters);
                     return <Fragment key={task.id}>
                       <tr className="drawing-task-row" data-status={task.status}>
                         <th scope="row" title={task.id}><span className="drawing-task-id">{taskLabel(task.id)}</span></th>
