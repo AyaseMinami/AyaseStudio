@@ -1,5 +1,15 @@
 # Ayase Studio Development Guide
 
+## Global scrollbar verification (#104, 2026-10-02)
+
+`src/scrollbars.css`, imported by `App.css`, owns all scrollbar visuals. New scroll containers require only ordinary overflow styles. Keep `scrollbar-gutter` decisions local and do not add component-level width/color or pseudo-element overrides; Chromium standard width/color must remain `auto` so the detailed pseudo-element styling applies. Dimensions, fallback and forced-colors rules are recorded in [UI-DESIGN.md](UI-DESIGN.md).
+
+Verification: `npm.cmd run check` passed data-contract checks, 123 test files / 1984 tests and TypeScript/Vite production build; `cargo check --locked --manifest-path src-tauri/Cargo.toml` passed. Scoped diff checks passed. The shared working tree's full diff check additionally reported a blank line at EOF in unrelated `src/avatar/assistantDefaults.ts`; that file was left untouched by #104. The production build retained the existing large-chunk warning.
+
+The in-app browser used a separate localhost origin on port 1504 with the existing `scripts/navigation81/vite.config.ts`. The ignored `ui-review.local/scrollbar104.html` fixture imports the real global stylesheet and appearance resolver, with synthetic lists, nested containers, textareas, horizontal/two-axis overflow, body-mounted content and a dynamically appended scroll area. All inherited 12px scrollbar styling without a scrollbar-specific class. Light/dark, reading and custom canvas colors were checked; keyboard vertical scroll, horizontal wheel scroll and thumb dragging worked. Dragging moved the list from 0 to about 506px without changing its 346px content width. A 320×520 fixture had document width 320px. Real chat navigation at the default viewport inherited the same styles; the real browser-only drawing fixture at 720×520 also inherited them, with document width 720px. Forced-colors emulation restored `auto` scrollbar width/color and browser button/radius defaults. Light/dark screenshots are saved in the ignored review folder.
+
+This is frontend styling only: no provider calls, live credentials, production databases, native capability or stored preference changes. Firefox fallback and actual Windows 10/11 WebView scrollbar interactions were not separately exercised; no native automation or Tauri restart was needed for this CSS change. Subjective appearance remains user acceptance.
+
 ## Chat toolbar layout entry (#95, 2026-10-02)
 
 The header and composer width toggles share the existing `useChatLayout` state/callback and preference. Input height expansion remains local to Composer, using up/down double chevrons. Run `npm.cmd test -- src/ui/chat/ChatLayout.test.tsx src/ui/chat/Composer.test.tsx` for entry synchronization, generation-time switching, remount persistence, independent height state and draft/selection preservation. No new storage fields or native behavior are introduced.

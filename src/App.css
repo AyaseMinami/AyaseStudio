@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./scrollbars.css";
 
 .thinking-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 4px 8px 10px; font-size: 12px; }
 .thinking-select, .thinking-summary-toggle, .thinking-budget { display: inline-flex; align-items: center; gap: 6px; }
