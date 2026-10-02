@@ -7,10 +7,11 @@
 .thinking-hint { color: rgb(var(--color-muted)); }
 .thinking-notice { width: 100%; color: rgb(var(--color-warning-text)); }
 .composer-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 4px; }
-.composer-tools { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; }
+.composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; flex: 1; }
 .composer-tool-button { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 7px; color: rgb(var(--color-text-soft)); cursor: pointer; }
 .composer-tool-button:hover:not(:disabled), .composer-tool-button[aria-expanded="true"] { background: rgb(var(--color-accent) / 0.1); }
 .composer-tool-button.is-active { color: rgb(var(--color-accent-text)); }
+.composer-layout-button[aria-pressed="true"] { color: rgb(var(--color-accent-text)); background: rgb(var(--color-accent) / 0.1); }
 .composer-tool-button:disabled { opacity: 0.45; cursor: default; }
 .composer-tool-button:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
 .thinking-toolbar-control { display: flex; flex-shrink: 0; }
@@ -1898,6 +1899,7 @@ textarea:disabled {
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
   color: rgb(var(--color-muted));
+.chat-layout-button[aria-pressed="true"] { color: rgb(var(--color-accent-text)); background: rgb(var(--color-accent) / 0.1); }
   font-size: var(--font-ui);
   height: 2rem;
   display: flex;

@@ -1,5 +1,11 @@
 # Ayase Studio Development Guide
 
+## Chat toolbar layout entry (#95, 2026-10-02)
+
+The header and composer width toggles share the existing `useChatLayout` state/callback and preference. Input height expansion remains local to Composer, using up/down double chevrons. Run `npm.cmd test -- src/ui/chat/ChatLayout.test.tsx src/ui/chat/Composer.test.tsx` for entry synchronization, generation-time switching, remount persistence, independent height state and draft/selection preservation. No new storage fields or native behavior are introduced.
+
+Verification: 12 targeted tests, the full `npm.cmd run check` (1939 tests, data contracts and production build), `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks passed. Independent scoped review found no actionable defects. The in-app browser mounted real ChatWorkspace/Composer with synthetic content and no providers/credentials at a separate localhost origin: 1440×900, 720×520, 360×520 and 320×360; light/dark, compact/expanded states, long model label, synchronized widths/pressed state, mouse and Enter/Space toggling, Escape collapse and preference restoration passed. Controls stayed within the viewport with no page horizontal overflow. Browser acceptance does not establish native WebView interaction; no native launch or live provider request was needed for this frontend change.
+
 ## Idle native close permission regression (2026-10-02)
 
 An idle dev window could remain in its closing state with `window.destroy not allowed`. Tauri's installed SDK calls `destroy()` after an `onCloseRequested` handler allows the event, so main needs both `core:window:allow-close` and `core:window:allow-destroy`. Only the latter permission was added; confirmation, settling and unsaved-image guards stay unchanged. Permission edits require restarting `npm.cmd run tauri dev`, not just frontend hot reload.

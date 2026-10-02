@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { FileImage, FileText, Maximize2, Minimize2, Paperclip, Send, Square, X } from "lucide-react";
+import { ChevronsDown, ChevronsUp, FileImage, FileText, MoveHorizontal, Paperclip, Send, Square, X } from "lucide-react";
 import { attachmentAccept, materializeDraftAttachment, type DraftAttachment } from "../../chat/attachments";
 import type { ChatProtocol } from "../../chat/types";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
 import { isTextareaVisualBoundary, type TextareaCaretAffinity } from "./textareaVisualLine";
+import type { ChatLayout } from "./useChatLayout";
 
 function DraftImagePreview({ item, opener, onClose }: {
   item: DraftAttachment; opener: HTMLElement; onClose(): void;
@@ -14,6 +15,8 @@ function DraftImagePreview({ item, opener, onClose }: {
 }
 
 export interface ComposerProps {
+  layout?: ChatLayout;
+  onToggleLayout?(): void;
   protocol?: ChatProtocol;
   thinkingControl?: ReactNode;
   searchControl?: ReactNode;
@@ -36,6 +39,8 @@ export interface ComposerProps {
 }
 
 export function Composer({
+  layout = "narrow",
+  onToggleLayout,
   protocol,
   thinkingControl,
   searchControl,
@@ -243,6 +248,12 @@ export function Composer({
               disabled={!isHydrated}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>
             {thinkingControl}
+            {onToggleLayout && <button className="composer-tool-button composer-layout-button" type="button"
+              aria-label={layout === "narrow" ? "切换为宽屏" : "切换为窄屏"}
+              title={layout === "narrow" ? "当前窄屏；切换为宽屏" : "当前宽屏；切换为窄屏"}
+              aria-pressed={layout === "wide"} onClick={onToggleLayout}>
+              <MoveHorizontal size={17} aria-hidden="true" />
+            </button>}
             <button className="composer-tool-button" type="button"
               aria-label={expanded ? "收起输入框" : "展开输入框"}
               aria-expanded={expanded}
@@ -252,7 +263,7 @@ export function Composer({
                 setExpanded(!expanded);
                 input.current?.focus();
               }}>
-              {expanded ? <Minimize2 size={17} aria-hidden="true" /> : <Maximize2 size={17} aria-hidden="true" />}
+              {expanded ? <ChevronsDown size={17} aria-hidden="true" /> : <ChevronsUp size={17} aria-hidden="true" />}
             </button>
             {searchControl}
             {modelControl}

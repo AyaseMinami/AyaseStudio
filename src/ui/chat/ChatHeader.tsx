@@ -55,10 +55,10 @@ export function ChatHeader({
     <header className="chat-header" aria-label={title} data-tauri-drag-region>
       <div className="chat-header-actions">
         {onToggleLayout && <button className="chat-layout-button" type="button"
-          aria-label={layout === "narrow" ? "展开聊天内容" : "收窄聊天内容"}
-          title={layout === "narrow" ? "展开聊天内容" : "收窄聊天内容"}
+          aria-label={layout === "narrow" ? "切换为宽屏" : "切换为窄屏"}
+          title={layout === "narrow" ? "当前窄屏；切换为宽屏" : "当前宽屏；切换为窄屏"}
           aria-pressed={layout === "wide"} onClick={onToggleLayout}>
-          <MoveHorizontal size={16} />
+          <MoveHorizontal size={16} aria-hidden="true" />
         </button>}
         <button className="clear-button" onClick={() => setConfirmingClear(true)} disabled={isGenerating || !isHydrated} type="button">清空</button>
         <WindowControls />

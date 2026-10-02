@@ -188,7 +188,7 @@ Issue #75：新用户消息提交并加入列表时，`MessageList` 在同一布
 
 Issue #36 / #61：SafeMarkdown 通过 remarkCodeBlocks 保留代码节点的语言和复制文本，CodeBlock 负责语言标签、复制反馈与 lowlight 语法树的 React 渲染。常用语言和 PowerShell 本地打包，未知语言不自动检测，按纯文本显示；不注入 HTML、不执行代码。围栏内文本保留换行形式和末尾换行，列表/引用容器的缩进仍由 Markdown 解析器处理。高亮按代码与语言缓存，组件类型保持稳定，流式更新不重建代码块。代码区通过 CSS 主题变量同步适配底板、标题栏、按钮状态与高亮：浅色为极浅暖灰底与深色文字，深色为炭灰底与浅色文字。默认通过 CSS 自适应换行；每块可独立切为正文横向滚动。换行选择仅在 CodeBlock 挂载期间保留，不持久化，流式内容更新不重置。视觉折行不插入字符、不自动补续行缩进，复制仍直接使用原始代码；消息存储、整条消息复制和请求内容不变。所有 SafeMarkdown 使用位置共用此行为。
 
-聊天内容宽度由 App 持有的 `useChatLayout` 管理，以独立 localStorage 键 `ayase-studio.chat-layout.v1` 保存本机全局偏好。默认窄屏，宽/窄模式只通过聊天容器 CSS 变量同步约束消息列与输入框，不进入助手配置、会话数据库或请求。存储不可用时当前运行仍可切换。
+聊天内容宽度由 App 持有的 `useChatLayout` 管理，以独立 localStorage 键 `ayase-studio.chat-layout.v1` 保存本机全局偏好。默认窄屏，宽/窄模式只通过聊天容器 CSS 变量同步约束消息列与输入框，不进入助手配置、会话数据库或请求。存储不可用时当前运行仍可切换。#95 的顶栏与输入框工具栏入口共用同一 `layout`／`onToggleLayout`，不各自维护偏好；Composer 的高度展开仍为独立组件状态。
 
 ## Purpose
 
