@@ -19,7 +19,7 @@ from `target`, which contains machine-specific paths and rendered build values.
 Run `pwsh -NoProfile -File scripts/test-installer-policy.ps1` from the repository
 root after a first NSIS bundle has populated Tauri's compiler/plugin cache.
 The harness compiles and executes the actual version comparison and policy block
-with six upgrade/reinstall/downgrade/WiX inputs, without installing an app or
+with nine upgrade/reinstall/downgrade/WiX inputs (including Alpha/Beta transitions), without installing an app or
 touching registry or application data. It does not test GUI page navigation.
 
 Validation: compile an NSIS bundle, inspect the generated script, then manually

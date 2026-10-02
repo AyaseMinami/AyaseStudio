@@ -2,7 +2,7 @@
 
 轻量、纯净、不含任何 Agent 功能的桌面 Chat Bot 工具。在同一个工作区管理多家模型服务、助手预设和对话，使用自己的 API Key 连接模型。
 
-基于 Tauri 2、React 和 TypeScript，当前以 **Windows x64** 为主要目标，处于 **Alpha** 阶段。
+基于 Tauri 2、React 和 TypeScript，当前以 **Windows x64** 为主要目标，处于 **Beta** 测试阶段。
 
 ## 功能
 
@@ -21,9 +21,9 @@
 
 ## 开始使用
 
-当前预发布版本：**[Alpha 3](https://github.com/AyaseMinami/AyaseStudio/releases/tag/v0.1.0-alpha.3)**。
+当前预发布版本：**[Beta 1](https://github.com/AyaseMinami/AyaseStudio/releases/tag/v0.1.0-beta.1)**。
 
-**[下载 Windows x64 安装包](https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-alpha.3/Ayase.Studio_0.1.0-alpha.3_x64-setup.exe)** · [所有版本与更新说明](https://github.com/AyaseMinami/AyaseStudio/releases)
+**[下载 Windows x64 安装包](https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.1/Ayase.Studio_0.1.0-beta.1_x64-setup.exe)** · [所有版本与更新说明](https://github.com/AyaseMinami/AyaseStudio/releases)
 
 运行下载的 `*-setup.exe` 安装；已有 NSIS 安装可覆盖升级，升级前请备份重要数据。安装包尚未进行代码签名，Windows 可能显示 SmartScreen 提示。GitHub 的 Source code ZIP/TAR.GZ 是源码，不是安装包。
 
@@ -33,13 +33,13 @@
 
 服务商 API 费用由服务商收取。兼容接口或中转服务的支持情况以实际服务为准。
 
-## 数据与 Alpha 注意事项
+## 数据与 Beta 注意事项
 
 - 聊天记录、连接配置及保存的附件和背景存放在本机；发送消息时，相关内容会传给你配置的模型服务。
 - 使用外部搜索时，仅本轮问题文本会发送给所配置的搜索服务，检索资料随后发给当前模型；各搜索 Key 与聊天 Key 独立。设置 → 网络搜索分别配置 Exa API（必填 Key）、Exa MCP（Key 选填）、Tavily 与智谱（必填 Key）。Tavily／智谱默认关闭，启用并保存才出现在聊天搜索菜单，设置列出额度／计费及官方链接。智谱问题最多 70 个字符。MCP 匿名访问受服务端限流，失败不会自动换接入方式。见 [#82 实现说明](docs/ISSUE-82-IMPLEMENTATION.md)。
 - **当前 API Key 在本机以明文保存，尚未加密。** 请保护设备和应用数据，仅连接可信服务，并优先使用 HTTPS。
 - 首条消息发送后，会使用同一模型额外请求一次简短的对话标题，可能产生少量 API 费用。
-- Alpha 版本仍在迭代，升级前请备份重要数据。使用过早期开发版的用户，请先阅读[数据目录迁移说明](docs/DEVELOPMENT.md#application-identity-and-existing-development-data)。
+- Beta 版本仍在迭代，升级前请备份重要数据。使用过早期开发版的用户，请先阅读[数据目录迁移说明](docs/DEVELOPMENT.md#application-identity-and-existing-development-data)。
 
 ## 从源码运行
 
