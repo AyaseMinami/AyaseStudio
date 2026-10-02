@@ -8,8 +8,11 @@ use tauri::{AppHandle, Manager};
 use uuid::{Uuid, Variant, Version};
 
 const QUARANTINE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+pub(crate) fn import_mime(name: &str, bytes: &[u8]) -> Option<&'static str> {
+    kind(name, bytes).ok().map(|(mime,_)| mime)
+}
 const SECOND_SCAN_AGE: Duration = Duration::from_secs(60 * 60);
-static FILE_OPERATIONS: Mutex<()> = Mutex::new(());
+pub(crate) static FILE_OPERATIONS: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, PartialEq, Eq)]
 enum AttachmentError { Unsupported, Corrupt, InvalidReference, Unavailable, Storage }

@@ -2,24 +2,28 @@
 
 轻量、纯净、不含任何 Agent 功能的桌面 Chat Bot 工具。在同一个工作区管理多家模型服务、助手预设和对话，使用自己的 API Key 连接模型。
 
-基于 Tauri 2、React 和 TypeScript，当前以 **Windows x64** 为主要目标，处于 **Alpha** 阶段。
+基于 Tauri 2、React 和 TypeScript，当前以 **Windows x64** 为主要目标，处于 **Beta** 测试阶段。
 
 ## 功能
+
+- 11 家内置供应商提供可编辑官方默认连接，包含已适配绘图协议；共用离线厂商头像库，自定义可直接命名并拖动排序。详见 [#100](docs/ISSUE-100-IMPLEMENTATION.md)。
+
+- **独立绘图**：Gemini、OpenAI Images、[Grok / xAI 与 Seedream / 火山方舟](docs/ISSUE-103-IMPLEMENTATION.md) 文生图／[多参考图编辑](docs/ISSUE-86-IMPLEMENTATION.md)；按协议和明确版本选择参数，自动保存、大图预览和 PNG 导出。官方合同实现与真实服务／中转验收分别记录。
 
 - **多协议连接**：支持 OpenAI Chat Completions、OpenAI Responses、Gemini 和 Anthropic 原生协议；按供应商、连接、模型组织配置。
 - **对话与助手**：助手提供新对话预设，每个对话可独立设置模型、系统提示词和生成参数；支持并行生成、停止和自动命名。
 - **消息操作**：复制、编辑、重新生成、对话分支，以及最新一轮问答的版本切换。
 - **阅读与附件**：Markdown、LaTeX、代码高亮，图片、PDF 和文本附件；Responses 连接另支持 DOCX、XLSX、PPTX 原文件输入。
-- **思考与搜索**：提供协议对应的思考选项、思考内容展示和供应商原生联网搜索，支持引用与来源查看。
+- **思考与搜索**：提供协议对应的思考选项、思考内容展示、供应商原生联网搜索及 Exa API / MCP、Tavily、智谱外部搜索，支持引用与来源查看。
 - **外观定制**：浅色、深色、跟随系统，自定义配色、透明度和本地背景。
 
 具体能力取决于所选模型和服务端支持。Office 文件仅展示文件信息，不在本地解析或转换；版本切换仅保留最新一轮的候选问答。
 
 ## 开始使用
 
-当前预发布版本：**[Alpha 3](https://github.com/AyaseMinami/AyaseStudio/releases/tag/v0.1.0-alpha.3)**。
+当前预发布版本：**[Beta 1](https://github.com/AyaseMinami/AyaseStudio/releases/tag/v0.1.0-beta.1)**。
 
-**[下载 Windows x64 安装包](https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-alpha.3/Ayase.Studio_0.1.0-alpha.3_x64-setup.exe)** · [所有版本与更新说明](https://github.com/AyaseMinami/AyaseStudio/releases)
+**[下载 Windows x64 安装包](https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.1/Ayase.Studio_0.1.0-beta.1_x64-setup.exe)** · [所有版本与更新说明](https://github.com/AyaseMinami/AyaseStudio/releases)
 
 运行下载的 `*-setup.exe` 安装；已有 NSIS 安装可覆盖升级，升级前请备份重要数据。安装包尚未进行代码签名，Windows 可能显示 SmartScreen 提示。GitHub 的 Source code ZIP/TAR.GZ 是源码，不是安装包。
 
@@ -29,12 +33,13 @@
 
 服务商 API 费用由服务商收取。兼容接口或中转服务的支持情况以实际服务为准。
 
-## 数据与 Alpha 注意事项
+## 数据与 Beta 注意事项
 
 - 聊天记录、连接配置及保存的附件和背景存放在本机；发送消息时，相关内容会传给你配置的模型服务。
+- 使用外部搜索时，仅本轮问题文本会发送给所配置的搜索服务，检索资料随后发给当前模型；各搜索 Key 与聊天 Key 独立。设置 → 网络搜索分别配置 Exa API（必填 Key）、Exa MCP（Key 选填）、Tavily 与智谱（必填 Key）。Tavily／智谱默认关闭，启用并保存才出现在聊天搜索菜单，设置列出额度／计费及官方链接。智谱问题最多 70 个字符。MCP 匿名访问受服务端限流，失败不会自动换接入方式。见 [#82 实现说明](docs/ISSUE-82-IMPLEMENTATION.md)。
 - **当前 API Key 在本机以明文保存，尚未加密。** 请保护设备和应用数据，仅连接可信服务，并优先使用 HTTPS。
 - 首条消息发送后，会使用同一模型额外请求一次简短的对话标题，可能产生少量 API 费用。
-- Alpha 版本仍在迭代，升级前请备份重要数据。使用过早期开发版的用户，请先阅读[数据目录迁移说明](docs/DEVELOPMENT.md#application-identity-and-existing-development-data)。
+- Beta 版本仍在迭代，升级前请备份重要数据。使用过早期开发版的用户，请先阅读[数据目录迁移说明](docs/DEVELOPMENT.md#application-identity-and-existing-development-data)。
 
 ## 从源码运行
 
@@ -64,11 +69,16 @@ cargo check --locked --manifest-path src-tauri/Cargo.toml
 npm.cmd run build:windows
 ```
 
-安装包输出目录：`src-tauri/target/release/bundle/nsis/`。构建成功不等于安装与升级验收通过，发布前仍需验证全新安装、覆盖升级和本地数据保留。
+安装包输出目录：`src-tauri/target/release/bundle/nsis/`。每次成功打包会保留 Tauri 标准文件，并额外生成带本机日期时间后缀的安装包副本（如 `_20260930-205336.exe`），避免后续增量构建覆盖旧包。构建成功不等于安装与升级验收通过，发布前仍需验证全新安装、覆盖升级和本地数据保留。
 
 自动测试使用模拟响应，不调用真实模型。真实 API 探针的配置与费用说明见[开发指南](docs/DEVELOPMENT.md)；请勿提交密钥或 `.env.probe.local`。
 
 ## 文档与反馈
+
+完整入口见 [文档索引](docs/README.md)；早期提案和模拟草图保存在 [历史归档](docs/archive/README.md)，不作为当前开发规则。
+
+- [Cherry 聊天导入指南](docs/CHERRY-IMPORT.md)：设置入口、支持格式、重复导入和附件限制。
+- [Ayase 备份与恢复](docs/AYASE-BACKUP.md)：本地自有格式、连接／密钥选项、密码及恢复策略。
 
 - [开发指南](docs/DEVELOPMENT.md)：环境、命令、数据迁移与验证。
 - [架构说明](docs/ARCHITECTURE.md)：模块边界、状态与持久化。

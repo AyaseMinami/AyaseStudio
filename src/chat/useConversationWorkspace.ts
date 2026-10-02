@@ -5,12 +5,11 @@ import type { StoredChatMessage, WorkspaceRepository } from "./repository";
 import type { ConfigErrors } from "./sessionConfig";
 import type { DraftAttachment } from "./attachments";
 import { SessionStore } from "./sessionStore";
+import { browseInputHistory, consumeInputDraft, type InputDraft, type DraftSelection } from "./inputHistory";
 import { selectedConversation, type WorkspaceCommand, type WorkspaceSnapshot } from "./workspace";
 
-interface ConversationView {
+interface ConversationView extends InputDraft {
   messages: StoredChatMessage[];
-  draft: string;
-  draftRevision: number;
   draftAttachments: DraftAttachment[];
   attachmentBusy: boolean;
   error?: string;
@@ -19,11 +18,11 @@ interface ConversationView {
 }
 
 function emptyView(): ConversationView {
-  return { messages: [], draft: "", draftRevision: 0, draftAttachments: [], attachmentBusy: false, configErrors: {} };
+  return { messages: [], draft: "", draftRevision: 0, draftSelection: { start: 0, end: 0 }, draftAttachments: [], attachmentBusy: false, configErrors: {} };
 }
 
 export function useConversationWorkspace(repository: WorkspaceRepository, legacyModelId: string | null,
-  validModelIds: string[], isGenerating: (id: string) => boolean, cleanupAttachments?: () => Promise<void>) {
+  validModelIds: string[], isGenerating: (id: string) => boolean, cleanupAttachments?: () => Promise<void>, maintenanceLocked: () => boolean = () => false) {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot>();
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string>();
@@ -36,6 +35,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   const fallback = useRef(emptyView());
   const queue = useRef(Promise.resolve());
   const pending = useRef(0);
+  const hasHydratedView = useRef(false);
   const initial = useRef({ legacyModelId, validModelIds });
   const latestModelIds = useRef(validModelIds);
   latestModelIds.current = validModelIds;
@@ -48,6 +48,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     const state = await store.hydrate();
     stores.current.set(id, store);
     views.current.set(id, { ...(views.current.get(id) ?? emptyView()), messages: state.messages });
+    hasHydratedView.current = true;
   }
 
   async function publish(next: WorkspaceSnapshot): Promise<void> {
@@ -62,7 +63,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   }
 
   function initialize(): void {
-    if (pending.current) return;
+    if (pending.current || maintenanceLocked()) return;
     pending.current++;
     setBusy(true);
     setLoadError(undefined);
@@ -88,7 +89,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   }, []);
 
   async function execute(command: WorkspaceCommand): Promise<boolean> {
-    if (!snapshotRef.current) return false;
+    if (!snapshotRef.current || maintenanceLocked()) return false;
     const action = structuredClone(command);
     pending.current++;
     setBusy(true);
@@ -149,9 +150,10 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   // Share the write ordering with navigation, but never hold global busy for a background title.
   async function updateAutomaticTitle(command: Extract<WorkspaceCommand,
     { type: "start-conversation-title" | "finish-conversation-title" }>) {
+    if (maintenanceLocked()) return undefined;
     let conversation: WorkspaceSnapshot["conversations"][number] | undefined;
     const next = queue.current.catch(() => undefined).then(async () => {
-      if (!alive.current) return;
+      if (!alive.current || maintenanceLocked()) return;
       const updated = await repository.execute(command);
       snapshotRef.current = updated;
       if (alive.current) setSnapshot(updated);
@@ -175,7 +177,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   const id = conversation?.id;
   const view = (id && views.current.get(id)) || fallback.current;
   function setField<K extends keyof ConversationView>(field: K, value: SetStateAction<ConversationView[K]>): void {
-    if (!id) return;
+    if (!id || maintenanceLocked()) return;
     const current = views.current.get(id);
     if (!current) return;
     const next = typeof value === "function" ? (value as (old: ConversationView[K]) => ConversationView[K])(current[field]) : value;
@@ -185,9 +187,16 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
 
   return {
     snapshot, conversation, assistant, effective, view, busy, loadError, operationError, execute, updateAutomaticTitle, retry: initialize,
+    // Presentation only: the first transcript load remains visibly unavailable.
+    isTemporarilyBusy: busy && hasHydratedView.current,
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
-    canSend: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
+    isSettled: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
+    canSend: () => !maintenanceLocked() && pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,
+    flushSessionWrites: async () => {
+      await queue.current;
+      await Promise.all([...stores.current.values()].map((store) => store.flush()));
+    },
     setMessages: (value: SetStateAction<StoredChatMessage[]>) => setField("messages", value),
     setDraft: (value: string) => {
       if (!id) return;
@@ -197,8 +206,27 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
       changed();
     },
     clearDraftIfUnchanged: (revision: number) => {
-      if (!id || views.current.get(id)?.draftRevision !== revision) return;
-      setField("draft", "");
+      if (!id) return;
+      const current = views.current.get(id);
+      if (!current || current.draftRevision !== revision) return;
+      views.current.set(id, { ...current, ...consumeInputDraft(current, revision) });
+      changed();
+    },
+    setDraftSelection: (selection: DraftSelection) => {
+      if (!id) return;
+      const current = views.current.get(id);
+      if (!current || (current.draftSelection.start === selection.start && current.draftSelection.end === selection.end)) return;
+      // Selection is remembered for remount/navigation, without rerendering on every caret move.
+      views.current.set(id, { ...current, draftSelection: { ...selection } });
+    },
+    browseHistory: (direction: -1 | 1, selection: DraftSelection): boolean => {
+      if (!id || pending.current || !snapshotRef.current || selectedConversation(snapshotRef.current)?.id !== id) return false;
+      const current = views.current.get(id);
+      if (!current) return false;
+      const next = browseInputHistory(current, current.messages, direction, selection);
+      if (!next) return false;
+      if (next !== current) { views.current.set(id, { ...current, ...next }); changed(); }
+      return true;
     },
     setDraftAttachments: (value: SetStateAction<DraftAttachment[]>) => setField("draftAttachments", value),
     setAttachmentBusy: (value: boolean) => setField("attachmentBusy", value),

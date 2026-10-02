@@ -1,0 +1,12 @@
+{
+  "identifier": "io.github.ayaseminami.ayasestudio.usage107acceptance",
+  "build": {
+    "beforeDevCommand": "",
+    "devUrl": "http://127.0.0.1:1507/scripts/usage107/index.html"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1507; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+    }
+  }
+}

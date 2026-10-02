@@ -26,17 +26,19 @@ export interface SessionConfigPanelProps {
   model: string;
   onChange(config: SessionConfig): void;
   resetLabel?: string;
+  initialFocusId?: string;
   onClose(): void;
   onReset(): void;
 }
 
-export function SessionConfigPanel({ presentation = "drawer", disabled = false, title = "会话配置", description = "当前对话独立保存，修改立即写入本地。", children, footer, config, errors, protocol, model, onChange, onClose, onReset, resetLabel = "恢复默认配置" }: SessionConfigPanelProps) {
+export function SessionConfigPanel({ presentation = "drawer", disabled = false, title = "会话配置", description = "当前对话独立保存，修改立即写入本地。", children, footer, config, errors, protocol, model, onChange, onClose, onReset, resetLabel = "恢复默认配置", initialFocusId }: SessionConfigPanelProps) {
   const panel = useRef<HTMLElement>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const showAdvanced = advancedOpen || !!errors.customJson;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    panel.current?.querySelector<HTMLElement>("input:not(:disabled), textarea, button")?.focus();
+    const requested = initialFocusId ? document.getElementById(initialFocusId) : null;
+    (requested && panel.current?.contains(requested) ? requested : panel.current?.querySelector<HTMLElement>("input:not(:disabled), textarea, button"))?.focus();
     return () => previous?.focus();
   }, []);
   useEffect(() => {

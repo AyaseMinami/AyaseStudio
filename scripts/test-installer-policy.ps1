@@ -41,6 +41,9 @@ try {
   & (Join-Path $NsisDirectory 'makensis.exe') /V2 "policy.nsi"
   if ($LASTEXITCODE -ne 0) { throw 'NSIS policy harness compilation failed' }
   $cases = @(
+    @{ Name = 'Alpha to Beta upgrade'; Old = '0.1.0-alpha.3'; New = '0.1.0-beta.1'; Wix = 0; Code = 42 },
+    @{ Name = 'Beta same-version reinstall'; Old = '0.1.0-beta.1'; New = '0.1.0-beta.1'; Wix = 0; Code = 42 },
+    @{ Name = 'Beta to Alpha downgrade retains choices'; Old = '0.1.0-beta.1'; New = '0.1.0-alpha.3'; Wix = 0; Code = 0 },
     @{ Name = 'upgrade'; Old = '0.1.0-alpha.1'; New = '0.1.0-alpha.2'; Wix = 0; Code = 42 },
     @{ Name = 'same-version reinstall'; Old = '0.1.0-alpha.2'; New = '0.1.0-alpha.2'; Wix = 0; Code = 42 },
     @{ Name = 'numeric prerelease upgrade'; Old = '0.1.0-alpha.2'; New = '0.1.0-alpha.10'; Wix = 0; Code = 42 },

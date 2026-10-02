@@ -1,0 +1,5 @@
+{
+  "identifier": "io.github.ayaseminami.ayasestudio.search82acceptance",
+  "build": { "beforeDevCommand": "", "devUrl": "http://127.0.0.1:1519/scripts/search82/index.html" },
+  "app": { "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1519; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:" } }
+}

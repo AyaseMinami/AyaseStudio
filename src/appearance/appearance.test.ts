@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { centerBackgroundFocus } from "./backgroundFocus";
+import { colorPresets } from "./colorPresets";
 
 import {
   APPEARANCE_STORAGE_KEY,
@@ -14,6 +15,9 @@ import {
 } from "./appearance";
 
 const expectedDefaultPreferences = {
+  backgroundLibrary: [],
+  backgroundEnabled: true,
+  backgroundName: null,
   userBubbleColor: null,
   unifiedThemeColor: null,
   colorPreset: "default" as const,
@@ -85,6 +89,74 @@ function createThemeHarness(initiallyDark = false) {
 }
 
 describe("appearance preferences", () => {
+  it.each(colorPresets)("persists $id across restart and theme changes without touching background or transparency", async (preset) => {
+    let saved: string | null = JSON.stringify({ ...expectedDefaultPreferences, backgroundEnabled: false,
+      sidebarTransparency: 25, composerTransparency: 35, assistantBubbleTransparency: 20, backgroundName: "保留的背景",
+      backgroundReference: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png", backgroundMask: 72, backgroundBlur: 3 });
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    const harness = createThemeHarness();
+    const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    await controller.ready;
+    const before = JSON.parse(saved!);
+    controller.setUnifiedThemeColor("#123456");
+    controller.setCanvasColor("#abcdef");
+    controller.setAssistantBubbleColor("#eeeeee");
+    controller.setColorPreset(preset.id);
+    const after = JSON.parse(saved!);
+    expect(after).toEqual({ ...before, colorPreset: preset.id });
+    expect(controller.getSnapshot()).toMatchObject({ effectiveAccentColor: preset.light.accent,
+      effectiveCanvasColor: preset.light.canvas, effectiveUserBubbleColor: preset.light.userBubble });
+    harness.setSystemTheme(true);
+    expect(controller.getSnapshot()).toMatchObject({ colorPreset: preset.id, resolvedTheme: "dark",
+      effectiveAccentColor: preset.dark.accent, effectiveCanvasColor: preset.dark.canvas, effectiveUserBubbleColor: preset.dark.userBubble });
+    controller.setUserBubbleColor("#bacdef");
+    controller.destroy();
+    const restarted = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    await restarted.ready;
+    expect(restarted.getSnapshot()).toMatchObject({ colorPreset: preset.id, userBubbleColor: "#bacdef", resolvedTheme: "dark" });
+    restarted.setThemeMode("light");
+    expect(restarted.getSnapshot()).toMatchObject({ colorPreset: preset.id, userBubbleColor: "#bacdef" });
+    restarted.setColorPreset(preset.id);
+    expect(restarted.getSnapshot()).toMatchObject({ userBubbleColor: null, effectiveUserBubbleColor: preset.light.userBubble,
+      backgroundReference: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png", backgroundEnabled: false, sidebarTransparency: 25, composerTransparency: 35 });
+    restarted.destroy();
+  });
+
+  it("keeps legacy presets and safely falls back for an unknown preset", () => {
+    for (const id of ["reading", "default", "unknown", null]) {
+      const preferences = loadAppearancePreferences({ getItem: () => JSON.stringify({ colorPreset: id, accentColor: "#123456", themeMode: "dark" }), setItem: () => {} });
+      expect(preferences).toMatchObject({ colorPreset: id === "reading" ? "reading" : "default", accentColor: "#123456", themeMode: "dark" });
+    }
+  });
+
+  it.each(colorPresets)("keeps $id text and controls readable in both themes", async (preset) => {
+    const rgb = (hex: string) => [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16));
+    const contrast = (a: number[], b: number[]) => {
+      const luminance = (channels: number[]) => channels.map(c => c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const x = luminance(a), y = luminance(b);
+      return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    };
+    for (const dark of [false, true]) {
+      const harness = createThemeHarness(dark);
+      const controller = createAppearanceController({ storage: { getItem: () => null, setItem: () => {} }, systemTheme: harness.systemTheme, target: harness.target });
+      await controller.ready;
+      controller.setColorPreset(preset.id);
+      const palette = dark ? preset.dark : preset.light;
+      const text = dark ? [245, 245, 244] : [41, 42, 45];
+      expect(contrast(text, rgb(palette.canvas))).toBeGreaterThanOrEqual(7);
+      expect(contrast(text, rgb(palette.assistantBubble))).toBeGreaterThanOrEqual(4.5);
+      const value = (name: string, fallback: string) => (harness.styleProperties.get(name) ?? fallback).split(" ").map(Number);
+      expect(contrast(value("--color-on-accent", dark ? "15 23 42" : "255 255 255"), rgb(palette.accent))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(value("--color-focus", dark ? "147 197 253" : "37 99 235"), value("--color-panel", dark ? "28 25 23" : "255 255 255"))).toBeGreaterThanOrEqual(3);
+      for (const transparency of [0, 6, 25, 50, 75, 100]) {
+        controller.setAssistantBubbleTransparency(transparency);
+        const background = rgb(palette.userBubble).map((c, i) => Math.round(c * (1 - transparency / 100) + rgb(palette.canvas)[i] * transparency / 100));
+        expect(contrast(value("--color-user-message-text", dark ? "15 23 42" : "41 42 45"), background)).toBeGreaterThanOrEqual(4.5);
+      }
+      controller.destroy();
+    }
+  });
+
   it("unifies only component and user colors, then preserves independent edits across restart", async () => {
     let saved: string | null = null;
     const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
@@ -326,6 +398,7 @@ describe("appearance preferences", () => {
 
     expect(loadAppearancePreferences(validStorage)).toEqual({
       ...expectedDefaultPreferences,
+      backgroundLibrary: [{ id: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp", reference: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp", name: "原有背景", fit: "contain", mask: 48, blur: 12, focus: null }],
       themeMode: "system",
       accentColor: "#a855f7",
       userBubbleColor: "#a855f7",
@@ -564,7 +637,7 @@ describe("appearance controller", () => {
     expect(cleanupCalls).toEqual([[previousReference], [nextReference]]);
   });
 
-  it("removes only the managed background reference and cleans private copies", async () => {
+  it("disables the background while retaining the managed reference for restoration", async () => {
     const harness = createThemeHarness(false);
     const reference =
       "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png";
@@ -599,13 +672,14 @@ describe("appearance controller", () => {
     await controller.removeBackground();
 
     expect(controller.getSnapshot()).toMatchObject({
-      backgroundReference: null,
+      backgroundReference: reference,
+      backgroundEnabled: false,
       backgroundUrl: null,
       backgroundStatus: "none",
       backgroundBusy: false,
     });
-    expect(JSON.parse(saved).backgroundReference).toBeNull();
-    expect(cleanupCalls).toEqual([[reference], []]);
+    expect(JSON.parse(saved).backgroundReference).toBe(reference);
+    expect(cleanupCalls).toEqual([[reference]]);
     expect(harness.attributes.has("data-has-background")).toBe(false);
   });
 
@@ -641,6 +715,7 @@ describe("appearance controller", () => {
     expect(harness.styleProperties.get("--appearance-background-blur")).toBe(
       "32px",
     );
+    expect(harness.styleProperties.get("--appearance-background-scale")).toBeUndefined();
     expect(JSON.parse(saved)).toMatchObject({
       backgroundFit: "contain",
       backgroundMask: 35,
@@ -690,6 +765,8 @@ describe("appearance controller", () => {
 
     expect(controller.getSnapshot()).toMatchObject({
       ...expectedDefaultPreferences,
+      backgroundReference: reference, backgroundName: "原有背景", backgroundEnabled: false,
+      backgroundFit: "contain", backgroundMask: 48, backgroundBlur: 14,
       themeMode: "dark",
       resolvedTheme: "dark",
       backgroundUrl: null,
@@ -697,9 +774,11 @@ describe("appearance controller", () => {
     });
     expect(JSON.parse(saved)).toEqual({
       ...expectedDefaultPreferences,
+      backgroundReference: reference, backgroundName: "原有背景", backgroundEnabled: false,
+      backgroundFit: "contain", backgroundMask: 48, backgroundBlur: 14,
       themeMode: "dark",
     });
-    expect(cleanupCalls).toEqual([[reference], []]);
+    expect(cleanupCalls).toEqual([[reference]]);
     expect(harness.styleProperties.has("--color-accent")).toBe(false);
     expect(harness.styleProperties.has("--color-canvas")).toBe(false);
   });
@@ -734,7 +813,7 @@ describe("appearance controller", () => {
     expect(controller.getSnapshot().effectiveAccentColor).toBe(lightAccent);
   });
 
-  it("clears a missing private background reference without blocking startup", async () => {
+  it("retains a missing private background reference for recovery without blocking startup", async () => {
     const harness = createThemeHarness(false);
     const reference =
       "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp";
@@ -767,14 +846,14 @@ describe("appearance controller", () => {
     await controller.ready;
 
     expect(controller.getSnapshot()).toMatchObject({
-      backgroundReference: null,
+      backgroundReference: reference,
       backgroundUrl: null,
       backgroundStatus: "error",
       backgroundBusy: false,
       backgroundError: "已保存的背景不可用，已回退到基础主题。",
     });
-    expect(JSON.parse(saved).backgroundReference).toBeNull();
-    expect(cleanupCalls).toEqual([[]]);
+    expect(saved).toBe("");
+    expect(cleanupCalls).toEqual([]);
   });
 
   it("keeps the current background when a replacement is rejected", async () => {
@@ -861,12 +940,11 @@ describe("appearance controller", () => {
 
     await controller.confirmBackgroundFocus(centerBackgroundFocus);
     expect(controller.getSnapshot().backgroundError).toBe(
-      "背景已预览，但本机偏好暂时无法保存。",
+      "无法保存背景设置，原图片和配置保持不变，请重试。",
     );
-    expect(cleanupCalls).toEqual([
-      [previousReference],
-      [previousReference, nextReference],
-    ]);
+    expect(controller.getSnapshot().backgroundReference).toBe(previousReference);
+    expect(controller.getSnapshot().backgroundDraft?.reference).toBe(nextReference);
+    expect(cleanupCalls).toEqual([[previousReference]]);
   });
 
   it("keeps background operations busy until deferred cleanup finishes", async () => {
@@ -1051,15 +1129,17 @@ describe("appearance controller", () => {
 
     await controller.selectBackground();
     await controller.confirmBackgroundFocus(centerBackgroundFocus);
+    await controller.cancelBackgroundFocus();
     await controller.selectBackground();
     await controller.confirmBackgroundFocus(centerBackgroundFocus);
+    await controller.cancelBackgroundFocus();
     await controller.removeBackground();
 
     expect(cleanupCalls).toEqual([
       [persistedReference],
-      [persistedReference, firstPreview],
-      [persistedReference, secondPreview],
+      [persistedReference],
       [persistedReference],
     ]);
+    expect(controller.getSnapshot().backgroundReference).toBe(persistedReference);
   });
 });

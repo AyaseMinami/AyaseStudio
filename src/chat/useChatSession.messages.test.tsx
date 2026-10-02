@@ -67,6 +67,34 @@ describe("message actions through the session", () => {
     } } satisfies ChatTransport);
   }
 
+  it("sends a recalled edit as a new message and restores the unsent original", async () => {
+    let sent: ChatRequest | undefined;
+    respond(request => { sent = request; });
+    await act(async () => session.setDraft("keep original draft"));
+    await act(async () => { session.workspace.browseHistory(-1, { start: 5, end: 5 }); });
+    expect(session.draft).toBe("three");
+    expect(session.draftAttachments).toEqual([]);
+    await act(async () => session.setDraft("three recalled and edited"));
+    await act(async () => { await session.sendMessage(); });
+    expect(sent?.messages.slice(-1)[0].content).toBe("three recalled and edited");
+    expect(session.draft).toBe("keep original draft");
+    expect(session.workspace.view.draftSelection).toEqual({ start: 5, end: 5 });
+    expect(session.messages.find(item => item.id === "u3")?.content).toBe("three");
+  });
+
+  it("retains a recalled edit and its original when send preflight rejects it", async () => {
+    await act(async () => session.setDraft("original"));
+    await act(async () => { session.workspace.browseHistory(-1, { start: 0, end: 0 }); });
+    await act(async () => session.setDraft("edited history"));
+    await act(async () => { await session.workspace.execute({ type: "configure-conversation", id: "current",
+      settings: { ...session.workspace.effective, modelId: null } }); });
+    await act(async () => { await session.sendMessage(); });
+    expect(session.draft).toBe("edited history");
+    await act(async () => { session.workspace.browseHistory(1, { start: 14, end: 14 }); });
+    expect(session.draft).toBe("original");
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+  });
+
   it("switches latest paired versions, persists selection and discards alternatives on the next turn", async () => {
     respond();
     await act(async () => { await session.editAndSendMessage("u3", "three revised"); });

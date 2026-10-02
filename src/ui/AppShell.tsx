@@ -1,22 +1,24 @@
 import type { ReactNode } from "react";
-import { MessageSquare, Settings } from "lucide-react";
+import { Image, MessageSquare, Settings } from "lucide-react";
 import appIcon from "../../assets/branding/ayase-icon.svg";
 
-export type AppPage = "chat" | "settings";
+export type AppPage = "chat" | "drawing" | "settings";
 
 export function AppShell({
   activePage,
   children,
   background,
   onPageChange,
+  interactionDisabled = false,
 }: {
   activePage: AppPage;
   children: ReactNode;
   background?: ReactNode;
   onPageChange(page: AppPage): void;
+  interactionDisabled?: boolean;
 }) {
   return (
-    <main className="app-shell">
+    <main className="app-shell" inert={interactionDisabled} aria-busy={interactionDisabled || undefined}>
       <div className="app-background" aria-hidden="true">{background}</div>
       <aside className="app-navigation" aria-label="主要功能">
         <div className="app-navigation-brand" aria-label="Ayase Studio">
@@ -32,6 +34,16 @@ export function AppShell({
           >
             <MessageSquare size={19} />
             <span>聊天</span>
+          </button>
+          <button
+            className="app-navigation-button"
+            aria-label="绘图"
+            aria-current={activePage === "drawing" ? "page" : undefined}
+            onClick={() => onPageChange("drawing")}
+            type="button"
+          >
+            <Image size={19} />
+            <span>绘图</span>
           </button>
           <button
             className="app-navigation-button app-navigation-settings"

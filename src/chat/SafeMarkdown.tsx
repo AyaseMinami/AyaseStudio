@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, MouseEvent, ReactNode } from "react";
+import { memo, type ComponentPropsWithoutRef, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -11,6 +11,8 @@ import type { ExtraProps } from "react-markdown";
 import type { PluggableList } from "unified";
 
 import type { SearchRecord } from "./nativeSearch";
+import { renderExternalCitations } from "../search/citations";
+import { isExternalSearch } from "../search/mode";
 import { openExternal, safeExternalUrl } from "./externalLinks";
 
 type MarkdownNode = {
@@ -150,10 +152,12 @@ function CodePre({ node, children, ...props }: ComponentPropsWithoutRef<"pre"> &
   return <pre {...props}>{children}</pre>;
 }
 
-export function SafeMarkdown({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
+function SafeMarkdownContent({ children, search }: { children: string; search?: SearchRecord }): ReactNode {
   const citations = validCitations(search, children);
   const remarkPlugins: PluggableList = [[remarkGfm, { singleTilde: false }], remarkMath, remarkMathSyntax, remarkCodeBlocks,
-    ...(citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : []),
+    ...(isExternalSearch(search?.provider)
+      ? [() => (tree: unknown) => renderExternalCitations(tree as MarkdownNode, children, search.sources, citationNode)]
+      : citations.length ? [() => (tree: unknown) => addCitationBadges(tree, citations, children)] : []),
     () => (tree: unknown) => addSoftLineBreaks(tree)];
   return <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[[rehypeKatex, { trust: false, errorColor: "currentColor" }]]} components={{
     a: ExternalLink,
@@ -161,3 +165,6 @@ export function SafeMarkdown({ children, search }: { children: string; search?: 
     span: ({ node: _node, ...props }) => search ? CitationSpan(props, search) : <span {...props} />,
   }}>{children}</ReactMarkdown>;
 }
+
+/** Unchanged history skips parsing; changed text or search data still renders. */
+export const SafeMarkdown = memo(SafeMarkdownContent);

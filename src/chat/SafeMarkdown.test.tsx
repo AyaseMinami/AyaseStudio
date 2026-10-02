@@ -11,6 +11,42 @@ function render(content: string) {
 }
 
 describe("SafeMarkdown", () => {
+  it("replaces verified external markers in ordinary text but preserves code/math and unknown IDs", () => {
+    const source = { id: "s1", title: "Source", url: "https://source.example/" };
+    const search = { enabled: true, provider: "exa-mcp" as const, status: "completed" as const, sources: [source], queries: ["question"], citations: [] };
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(<SafeMarkdown search={search}>{"中文😀\r\n正文[ayase-source:s1] 和\\*转义后的[ayase-source:s1]。\n\n`[ayase-source:s1]` $x+[ayase-source:s1]$ 未知[ayase-source:no]"}</SafeMarkdown>);
+    expect(host.querySelectorAll(".citation-badge")).toHaveLength(2);
+    expect(host.querySelector("code")?.textContent).toBe("[ayase-source:s1]");
+    expect(host.querySelector(".katex")?.textContent).toContain("ayase");
+    expect(host.textContent).toContain("[ayase-source:no]");
+    expect(host.textContent).not.toContain("正文[ayase-source:s1]");
+  });
+  it("never makes inert model HTML or escaped external markers into source buttons", () => {
+    const search = { enabled: true, provider: "exa-mcp" as const, status: "completed" as const, sources: [{ id: "s1", title: "S", url: "https://source.example/" }], queries: [], citations: [] };
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(<SafeMarkdown search={search}>{"\\[ayase-source:s1]\n\n<div>[ayase-source:s1]</div>\n\n<script>alert(1)</script>"}</SafeMarkdown>);
+    expect(host.querySelector(".citation-badge")).toBeNull();
+    expect(host.querySelector("script")).toBeNull();
+  });
+  it("maps source offsets past escaped duplicates, entities and list indentation", () => {
+    const search = { enabled: true, provider: "exa-mcp" as const, status: "completed" as const, sources: [{ id: "s1", title: "S", url: "https://source.example/" }], queries: [], citations: [] };
+    for (const content of [String.raw`Literal [ayase-source:s1\] actual [ayase-source:s1]`, String.raw`Literal [ayase-source\:s1] actual [ayase-source:s1]`, "Literal &#91;ayase-source:s1] actual [ayase-source:s1]", "- first\n  literal [ayase-source:s1\\] actual [ayase-source:s1]"]) {
+      const host = document.createElement("div");
+      host.innerHTML = renderToStaticMarkup(<SafeMarkdown search={search}>{content}</SafeMarkdown>);
+      expect(host.querySelectorAll(".citation-badge")).toHaveLength(1);
+      expect(host.textContent).toContain("[ayase-source:s1] actual [1]");
+    }
+  });
+  it("maps references across actual quote containers without consuming literal greater-than text", () => {
+    const search = { enabled: true, provider: "exa-mcp" as const, status: "completed" as const, sources: [{ id: "s1", title: "S", url: "https://source.example/" }], queries: [], citations: [] };
+    for (const content of ["> first\n> cite [ayase-source:s1]", "> first\r\n> cite [ayase-source:s1]", "> > first\n> > cite [ayase-source:s1]", "- > first\n  > cite [ayase-source:s1]", "> first\n> a > b [ayase-source:s1]"]) {
+      const host = document.createElement("div");
+      host.innerHTML = renderToStaticMarkup(<SafeMarkdown search={search}>{content}</SafeMarkdown>);
+      expect(host.querySelectorAll(".citation-badge")).toHaveLength(1);
+      expect(host.textContent).not.toContain("ayase-source:");
+    }
+  });
   it("preserves tilde number ranges while supporting double-tilde strikethrough", () => {
     const host = render("通常建议**男性从 10~12 磅、女性从 8~10 磅**开始适应。~~删除线~~");
 

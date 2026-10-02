@@ -3,6 +3,8 @@
 .search-status svg { flex-shrink: 0; }
 .search-status-failed, .search-error { color: rgb(var(--color-error-text)); }
 .search-results .search-queries, .search-results .search-error { margin: 0; overflow-wrap: anywhere; }
+.search-results .search-warning, .search-results .search-citation-notice { margin: 0; overflow-wrap: anywhere; }
+.search-results .search-source-excerpt { margin: 0.2rem 0 0.4rem 1.4rem; color: rgb(var(--color-muted)); white-space: pre-wrap; overflow-wrap: anywhere; }
 .search-sources summary { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; width: fit-content; padding: 0.15rem 0; cursor: pointer; list-style: none; }
 .search-sources summary::-webkit-details-marker { display: none; }
 .search-sources summary:hover { color: rgb(var(--color-text-soft)); }

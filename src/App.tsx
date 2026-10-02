@@ -1,6 +1,7 @@
 import "./App.css";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useUserAvatar } from "./avatar/useUserAvatar";
 
 import { useAppearance } from "./appearance/useAppearance";
 import { BackgroundFocusDialog } from "./ui/settings/BackgroundFocusDialog";
@@ -9,8 +10,13 @@ import { useChatSession } from "./chat/useChatSession";
 import { getThinkingSettings } from "./chat/thinking";
 import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
+import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
+import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
+import { openDrawingOutputDirectory } from "./drawing/runtime";
+import { getDrawingModels } from "./chat/settings";
 import { ChatHeader } from "./ui/chat/ChatHeader";
 import { ConversationNavigation } from "./ui/chat/ConversationNavigation";
+import { useConversationNavigation } from "./ui/chat/useConversationNavigation";
 import { useChatLayout } from "./ui/chat/useChatLayout";
 import {
   SettingsWorkspace,
@@ -18,45 +24,61 @@ import {
 } from "./ui/settings/SettingsWorkspace";
 
 function App() {
-  const [activePage, setActivePage] = useState<AppPage>("chat");
+  const [activePage, setActivePage] = useState<AppPage>(window.location.hash === "#data" ? "settings" : "chat");
   const [activeSettingsSection, setActiveSettingsSection] =
-    useState<SettingsSection>("connections");
+    useState<SettingsSection>(window.location.hash === "#data" ? "data" : "connections");
   const appearance = useAppearance();
+  const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
+  const navigation = useConversationNavigation();
+  const drawing = useDrawingWorkspace(activePage === "drawing");
+  const [backupError, setBackupError] = useState<string>();
   const chat = useChatSession({
+    externalBusy: drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued") || drawing.closing,
+    externalMaintenanceBusy: () => drawing.controller.getSnapshot().busy,
     onConfigurationRequired: () => {
       setActiveSettingsSection("connections");
       setActivePage("settings");
     },
   });
+  useEffect(() => { drawing.controller.updateSettings(chat.connectionSettings); }, [drawing.controller, chat.connectionSettings]);
   const modelLabel = chat.activeProvider && chat.activeConnection && chat.activeModel
     ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${chat.activeModel.displayName || chat.activeModel.modelId}`
     : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 点击选择模型`;
 
   return (
-    <AppShell activePage={activePage} onPageChange={setActivePage}
-      background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} /></div>}>
+    <AppShell activePage={activePage} onPageChange={setActivePage} interactionDisabled={chat.backupPreparing || drawing.closing}
+      background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur} /></div>}>
       {appearance.backgroundDraft && <BackgroundFocusDialog
-        url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit}
+        url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur}
+        error={appearance.backgroundError}
         onConfirm={(focus) => void appearance.confirmBackgroundFocus(focus)}
         onCancel={() => void appearance.cancelBackgroundFocus()} />}
       {activePage === "chat" ? (
-        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingIds={chat.generatingConversationIds}
-          toolbar={<ChatHeader key={chat.workspace.conversation?.id ?? "loading"} title={chat.workspace.conversation?.title ?? "新对话"}
+        <ConversationNavigation workspace={chat.workspace} settings={chat.connectionSettings} generatingIds={chat.generatingConversationIds} navigation={navigation}
+          toolbar={<ChatHeader conversationId={chat.workspace.conversation?.id} title={chat.workspace.conversation?.title ?? "新对话"}
             layout={chatLayout.layout} onToggleLayout={chatLayout.toggleLayout} isHydrated={chat.isHydrated}
             isGenerating={chat.isGenerating}
+            isWorkspaceBusy={chat.workspace.isTemporarilyBusy}
             onClear={chat.clearConversation} />}>
         <ChatWorkspace hideHeader
+          onDraftActivate={navigation.activateDraft}
+          userAvatarUrl={avatar.url}
+          assistant={chat.workspace.assistant}
           layout={chatLayout.layout}
           onToggleLayout={chatLayout.toggleLayout}
           key={chat.workspace.conversation?.id ?? "loading"}
           title={chat.workspace.conversation?.title ?? "新对话"}
           draft={chat.draft}
+          draftSelection={chat.workspace.view.draftSelection}
+          onDraftSelectionChange={chat.workspace.setDraftSelection}
+          onBrowseHistory={chat.workspace.browseHistory}
           draftAttachments={chat.draftAttachments}
           attachmentBusy={chat.attachmentBusy}
           contextPlan={chat.contextPlan}
           error={chat.error}
           isHydrated={chat.isHydrated}
+          isWorkspaceBusy={chat.workspace.isTemporarilyBusy}
           isGenerating={chat.isGenerating}
           messages={chat.messages}
           messageActions={{ edit: chat.editMessage, editAndSend: chat.editAndSendMessage, delete: chat.deleteMessage, retry: chat.retryMessage, branch: chat.branchMessage, continue: chat.continueMessage, selectVersion: chat.selectRoundVersion }}
@@ -65,8 +87,8 @@ function App() {
           modelId={chat.activeModel?.modelId}
           thinking={getThinkingSettings(chat.sessionConfig, chat.activeConnection?.protocol ?? "gemini-native")}
           onThinkingChange={(value) => void chat.setThinking(value)}
-          webSearch={chat.sessionConfig.webSearch ?? false}
-          onWebSearchChange={(enabled) => void chat.setWebSearch(enabled)}
+          searchMode={chat.searchMode}
+          onSearchModeChange={(mode) => void chat.setSearchMode(mode)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={modelLabel}
           modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}
@@ -82,8 +104,53 @@ function App() {
           onStop={chat.stopGeneration}
         />
         </ConversationNavigation>
+      ) : activePage === "drawing" ? (
+        <DrawingWorkspace draft={drawing.draft} references={drawing.references} preparation={drawing.preparation} onDraftChange={drawing.controller.setDraft}
+          models={getDrawingModels(chat.connectionSettings)} tasks={drawing.tasks} results={drawing.results}
+          selectedResultId={drawing.selectedResultId} previewUrl={drawing.previewUrl} previewError={drawing.previewError}
+          ready={drawing.ready && !chat.maintenanceBusy} busy={drawing.busy} error={drawing.error}
+          submitting={drawing.submitting} paused={drawing.paused} onPause={drawing.controller.pause} onResume={drawing.controller.resume}
+          onGenerate={() => { if (!chat.maintenanceBusy) void drawing.controller.generate(chat.connectionSettings); }}
+          onCancel={drawing.controller.cancel} onCancelPreparation={drawing.controller.cancelPreparation} onSelectResult={drawing.controller.selectResult}
+          managementBusy={drawing.managementBusy} onCancelBatch={drawing.controller.cancelBatch}
+          onRegenerate={id => void drawing.controller.regenerate(id)} onDeleteTasks={ids => void drawing.controller.deleteTasks(ids)}
+          onExport={id => void drawing.controller.export(id)} onRetrySave={id => void drawing.controller.retrySave(id)}
+          onOpenOutputDirectory={openDrawingOutputDirectory}
+          onReuse={id => void drawing.controller.reuse(id)}
+          onReuseTask={id => void drawing.controller.reuseTask(id)}
+          onCopyTaskPrompt={id => void drawing.controller.copyTaskPrompt(id)}
+          presets={drawing.presets} presetsBusy={drawing.presetsBusy}
+          onApplyPreset={drawing.controller.applyPreset} onCreatePreset={drawing.controller.createPreset}
+          onUpdatePreset={drawing.controller.updatePreset} onDeletePreset={drawing.controller.deletePreset}
+          onClearReferences={() => void drawing.controller.clearReferences()}
+          readThumbnail={drawing.controller.readThumbnail} onPreviewActive={drawing.setPreviewActive}
+          onDeleteResults={ids => void drawing.controller.deleteResults(ids)}
+          onExportResults={(ids, withParameters) => void drawing.controller.exportResults(ids, withParameters)}
+          onCopyPrompt={id => void drawing.controller.copyPrompt(id)} notice={drawing.notice} closing={drawing.closing}
+          referencesBusy={drawing.referencesBusy} onAddReferences={files => void drawing.controller.addReferences(files)}
+          onRemoveReference={id => void drawing.controller.removeReference(id)}
+          onMoveReference={(id, direction) => void drawing.controller.moveReference(id, direction)}
+          onUseAsReference={id => void drawing.controller.useAsReference(id)} readReference={drawing.controller.readReference}
+          onConfigure={() => { setActiveSettingsSection("connections"); setActivePage("settings"); }} />
       ) : (
         <SettingsWorkspace
+          dataImport={chat.dataImport}
+          backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.closing}
+          backupError={backupError ?? chat.backupPreparationError}
+          onBackup={() => {
+            setBackupError(undefined);
+            const drawingPrepared = drawing.controller.prepareMaintenance();
+            const chatPrepared = chat.prepareBackup();
+            void Promise.allSettled([drawingPrepared, chatPrepared]).then(([drawResult, chatResult]) => {
+              if (drawResult.status === "fulfilled" && chatResult.status === "fulfilled" && chatResult.value) {
+                window.location.hash = "backup"; window.location.reload();
+              } else {
+                drawing.controller.cancelMaintenance(); chat.cancelBackupPreparation();
+                if (drawResult.status === "rejected") setBackupError(drawResult.reason instanceof Error ? drawResult.reason.message : "绘图维护准备失败，请重试。");
+              }
+            });
+          }}
+          avatar={avatar}
           activeSection={activeSettingsSection}
           appearance={{
             themeMode: appearance.themeMode,
@@ -102,6 +169,9 @@ function App() {
             effectiveAccentColor: appearance.effectiveAccentColor,
             effectiveCanvasColor: appearance.effectiveCanvasColor,
             backgroundReference: appearance.backgroundReference,
+            backgroundLibrary: appearance.backgroundLibrary,
+            backgroundEnabled: appearance.backgroundEnabled,
+            backgroundName: appearance.backgroundName,
             backgroundUrl: appearance.backgroundUrl,
             backgroundFocus: appearance.backgroundFocus,
             backgroundFit: appearance.backgroundFit,
@@ -124,23 +194,32 @@ function App() {
             onBackgroundFitChange: appearance.setBackgroundFit,
             onBackgroundMaskChange: appearance.setBackgroundMask,
             onBackgroundBlurChange: appearance.setBackgroundBlur,
-            onSelectBackground: appearance.selectBackground,
+            onPrepareLibraryBackground: appearance.prepareLibraryBackground,
+            onSaveLibraryBackground: appearance.saveLibraryBackground,
+            onDiscardLibraryBackground: appearance.discardLibraryBackground,
+            onResolveLibraryBackground: appearance.resolveLibraryBackground,
+            onApplyLibraryBackground: appearance.applyLibraryBackground,
+            onRemoveLibraryBackgrounds: appearance.removeLibraryBackgrounds,
+            onRestoreBackground: appearance.restoreBackground,
             onRemoveBackground: appearance.removeBackground,
             onResetCustomAppearance: appearance.resetCustomAppearance,
           }}
           connection={{
             canSelectModel: !!chat.workspace.assistant && !chat.workspace.busy,
             connectionSettings: chat.connectionSettings,
-            isStreaming: chat.isAnyGenerating,
+            isStreaming: chat.isAnyGenerating || drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued"),
             streamPreview: chat.workspace.assistant?.defaultConfig.stream ?? true,
             modelCatalogs: chat.modelCatalogs,
             modelTests: chat.modelTests,
             onAddConnection: chat.addConnection,
             onAddModel: chat.addModel,
             onAddProvider: chat.addProvider,
+            onProviderAvatarChange: chat.changeProviderAvatar,
+            onResetConnection: chat.resetPresetConnection,
             onCancelModelCatalogRefresh: chat.cancelModelCatalogRefresh,
             onCancelModelTest: chat.cancelModelTest,
             onConnectionChange: chat.updateConnection,
+            onConnectionMove: chat.moveConnection,
             onDeleteConnection: chat.deleteConnection,
             onDeleteModel: chat.deleteModel,
             onDeleteProvider: chat.deleteProvider,

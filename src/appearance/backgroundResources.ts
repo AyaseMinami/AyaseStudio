@@ -9,6 +9,7 @@ import {
 interface NativeBackgroundResource {
   reference: string;
   absolutePath: string;
+  name?: string;
 }
 
 const nativeErrorMessages: Record<string, string> = {
@@ -25,6 +26,7 @@ function toResource(resource: NativeBackgroundResource): BackgroundResource {
   return {
     reference: resource.reference,
     url: convertFileSrc(resource.absolutePath),
+    name: resource.name,
   };
 }
 
@@ -52,11 +54,13 @@ export function createTauriBackgroundResourceStore(): BackgroundResourceStore {
         throw toBackgroundError(error);
       }
     },
-    async resolve(reference) {
+    async resolve(reference, options) {
       try {
         return toResource(
           await invoke<NativeBackgroundResource>("resolve_background_image", {
             reference,
+            thumbnail: options?.thumbnail ?? false,
+            refresh: options?.refresh ?? false,
           }),
         );
       } catch (error) {

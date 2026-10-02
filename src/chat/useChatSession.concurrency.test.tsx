@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatSession } from "./useChatSession";
 import { createChatRepository, type StoredChatMessage } from "./repository";
 import { SessionStore } from "./sessionStore";
-import { saveConnectionSettings } from "./settings";
+import { loadConnectionSettings, saveConnectionSettings } from "./settings";
 import type { ChatEvent, ChatRequest, ChatTransport } from "./types";
 
 const runtime = vi.hoisted(() => ({
@@ -52,6 +52,10 @@ describe("parallel conversation generation", () => {
   let root: ReturnType<typeof createRoot>;
   let container: HTMLDivElement;
   let session: ReturnType<typeof useChatSession>;
+  function Probe({ externalBusy = false }: { externalBusy?: boolean }) {
+    session = useChatSession({ onConfigurationRequired: () => undefined, externalBusy });
+    return null;
+  }
 
   async function wait(predicate: () => boolean) {
     for (let index = 0; index < 100 && !predicate(); index++) {
@@ -66,6 +70,47 @@ describe("parallel conversation generation", () => {
     });
     await wait(() => session.workspace.conversation?.id === id && session.isHydrated);
   }
+
+  it("flushes every loaded conversation before backup, including after navigation", async () => {
+    await act(async () => session.clearConversation());
+    await select("other");
+    const originalFlush = SessionStore.prototype.flush;
+    const started = new Set<string>();
+    const release = new Map<string, () => void>();
+    vi.spyOn(SessionStore.prototype, "flush").mockImplementation(function (this: SessionStore) {
+      started.add(this.id);
+      return new Promise<void>((resolve, reject) => {
+        release.set(this.id, () => { void originalFlush.call(this).then(resolve, reject); });
+      });
+    });
+
+    let result: boolean | undefined;
+    let prepare!: Promise<boolean>;
+    await act(async () => { prepare = session.prepareBackup().then(value => { result = value; return value; }); });
+    await wait(() => started.has("current") && started.has("other"));
+    expect(result).toBeUndefined();
+    expect(session.backupDisabled).toBe(true);
+
+    await act(async () => {
+      release.get("current")!();
+      release.get("other")!();
+      await prepare;
+    });
+    expect(result).toBe(true);
+    expect(session.backupDisabled).toBe(true);
+    await act(async () => { expect(await session.workspace.execute({ type: "select", assistantId: "default", conversationId: "current" })).toBe(false); });
+    await act(async () => { session.cancelBackupPreparation(); });
+    expect(session.backupDisabled).toBe(false);
+    expect((await repo.load("current"))?.messages).toEqual([]);
+  });
+
+  it("does not proceed to backup when pending conversation writes cannot flush", async () => {
+    vi.spyOn(SessionStore.prototype, "flush").mockRejectedValue(new Error("synthetic storage failure"));
+    let result: boolean | undefined;
+    await act(async () => { result = await session.prepareBackup(); });
+    expect(result).toBe(false);
+    expect(session.backupPreparationError).toContain("无法保存待写入的对话记录");
+  });
 
   beforeEach(async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -84,7 +129,6 @@ describe("parallel conversation generation", () => {
     }] });
     await repo.initializeWorkspace("model", ["model"]);
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-    function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
     await act(async () => root.render(<Probe />));
     await wait(() => session.isHydrated);
     await act(async () => { await session.workspace.execute({ type: "create-conversation", id: "other", assistantId: "default" }); });
@@ -95,6 +139,256 @@ describe("parallel conversation generation", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+  });
+
+  it("persists each conversation's observed and final metrics through navigation and reload", async () => {
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.setDraft("A"));
+    let sendingA!: Promise<void>;
+    await act(async () => { sendingA = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    await select("other");
+    await act(async () => session.setDraft("B"));
+    let sendingB!: Promise<void>;
+    await act(async () => { sendingB = session.sendMessage(); });
+    await wait(() => requests.length === 2);
+    await act(async () => {
+      requests[0].push({ type: "thinking-delta", text: "Reasoning A" });
+      requests[0].push({ type: "text-delta", text: "Answer A" });
+      requests[0].push({ type: "completed", usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 80 } });
+      requests[0].finish(); await sendingA;
+      requests[1].push({ type: "usage-update", usage: { inputTokens: 200, outputTokens: 3, cacheReadTokens: 0 } });
+      requests[1].push({ type: "aborted" }); requests[1].finish(); await sendingB;
+    });
+    const a = (await repo.load("current"))!.messages.slice(-1)[0];
+    const b = (await repo.load("other"))!.messages.slice(-1)[0];
+    expect(a.generationMetrics).toHaveLength(1);
+    expect(a.generationMetrics![0]).toMatchObject({ status: "complete", usageComplete: true,
+      usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 80 }, firstTextMs: expect.any(Number) });
+    expect(b.generationMetrics![0]).toMatchObject({ status: "aborted", usageComplete: false,
+      usage: { inputTokens: 200, outputTokens: 3, cacheReadTokens: 0 } });
+    expect(b.generationMetrics![0].firstTextMs).toBeUndefined();
+    const reloaded = await new SessionStore(repo, "current").hydrate();
+    expect(reloaded.messages.slice(-1)[0].generationMetrics).toEqual(a.generationMetrics);
+    await select("current");
+    let retry!: Promise<void>;
+    await act(async () => { retry = session.retryMessage(a.id); });
+    await wait(() => requests.length === 3);
+    await act(async () => {
+      requests[2].push({ type: "text-delta", text: "New A" });
+      requests[2].push({ type: "completed", usage: { inputTokens: 50, outputTokens: 5 } });
+      requests[2].finish(); await retry;
+    });
+    const regenerated = (await repo.load("current"))!.messages.slice(-1)[0];
+    expect(regenerated.generationMetrics).toHaveLength(1);
+    expect(regenerated.generationMetrics![0].usage?.outputTokens).toBe(5);
+    expect((await repo.load("current"))!.messages.slice(-2)[0].roundVersions?.pairs[0][1].generationMetrics).toEqual(a.generationMetrics);
+  });
+
+  it("appends a separate request measurement when continuing a paused reply", async () => {
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.updateConnection("connection", "protocol", "anthropic-native"));
+    await act(async () => session.setDraft("Continue this"));
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    await act(async () => {
+      requests[0].push({ type: "text-delta", text: "First part" });
+      requests[0].push({ type: "provider-replay", replay: { protocol: "anthropic-native",
+        scope: "connection|https://test.example", content: [{ type: "text", text: "First part" }] } });
+      requests[0].push({ type: "completed", finishReason: "pause_turn", usage: { inputTokens: 20, outputTokens: 4 } });
+      requests[0].finish(); await sending;
+    });
+    const paused = session.messages.slice(-1)[0];
+    const first = paused.generationMetrics![0];
+    expect(first.status).toBe("paused");
+    let continuing!: Promise<void>;
+    await act(async () => { continuing = session.continueMessage(paused.id); });
+    await wait(() => requests.length === 2);
+    await act(async () => {
+      requests[1].push({ type: "text-delta", text: " second part" });
+      requests[1].push({ type: "completed", usage: { inputTokens: 30, outputTokens: 6 } });
+      requests[1].finish(); await continuing;
+    });
+    const saved = (await repo.load("current"))!.messages.slice(-1)[0];
+    expect(saved.content).toBe("First part second part");
+    expect(saved.generationMetrics).toHaveLength(2);
+    expect(saved.generationMetrics![0]).toEqual(first);
+    expect(saved.generationMetrics![1]).toMatchObject({ status: "complete", usage: { inputTokens: 30, outputTokens: 6 } });
+  });
+
+  it("persists connection moves without changing selection and blocks them while drawing is busy", async () => {
+    let secondId = "";
+    await act(async () => { secondId = session.addConnection("provider", "Second", "openai-chat"); });
+    const selected = {
+      active: session.connectionSettings.activeModelId,
+      assistant: session.workspace.assistant?.defaultModelId,
+      conversation: session.workspace.effective.modelId,
+    };
+    await act(async () => session.moveConnection(secondId, "connection", "before"));
+    expect(session.connectionSettings.providers[0].connections.map((item) => item.id)).toEqual([secondId, "connection"]);
+    expect(loadConnectionSettings()).toEqual(session.connectionSettings);
+    expect({
+      active: session.connectionSettings.activeModelId,
+      assistant: session.workspace.assistant?.defaultModelId,
+      conversation: session.workspace.effective.modelId,
+    }).toEqual(selected);
+    await act(async () => root.render(<Probe externalBusy />));
+    const before = session.connectionSettings;
+    await act(async () => session.moveConnection(secondId, "connection", "after"));
+    expect(session.connectionSettings).toBe(before);
+    await act(async () => root.render(<Probe />));
+    await act(async () => session.moveConnection(secondId, "connection", "after"));
+    expect(session.connectionSettings.providers[0].connections.map((item) => item.id)).toEqual(["connection", secondId]);
+  });
+
+  it("blocks connection moves during background chat generation and permits them after completion", async () => {
+    let secondId = "";
+    await act(async () => { secondId = session.addConnection("provider", "Second", "openai-chat"); });
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.setDraft("Synthetic question"));
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    await select("other");
+    expect(session.isGenerating).toBe(false);
+    const before = session.connectionSettings;
+    await act(async () => session.moveConnection(secondId, "connection", "before"));
+    expect(session.connectionSettings).toBe(before);
+    await act(async () => {
+      requests[0].push({ type: "completed", finishReason: "stop" });
+      requests[0].finish();
+      await sending;
+    });
+    await act(async () => session.moveConnection(secondId, "connection", "before"));
+    expect(session.connectionSettings.providers[0].connections.map((item) => item.id)).toEqual([secondId, "connection"]);
+  });
+
+  it("keeps drawing models out of assistant and conversation defaults and skips chat availability requests", async () => {
+    let drawingId = "";
+    let imageId = "";
+    await act(async () => { drawingId = session.addConnection("provider", "Drawing", "gemini-image"); });
+    await act(async () => {
+      session.updateConnection(drawingId, "baseUrl", "https://images.example");
+      session.updateConnection(drawingId, "apiKey", "synthetic-image-key");
+      imageId = session.addModel(drawingId, "image/example");
+    });
+    const previousDefault = session.workspace.assistant?.defaultModelId;
+    const previousModel = session.workspace.effective.modelId;
+    let selected: boolean | undefined;
+    await act(async () => {
+      session.setActiveModel(imageId);
+      selected = await session.setConversationModel(imageId);
+      await session.runModelTest(drawingId, imageId);
+    });
+    expect(selected).toBe(false);
+    expect(session.workspace.assistant?.defaultModelId).toBe(previousDefault);
+    expect(session.workspace.effective.modelId).toBe(previousModel);
+    expect(session.modelTests[imageId]).toMatchObject({ status: "failed", error: { message: "绘图模型请在绘图页生成图片验证。" } });
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    const list = vi.fn(async () => [{ id: "image/example" }]);
+    runtime.createRuntimeModelCatalogClient.mockResolvedValue({ list });
+    await act(async () => { await session.refreshModelCatalog(drawingId); });
+    expect(runtime.createRuntimeModelCatalogClient).toHaveBeenCalledExactlyOnceWith("gemini-native");
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: "https://images.example", apiKey: "synthetic-image-key" }));
+  });
+
+  it("locks shared configuration and maintenance actions while drawing is busy without reporting chat generation", async () => {
+    await act(async () => root.render(<Probe externalBusy />));
+    expect(session.isAnyGenerating).toBe(false);
+    expect(session.backupDisabled).toBe(true);
+    expect(session.dataImport.disabled).toBe(true);
+    const before = structuredClone(session.connectionSettings.providers);
+    await act(async () => {
+      session.updateConnection("connection", "baseUrl", "https://changed.example");
+      session.updateModel("model", "modelId", "changed");
+      session.deleteModel("model");
+      session.deleteConnection("connection");
+      session.deleteProvider("provider");
+      session.renameProvider("provider", "Changed");
+      session.addConnection("provider", "Changed", "gemini-image");
+      session.addModel("connection", "changed");
+      session.addProvider("gemini");
+      await session.runModelTest("connection", "model");
+      await session.refreshModelCatalog("connection");
+    });
+    expect(session.connectionSettings.providers).toEqual(before);
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(runtime.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+    expect(await session.prepareBackup()).toBe(false);
+    await expect(session.dataImport.selectBackup()).rejects.toThrow("请先等待当前操作完成");
+  });
+
+  it("can send chat while the drawing queue protects shared configuration", async () => {
+    await act(async () => root.render(<Probe externalBusy />));
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.setDraft("Synthetic concurrent chat"));
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    expect(session.isAnyGenerating).toBe(true);
+    await act(async () => {
+      requests[0].push({ type: "completed", finishReason: "stop" });
+      requests[0].finish();
+      await sending;
+    });
+    expect(session.isAnyGenerating).toBe(false);
+    expect(session.backupDisabled).toBe(true);
+  });
+
+  it.each(["http://localhost:1234", "http://images.example"])("rejects a drawing catalog callback for %s before creating a client", async (baseUrl) => {
+    let drawingId = "";
+    await act(async () => { drawingId = session.addConnection("provider", "Drawing", "gemini-image"); });
+    await act(async () => {
+      session.updateConnection(drawingId, "baseUrl", baseUrl);
+      session.updateConnection(drawingId, "apiKey", "synthetic-image-key");
+    });
+    const list = vi.fn(async () => [{ id: "image/example" }]);
+    runtime.createRuntimeModelCatalogClient.mockResolvedValue({ list });
+    await act(async () => { await session.refreshModelCatalog(drawingId); });
+    expect(session.modelCatalogs[drawingId]).toMatchObject({ status: "error", error: "绘图 Base URL 只支持 HTTPS 地址。" });
+    expect(runtime.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite a newly edited recalled draft when an originating send commits in the background", async () => {
+    const old: StoredChatMessage = { id: "old", role: "user", content: "historical question", status: "complete" };
+    await act(async () => {
+      session.workspace.setMessages([old]);
+      await session.workspace.store!.updateMessages([old]);
+      session.setDraft("original unsent");
+    });
+    await act(async () => { session.workspace.browseHistory(-1, { start: 3, end: 3 }); });
+    let release!: () => void;
+    let blocked = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const update = SessionStore.prototype.updateMessages;
+    vi.spyOn(SessionStore.prototype, "updateMessages").mockImplementation(async function(this: SessionStore, messages) {
+      if (this.id === "current" && messages.length === 3 && !blocked) { blocked = true; await gate; }
+      return update.call(this, messages);
+    });
+    runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream() { yield { type: "completed", finishReason: "stop" }; } } satisfies ChatTransport);
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => blocked);
+    await act(async () => session.setDraft("new edit during preparation"));
+    await select("other");
+    await act(async () => session.setDraft("other draft"));
+    await act(async () => { release(); await sending; });
+    expect(session.draft).toBe("other draft");
+    await select("current");
+    expect(session.draft).toBe("new edit during preparation");
+    await act(async () => { session.workspace.browseHistory(1, { start: 27, end: 27 }); });
+    // The newly committed message is newer than the recalled source; one more Down reaches the original.
+    await act(async () => { session.workspace.browseHistory(1, { start: session.draft.length, end: session.draft.length }); });
+    expect(session.draft).toBe("original unsent");
+    expect((await repo.load("current"))?.messages.filter(item => item.role === "user").map(item => item.content))
+      .toEqual(["historical question", "historical question"]);
   });
 
   it("streams two conversations independently and keeps only its own task locked while its final save is pending", async () => {
@@ -313,6 +607,10 @@ describe("parallel conversation generation", () => {
     await act(async () => {
       session.workspace.setMessages([old]);
       await session.workspace.store!.updateMessages([old]);
+    });
+    // Let queued workspace metadata and the React snapshot settle before the user action.
+    await wait(() => session.workspace.canSend());
+    await act(async () => {
       expect(await session.editMessage("editable", "after")).toBe(true);
     });
     await select("temporary-conversation", "temporary");

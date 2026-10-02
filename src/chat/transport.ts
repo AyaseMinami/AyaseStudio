@@ -5,6 +5,8 @@ import { buildProtocolBody, RequestConfigError } from "./requestMapping";
 import { includeThinkingSummary } from "./thinking";
 import { ResponseThinking } from "./responseThinking";
 import { SearchDecoder } from "./searchDecoding";
+import { mergeTokenUsage, normalizeTokenUsage } from "./usage";
+import { resolveSearchMode } from "../search/mode";
 import { resolveGenerationEndpoint, UrlResolutionError } from "./urlResolution";
 import type {
   ChatEvent,
@@ -13,6 +15,7 @@ import type {
   ChatRequest,
   ChatTransport,
   ChatTransportDependencies,
+  TokenUsage,
 } from "./types";
 
 // Documented compatible-service extension; never infer reasoning from answer text.
@@ -185,7 +188,7 @@ class OpenAIChatTransport implements ChatTransport {
     let capturedFetch: ReturnType<typeof openAIFetch> | undefined;
     try {
       const body = buildProtocolBody("openai-chat", request);
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-chat",
         request.baseUrl,
@@ -204,6 +207,9 @@ class OpenAIChatTransport implements ChatTransport {
           { signal: request.signal },
         );
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        const usage = normalizeTokenUsage("openai-chat", response.usage);
+        if (usage) yield { type: "usage-update", usage };
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         const choice = response.choices?.[0];
         search.openAI(choice?.message as unknown);
         const message = choice?.message;
@@ -221,7 +227,7 @@ class OpenAIChatTransport implements ChatTransport {
         yield {
           type: "completed",
           finishReason: choice.finish_reason,
-          ...(response.usage ? { usage: { inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens } } : {}),
+          ...(usage ? { usage } : {}),
         };
         return;
       }
@@ -230,8 +236,15 @@ class OpenAIChatTransport implements ChatTransport {
         { signal: request.signal },
       );
       let finishReason: string | undefined;
+      let usage: TokenUsage | undefined;
 
       for await (const chunk of stream) {
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        const snapshot = normalizeTokenUsage("openai-chat", chunk.usage);
+        if (snapshot) {
+          usage = mergeTokenUsage(usage, snapshot);
+          yield { type: "usage-update", usage: usage! };
+        }
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         for (const choice of chunk.choices) {
           yield* chatThinking(choice.delta, includeThinkingSummary(request.config, "openai-chat"));
@@ -256,7 +269,7 @@ class OpenAIChatTransport implements ChatTransport {
       }
       if (finishReason) {
         const completedSearch = search.complete(); if (completedSearch) yield { type: "search-update", search: completedSearch };
-        yield { type: "completed", finishReason };
+        yield { type: "completed", finishReason, ...(usage ? { usage } : {}) };
       } else {
         yield {
           type: "failed",
@@ -286,7 +299,7 @@ class OpenAIResponsesTransport implements ChatTransport {
     try {
       const body = buildProtocolBody("openai-responses", request);
       const thinking = new ResponseThinking(includeThinkingSummary(request.config, "openai-responses"));
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { normalizedBaseUrl } = resolveGenerationEndpoint(
         "openai-responses",
         request.baseUrl,
@@ -304,6 +317,9 @@ class OpenAIResponsesTransport implements ChatTransport {
           body as unknown as OpenAI.Responses.ResponseCreateParamsNonStreaming,
           { signal: request.signal },
         );
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        const usage = normalizeTokenUsage("openai-responses", response.usage);
+        if (usage) yield { type: "usage-update", usage };
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         for (const event of thinking.output(response.output)) {
           yield event;
@@ -328,7 +344,7 @@ class OpenAIResponsesTransport implements ChatTransport {
         yield {
           type: "completed",
           ...(response.status === "incomplete" ? { finishReason: `incomplete:${response.incomplete_details?.reason ?? "unknown"}` } : {}),
-          ...(response.usage ? { usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } } : {}),
+          ...(usage ? { usage } : {}),
         };
         return;
       }
@@ -338,10 +354,17 @@ class OpenAIResponsesTransport implements ChatTransport {
       );
 
       const outputParts = new Map<number, Map<number, string>>();
+      let usage: TokenUsage | undefined;
       const offsetFor = (outputIndex: number, contentIndex: number) => [...outputParts.entries()]
         .sort(([a], [b]) => a - b).reduce((total, [index, parts]) => total + [...parts.entries()]
           .sort(([a], [b]) => a - b).reduce((partTotal, [partIndex, text]) => partTotal + ((index < outputIndex || index === outputIndex && partIndex < contentIndex) ? text.length : 0), 0), 0);
       for await (const event of stream) {
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        const snapshot = normalizeTokenUsage("openai-responses", "response" in event ? event.response.usage : undefined);
+        if (snapshot) {
+          usage = mergeTokenUsage(usage, snapshot);
+          yield { type: "usage-update", usage: usage! };
+        }
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         for (const thought of thinking.event(event)) {
           yield thought;
@@ -366,17 +389,10 @@ class OpenAIResponsesTransport implements ChatTransport {
         if (event.type === "response.completed") {
           search.openAIOutput(event.response.output);
           const update = search.complete(); if (update) yield { type: "search-update", search: update };
-          const usage = event.response.usage;
+          const terminalUsage = normalizeTokenUsage("openai-responses", event.response.usage);
           yield {
             type: "completed",
-            ...(usage
-              ? {
-                  usage: {
-                    inputTokens: usage.input_tokens,
-                    outputTokens: usage.output_tokens,
-                  },
-                }
-              : {}),
+            ...(terminalUsage ? { usage: terminalUsage } : {}),
           };
           return;
         }
@@ -406,19 +422,12 @@ class OpenAIResponsesTransport implements ChatTransport {
         if (event.type === "response.incomplete") {
           search.openAIOutput(event.response.output);
           const update = search.complete(); if (update) yield { type: "search-update", search: update };
-          const usage = event.response.usage;
           const reason = event.response.incomplete_details?.reason ?? "unknown";
+          const terminalUsage = normalizeTokenUsage("openai-responses", event.response.usage);
           yield {
             type: "completed",
             finishReason: `incomplete:${reason}`,
-            ...(usage
-              ? {
-                  usage: {
-                    inputTokens: usage.input_tokens,
-                    outputTokens: usage.output_tokens,
-                  },
-                }
-              : {}),
+            ...(terminalUsage ? { usage: terminalUsage } : {}),
           };
           return;
         }
@@ -462,7 +471,7 @@ interface GeminiChunk {
     finishReason?: string;
     groundingMetadata?: unknown;
   }>;
-  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  usageMetadata?: unknown;
 }
 
 function blockedGeminiPrompt(chunk: GeminiChunk, apiKey: string): ChatFailure | undefined {
@@ -480,7 +489,7 @@ class GeminiNativeTransport implements ChatTransport {
       const body = buildProtocolBody("gemini-native", request);
       const streaming = request.config?.stream ?? true;
       const showThinking = includeThinkingSummary(request.config, "gemini-native");
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "gemini-native",
         request.baseUrl,
@@ -503,6 +512,9 @@ class GeminiNativeTransport implements ChatTransport {
 
       if (!streaming) {
         const chunk = await response.json() as GeminiChunk;
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        const usage = normalizeTokenUsage("gemini-native", chunk.usageMetadata);
+        if (usage) yield { type: "usage-update", usage };
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         if (chunk.error) {
           yield { type: "failed", error: providerFailure(chunk.error.status ?? String(chunk.error.code ?? "provider_error"), chunk.error.message ?? "Gemini response error", chunk, request.apiKey) };
@@ -530,19 +542,27 @@ class GeminiNativeTransport implements ChatTransport {
         yield {
           type: "completed",
           finishReason: candidate.finishReason,
-          ...(chunk.usageMetadata ? { usage: { inputTokens: chunk.usageMetadata.promptTokenCount, outputTokens: chunk.usageMetadata.candidatesTokenCount } } : {}),
+          ...(usage ? { usage } : {}),
         };
         return;
       }
 
       let finishReason: string | undefined;
+      let usage: TokenUsage | undefined;
       let answerText = "";
       let singleTextPart = true;
       for await (const event of parseServerSentEvents(response.body)) {
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         if (event.data === "[DONE]") {
           continue;
         }
         const chunk = JSON.parse(event.data) as GeminiChunk;
+        const snapshot = normalizeTokenUsage("gemini-native", chunk.usageMetadata);
+        if (snapshot) {
+          usage = mergeTokenUsage(usage, snapshot);
+          yield { type: "usage-update", usage: usage! };
+        }
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         if (chunk.error) {
           yield {
             type: "failed",
@@ -581,7 +601,7 @@ class GeminiNativeTransport implements ChatTransport {
       }
       if (finishReason) {
         const update = search.complete(); if (update) yield { type: "search-update", search: update };
-        yield { type: "completed", finishReason };
+        yield { type: "completed", finishReason, ...(usage ? { usage } : {}) };
       } else {
         yield {
           type: "failed",
@@ -606,7 +626,7 @@ class GeminiNativeTransport implements ChatTransport {
 type AnthropicEvent =
   | {
       type: "message_start";
-      message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+      message?: { usage?: unknown };
     }
   | {
       type: "content_block_delta";
@@ -618,7 +638,7 @@ type AnthropicEvent =
   | {
       type: "message_delta";
       delta?: { stop_reason?: string };
-      usage?: { output_tokens?: number };
+      usage?: unknown;
     }
   | {
       type: "error";
@@ -635,7 +655,7 @@ class AnthropicNativeTransport implements ChatTransport {
       const body = buildProtocolBody("anthropic-native", request);
       const showThinking = includeThinkingSummary(request.config, "anthropic-native");
       const streaming = request.config?.stream ?? true;
-      const search = new SearchDecoder(request.config?.webSearch === true);
+      const search = new SearchDecoder(request.config ? resolveSearchMode(request.config) === "native" : false);
       const { resolvedEndpoint } = resolveGenerationEndpoint(
         "anthropic-native",
         request.baseUrl,
@@ -663,9 +683,12 @@ class AnthropicNativeTransport implements ChatTransport {
           type?: string;
           content?: Array<Record<string, unknown>>;
           stop_reason?: string | null;
-          usage?: { input_tokens?: number; output_tokens?: number };
+          usage?: unknown;
           error?: { type?: string; message?: string };
         };
+        if (request.signal?.aborted) { yield { type: "aborted" }; return; }
+        const usage = normalizeTokenUsage("anthropic-native", payload.usage);
+        if (usage) yield { type: "usage-update", usage };
         if (request.signal?.aborted) { yield { type: "aborted" }; return; }
         if (payload.type === "error" || payload.error) {
           yield { type: "failed", error: providerFailure(payload.error?.type ?? null, payload.error?.message ?? "Anthropic response error", payload, request.apiKey) };
@@ -695,14 +718,14 @@ class AnthropicNativeTransport implements ChatTransport {
 
         yield {
           type: "completed", finishReason: payload.stop_reason,
-          ...(payload.usage ? { usage: { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens } } : {}),
+          ...(usage ? { usage } : {}),
         };
         return;
       }
 
       let finishReason: string | undefined;
-      let inputTokens: number | undefined;
-      let outputTokens: number | undefined;
+      let usage: TokenUsage | undefined;
+      let terminalOutputTokens: number | undefined;
       const thinkingBlocks = new Set<number>();
       const startedBlocks = new Set<number>();
       const replayBlocks = new Map<number, Record<string, unknown>>();
@@ -748,8 +771,11 @@ class AnthropicNativeTransport implements ChatTransport {
         }
 
         if (payload.type === "message_start" && "message" in payload) {
-          inputTokens = payload.message?.usage?.input_tokens;
-          outputTokens = payload.message?.usage?.output_tokens;
+          const snapshot = normalizeTokenUsage("anthropic-native", payload.message?.usage);
+          if (snapshot) {
+            usage = mergeTokenUsage(usage, snapshot);
+            yield { type: "usage-update", usage: usage! };
+          }
           continue;
         }
 
@@ -785,11 +811,14 @@ class AnthropicNativeTransport implements ChatTransport {
         }
 
         if (payload.type === "message_delta") {
+          const snapshot = normalizeTokenUsage("anthropic-native", "usage" in payload ? payload.usage : undefined);
           if ("delta" in payload && payload.delta?.stop_reason) {
             finishReason = payload.delta.stop_reason;
+            terminalOutputTokens = snapshot?.outputTokens;
           }
-          if ("usage" in payload && payload.usage?.output_tokens !== undefined) {
-            outputTokens = payload.usage.output_tokens;
+          if (snapshot) {
+            usage = mergeTokenUsage(usage, snapshot);
+            yield { type: "usage-update", usage: usage! };
           }
           continue;
         }
@@ -818,12 +847,15 @@ class AnthropicNativeTransport implements ChatTransport {
             protocol: "anthropic-native", scope: request.replayScope ?? request.baseUrl,
             content: [...replayBlocks.entries()].sort(([a], [b]) => a - b).map(([, block]) => block),
           } };
+          const finalObservation = { ...usage };
+          delete finalObservation.outputTokens;
+          delete finalObservation.totalTokens;
+          if (terminalOutputTokens !== undefined) finalObservation.outputTokens = terminalOutputTokens;
+          const terminalUsage = mergeTokenUsage(undefined, finalObservation);
           yield {
             type: "completed",
             finishReason,
-            ...(inputTokens !== undefined || outputTokens !== undefined
-              ? { usage: { inputTokens, outputTokens } }
-              : {}),
+            ...(terminalUsage ? { usage: terminalUsage } : {}),
           };
           return;
         }

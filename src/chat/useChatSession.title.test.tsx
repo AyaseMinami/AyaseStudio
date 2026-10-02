@@ -93,6 +93,22 @@ describe("background conversation titles", () => {
     expect(titles).toHaveLength(1);
   });
 
+  it("waits for background naming before backup and holds the command gate after preparing", async () => {
+    await send("待命名的合成消息"); await wait(() => titles.length === 1);
+    expect(session.isGenerating).toBe(false);
+    let ready = true;
+    await act(async () => { ready = await session.prepareBackup(); });
+    expect(ready).toBe(false); expect(session.backupPreparing).toBe(false);
+    expect(titles[0].request.signal?.aborted).toBe(false);
+    await act(async () => titles[0].finish("合成标题"));
+    await wait(() => session.workspace.conversation?.title === "合成标题" && !session.backupDisabled);
+    await act(async () => { ready = await session.prepareBackup(); });
+    expect(ready).toBe(true); expect(session.backupPreparing).toBe(true);
+    await act(async () => { expect(await session.workspace.execute({ type: "rename-conversation", id: "current", title: "blocked" })).toBe(false); });
+    expect((await repo.initializeWorkspace("m", ["m", "m2"])).conversations.find(c => c.id === "current")?.title).toBe("合成标题");
+    await act(async () => session.cancelBackupPreparation());
+  });
+
   it("keeps frozen model/config independent of settings changes and ignores a title after clearing", async () => {
     await send("首条原文"); await wait(() => titles.length === 1);
     await act(async () => { await session.workspace.execute({ type: "configure-conversation", id: "current",

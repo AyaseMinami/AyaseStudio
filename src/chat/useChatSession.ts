@@ -1,11 +1,27 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { GenerationTasks } from "./generationTasks";
+import type { UserAvatar } from "../avatar/repository";
+import type { ProviderAvatarSelection } from "../avatar/brandIds";
+import { providerAvatarRepository } from "../avatar/providerAvatars";
+import { getConnectionTemplate, presetCatalogOptions } from "./providerPresets";
+import { GenerationMeasurement } from "./generationMetrics";
 import { appendRoundVersion, withoutVersions } from "./roundVersions";
 import { summarizeConversationTitle } from "./conversationTitle";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { createCherryImportRepository } from "../import/cherryRepository";
+import { commitCherryImport } from "../import/cherryImport";
+import type { CherryBackup, CherryImportPlan } from "../import/cherryTypes";
 
 import type { DiscoveredModel } from "./modelCatalog";
 import { initialSearch, finishSearch, mergeSearch } from "./nativeSearch";
+import { isExternalSearch, resolveSearchMode, withSearchMode, type SearchMode } from "../search/mode";
+import { assertSearchEnabled, loadSearchSettings, validateSearchQuery, type SearchProfile, type ExternalSearchProvider } from "../search/settings";
+import { searchExa } from "../search/runtime";
+import { validateExaApiSettings } from "../search/exaApi";
+import { validateTavilyApiSettings } from "../search/tavily";
+import { validateZhipuApiSettings, validateZhipuSearchQuery } from "../search/zhipu";
+import { prepareSearchContext, projectSearchHistory } from "../search/context";
+import { externalCitations } from "../search/citations";
 import { ContextBudgetError, planContextBudget,
   summarizeContextPlan, type ContextPlan } from "./contextBudget";
 import { addDraftAttachments, attachmentCapabilityFailure, materializeDraftAttachment, prepareDraftAttachment,
@@ -36,22 +52,27 @@ import {
   addConnection,
   addModel,
   createProviderFromTemplate,
+  initializeProviderPresets,
+  setProviderAvatar,
+  resetPresetConnection,
   deleteConnection,
   deleteModel,
   deleteProvider,
   getActiveTarget,
   getConnection,
+  isChatConnection,
   loadConnectionSettings,
   providerTemplates,
   renameProvider,
   moveProvider,
+  moveConnection,
   saveConnectionSettings,
-  selectModel,
   updateConnection,
   updateModel,
   type ConnectionField,
   type ModelField,
   type ProviderTemplateId,
+  type ServiceProtocol,
 } from "./settings";
 import type { ChatProtocol } from "./types";
 import {
@@ -63,6 +84,7 @@ import {
 const chatRepository = createChatRepository();
 const attachmentStore = createTauriAttachmentStore();
 const attachmentLifecycle = new AttachmentLifecycle(attachmentStore, () => chatRepository.attachmentReferences());
+const cherryRepository = createCherryImportRepository();
 async function cleanupAttachments(): Promise<void> {
   if (!isTauri()) return;
   await attachmentLifecycle.cleanup();
@@ -118,16 +140,39 @@ function replaceAssistant(
 
 export function useChatSession({
   onConfigurationRequired,
+  externalBusy = false,
+  externalMaintenanceBusy,
 }: {
   onConfigurationRequired(): void;
+  externalBusy?: boolean;
+  externalMaintenanceBusy?: () => boolean;
 }) {
   const [connectionSettings, setConnectionSettings] = useState(
-    loadConnectionSettings,
+    () => initializeProviderPresets(loadConnectionSettings()),
   );
+  const connectionSettingsRef = useRef(connectionSettings);
+  connectionSettingsRef.current = connectionSettings;
+  const providerAvatarPending = useRef(false);
+  const [providerAvatarBusy, setProviderAvatarBusy] = useState(false);
+  const sessionActive = useRef(true);
+  useEffect(() => { sessionActive.current = true; return () => { sessionActive.current = false; }; }, []);
   const [generationTasks] = useState(() => new GenerationTasks());
+  const [cherryBusy, setCherryBusy] = useState(false);
+  const [backupPreparing, setBackupPreparing] = useState(false);
+  const [titleBusy, setTitleBusy] = useState(false);
+  const backupPreparingRef = useRef(false);
+  const [backupPreparationError, setBackupPreparationError] = useState<string>();
+  const cherryBusyRef = useRef(false);
+  const cherryToken = useRef<string | undefined>(undefined);
   const generatingConversationIds = useSyncExternalStore(generationTasks.subscribe, generationTasks.getSnapshot);
+  const externalBusyRef = useRef(externalBusy);
+  externalBusyRef.current = externalBusy;
+  const sharedSettingsBusy = () => providerAvatarPending.current || backupPreparingRef.current || externalBusyRef.current || generationTasks.getSnapshot().size > 0;
+  const externalMaintenanceBusyRef = useRef(externalMaintenanceBusy);
+  externalMaintenanceBusyRef.current = externalMaintenanceBusy;
+  const maintenanceExternalBusy = () => externalMaintenanceBusyRef.current?.() ?? externalBusyRef.current;
   const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
-    connectionSettings.providers.flatMap((provider) => provider.connections.flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments);
+    connectionSettings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments, () => backupPreparingRef.current);
   const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
   const sessionConfig = workspace.effective.config;
   const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
@@ -180,9 +225,12 @@ export function useChatSession({
       settings: { modelId: workspace.effective.modelId, config: withThinkingSettings(sessionConfig, protocol, settings) } });
   }
   async function setWebSearch(enabled: boolean): Promise<boolean> {
+    return setSearchMode(enabled ? "native" : "off");
+  }
+  async function setSearchMode(mode: SearchMode): Promise<boolean> {
     if (!workspace.conversation || !workspace.canSend()) return false;
     return workspace.execute({ type: "configure-conversation", id: workspace.conversation.id,
-      settings: { modelId: workspace.effective.modelId, config: { ...sessionConfig, webSearch: enabled } } });
+      settings: { modelId: workspace.effective.modelId, config: withSearchMode(sessionConfig, mode) } });
   }
   useEffect(() => {
     setConfigErrors(validateRequestConfig(
@@ -193,7 +241,7 @@ export function useChatSession({
   }, [sessionConfig, activeConnection?.protocol, activeModel?.modelId, workspace.conversation?.id]);
 
   useEffect(() => {
-    saveConnectionSettings(connectionSettings);
+    if (connectionSettingsRef.current === connectionSettings) saveConnectionSettings(connectionSettings);
   }, [connectionSettings]);
 
   useEffect(() => {
@@ -244,33 +292,68 @@ export function useChatSession({
     [],
   );
 
-  function addProviderFromTemplate(templateId: ProviderTemplateId): string {
+  function addProviderFromTemplate(templateId: ProviderTemplateId, name?: string): string {
+    if (sharedSettingsBusy()) return "";
     const providerId = newId();
     const template = providerTemplates.find(
       (candidate) => candidate.id === templateId,
     )!;
     const connectionIds = Object.fromEntries(
       template.connections.map(({ protocol }) => [protocol, newId()]),
-    ) as Partial<Record<ChatProtocol, string>>;
+    ) as Partial<Record<ServiceProtocol, string>>;
     setConnectionSettings((current) =>
       createProviderFromTemplate(current, templateId, {
         providerId,
         connectionIds,
-        name: uniqueProviderName(
+        name: name?.trim() || uniqueProviderName(
           current.providers.map((provider) => provider.name),
           template.providerName,
         ),
+        prepend: templateId === "custom",
       }),
     );
     return providerId;
   }
 
+  async function changeProviderAvatar(providerId: string, selection: ProviderAvatarSelection | UserAvatar | undefined): Promise<boolean> {
+    if (sharedSettingsBusy() || !connectionSettingsRef.current.providers.some(p => p.id === providerId)) return false;
+    providerAvatarPending.current = true; setProviderAvatarBusy(true);
+    try {
+      const avatar = selection && "original" in selection
+        ? { kind: "image" as const, id: await providerAvatarRepository.save(selection) } : selection;
+      if (!sessionActive.current || backupPreparingRef.current || externalBusyRef.current || generationTasks.getSnapshot().size > 0) return false;
+      const current = connectionSettingsRef.current;
+      if (!current.providers.some(p => p.id === providerId)) return false;
+      const next = setProviderAvatar(current, providerId, avatar);
+      // Confirm both durable halves before reporting success or releasing maintenance.
+      saveConnectionSettings(next);
+      connectionSettingsRef.current = next;
+      setConnectionSettings(next);
+      return true;
+    } finally {
+      providerAvatarPending.current = false;
+      if (sessionActive.current) setProviderAvatarBusy(false);
+    }
+  }
+
+  function restorePresetConnection(connectionId: string): void {
+    if (sharedSettingsBusy()) return;
+    const provider = connectionSettings.providers.find(p => p.connections.some(c => c.id === connectionId));
+    const connection = provider?.connections.find(c => c.id === connectionId);
+    const defaults = getConnectionTemplate(provider?.presetId, connection?.presetProtocol);
+    if (!defaults) return;
+    // Reuse protocol mutation cleanup, then atomically apply the remaining defaults.
+    updateConnectionProfile(connectionId, "protocol", defaults.protocol);
+    setConnectionSettings(current => resetPresetConnection(current, connectionId));
+  }
+
   function addProviderConnection(
     providerId: string,
     name: string,
-    protocol: ChatProtocol,
+    protocol: ServiceProtocol,
     copyFromConnectionId?: string,
   ): string {
+    if (sharedSettingsBusy()) return "";
     const connectionId = newId();
     setConnectionSettings((current) =>
       addConnection(current, providerId, {
@@ -288,6 +371,7 @@ export function useChatSession({
     field: ConnectionField,
     value: string,
   ): void {
+    if (sharedSettingsBusy()) return;
     if (field === "protocol" || field === "baseUrl" || field === "apiKey") {
       invalidateCatalogRequest(connectionId);
       setModelCatalogs((current) => {
@@ -324,6 +408,7 @@ export function useChatSession({
     modelId: string,
     displayName?: string,
   ): string {
+    if (sharedSettingsBusy()) return "";
     const id = newId();
     setConnectionSettings((current) =>
       addModel(current, connectionId, { id, modelId, displayName }),
@@ -336,6 +421,7 @@ export function useChatSession({
     field: ModelField,
     value: string,
   ): void {
+    if (sharedSettingsBusy()) return;
     if (field === "modelId") {
       invalidateModelTestRequest(modelId);
       setModelTests((current) => {
@@ -352,7 +438,7 @@ export function useChatSession({
   }
 
   function setActiveModel(modelId: string): void {
-    const target = getActiveTarget(selectModel(connectionSettings, modelId));
+    const target = getActiveTarget({ ...connectionSettings, activeModelId: modelId });
     if (!workspace.assistant || !target) return;
     const previous = getActiveTarget({ ...connectionSettings, activeModelId: workspace.assistant.defaultModelId });
     void workspace.execute({ type: "edit-assistant", id: workspace.assistant.id, input: { ...workspace.assistant,
@@ -368,6 +454,7 @@ export function useChatSession({
   }
 
   function removeModel(modelId: string): void {
+    if (sharedSettingsBusy()) return;
     invalidateModelTestRequest(modelId);
     setModelTests((current) => {
       if (!(modelId in current)) {
@@ -380,6 +467,7 @@ export function useChatSession({
   }
 
   function removeConnection(connectionId: string): void {
+    if (sharedSettingsBusy()) return;
     invalidateCatalogRequest(connectionId);
     const affectedModelIds = new Set(
       getConnection(connectionSettings, connectionId)?.models.map(
@@ -395,6 +483,7 @@ export function useChatSession({
   }
 
   function removeProvider(providerId: string): void {
+    if (sharedSettingsBusy()) return;
     const provider = connectionSettings.providers.find(
       (candidate) => candidate.id === providerId,
     );
@@ -408,19 +497,32 @@ export function useChatSession({
   }
 
   function updateProviderName(providerId: string, name: string): void {
+    if (sharedSettingsBusy()) return;
     setConnectionSettings((current) =>
       renameProvider(current, providerId, name),
     );
   }
 
   function moveProviderGroup(providerId: string, targetId: string, placement: "before" | "after"): void {
-    if (generationTasks.getSnapshot().size) return;
+    if (sharedSettingsBusy()) return;
     setConnectionSettings((current) => moveProvider(current, providerId, targetId, placement));
   }
 
+  function moveConnectionChannel(connectionId: string, targetId: string, placement: "before" | "after"): void {
+    if (sharedSettingsBusy()) return;
+    setConnectionSettings((current) => moveConnection(current, connectionId, targetId, placement));
+  }
+
   async function refreshModelCatalog(connectionId: string): Promise<void> {
+    if (sharedSettingsBusy()) return;
     const connection = getConnection(connectionSettings, connectionId);
     const existing = modelCatalogs[connectionId];
+    const provider = connectionSettings.providers.find(p => p.connections.some(c => c.id === connectionId));
+    const catalogDefaults = presetCatalogOptions(provider, connection);
+    if (catalogDefaults?.manualCatalog) {
+      setModelCatalogs(current => ({ ...current, [connectionId]: { status: "error", models: current[connectionId]?.models ?? [], error: catalogDefaults.catalogHint ?? "请手动添加模型 ID。" } }));
+      return;
+    }
     if (!connection?.baseUrl.trim() || !connection.apiKey.trim()) {
       setModelCatalogs((current) => ({
         ...current,
@@ -433,6 +535,7 @@ export function useChatSession({
       return;
     }
     try {
+      // Validate drawing HTTPS before reusing a matching read-only model catalog client.
       resolveModelCatalogEndpoint(connection.protocol, connection.baseUrl);
     } catch (error) {
       if (!(error instanceof UrlResolutionError)) throw error;
@@ -458,7 +561,9 @@ export function useChatSession({
       },
     }));
     try {
-      const client = await createRuntimeModelCatalogClient(connection.protocol);
+      if (connection.protocol === "seedream-images") throw new Error("Seedream 绘图请手动添加模型，尚未接入模型目录接口。");
+      const client = await createRuntimeModelCatalogClient(connection.protocol === "gemini-image" ? "gemini-native"
+        : connection.protocol === "openai-images" || connection.protocol === "grok-images" ? "openai-chat" : connection.protocol);
       const models = await client.list({
         baseUrl: connection.baseUrl,
         apiKey: connection.apiKey,
@@ -510,7 +615,15 @@ export function useChatSession({
     connectionId: string,
     configuredModelId: string,
   ): Promise<void> {
+    if (sharedSettingsBusy()) return;
     const connection = getConnection(connectionSettings, connectionId);
+    if (connection && !isChatConnection(connection)) {
+      setModelTests((current) => ({ ...current, [configuredModelId]: {
+        status: "failed", totalMs: 0,
+        error: { kind: "protocol", message: "绘图模型请在绘图页生成图片验证。", retryable: false },
+      } }));
+      return;
+    }
     const model = connection?.models.find(
       (candidate) => candidate.id === configuredModelId,
     );
@@ -614,6 +727,7 @@ export function useChatSession({
   }
 
   async function sendMessage(retryMessageId?: string, resumeMessageId?: string, editedContent?: string): Promise<true | undefined> {
+    if (cherryBusyRef.current) return;
     const resume = resumeMessageId ? messages.find((message) => message.id === resumeMessageId && message.status === "paused") : undefined;
     if (resumeMessageId && (!resume?.continuation || !resume.providerReplay || messages[messages.length - 1]?.id !== resume.id)) return;
     const originalUser = retryMessageId || resumeMessageId ? retryUser(messages, (retryMessageId ?? resumeMessageId)!) : undefined;
@@ -672,6 +786,27 @@ export function useChatSession({
     const requestStore = sessionStore;
 
     const frozenConfig = structuredClone(resume?.continuation?.config ?? sessionConfig);
+    const searchMode = isExternalSearch(resume?.search?.provider) ? resume.search.provider : resolveSearchMode(frozenConfig);
+    const externalSearch = isExternalSearch(searchMode);
+    // Keep transport configuration native-only; external data is prepared by the session.
+    frozenConfig.webSearch = searchMode === "native";
+    let searchSettings: SearchProfile | undefined;
+    let searchQuery: string | undefined;
+    if (externalSearch && !resume) {
+      try {
+        searchSettings = structuredClone(loadSearchSettings(undefined, searchMode as ExternalSearchProvider));
+        assertSearchEnabled(searchMode as ExternalSearchProvider, searchSettings);
+        if (searchMode === "exa-api") searchSettings = validateExaApiSettings(searchSettings);
+        if (searchMode === "tavily") searchSettings = validateTavilyApiSettings(searchSettings as import("../search/settings").TavilySearchSettings);
+        if (searchMode === "zhipu") searchSettings = validateZhipuApiSettings(searchSettings as import("../search/settings").ZhipuSearchSettings);
+        searchQuery = searchMode === "zhipu" ? validateZhipuSearchQuery(content) : validateSearchQuery(content);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "外部搜索配置无效。");
+        return;
+      }
+    }
+    const requestHistory = projectSearchHistory(history).map(message => message.providerReplay?.scope === replayScope
+      ? message : { ...message, providerReplay: undefined });
     const errors = validateRequestConfig(
       frozenConfig,
       requestConnection.protocol,
@@ -691,7 +826,7 @@ export function useChatSession({
         planned = resume?.continuation ? { messages: [...resume.continuation.messages,
           { role: "assistant", content: resume.content, providerReplay: resume.providerReplay }],
           keptTurns: 0, trimmedTurns: 0, excludedIncompleteTurns: 0, inputTokens: 0, countingLabel: "继续原请求", estimated: true } : await planContextBudget(
-          history.map((message) => message.providerReplay?.scope === replayScope ? message : { ...message, providerReplay: undefined }), content, frozenConfig,
+          requestHistory, content, frozenConfig,
           requestConnection.protocol, activeTarget.model.modelId, undefined,
           [...frozenAttachments, ...existingAttachments].map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
         );
@@ -796,7 +931,8 @@ export function useChatSession({
         replyToId: userMessage.id,
         content: resume?.content ?? "",
         status: "streaming",
-        search: resume?.search ?? (frozenConfig.webSearch ? initialSearch(true) : undefined),
+        search: resume?.search ?? (externalSearch ? { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "searching", queries: [searchQuery!] }
+          : frozenConfig.webSearch ? initialSearch(true) : undefined),
         ...(requestConnection.protocol === "anthropic-native" ? { continuation: resume?.continuation ?? {
           config: frozenConfig, model: activeTarget.model.modelId, baseUrl: requestConnection.baseUrl, scope: replayScope,
           messages: planned.messages.map((message, index) => index === planned.messages.length - 1
@@ -828,9 +964,9 @@ export function useChatSession({
         }
         return;
       }
-      startTitleNaming();
+      if (!externalSearch) startTitleNaming();
       if (controller.signal.aborted) {
-        workingMessages = [...history, userMessage, { ...assistantMessage, status: "aborted" }];
+        workingMessages = replaceAssistant(workingMessages, assistantId, assistantMessage.content, "aborted");
         await requestStore.updateMessages(workingMessages).catch(() => undefined);
         setMessages(workingMessages);
         consumeSentDraft();
@@ -844,6 +980,7 @@ export function useChatSession({
         if (targetUser || messages.some((message) => message.role === "user")) return;
         const titleController = new AbortController();
         titleAbortControllers.current.add(titleController);
+        setTitleBusy(true);
         const timeout = setTimeout(() => titleController.abort(), 60_000);
         void (async () => {
           try {
@@ -866,12 +1003,21 @@ export function useChatSession({
           finally {
             clearTimeout(timeout);
             titleAbortControllers.current.delete(titleController);
+            setTitleBusy(titleAbortControllers.current.size > 0);
           }
         })();
       }
 
       let persistChain = Promise.resolve();
       let persistenceFailed = false;
+      let measurement: GenerationMeasurement | undefined;
+      const earlierMetrics = resume?.generationMetrics ?? [];
+      function updateGenerationMetrics(status: StoredMessageStatus): void {
+        if (!measurement) return;
+        const metrics = measurement.snapshot(status);
+        workingMessages = workingMessages.map(message => message.id === assistantId
+          ? { ...message, generationMetrics: [...earlierMetrics, metrics] } : message);
+      }
       function queuePersist(snapshotMessages: StoredChatMessage[]) {
         persistChain = persistChain
           .then(() =>
@@ -889,9 +1035,49 @@ export function useChatSession({
       let lastPersist = 0;
       let terminalSeen = false;
       try {
+        if (externalSearch && !resume) {
+          const result = await searchExa(searchSettings!, searchQuery!, controller.signal, searchMode as ExternalSearchProvider);
+          if (controller.signal.aborted) throw new Error("检索已停止。");
+          // Preserve successful retrieval independently of budget/model failures.
+          workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
+            search: { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "completed", sources: result.sources,
+              queries: [searchQuery!], ...(result.warning ? { warning: result.warning } : {}) } } : message);
+          setMessages(workingMessages); queuePersist(workingMessages);
+          const latestAttachments = requestMessages[requestMessages.length - 1]?.attachments ?? [];
+          const prepared = await prepareSearchContext(requestHistory, content, frozenConfig, requestConnection.protocol,
+            requestModelId, result.sources, latestAttachments as RequestAttachment[]);
+          if (controller.signal.aborted) throw new Error("检索已停止。");
+          planned = prepared.plan;
+          // Materialize any historical attachment newly retained after data budgeting.
+          requestMessages = [];
+          for (const message of planned.messages) {
+            const loaded: RequestAttachment[] = [];
+            for (const attachment of message.attachments ?? []) {
+              if (controller.signal.aborted) throw new Error("检索已停止。");
+              loaded.push("data" in attachment ? attachment : await attachmentStore.read(attachment));
+            }
+            requestMessages.push({ ...message, ...(loaded.length ? { attachments: loaded } : {}) });
+          }
+          buildProtocolBody(requestConnection.protocol, { baseUrl: requestConnection.baseUrl, apiKey: "", model: requestModelId,
+            messages: requestMessages, config: frozenConfig, replayScope });
+          if (controller.signal.aborted) throw new Error("检索已停止。");
+          workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
+            search: { ...message.search!, sources: prepared.sources },
+            ...(message.continuation ? { continuation: { ...message.continuation,
+              messages: planned.messages.map((item, index) => index === planned.messages.length - 1
+                ? { ...item, attachments: userMessage.attachments } : item) } } : {}) } : message);
+          setContextPlan(summarizeContextPlan(planned));
+          setMessages(workingMessages); queuePersist(workingMessages);
+          startTitleNaming();
+        }
+        if (controller.signal.aborted) throw new Error("生成已停止。");
         const transport = await createRuntimeChatTransport(
           requestConnection.protocol,
         );
+        if (controller.signal.aborted) throw new Error("生成已停止。");
+        measurement = new GenerationMeasurement(requestConnection.protocol, frozenConfig.stream);
+        updateGenerationMetrics("streaming");
+        setMessages(workingMessages); queuePersist(workingMessages);
         for await (const event of transport.stream({
           baseUrl: requestConnection.baseUrl,
           apiKey: requestConnection.apiKey,
@@ -901,7 +1087,14 @@ export function useChatSession({
           signal: controller.signal,
           replayScope,
         })) {
+          if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
+          measurement.observe(event);
+          if (event.type === "usage-update") {
+            updateGenerationMetrics("streaming");
+            setMessages(workingMessages); queuePersist(workingMessages); continue;
+          }
           if (event.type === "search-update") {
+            if (externalSearch) continue;
             workingMessages = workingMessages.map((message) => message.id === assistantId
               ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
             setMessages(workingMessages); queuePersist(workingMessages); continue;
@@ -914,7 +1107,6 @@ export function useChatSession({
             continue;
           }
           if (event.type === "text-delta" || event.type === "thinking-delta") {
-            if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
             if (event.type === "text-delta") assistantText += event.text;
             else workingMessages = workingMessages.map((message) => message.id === assistantId
               ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
@@ -924,6 +1116,9 @@ export function useChatSession({
               assistantText,
               "streaming",
             );
+            if (externalSearch && event.type === "text-delta") workingMessages = workingMessages.map(message => message.id === assistantId
+              ? { ...message, search: { ...message.search!, citations: externalCitations(assistantText, message.search!.sources) } } : message);
+            updateGenerationMetrics("streaming");
             const now = performance.now();
             if (now - lastPaint >= 32) {
               setMessages(workingMessages);
@@ -963,6 +1158,7 @@ export function useChatSession({
             const status = event.error.status ? ` (${event.error.status})` : "";
             setError(`${event.error.message}${status}`);
           }
+          updateGenerationMetrics(workingMessages.find(message => message.id === assistantId)!.status);
           setMessages(workingMessages);
           queuePersist(workingMessages);
         }
@@ -971,6 +1167,7 @@ export function useChatSession({
             workingMessages, assistantId, assistantText,
             controller.signal.aborted ? "aborted" : "failed",
           );
+          updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
           setMessages(workingMessages);
           queuePersist(workingMessages);
           if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
@@ -982,6 +1179,7 @@ export function useChatSession({
           assistantText,
           controller.signal.aborted ? "aborted" : "failed",
         );
+        updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
         setMessages(workingMessages);
         queuePersist(workingMessages);
         if (!controller.signal.aborted) {
@@ -1050,7 +1248,66 @@ export function useChatSession({
     }
   }
 
+  async function prepareBackup(): Promise<boolean> {
+    if (backupPreparingRef.current) return false;
+    const canPrepare = () => !maintenanceExternalBusy() && workspace.isSettled() && generationTasks.getSnapshot().size === 0 &&
+      !providerAvatarPending.current && !cherryBusyRef.current && imports.current.size === 0 && testAbortControllers.current.size === 0 && catalogAbortControllers.current.size === 0 && titleAbortControllers.current.size === 0;
+    if (!canPrepare()) {
+      setBackupPreparationError("请等待当前对话操作完成后再进入备份。");
+      return false;
+    }
+    backupPreparingRef.current = true;
+    setBackupPreparing(true);
+    setBackupPreparationError(undefined);
+    try {
+      saveConnectionSettings(connectionSettingsRef.current);
+      await workspace.flushSessionWrites();
+      if (!canPrepare()) throw new Error("对话操作仍在进行。");
+      return true;
+    } catch {
+      setBackupPreparationError("无法保存待写入的对话记录，备份尚未开始。请重试。");
+      cancelBackupPreparation();
+      return false;
+    }
+  }
+  function cancelBackupPreparation(): void { backupPreparingRef.current = false; setBackupPreparing(false); }
+
   return {
+    maintenanceBusy: backupPreparing || cherryBusy || workspace.busy || providerAvatarBusy,
+    backupPreparing,
+    backupDisabled: providerAvatarBusy || maintenanceExternalBusy() || !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing || titleBusy,
+    backupPreparationError,
+    prepareBackup,
+    cancelBackupPreparation,
+    dataImport: {
+      disabled: providerAvatarBusy || externalBusy || !workspace.isReady || generatingConversationIds.size > 0 || cherryBusy || backupPreparing,
+      async selectBackup(): Promise<CherryBackup | null> {
+        if (!isTauri() || providerAvatarPending.current || externalBusyRef.current || generationTasks.getSnapshot().size > 0 || cherryBusyRef.current || backupPreparingRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
+        const backup = await invoke<CherryBackup | null>("select_cherry_backup");
+        if (backup) cherryToken.current = backup.token;
+        return backup;
+      },
+      async closeBackup(token: string): Promise<void> {
+        await invoke("close_cherry_backup", { token });
+        if (cherryToken.current === token) cherryToken.current = undefined;
+      },
+      existingSourceKeys: (keys: string[]) => cherryRepository.existingSourceKeys(keys),
+      async importPlan(plan: CherryImportPlan, mode: "skip" | "copy") {
+        if (providerAvatarPending.current || externalBusyRef.current || cherryBusyRef.current || backupPreparingRef.current || !workspace.canSend() || generationTasks.getSnapshot().size || !cherryToken.current) {
+          throw new Error("请先等待当前操作完成，再导入聊天。");
+        }
+        cherryBusyRef.current = true; setCherryBusy(true);
+        const token = cherryToken.current;
+        try {
+          const result = await commitCherryImport(plan, mode, cherryRepository, {
+            lifecycle: attachmentLifecycle, verify: attachmentStore.verify,
+            readFile: (key) => invoke<RequestAttachment | null>("read_cherry_file", { token, key }),
+          });
+          workspace.retry();
+          return result;
+        } finally { cherryBusyRef.current = false; setCherryBusy(false); }
+      },
+    },
     workspace,
     generatingConversationIds,
     isAnyGenerating: generatingConversationIds.size > 0,
@@ -1094,13 +1351,18 @@ export function useChatSession({
     protocolInfo,
     refreshModelCatalog,
     renameProvider: updateProviderName,
+    changeProviderAvatar,
+    resetPresetConnection: restorePresetConnection,
     moveProvider: moveProviderGroup,
+    moveConnection: moveConnectionChannel,
     runModelTest,
     sendMessage: async (): Promise<void> => { await sendMessage(); },
     setDraft,
     sessionConfig,
     setThinking,
     setWebSearch,
+    searchMode: resolveSearchMode(sessionConfig),
+    setSearchMode,
     setActiveModel,
     setConversationModel,
     stopGeneration,

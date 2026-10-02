@@ -1,4 +1,9 @@
 import type { ChatProtocol } from "./types";
+import { dataCheck, dataRecord, migrateData, type DataMigration } from "../storage/dataContract";
+import { backupFields } from "../storage/dataContract";
+import { dataPolicies } from "../storage/dataPolicies";
+import { isGeminiThinkingSettings } from "./geminiThinking";
+import { isThinkingSettings } from "./thinking";
 
 export type NumericSetting =
   | { mode: "auto" }
@@ -14,6 +19,7 @@ export type NumericField =
 export interface SessionConfig {
   version: 1;
   webSearch?: boolean;
+  webSearchProvider?: "native" | import("../search/settings").ExternalSearchProvider;
   geminiThinking?: import("./geminiThinking").GeminiThinkingSettings;
   thinking?: Partial<Record<Exclude<ChatProtocol, "gemini-native">, import("./thinking").ThinkingSettings>>;
   systemInstruction: string;
@@ -61,25 +67,51 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function restoreSessionConfig(raw: unknown): SessionConfig {
+export const sessionDataMigration: DataMigration = { version: 1, oldestVersion: 1, migrations: {} };
+
+/** Strict read used before durable writes and by backup; editable invalid numeric text is preserved. */
+export function readSessionConfigData(raw: unknown): SessionConfig {
   if (raw === undefined) return defaultSessionConfig();
-  if (!isRecord(raw) || raw.version !== 1) {
-    return {
-      ...defaultSessionConfig(),
-      invalidStoredConfig: "会话配置版本或结构无效；请恢复默认配置。",
-    };
-  }
+  const value = migrateData(raw, sessionDataMigration);
   const required = [
     "systemInstruction", "temperature", "topP", "topK",
     "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson",
   ];
-  if (required.some((key) => !(key in raw)) || !isRecord(raw.customJson)) {
-    return {
-      ...defaultSessionConfig(),
-      invalidStoredConfig: "已保存的会话配置缺少字段；请恢复默认配置。",
-    };
+  dataCheck(required.every(key => key in value), "已保存的会话配置缺少字段；原数据未被修改。");
+  dataRecord(value.customJson);
+  dataCheck(Object.keys(value).every(key => backupFields(dataPolicies.session).includes(key)));
+  dataCheck(typeof value.systemInstruction === "string" && typeof value.stream === "boolean"
+    && typeof value.dualSamplingConfirmed === "boolean");
+  dataCheck(Object.keys(value.customJson).every(key => protocols.includes(key as ChatProtocol))
+    && protocols.every(key => typeof (value.customJson as Record<string, unknown>)[key] === "string"));
+  for (const key of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) {
+    dataRecord(value[key]);
+    dataCheck(Object.keys(value[key]).every(field => backupFields(dataPolicies.numeric).includes(field)));
+    dataCheck(["auto", "custom"].includes(value[key].mode as string));
+    dataCheck(value[key].mode !== "custom" || typeof value[key].value === "string");
   }
-  return raw as unknown as SessionConfig;
+  dataCheck(value.webSearch === undefined || typeof value.webSearch === "boolean");
+  dataCheck(value.webSearchProvider === undefined || ["native", "exa-mcp", "exa-api", "tavily", "zhipu"].includes(value.webSearchProvider as string));
+  dataCheck(value.invalidStoredConfig === undefined || typeof value.invalidStoredConfig === "string");
+  if (value.geminiThinking !== undefined) {
+    dataRecord(value.geminiThinking);
+    dataCheck(Object.keys(value.geminiThinking).every(key => backupFields(dataPolicies.geminiThinking).includes(key))
+      && isGeminiThinkingSettings(value.geminiThinking));
+  }
+  if (value.thinking !== undefined) {
+    dataRecord(value.thinking);
+    dataCheck(Object.keys(value.thinking).every(key => ["openai-chat", "openai-responses", "anthropic-native"].includes(key)));
+    for (const settings of Object.values(value.thinking)) {
+      dataRecord(settings);
+      dataCheck(Object.keys(settings).every(key => backupFields(dataPolicies.thinking).includes(key)) && isThinkingSettings(settings));
+    }
+  }
+  return value as unknown as SessionConfig;
+}
+
+export function restoreSessionConfig(raw: unknown): SessionConfig {
+  try { return readSessionConfigData(raw); }
+  catch { return { ...defaultSessionConfig(), invalidStoredConfig: "会话配置版本或结构无效；请恢复默认配置。" }; }
 }
 
 const ranges: Record<NumericField, { min: number; max: number; integer: boolean }> = {

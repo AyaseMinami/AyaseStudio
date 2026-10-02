@@ -7,11 +7,110 @@ import type { StoredChatMessage } from "../../chat/repository";
 import { MessageList, type MessageActions } from "./MessageList";
 import "fake-indexeddb/auto";
 import { createChatRepository } from "../../chat/repository";
+import { defaultSessionConfig } from "../../chat/sessionConfig";
+import { avatarPreviewCache } from "../../avatar/previewCache";
 
 const messages: StoredChatMessage[] = [
   { id: "user", role: "user", content: "**raw markdown**", status: "complete", replyToId: null },
   { id: "answer", role: "assistant", content: "Answer", status: "complete", replyToId: "user" },
 ];
+
+it("keeps imported missing attachment names visible as safe text", async () => {
+  const { host, root } = setup();
+  try {
+    await act(async () => root.render(<MessageList messages={[{
+      ...messages[0], source: { source: "cherry", id: "source-u", createdAt: 1,
+        unavailableAttachments: ["missing.pdf", "<img src=x onerror=alert(1)>.txt"] },
+    }]} />));
+    const missing = host.querySelector('[aria-label="未恢复的附件"]')!;
+    expect(missing.textContent).toContain("附件未恢复：missing.pdf");
+    expect(missing.textContent).toContain("<img src=x onerror=alert(1)>.txt");
+    expect(missing.querySelector("img")).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("shows only the start prompt and current assistant avatar in an empty chat", async () => {
+  const { host, root } = setup();
+  const makeUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:empty-avatar");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const decode = vi.spyOn(HTMLImageElement.prototype, "decode").mockResolvedValue();
+  const assistant = { id: "a", name: "A", icon: "", sortOrder: 0, defaultModelId: null, defaultConfig: defaultSessionConfig(), defaultAvatar: "blue" };
+  try {
+    await act(async () => root.render(<MessageList messages={[]} assistant={assistant} />));
+    expect(host.querySelector(".empty-state")?.textContent).toBe("发送消息以开始对话。");
+    expect(host.querySelector(".empty-state-avatar.assistant-avatar-blue")).not.toBeNull();
+    const avatar = { original: new Blob(["source"]), thumbnail: new Blob(["crop"]), crop: { x: .5, y: .5, zoom: 1 } };
+    await act(async () => root.render(<MessageList messages={[]} assistant={{ ...assistant, id: "b", avatar, defaultAvatar: "green" }} />));
+    await act(async () => { const ready = await avatarPreviewCache.acquire(avatar.thumbnail); ready.release(); });
+    const image = host.querySelector<HTMLImageElement>(".empty-state-avatar img")!;
+    expect(image.getAttribute("src")).toBe("blob:empty-avatar");
+    await act(async () => image.dispatchEvent(new Event("error")));
+    expect(host.querySelector(".empty-state-avatar img")).toBeNull();
+    expect(host.querySelector(".empty-state-avatar.assistant-avatar-green svg")).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={[]} />));
+    expect(host.querySelector(".empty-state-avatar.assistant-avatar-automatic svg")).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} assistant={assistant} />));
+    expect(host.querySelector(".empty-state")).toBeNull();
+    expect(host.querySelectorAll("article")).toHaveLength(2);
+  } finally {
+    await act(async () => root.unmount()); avatarPreviewCache.clearUnused(); host.remove(); makeUrl.mockRestore(); revoke.mockRestore(); decode.mockRestore();
+  }
+});
+
+it("keeps the user avatar visible alongside assistant avatars and across assistant changes", async () => {
+  const { host, root } = setup();
+  const makeUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:assistant-avatar");
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const decode = vi.spyOn(HTMLImageElement.prototype, "decode").mockResolvedValue();
+  const assistant = { id: "a", name: "A", icon: "", sortOrder: 0, defaultModelId: null, defaultConfig: defaultSessionConfig(), defaultAvatar: "blue" };
+  const userImage = () => host.querySelector<HTMLImageElement>(".message-row-user .message-user-avatar");
+  try {
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:user-avatar" assistant={assistant} />));
+    expect(userImage()?.getAttribute("src")).toBe("blob:user-avatar");
+    expect(host.querySelectorAll(".message-assistant-avatar")).toHaveLength(1);
+    const avatar = { original: new Blob(["source"]), thumbnail: new Blob(["crop"]), crop: { x: .5, y: .5, zoom: 1 } };
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:user-avatar" assistant={{ ...assistant, id: "b", avatar }} />));
+    await act(async () => { const ready = await avatarPreviewCache.acquire(avatar.thumbnail); ready.release(); });
+    const assistantImage = host.querySelector<HTMLImageElement>(".message-assistant-avatar img")!;
+    expect(assistantImage.getAttribute("src")).toBe("blob:assistant-avatar");
+    expect(userImage()?.getAttribute("src")).toBe("blob:user-avatar");
+    await act(async () => assistantImage.dispatchEvent(new Event("error")));
+    expect(userImage()?.getAttribute("src")).toBe("blob:user-avatar");
+    expect(host.querySelector(".message-assistant-avatar img")).toBeNull();
+  } finally {
+    await act(async () => root.unmount()); avatarPreviewCache.clearUnused(); host.remove(); makeUrl.mockRestore(); revoke.mockRestore(); decode.mockRestore();
+  }
+});
+
+it("uses the current assistant name and identity in the empty state and message avatars", async () => {
+  const { host, root } = setup();
+  const assistant = { id: "a", name: "alice", icon: "", sortOrder: 0, defaultModelId: null, defaultConfig: defaultSessionConfig() };
+  try {
+    await act(async () => root.render(<MessageList messages={[]} assistant={assistant} />));
+    expect(host.querySelector(".empty-state-avatar .assistant-avatar-initial")?.textContent).toBe("A");
+    const background = host.querySelector<HTMLElement>(".empty-state-avatar")!.style.background;
+    await act(async () => root.render(<MessageList messages={messages} assistant={{ ...assistant, name: "晴" }} />));
+    expect(host.querySelector(".message-assistant-avatar .assistant-avatar-initial")?.textContent).toBe("晴");
+    expect(host.querySelector<HTMLElement>(".message-assistant-avatar")!.style.background).toBe(background);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("shows the default user avatar when unset, removed, or unable to load", async () => {
+  const { host, root } = setup();
+  const fallback = () => host.querySelector('[aria-label="默认用户头像"]');
+  try {
+    await act(async () => root.render(<MessageList messages={messages} />));
+    expect(fallback()?.closest(".message-row-user")).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:custom" />));
+    expect(fallback()).toBeNull();
+    await act(async () => host.querySelector<HTMLImageElement>(".message-user-avatar")!.dispatchEvent(new Event("error")));
+    expect(fallback()).not.toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} userAvatarUrl="blob:replacement" />));
+    expect(fallback()).toBeNull();
+    await act(async () => root.render(<MessageList messages={messages} />));
+    expect(fallback()).not.toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 it("restores raw math and renders user, summary and streamed assistant consistently", async () => {
   const name = `MathMessages-${crypto.randomUUID()}`;
@@ -74,11 +173,12 @@ it("keeps both action bars and copy feedback outside message bodies", async () =
 async function setupScrolling(withAttachment = false) {
   const { host, root } = setup();
   let chunk = 0;
+  let users: StoredChatMessage[] = [];
   const attachment = { reference: "attachments/notes.txt", name: "notes.txt", mimeType: "text/plain" as const, size: 5 };
   const readAttachment = async () => ({ ...attachment, data: "SGVsbG8=" });
   const render = (key = "conversation", empty = false) => root.render(<MessageList key={key}
     onReadAttachment={readAttachment}
-    messages={empty ? [] : [{ ...messages[1], content: `chunk ${++chunk}`, status: "streaming",
+    messages={empty ? [] : [...users, { ...messages[1], content: `chunk ${++chunk}`, status: "streaming",
       attachments: withAttachment ? [attachment] : undefined }]} />);
   await act(async () => render());
   const region = host.querySelector<HTMLDivElement>(".message-scroll-region")!;
@@ -97,9 +197,50 @@ async function setupScrolling(withAttachment = false) {
     region.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -20 }));
   });
   const grow = async () => { height += 100; await act(async () => render()); };
+  const send = async (content = "new message") => {
+    users = [...users, { id: `sent-${users.length}`, role: "user", content, status: "complete" }];
+    height += 100;
+    await act(async () => render());
+  };
+  const edit = async () => {
+    users = users.map((user) => ({ ...user, content: "edited message" }));
+    height += 100;
+    await act(async () => render());
+  };
   await act(async () => render());
-  return { host, root, region, scroll, wheelUp, grow, render };
+  return { host, root, region, scroll, wheelUp, grow, render, send, edit };
 }
+
+it.each(["new message", ""])("resumes following after sending a user message (content: %s)", async (content) => {
+  const { host, root, region, grow, scroll, wheelUp, send } = await setupScrolling();
+  try {
+    await scroll(200);
+    await grow();
+    expect(region.scrollTop).toBe(200);
+    await send(content);
+    expect(region.scrollTop).toBe(800);
+    await grow();
+    expect(region.scrollTop).toBe(900);
+    await wheelUp();
+    await scroll(850);
+    await grow();
+    expect(region.scrollTop).toBe(850);
+    await send(content);
+    expect(region.scrollTop).toBe(1100);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("does not resume following for edits or reply updates with the same user ID", async () => {
+  const { host, root, region, grow, scroll, send, edit } = await setupScrolling();
+  try {
+    await send();
+    await scroll(200);
+    await edit();
+    expect(region.scrollTop).toBe(200);
+    await grow();
+    expect(region.scrollTop).toBe(200);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 it("keeps following stream growth without user scrolling", async () => {
   const { host, root, region, grow } = await setupScrolling();

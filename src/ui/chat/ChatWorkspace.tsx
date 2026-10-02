@@ -6,29 +6,40 @@ import type { ChatProtocol } from "../../chat/types";
 import type { StoredChatMessage } from "../../chat/repository";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
+import { GenerationStats } from "./GenerationStats";
+import type { DraftSelection } from "../../chat/inputHistory";
 import { ModelSelector } from "./ModelSelector";
 import type { ModelPickerProps } from "./ModelPicker";
 import { MessageList, type MessageActions } from "./MessageList";
 import { ThinkingToolbarControl } from "./ThinkingControl";
 import type { ThinkingSettings } from "../../chat/thinking";
-import { Globe } from "lucide-react";
+import { WebSearchToolbarControl } from "./WebSearchControl";
+import type { SearchMode } from "../../search/mode";
 import type { ChatLayout } from "./useChatLayout";
+import type { AssistantPreset } from "../../chat/workspace";
 
 export interface ChatWorkspaceProps {
+  assistant?: AssistantPreset;
+  userAvatarUrl?: string;
   hideHeader?: boolean;
   layout?: ChatLayout;
   onToggleLayout?(): void;
-  webSearch?: boolean;
-  onWebSearchChange?(enabled: boolean): void;
+  searchMode?: SearchMode;
+  onSearchModeChange?(mode: SearchMode): void;
   thinking?: ThinkingSettings;
   onThinkingChange?(value: ThinkingSettings): void;
   title: string;
   draft: string;
+  draftSelection?: DraftSelection;
+  onDraftSelectionChange?(selection: DraftSelection): void;
+  onBrowseHistory?(direction: -1 | 1, selection: DraftSelection): boolean;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;
   contextPlan?: ContextSummary;
   error?: string;
   isHydrated: boolean;
+  /** Visual hint only; never changes hydration or action guards. */
+  isWorkspaceBusy?: boolean;
   isGenerating: boolean;
   messages: StoredChatMessage[];
   messageActions?: MessageActions;
@@ -41,6 +52,7 @@ export interface ChatWorkspaceProps {
   protocol?: ChatProtocol;
   onClear(): void;
   onDraftChange(draft: string): void;
+  onDraftActivate?(): void;
   onFiles?(files: File[]): void;
   onRemoveAttachment?(id: string): void;
   onReadAttachment?: (item: SentAttachment) => Promise<RequestAttachment>;
@@ -49,20 +61,26 @@ export interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  assistant,
+  userAvatarUrl,
   hideHeader = false,
   layout = "narrow",
   onToggleLayout,
-  webSearch,
-  onWebSearchChange,
+  searchMode = "off",
+  onSearchModeChange,
   thinking,
   onThinkingChange,
   title,
   draft,
+  draftSelection,
+  onDraftSelectionChange,
+  onBrowseHistory,
   draftAttachments,
   attachmentBusy,
   contextPlan,
   error,
   isHydrated,
+  isWorkspaceBusy = false,
   isGenerating,
   messages,
   messageActions,
@@ -75,6 +93,7 @@ export function ChatWorkspace({
   protocol,
   onClear,
   onDraftChange,
+  onDraftActivate,
   onFiles,
   onRemoveAttachment,
   onReadAttachment,
@@ -109,6 +128,7 @@ export function ChatWorkspace({
         onToggleLayout={onToggleLayout}
         title={title}
         isHydrated={isHydrated}
+        isWorkspaceBusy={isWorkspaceBusy}
         isGenerating={isGenerating}
         onClear={onClear}
       />}
@@ -118,34 +138,39 @@ export function ChatWorkspace({
           {contextPlan.inputTokens} Token（估算，{contextPlan.countingLabel}）。原始记录未修改。
         </div>
       )}
-      <MessageList messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
-        actionsDisabled={messageActionsDisabled} actionError={messageActionError} />
+      <MessageList assistant={assistant} userAvatarUrl={userAvatarUrl} messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
+        actionsDisabled={messageActionsDisabled} actionsTemporarilyDisabled={isWorkspaceBusy && !isGenerating} actionError={messageActionError} />
       {draftAttachments && (attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
         attachmentCapabilityNotice(modelId ?? "", draftAttachments)) &&
         <p className="attachment-capability-notice" role="status">{
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
           attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
+        generationStats={<GenerationStats messages={messages} />}
+        layout={layout}
+        onToggleLayout={onToggleLayout}
         protocol={protocol}
         modelControl={modelPicker
           ? <ModelSelector label={modelLabel ?? "选择模型"} fullLabel={protocolLabel} {...modelPicker} />
           : <span className="composer-model-label">{protocolLabel}</span>}
-        searchControl={onWebSearchChange ? <button type="button" className="composer-tool-button"
-          aria-label="联网搜索" aria-pressed={webSearch ?? false}
-          style={webSearch ? { color: "rgb(var(--color-accent-text))", background: "rgb(var(--color-accent) / 0.1)" } : undefined}
-          title={`${webSearch ? "已开启" : "已关闭"}：修改仅影响当前会话下次请求。允许模型按需联网，可能产生额外费用。搜索专用模型可能始终联网。`}
-          disabled={!isHydrated} onClick={() => onWebSearchChange(!webSearch)}><Globe size={17} /></button> : undefined}
+        searchControl={onSearchModeChange ? <WebSearchToolbarControl mode={searchMode}
+          disabled={!isHydrated} busyOnly={isWorkspaceBusy && !isHydrated} onChange={onSearchModeChange} /> : undefined}
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}
-          disabled={!isHydrated} scope="当前会话" hint="当前会话 · 自动保存，下次请求生效" onChange={onThinkingChange} /> : undefined}
+          disabled={!isHydrated} busyOnly={isWorkspaceBusy && !isHydrated} scope="当前会话" hint="当前会话 · 自动保存，下次请求生效" onChange={onThinkingChange} /> : undefined}
         draft={draft}
+        draftSelection={draftSelection}
+        onDraftSelectionChange={onDraftSelectionChange}
+        onBrowseHistory={onBrowseHistory}
         draftAttachments={draftAttachments}
         attachmentBusy={attachmentBusy}
         attachmentBlockReason={draftAttachments ? attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) : undefined}
         error={error}
         isHydrated={isHydrated}
+        isWorkspaceBusy={isWorkspaceBusy}
         isGenerating={isGenerating}
         onDraftChange={onDraftChange}
+        onDraftActivate={onDraftActivate}
         onFiles={onFiles}
         onRemoveAttachment={onRemoveAttachment}
         onSend={onSend}

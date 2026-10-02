@@ -1,17 +1,22 @@
 use std::{
     collections::HashSet,
     fs::OpenOptions,
-    io::{Cursor, Write},
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
-use image::{ImageFormat, ImageReader, Limits};
+use image::{DynamicImage, ImageFormat, ImageReader, Limits};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
 pub const MAX_BACKGROUND_BYTES: u64 = 20_000_000;
+const MAX_THUMBNAIL_EDGE: u32 = 512;
+const MAX_THUMBNAIL_BYTES: u64 = 2_000_000;
+// Import, resolve and cleanup share one lock, including legacy thumbnail creation.
+pub(crate) static BACKGROUND_FILES: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, PartialEq, Eq)]
 enum BackgroundError {
@@ -64,6 +69,7 @@ struct ImportedBackground {
 pub struct BackgroundResourcePayload {
     reference: String,
     absolute_path: String,
+    name: Option<String>,
 }
 
 impl TryFrom<ImportedBackground> for BackgroundResourcePayload {
@@ -78,6 +84,7 @@ impl TryFrom<ImportedBackground> for BackgroundResourcePayload {
         Ok(Self {
             reference: resource.reference,
             absolute_path,
+            name: None,
         })
     }
 }
@@ -90,7 +97,14 @@ fn validate_background_size(size: u64) -> Result<(), BackgroundError> {
     }
 }
 
+#[cfg(test)]
 fn validate_background_bytes(bytes: &[u8]) -> Result<BackgroundKind, BackgroundError> {
+    decode_background_bytes(bytes).map(|(kind, _)| kind)
+}
+
+fn decode_background_bytes(
+    bytes: &[u8],
+) -> Result<(BackgroundKind, DynamicImage), BackgroundError> {
     validate_background_size(bytes.len() as u64)?;
     let format = image::guess_format(bytes).map_err(|_| BackgroundError::UnsupportedType)?;
     let kind = match format {
@@ -105,8 +119,69 @@ fn validate_background_bytes(bytes: &[u8]) -> Result<BackgroundKind, BackgroundE
     limits.max_alloc = Some(256 * 1024 * 1024);
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
     reader.limits(limits);
+    let image = reader.decode().map_err(|_| BackgroundError::Corrupt)?;
+    Ok((kind, image))
+}
+
+pub(crate) fn backup_image_extension(bytes: &[u8]) -> Result<&'static str, ()> {
+    decode_background_bytes(bytes).map(|(kind, _)| kind.extension()).map_err(|_| ())
+}
+
+fn thumbnail_path(app_data_dir: &Path, file_name: &str) -> PathBuf {
+    app_data_dir
+        .join("backgrounds/thumbnails")
+        .join(format!("{file_name}.png"))
+}
+
+fn validate_thumbnail(path: &Path) -> Result<(), BackgroundError> {
+    let metadata = std::fs::metadata(path).map_err(|_| BackgroundError::Corrupt)?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_THUMBNAIL_BYTES {
+        return Err(BackgroundError::Corrupt);
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .map_err(|_| BackgroundError::Corrupt)?
+        .take(MAX_THUMBNAIL_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| BackgroundError::Corrupt)?;
+    if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
+        return Err(BackgroundError::Corrupt);
+    }
+    if image::guess_format(&bytes).ok() != Some(ImageFormat::Png) {
+        return Err(BackgroundError::Corrupt);
+    }
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_THUMBNAIL_EDGE);
+    limits.max_image_height = Some(MAX_THUMBNAIL_EDGE);
+    limits.max_alloc = Some(4 * 1024 * 1024);
+    let mut reader = ImageReader::with_format(Cursor::new(bytes), ImageFormat::Png);
+    reader.limits(limits);
     reader.decode().map_err(|_| BackgroundError::Corrupt)?;
-    Ok(kind)
+    Ok(())
+}
+
+fn save_thumbnail(image: &DynamicImage, path: &Path) -> Result<(), BackgroundError> {
+    let directory = path.parent().ok_or(BackgroundError::StorageFailed)?;
+    std::fs::create_dir_all(directory).map_err(|_| BackgroundError::StorageFailed)?;
+    let thumbnail = if image.width() > MAX_THUMBNAIL_EDGE || image.height() > MAX_THUMBNAIL_EDGE {
+        image.thumbnail(MAX_THUMBNAIL_EDGE, MAX_THUMBNAIL_EDGE)
+    } else {
+        image.clone()
+    };
+    // Same-directory persist atomically replaces existing files on Windows as well.
+    let mut output =
+        tempfile::NamedTempFile::new_in(directory).map_err(|_| BackgroundError::StorageFailed)?;
+    DynamicImage::ImageRgba8(thumbnail.to_rgba8())
+        .write_to(output.as_file_mut(), ImageFormat::Png)
+        .map_err(|_| BackgroundError::StorageFailed)?;
+    output
+        .as_file()
+        .sync_all()
+        .map_err(|_| BackgroundError::StorageFailed)?;
+    output
+        .persist(path)
+        .map_err(|_| BackgroundError::StorageFailed)?;
+    Ok(())
 }
 
 fn managed_file_name(reference: &str) -> Result<&str, BackgroundError> {
@@ -144,13 +219,16 @@ fn import_background_from_path(
     source: &Path,
     app_data_dir: &Path,
 ) -> Result<ImportedBackground, BackgroundError> {
+    let _guard = BACKGROUND_FILES
+        .lock()
+        .map_err(|_| BackgroundError::StorageFailed)?;
     let metadata = std::fs::metadata(source).map_err(|_| BackgroundError::Unavailable)?;
     if !metadata.is_file() {
         return Err(BackgroundError::Unavailable);
     }
     validate_background_size(metadata.len())?;
     let bytes = std::fs::read(source).map_err(|_| BackgroundError::Unavailable)?;
-    let kind = validate_background_bytes(&bytes)?;
+    let (kind, image) = decode_background_bytes(&bytes)?;
 
     let background_dir = app_data_dir.join("backgrounds");
     std::fs::create_dir_all(&background_dir).map_err(|_| BackgroundError::StorageFailed)?;
@@ -166,6 +244,11 @@ fn import_background_from_path(
         let _ = std::fs::remove_file(&absolute_path);
         return Err(BackgroundError::StorageFailed);
     }
+    drop(destination);
+    if let Err(error) = save_thumbnail(&image, &thumbnail_path(app_data_dir, &file_name)) {
+        let _ = std::fs::remove_file(&absolute_path);
+        return Err(error);
+    }
 
     Ok(ImportedBackground {
         reference: format!("backgrounds/{file_name}"),
@@ -177,6 +260,9 @@ fn cleanup_background_files(
     app_data_dir: &Path,
     retained_references: &[String],
 ) -> Result<(), BackgroundError> {
+    let _guard = BACKGROUND_FILES
+        .lock()
+        .map_err(|_| BackgroundError::StorageFailed)?;
     let retained_names = retained_references
         .iter()
         .map(|reference| managed_file_name(reference).map(str::to_owned))
@@ -204,13 +290,54 @@ fn cleanup_background_files(
             std::fs::remove_file(entry.path()).map_err(|_| BackgroundError::StorageFailed)?;
         }
     }
+    let thumbnails = match std::fs::read_dir(background_dir.join("thumbnails")) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(BackgroundError::StorageFailed),
+    };
+    for entry in thumbnails {
+        let entry = entry.map_err(|_| BackgroundError::StorageFailed)?;
+        if !entry
+            .file_type()
+            .map_err(|_| BackgroundError::StorageFailed)?
+            .is_file()
+        {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(original_name) = name.strip_suffix(".png") else {
+            continue;
+        };
+        if managed_file_name(&format!("backgrounds/{original_name}")).is_err() {
+            continue;
+        }
+        if !retained_names.contains(original_name) || !background_dir.join(original_name).is_file()
+        {
+            std::fs::remove_file(entry.path()).map_err(|_| BackgroundError::StorageFailed)?;
+        }
+    }
     Ok(())
 }
 
+#[cfg(test)]
 fn resolve_background_reference(
     app_data_dir: &Path,
     reference: &str,
 ) -> Result<ImportedBackground, BackgroundError> {
+    resolve_background_resource(app_data_dir, reference, false, false)
+}
+
+fn resolve_background_resource(
+    app_data_dir: &Path,
+    reference: &str,
+    thumbnail: bool,
+    refresh: bool,
+) -> Result<ImportedBackground, BackgroundError> {
+    let _guard = BACKGROUND_FILES
+        .lock()
+        .map_err(|_| BackgroundError::StorageFailed)?;
     let file_name = managed_file_name(reference)?;
     let absolute_path = app_data_dir.join("backgrounds").join(file_name);
     let metadata = std::fs::metadata(&absolute_path).map_err(|_| BackgroundError::Unavailable)?;
@@ -218,11 +345,27 @@ fn resolve_background_reference(
         return Err(BackgroundError::Unavailable);
     }
     validate_background_size(metadata.len())?;
+    if metadata.len() == 0 {
+        return Err(BackgroundError::Corrupt);
+    }
+    let cached_path = thumbnail_path(app_data_dir, file_name);
+    if thumbnail && !refresh && validate_thumbnail(&cached_path).is_ok() {
+        return Ok(ImportedBackground {
+            reference: reference.to_owned(),
+            absolute_path: cached_path,
+        });
+    }
     let bytes = std::fs::read(&absolute_path).map_err(|_| BackgroundError::Unavailable)?;
-    let kind = validate_background_bytes(&bytes)?;
+    let (kind, image) = decode_background_bytes(&bytes)?;
     if !file_name.ends_with(&format!(".{}", kind.extension())) {
         return Err(BackgroundError::Corrupt);
     }
+    let absolute_path = if thumbnail {
+        save_thumbnail(&image, &cached_path)?;
+        cached_path
+    } else {
+        absolute_path
+    };
     Ok(ImportedBackground {
         reference: reference.to_owned(),
         absolute_path,
@@ -250,33 +393,293 @@ pub async fn select_background_image(
     let source = selected
         .into_path()
         .map_err(|_| BackgroundError::Unavailable.code().to_owned())?;
-    let imported = import_background_from_path(&source, &app_data_dir(&app)?)
-        .map_err(|error| error.code().to_owned())?;
-    BackgroundResourcePayload::try_from(imported).map(Some)
+    let name = source
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .map(|name| name.chars().take(100).collect());
+    let directory = app_data_dir(&app)?;
+    let imported = tauri::async_runtime::spawn_blocking(move || {
+        import_background_from_path(&source, &directory)
+    })
+    .await
+    .map_err(|_| BackgroundError::StorageFailed.code().to_owned())?
+    .map_err(|error| error.code().to_owned())?;
+    let mut payload = BackgroundResourcePayload::try_from(imported)?;
+    // Only the basename crosses the boundary; the source path is never persisted or sent to React.
+    payload.name = name;
+    Ok(Some(payload))
 }
 
 #[tauri::command]
-pub fn resolve_background_image(
+pub async fn resolve_background_image(
     app: AppHandle,
     reference: String,
+    thumbnail: Option<bool>,
+    refresh: Option<bool>,
 ) -> Result<BackgroundResourcePayload, String> {
-    let resource = resolve_background_reference(&app_data_dir(&app)?, &reference)
-        .map_err(|error| error.code().to_owned())?;
+    let directory = app_data_dir(&app)?;
+    let resource = tauri::async_runtime::spawn_blocking(move || {
+        resolve_background_resource(
+            &directory,
+            &reference,
+            thumbnail.unwrap_or(false),
+            refresh.unwrap_or(false),
+        )
+    })
+    .await
+    .map_err(|_| BackgroundError::StorageFailed.code().to_owned())?
+    .map_err(|error| error.code().to_owned())?;
     BackgroundResourcePayload::try_from(resource)
 }
 
 #[tauri::command]
-pub fn cleanup_background_images(
+pub async fn cleanup_background_images(
     app: AppHandle,
     retained_references: Vec<String>,
 ) -> Result<(), String> {
-    cleanup_background_files(&app_data_dir(&app)?, &retained_references)
-        .map_err(|error| error.code().to_owned())
+    let directory = app_data_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        cleanup_background_files(&directory, &retained_references)
+    })
+    .await
+    .map_err(|_| BackgroundError::StorageFailed.code().to_owned())?
+    .map_err(|error| error.code().to_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn png_image(width: u32, height: u32) -> Vec<u8> {
+        let image = image::RgbaImage::from_pixel(width, height, image::Rgba([24, 64, 128, 80]));
+        let mut bytes = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(image)
+            .write_to(&mut bytes, ImageFormat::Png)
+            .unwrap();
+        bytes.into_inner()
+    }
+
+    fn legacy_image(app_data: &Path, bytes: &[u8]) -> String {
+        let reference = "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png";
+        std::fs::create_dir_all(app_data.join("backgrounds")).unwrap();
+        std::fs::write(app_data.join(reference), bytes).unwrap();
+        reference.to_owned()
+    }
+
+    #[test]
+    fn thumbnails_preserve_aspect_alpha_small_sizes_and_original_bytes() {
+        for (width, height, expected) in [
+            (1024, 256, (512, 128)),
+            (256, 1024, (128, 512)),
+            (512, 512, (512, 512)),
+            (23, 17, (23, 17)),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let bytes = png_image(width, height);
+            let source = temp.path().join("original.png");
+            let app_data = temp.path().join("data");
+            std::fs::write(&source, &bytes).unwrap();
+            let imported = import_background_from_path(&source, &app_data).unwrap();
+            let resolved =
+                resolve_background_resource(&app_data, &imported.reference, true, false).unwrap();
+            assert_eq!(resolved.reference, imported.reference);
+            assert_eq!(
+                resolved.absolute_path,
+                thumbnail_path(&app_data, managed_file_name(&imported.reference).unwrap())
+            );
+            let thumbnail = image::open(resolved.absolute_path).unwrap().to_rgba8();
+            assert_eq!(thumbnail.dimensions(), expected);
+            assert_eq!(thumbnail.get_pixel(0, 0).0[3], 80);
+            assert_eq!(std::fs::read(imported.absolute_path).unwrap(), bytes);
+            assert_eq!(std::fs::read(source).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn jpeg_thumbnail_name_includes_the_original_extension() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("photo.jpeg");
+        DynamicImage::new_rgb8(1200, 600)
+            .save_with_format(&source, ImageFormat::Jpeg)
+            .unwrap();
+        let imported = import_background_from_path(&source, temp.path()).unwrap();
+        let resolved =
+            resolve_background_resource(temp.path(), &imported.reference, true, false).unwrap();
+        assert!(
+            resolved
+                .absolute_path
+                .to_str()
+                .unwrap()
+                .ends_with(".jpg.png")
+        );
+        assert_eq!(image::open(resolved.absolute_path).unwrap().width(), 512);
+    }
+
+    #[test]
+    fn old_images_lazily_create_thumbnails_and_hot_reads_do_not_decode_originals() {
+        let temp = tempfile::tempdir().unwrap();
+        let reference = legacy_image(temp.path(), &png_image(1024, 512));
+        let cached = thumbnail_path(temp.path(), managed_file_name(&reference).unwrap());
+        assert!(!cached.exists());
+        let resolved = resolve_background_resource(temp.path(), &reference, true, false).unwrap();
+        assert_eq!(resolved.absolute_path, cached);
+        std::fs::write(temp.path().join(&reference), b"\x89PNG\r\n\x1a\ntruncated").unwrap();
+        assert!(resolve_background_resource(temp.path(), &reference, true, false).is_ok());
+        assert_eq!(
+            resolve_background_reference(temp.path(), &reference),
+            Err(BackgroundError::Corrupt)
+        );
+        assert_eq!(
+            resolve_background_resource(temp.path(), &reference, true, true),
+            Err(BackgroundError::Corrupt)
+        );
+        std::fs::remove_file(temp.path().join(&reference)).unwrap();
+        assert_eq!(
+            resolve_background_resource(temp.path(), &reference, true, false),
+            Err(BackgroundError::Unavailable)
+        );
+    }
+
+    #[test]
+    fn missing_corrupt_and_oversized_thumbnails_are_rebuilt() {
+        let temp = tempfile::tempdir().unwrap();
+        let reference = legacy_image(temp.path(), &png_image(800, 400));
+        let cached = thumbnail_path(temp.path(), managed_file_name(&reference).unwrap());
+        resolve_background_resource(temp.path(), &reference, true, false).unwrap();
+        for replacement in [b"broken".to_vec(), png_image(513, 1)] {
+            std::fs::write(&cached, replacement).unwrap();
+            resolve_background_resource(temp.path(), &reference, true, false).unwrap();
+            assert_eq!(image::open(&cached).unwrap().width(), 512);
+        }
+        std::fs::write(&cached, png_image(7, 3)).unwrap();
+        resolve_background_resource(temp.path(), &reference, true, true).unwrap();
+        assert_eq!(image::open(&cached).unwrap().width(), 512);
+        std::fs::write(&cached, b"broken").unwrap();
+        resolve_background_resource(temp.path(), &reference, true, true).unwrap();
+        assert_eq!(image::open(&cached).unwrap().height(), 256);
+    }
+
+    #[test]
+    fn thumbnail_failures_never_return_originals_or_leave_failed_imports() {
+        let temp = tempfile::tempdir().unwrap();
+        let reference = legacy_image(temp.path(), &png_image(30, 20));
+        std::fs::write(
+            temp.path().join("backgrounds/thumbnails"),
+            b"block directory",
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_background_resource(temp.path(), &reference, true, false),
+            Err(BackgroundError::StorageFailed)
+        );
+        let source = temp.path().join("source.png");
+        std::fs::write(&source, png_image(10, 10)).unwrap();
+        assert_eq!(
+            import_background_from_path(&source, temp.path()),
+            Err(BackgroundError::StorageFailed)
+        );
+        assert_eq!(
+            std::fs::read_dir(temp.path().join("backgrounds"))
+                .unwrap()
+                .count(),
+            2
+        );
+        assert!(resolve_background_reference(temp.path(), &reference).is_ok());
+    }
+
+    #[test]
+    fn cleanup_retains_pairs_and_removes_stale_pairs_and_orphan_thumbnails() {
+        let temp = tempfile::tempdir().unwrap();
+        let kept = legacy_image(temp.path(), &png_image(20, 10));
+        resolve_background_resource(temp.path(), &kept, true, false).unwrap();
+        let source = temp.path().join("source.png");
+        std::fs::write(&source, png_image(40, 20)).unwrap();
+        let stale = import_background_from_path(&source, temp.path()).unwrap();
+        let orphan = "abcdefab-cdef-4abc-8def-abcdefabcdef.webp";
+        let thumbnail_dir = temp.path().join("backgrounds/thumbnails");
+        let orphan_path = thumbnail_dir.join(format!("{orphan}.png"));
+        std::fs::write(&orphan_path, b"orphan").unwrap();
+        std::fs::write(thumbnail_dir.join("unmanaged.png"), b"keep").unwrap();
+        std::fs::write(thumbnail_dir.join(format!("{orphan}.png.extra")), b"keep").unwrap();
+        let managed_directory = thumbnail_dir.join("abcdefab-cdef-4abc-9def-abcdefabcdef.jpg.png");
+        std::fs::create_dir(&managed_directory).unwrap();
+        cleanup_background_files(
+            temp.path(),
+            &[kept.clone(), format!("backgrounds/{orphan}")],
+        )
+        .unwrap();
+        assert!(temp.path().join(&kept).exists());
+        assert!(thumbnail_path(temp.path(), managed_file_name(&kept).unwrap()).exists());
+        assert!(!stale.absolute_path.exists());
+        assert!(
+            !thumbnail_path(temp.path(), managed_file_name(&stale.reference).unwrap()).exists()
+        );
+        assert!(!orphan_path.exists());
+        assert!(thumbnail_dir.join("unmanaged.png").exists());
+        assert!(thumbnail_dir.join(format!("{orphan}.png.extra")).exists());
+        assert!(managed_directory.is_dir());
+        assert!(source.exists());
+    }
+
+    #[test]
+    fn cleanup_handles_missing_backgrounds_and_never_accepts_thumbnail_references() {
+        let temp = tempfile::tempdir().unwrap();
+        assert_eq!(cleanup_background_files(temp.path(), &[]), Ok(()));
+        assert_eq!(
+            cleanup_background_files(
+                temp.path(),
+                &[
+                    "backgrounds/thumbnails/01234567-89ab-4cde-8fab-0123456789ab.png.png"
+                        .to_owned()
+                ]
+            ),
+            Err(BackgroundError::InvalidReference)
+        );
+        assert!(!temp.path().join("backgrounds").exists());
+    }
+
+    #[test]
+    fn thumbnail_persist_failure_removes_the_temporary_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("occupied.png");
+        std::fs::create_dir(&target).unwrap();
+        assert_eq!(
+            save_thumbnail(&DynamicImage::new_rgba8(20, 10), &target),
+            Err(BackgroundError::StorageFailed)
+        );
+        assert!(target.is_dir());
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn hot_reads_enforce_original_size_and_thumbnail_byte_limits() {
+        let temp = tempfile::tempdir().unwrap();
+        let reference = legacy_image(temp.path(), &png_image(20, 10));
+        let resolved = resolve_background_resource(temp.path(), &reference, true, false).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&resolved.absolute_path)
+            .unwrap()
+            .set_len(MAX_THUMBNAIL_BYTES + 1)
+            .unwrap();
+        resolve_background_resource(temp.path(), &reference, true, false).unwrap();
+        assert!(std::fs::metadata(&resolved.absolute_path).unwrap().len() < MAX_THUMBNAIL_BYTES);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(temp.path().join(&reference))
+            .unwrap()
+            .set_len(MAX_BACKGROUND_BYTES + 1)
+            .unwrap();
+        assert_eq!(
+            resolve_background_resource(temp.path(), &reference, true, false),
+            Err(BackgroundError::TooLarge)
+        );
+        std::fs::write(temp.path().join(&reference), b"").unwrap();
+        assert_eq!(
+            resolve_background_resource(temp.path(), &reference, true, false),
+            Err(BackgroundError::Corrupt)
+        );
+    }
 
     #[test]
     fn rejects_backgrounds_larger_than_twenty_decimal_megabytes() {

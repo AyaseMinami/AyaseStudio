@@ -1,12 +1,15 @@
-import Dexie, { type EntityTable } from "dexie";
+import { AyaseDatabase } from "../storage/database";
+import { resolveAvatarSource, withoutAvatarSource } from "../avatar/repository";
+import { readAssistantAvatarSelection } from "../avatar/assistantDefaults";
 import { retainedRoundMessages, selectRoundVersion, withoutVersions } from "./roundVersions";
 import { titleFromText } from "./conversationTitle";
-import { copyAssistantConfig, resolveConversationConfig } from "./conversationConfig";
+import { copyAssistantConfig, resolveConversationConfig, assertLegacyOverrides, readConversationConfigData } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
+import { readMessagesGenerationMetrics } from "./generationMetricsData";
 
 import type { ChatMessage } from "./types";
-import { defaultSessionConfig, restoreSessionConfig, type SessionConfig } from "./sessionConfig";
-import { DEFAULT_ASSISTANT_ID, orderedConversations, type AssistantPreset, type Conversation, type WorkspaceCommand, type WorkspaceSelection, type WorkspaceSnapshot } from "./workspace";
+import { defaultSessionConfig, restoreSessionConfig, readSessionConfigData, type SessionConfig } from "./sessionConfig";
+import { DEFAULT_ASSISTANT_ID, orderedConversations, placeItem, type AssistantPreset, type WorkspaceCommand, type WorkspaceSelection, type WorkspaceSnapshot } from "./workspace";
 
 export type StoredMessageStatus =
   | "complete"
@@ -17,11 +20,13 @@ export type StoredMessageStatus =
   | "failed";
 
 export interface StoredChatMessage extends ChatMessage {
+  source?: { source: "cherry"; id: string; createdAt: number; unavailableAttachments?: string[] };
   roundVersions?: import("./roundVersions").RoundVersions;
   id: string;
   replyToId?: string | null;
   editedAt?: number;
   thinkingSummary?: string;
+  generationMetrics?: import("./generationMetrics").GenerationMetrics[];
   continuation?: import("./nativeSearch").SearchContinuation;
   status: StoredMessageStatus;
   attachments?: import("./attachments").SentAttachment[];
@@ -46,40 +51,12 @@ export interface WorkspaceRepository extends ChatRepository {
   execute(command: WorkspaceCommand): Promise<WorkspaceSnapshot>;
 }
 
-class AyaseDatabase extends Dexie {
-  legacyConversationConfigs!: EntityTable<{ id: string; generationConfig?: SessionConfig; lastUsedModelId?: string | null }, "id">;
-  chats!: EntityTable<ChatSnapshot, "id">;
-  assistants!: EntityTable<AssistantPreset, "id">;
-  conversations!: EntityTable<Conversation, "id">;
-  workspace!: EntityTable<WorkspaceSelection, "id">;
-
-  constructor(name: string) {
-    super(name);
-    this.version(1).stores({ chats: "id,updatedAt" });
-    this.version(2).stores({
-      chats: "id,updatedAt", assistants: "id,sortOrder",
-      conversations: "id,assistantId,updatedAt", workspace: "id",
-    });
-    this.version(3).stores({ legacyConversationConfigs: "id" }).upgrade(async (transaction) => {
-      const chats = transaction.table("chats");
-      const conversations = transaction.table("conversations");
-      for (const chat of await chats.toArray()) {
-        const conversation = await conversations.get(chat.id);
-        await transaction.table("legacyConversationConfigs").put({ id: chat.id,
-          generationConfig: chat.generationConfig, lastUsedModelId: conversation?.lastUsedModelId });
-        delete chat.generationConfig;
-        await chats.put(chat);
-      }
-      await conversations.toCollection().modify((item) => { delete item.lastUsedModelId; });
-    });
-  }
-}
-
 class DexieChatRepository implements WorkspaceRepository {
   constructor(private readonly database: AyaseDatabase) {}
 
-  load(id: string): Promise<ChatSnapshot | undefined> {
-    return this.database.chats.get(id);
+  async load(id: string): Promise<ChatSnapshot | undefined> {
+    const snapshot = await this.database.chats.get(id);
+    return snapshot && { ...snapshot, messages: readMessagesGenerationMetrics(snapshot.messages) };
   }
 
   async attachmentReferences(): Promise<string[]> {
@@ -89,6 +66,7 @@ class DexieChatRepository implements WorkspaceRepository {
   }
 
   async save(snapshot: ChatSnapshot): Promise<void> {
+    snapshot = { ...snapshot, messages: readMessagesGenerationMetrics(snapshot.messages) };
     const db = this.database;
     await db.transaction("rw", [db.chats, db.conversations, db.workspace], async () => {
       const conversation = await db.conversations.get(snapshot.id);
@@ -111,13 +89,17 @@ class DexieChatRepository implements WorkspaceRepository {
 
   private transaction<T>(action: () => Promise<T>): Promise<T> {
     const db = this.database;
-    return db.transaction("rw", [db.chats, db.assistants, db.conversations, db.workspace, db.legacyConversationConfigs], action);
+    return db.transaction("rw", [db.chats, db.assistants, db.conversations, db.workspace, db.legacyConversationConfigs, db.avatarLibrary], action);
   }
 
   private async snapshot(): Promise<WorkspaceSnapshot> {
     const db = this.database;
+    const resources = new Set(await db.avatarLibrary.toCollection().primaryKeys());
     return {
-      assistants: (await db.assistants.toArray()).sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)),
+      assistants: (await db.assistants.toArray()).map(assistant =>
+        assistant.avatar?.source && !resources.has(assistant.avatar.source.resourceId)
+          ? { ...assistant, avatar: withoutAvatarSource(assistant.avatar) } : assistant)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)),
       conversations: orderedConversations(await db.conversations.toArray()),
       selection: (await db.workspace.get("selection"))!,
     };
@@ -146,6 +128,25 @@ class DexieChatRepository implements WorkspaceRepository {
       const valid = new Set(validModelIds);
       const modelId = legacyModelId && valid.has(legacyModelId) ? legacyModelId : null;
       const previous = await db.workspace.get("selection");
+      // Reject unsupported data before initialization can publish defaults or repair any rows.
+      // The enclosing transaction also rolls back any later migration/selection failure.
+      for (const chat of await db.chats.toArray()) readMessagesGenerationMetrics(chat.messages);
+      for (const assistant of await db.assistants.toArray()) {
+        readSessionConfigData(assistant.defaultConfig);
+        readAssistantAvatarSelection(assistant);
+      }
+      for (const conversation of await db.conversations.toArray()) {
+        if (conversation.settings !== undefined) readConversationConfigData(conversation.settings);
+        if (conversation.creationConfig !== undefined) readConversationConfigData(conversation.creationConfig);
+        if (conversation.overrides !== undefined) {
+          assertLegacyOverrides(conversation.overrides);
+          const assistant = await db.assistants.get(conversation.assistantId);
+          readSessionConfigData(resolveConversationConfig(assistant, conversation.overrides).config);
+        }
+      }
+      for (const legacy of await db.legacyConversationConfigs.toArray()) {
+        if (legacy.generationConfig !== undefined) readSessionConfigData(legacy.generationConfig);
+      }
       if (!await db.assistants.get(DEFAULT_ASSISTANT_ID)) {
         await db.assistants.put({ id: DEFAULT_ASSISTANT_ID, name: "默认助手", icon: "", sortOrder: 0,
           defaultModelId: previous ? null : modelId,
@@ -207,38 +208,67 @@ class DexieChatRepository implements WorkspaceRepository {
         if (!item) throw new Error("对话不存在。");
         return item;
       };
+      const newConversationRank = async (assistantId: string) => {
+        const siblings = await db.conversations.where("assistantId").equals(assistantId).toArray();
+        if (!siblings.some(item => Number.isFinite(item.sortOrder))) return {};
+        // Normalize before adding to avoid ever growing/overflowing ranks.
+        const ordered = orderedConversations(siblings);
+        for (let order = 0; order < ordered.length; order++) await db.conversations.update(ordered[order].id, { sortOrder: order + 1 });
+        return { sortOrder: 0 };
+      };
       switch (action.type) {
         case "create-assistant":
         case "edit-assistant": {
+          readAssistantAvatarSelection(action.input);
           if (!action.input.name.trim()) throw new Error("请输入助手名称。");
           const existing = action.type === "edit-assistant" ? await requireAssistant(action.id) : undefined;
+          const avatar = await resolveAvatarSource(db, action.input.avatar);
           const orders = (await db.assistants.toArray()).map((item) => item.sortOrder);
           const assistant: AssistantPreset = { id: action.id, sortOrder: existing?.sortOrder ?? Math.max(0, ...orders) + 1,
             name: action.id === DEFAULT_ASSISTANT_ID ? "默认助手" : action.input.name.trim(),
             icon: action.input.icon.trim(), defaultModelId: action.input.defaultModelId,
+            avatar, defaultAvatar: action.input.defaultAvatar,
             defaultConfig: restoreSessionConfig(action.input.defaultConfig) };
           if (existing) await db.assistants.put(assistant); else await db.assistants.add(assistant);
           if (!existing) selection.activeAssistantId = action.id;
           break;
         }
-        case "move-assistant": {
+        case "move-assistant":
+        case "reorder-assistant": {
           await requireAssistant(action.id);
           const items = (await this.snapshot()).assistants;
           const index = items.findIndex((item) => item.id === action.id);
-          const target = index + action.direction;
-          if (target >= 0 && target < items.length) {
-            [items[index], items[target]] = [items[target], items[index]];
-            for (let order = 0; order < items.length; order++) await db.assistants.update(items[order].id, { sortOrder: order });
-          }
+          const targetId = action.type === "reorder-assistant" ? (await requireAssistant(action.targetId)).id : items[index + action.direction]?.id;
+          const next = targetId && placeItem(items, action.id, targetId, action.type === "reorder-assistant" ? action.placement : action.direction < 0 ? "before" : "after");
+          if (next) for (let order = 0; order < next.length; order++) await db.assistants.update(next[order].id, { sortOrder: order });
+          break;
+        }
+        case "move-conversation":
+        case "reorder-conversation": {
+          const item = await requireConversation(action.id);
+          const items = orderedConversations(await db.conversations.where("assistantId").equals(item.assistantId).toArray());
+          const index = items.findIndex(child => child.id === action.id);
+          const target = action.type === "reorder-conversation" ? await requireConversation(action.targetId) : items[index + action.direction];
+          if (target && target.assistantId !== item.assistantId) throw new Error("只能在同一助手内调整对话顺序。");
+          const next = target && placeItem(items, action.id, target.id, action.type === "reorder-conversation" ? action.placement : action.direction < 0 ? "before" : "after");
+          if (next) for (let order = 0; order < next.length; order++) await db.conversations.update(next[order].id, { sortOrder: order });
           break;
         }
         case "delete-assistant": {
           if (action.id === DEFAULT_ASSISTANT_ID) throw new Error("默认助手不能删除。");
           await requireAssistant(action.id);
-          const children = await db.conversations.where("assistantId").equals(action.id).toArray();
+          const children = orderedConversations(await db.conversations.where("assistantId").equals(action.id).toArray());
+          const destination = orderedConversations(await db.conversations.where("assistantId").equals(DEFAULT_ASSISTANT_ID).toArray());
           for (const child of children) {
-            if (action.mode === "move") await db.conversations.update(child.id, { assistantId: DEFAULT_ASSISTANT_ID });
+            if (action.mode === "move") {
+              const { sortOrder: _oldRank, ...moved } = child;
+              await db.conversations.put({ ...moved, assistantId: DEFAULT_ASSISTANT_ID });
+            }
             else { await db.chats.delete(child.id); await db.conversations.delete(child.id); await db.legacyConversationConfigs.delete(child.id); }
+          }
+          if (action.mode === "move" && destination.some(item => Number.isFinite(item.sortOrder))) {
+            const combined = [...destination, ...children];
+            for (let order = 0; order < combined.length; order++) await db.conversations.update(combined[order].id, { sortOrder: order });
           }
           if (selection.activeAssistantId === action.id && action.mode === "move") {
             selection.lastSelected[DEFAULT_ASSISTANT_ID] = selection.lastSelected[action.id] ?? null;
@@ -250,7 +280,7 @@ class DexieChatRepository implements WorkspaceRepository {
           const assistant = await requireAssistant(action.assistantId);
           const now = Date.now();
           await db.conversations.add({ id: action.id, assistantId: assistant.id, title: "新对话",
-            createdAt: now, updatedAt: now, settings: copyAssistantConfig(assistant) });
+            createdAt: now, updatedAt: now, settings: copyAssistantConfig(assistant), ...await newConversationRank(assistant.id) });
           await db.chats.add({ id: action.id, updatedAt: now, messages: [] });
           selection.activeAssistantId = assistant.id;
           selection.lastSelected[assistant.id] = action.id;
@@ -273,7 +303,7 @@ class DexieChatRepository implements WorkspaceRepository {
         }
         case "start-conversation-title": {
           const conversation = await db.conversations.get(action.id);
-          const chat = await db.chats.get(action.id);
+          const chat = await this.load(action.id);
           const firstUser = chat?.messages.find((message) => message.role === "user");
           if (!conversation || conversation.titleNaming || conversation.title !== "新对话" || firstUser?.id !== action.messageId) break;
           const source = firstUser.content.trim() || firstUser.attachments?.map((item) => item.name).join("、") || "";
@@ -287,7 +317,7 @@ class DexieChatRepository implements WorkspaceRepository {
           const conversation = await db.conversations.get(action.id);
           const naming = conversation?.titleNaming;
           if (!naming || naming === "manual" || naming.status !== "pending" || naming.sourceMessageId !== action.messageId) break;
-          const chat = await db.chats.get(action.id);
+          const chat = await this.load(action.id);
           const firstUser = chat?.messages.find((message) => message.role === "user");
           const source = firstUser && (firstUser.content.trim() || firstUser.attachments?.map((item) => item.name).join("、") || "");
           const title = action.title && titleFromText(action.title);
@@ -299,7 +329,7 @@ class DexieChatRepository implements WorkspaceRepository {
         }
         case "select-round-version": {
           const source = await requireConversation(action.conversationId);
-          const chat = await db.chats.get(source.id);
+          const chat = await this.load(source.id);
           const messages = selectRoundVersion(withReplyLinks(chat?.messages ?? []), action.index);
           const now = Date.now();
           await db.chats.put({ id: source.id, updatedAt: now, messages });
@@ -310,7 +340,7 @@ class DexieChatRepository implements WorkspaceRepository {
         case "delete-message":
         case "fork-conversation": {
           const source = await requireConversation(action.conversationId);
-          const chat = await db.chats.get(source.id);
+          const chat = await this.load(source.id);
           const messages = action.type === "edit-message" ? chat?.messages ?? [] : withReplyLinks(chat?.messages ?? []);
           const index = messages.findIndex((message) => message.id === action.messageId);
           if (index < 0) throw new Error("消息不存在。");
@@ -322,7 +352,7 @@ class DexieChatRepository implements WorkspaceRepository {
             while (siblings.some((item) => item.title === `${base} (${suffix})`)) suffix++;
             await db.conversations.add({ id: action.id, assistantId: source.assistantId,
               title: `${base} (${suffix})`, createdAt: now, updatedAt: now,
-              creationConfig: action.creationConfig, settings: structuredClone(source.settings) });
+              creationConfig: action.creationConfig, settings: structuredClone(source.settings), ...await newConversationRank(source.assistantId) });
             await db.chats.add({ id: action.id, updatedAt: now,
               messages: copyBranchMessages(messages.slice(0, index + 1)) });
             selection.activeAssistantId = source.assistantId;

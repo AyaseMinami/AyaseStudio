@@ -1,5 +1,374 @@
 # Ayase Studio Development Guide
 
+## Supplier verification (#100)
+
+The isolated supplier fixture includes a transparency acceptance mode: it materializes all 11 bundled marks through the actual PNG encoder, checks transparent and opaque pixels, crops a synthetic Alpha PNG and renders the real supplier/assistant/user avatar components. Check both themes, image and crop container backgrounds, and 24px tree versus library sizing. The fixture owns only temporary image URLs and memory state; it does not rewrite existing user snapshots.
+
+Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks. Supplier, avatar, backup and hook tests use synthetic state. The [supplier fixture](../scripts/providers100/README.md) supports in-app browser light/dark and responsive acceptance without production storage or provider probes. Persistence/interface changes require independent Sol/high review. See [#100 scope, sources and evidence](ISSUE-100-IMPLEMENTATION.md).
+
+## Search providers verification (#82)
+
+Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and `git diff --check`. Search adapter/runtime, chat preflight, UI settings/selectors and backup search82 tests use synthetic credentials without provider calls. [The isolated search fixture](../scripts/search82/README.md) supports in-app browser acceptance and separate native startup; real account/API, billing and native interactions remain separate. Independent Sol/high review is required for protocol and persistence changes. See [implementation evidence](ISSUE-82-IMPLEMENTATION.md).
+
+## Grok/Seedream verification (#103, 2026-10-02)
+
+Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks. Adapter tests cover generation/ordered JSON reference edits, explicit profiles, MIME/budgets and uncertain errors. `compatibility103.test.ts` covers durable frozen batches, restart, reuse/export, owner retention and local-save retry. Drawing backup integration covers old/current stamps, missing groups and zero-write refusal. Independent Sol/high review is required.
+
+The [#103 fixture](../scripts/drawing103/README.md) mounts real UI with synthetic inputs and injected adapter responses, without production settings, credentials or databases. Native startup uses a separate application identifier. Browser interactions, startup, native file dialogs/export and live service/relay acceptance remain separate evidence; see [#103 record](ISSUE-103-IMPLEMENTATION.md).
+
+## Adaptive navigation docking (#97, 2026-10-02)
+
+User acceptance (2026-10-02): the user confirmed the desktop reading experience and accepted the current 560/576px rule, then authorized committing/pushing this scope and closing #97. The screenshot feedback confirmed that further narrowing already affects reading, so insufficient-space navigation should overlay. This confirms the user's current experience without extending the synthetic checks to all native interactions or arbitrary content.
+
+Navigation now uses the actual workspace width minus the current CSS navigation target occupancy. It docks when at least 560 CSS px remain; returning from overlay requires 576px. A zero-height, inaccessible width probe shares the pane width variables without inheriting their animation. ResizeObserver watches only the full workspace and probe, so chat resizing cannot feed back into the decision. Window resize is also observed; cleanup disconnects observers and ignores late callbacks. No persistence or native capability changes. The 860px initial visibility and pane sizing rules remain independent.
+
+Focused verification: `npm.cmd test -- src/ui/chat/useNavigationDocking.test.tsx src/ui/chat/ConversationNavigation.test.tsx`. Browser acceptance uses the existing isolated [navigation fixture](../scripts/navigation81/README.md) with synthetic data and no provider requests. Native interaction and subjective comfort at the 560px threshold remain user acceptance. The current user decision supersedes the Issue's pending design discussion; the remote Issue is unchanged.
+
+Verification passed: 22 focused tests, full `npm.cmd run check` (137 files / 2172 tests, data contracts, TypeScript and production build), `cargo check --locked --manifest-path src-tauri/Cargo.toml`, and diff checks. Independent read-only review found stale boundary text in two architecture sections; these and the UI history wording were corrected, with no remaining findings on re-review.
+
+In-app browser on isolated port 1517 verified actual CSS geometry: at a 1000px viewport the workspace is 932px, compact two-pane occupancy is 316px and chat docks at 616px; full two-pane occupancy is 508px and overlays. A genuine browser mouse click in the input restores compact docking. Resizing the workspace to 872px overlays, 880px remains overlay, and 892px returns to docking with 576px chat width. A 600px viewport overlays and respects the existing constrained pane width; a 760px viewport with only the avatar column docks at 624px chat width. A 1200px viewport docks full navigation at 624px. Both themes were exercised without page horizontal overflow. No provider requests or production database access, and no native interaction acceptance is claimed.
+
+## Chat generation statistics verification (#107, 2026-10-02)
+
+See [#107 evidence](ISSUE-107-IMPLEMENTATION.md) and the [isolated browser/native startup fixture](../scripts/usage107/README.md). Focused deterministic tests cover four-protocol stream usage, final provenance, timing, per-conversation generation, continuation/history, strict storage and backup compatibility. The fixture uses synthetic data and an independent database without provider settings or requests. Live short relay responses do not establish positive cache hits or long-conversation behavior; the user will test those separately.
+
+## Assistant navigation verification (#81, 2026-10-02)
+
+See [#81 implementation evidence](ISSUE-81-IMPLEMENTATION.md) for interaction, data compatibility and acceptance boundaries. The [isolated navigation fixture](../scripts/navigation81/README.md) mounts real frontend components with synthetic local data and no provider requests. Targeted checks use `npm.cmd test -- src/ui/chat/ConversationNavigation.test.tsx src/backup/automaticAvatar.test.ts src/avatar/automaticAvatar.test.ts`; the initial implementation full check passed 123 files / 1984 tests, data contracts, TypeScript and production build. Independent review and in-app browser checks passed. Desktop interaction and subjective focus/animation feel remain user acceptance.
+
+The performance follow-up uses `npm.cmd test -- src/ui/chat/useConversationNavigation.test.tsx src/ui/chat/ConversationNavigation.test.tsx src/chat/SafeMarkdown.performance.test.tsx src/chat/SafeMarkdown.test.tsx src/ui/chat/ChatLayout.test.tsx` (57 tests). It checks controller ownership/subscription cleanup, page remounts, no-op snapshot identity, actual Markdown parse counts and changed text/search metadata. Independent review, these tests, data-contract checks, TypeScript/Vite build, Rust check and diff checks passed. The shared-tree full run had 2125/2128 tests pass; rerunning the two failing files passed 29/30, with the remaining committed-edit/read-failure test affected by concurrent session repository changes. Those changes were preserved. Browser measurements use ignored `.navigation81.local/perf` with synthetic data, actual final production sources and render counters only; details and dev/native limitations are in the implementation record.
+
+Navigation user-feedback follow-up: `npm.cmd run check` passed 132 files / 2143 tests, data contracts, TypeScript and production build; Rust check and diff checks also passed. This later shared-tree run supersedes the earlier failing snapshot above. The updated click-range and avatar suites cover actual model modal controls, scrolling/secondary/keyboard events, pre-effect commits on mount/Blob reload/remount, image failures and StrictMode URL cleanup. Independent review found no remaining defect. The isolated navigation fixture on port 1512 verified body/tool clicks, decoded synthetic PNG after assistant/conversation selection, and genuine modal-backdrop mouse-down/up closure preserving navigation. Normal desktop feel and the user's actual images remain manual acceptance. No native host capability or data contract changed.
+
+Avatar image-loading follow-up: `npm.cmd run check` passed 133 files / 2156 tests, data contracts, TypeScript and production build; Rust check and diff checks passed. The content-cache and display suites pass 23 tests, including real SHA keys, concurrent lease/decode deduplication, changed equal-sized bytes/MIME, LRU/pixel memory bounds, failure retry, HMR-style disposal, StrictMode, late cancellation, same-owner replacement and cross-owner isolation. Message-list image tests wait for decoded readiness and clean their mock/cache state. Independent review and browser evidence are recorded in [#81](ISSUE-81-IMPLEMENTATION.md).
+
+Navigation busy-state visual follow-up: `npm.cmd run check` passed 133 files / 2158 tests, data contracts and TypeScript/Vite build; `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks passed. 18 navigation tests include two delayed-operation regressions that preserve disabled guards and generation restrictions while marking transient waits for stable styling. Isolated in-app browser sampling observed 298 transient disabled control records with opacity 1, stable create-button color and generation-restricted deletion at opacity 0.4; see [#81 evidence](ISSUE-81-IMPLEMENTATION.md). Native desktop visual acceptance remains a user check.
+
+Expanded chat busy-state audit: `npm.cmd run check` passed 134 files / 2166 tests, data contracts and TypeScript/Vite build; Rust check and diff checks passed. The presentation signal now distinguishes the first transcript read (including failure/retry) from later workspace waits without changing readiness/send/command guards. Tests cover tool/dialog blocking, sending restrictions, unavailable message actions and version boundaries. Isolated in-app browser checks observe unchanged opacity/color/background in both themes during real conversation switches; ongoing generation retains dimmed clear/message controls. Independent review's initial-load finding was fixed and its final review found no remaining P1/P2; native subjective acceptance remains manual. See [#81 evidence](ISSUE-81-IMPLEMENTATION.md).
+
+Titlebar lifetime follow-up: `npm.cmd run check` passed 136 files / 2168 tests, data contracts and TypeScript/Vite build; Rust check passed. Actual App tests mock the native bridge and prove all titlebar/button DOM identities, maximize state and the single native subscription survive conversation changes. Same-title identity changes dismiss old clear confirmation and returning does not revive it. Independent read-only review found no P1/P2. Isolated browser selection keeps the same header/clear DOM and bounding rectangle. Native startup smoke was attempted with an isolated identifier and synthetic navigation frontend but the running debug executable could not be replaced (Windows access denied); the active process was preserved. Native subjective acceptance remains manual.
+
+## Global scrollbar verification (#104, 2026-10-02)
+
+Delivery acceptance (2026-10-02): the user confirmed that concurrent changes had also been verified and authorized committing/pushing the whole current worktree and accepting the corresponding Issues. This includes the scrollbar follow-ups and supersedes the phase-specific pending-delivery/acceptance wording below. The final combined `npm.cmd run check` passed 136 files / 2168 tests, data contracts, TypeScript and production build; Rust check and diff checks passed. Browser/native coverage remains exactly as documented; this acceptance does not turn synthetic measurements into native performance guarantees.
+
+Latest hover correction: a stationary pointer over chat body must not keep the scrollbar visible. Visibility now requires scroll activity or proximity to the actual scrollbar edge (track plus 6px of adjacent content); delegated pointermove updates this while staying inside the same container. CSS thumb hover colors also remain transparent after fade cleanup. The failing regression reproduced the old whole-container `:hover` at idle, then passed after the correction. The 19 targeted tests include content/edge transitions, idle on the edge, nested owners, horizontal/RTL edges and touch/disposal. Full `npm.cmd run check` now passes data contracts, 132 files / 2140 tests and TypeScript/production build; Rust and scoped diff checks pass. Earlier failures recorded below were resolved in the other concurrent tasks without scrollbar changes to those modules.
+
+Browser acceptance used ignored `ui-review.local/scrollbar104-chat.html`, mounting the actual chat/navigation components from the isolated `Navigation81Synthetic` fixture, with the global helper installed. At idle, `.message-scroll-region` still matched `:hover` while its thumb background was fully transparent and transient fade state cleared. Wheel scrolling while remaining over text revealed it and returned to complete transparency after idle; approaching the right edge revealed it. Dragging changed scrollTop from 344px to about 174px, held active feedback beyond the timeout while moving into the body, and became transparent after release/idle with the pointer stationary there. Both plain and synthetic gradient background/transparent panels passed, with content width fixed at 756px. Screenshot: ignored `ui-review.local/scrollbar104-chat-idle-background.jpg`. No provider or production database was accessed; actual native Windows acceptance remains the user's experience.
+
+The fade follow-up adds 150ms reveal / 200ms hide (ease-out), continuing from the current alpha on reversal, with the existing 700ms idle delay. A registered non-inherited numeric property animates on activity-discovered owners; only their scrollbar pseudo-elements inherit it. Existing component transitions remain untouched. Reduced-motion and forced-colors changes cancel animations; unsupported APIs switch visibility directly. Each transition checks at most 500 descendants and skips animation at that limit, since Chromium still restyles large subtrees during custom-property animation. This is automatic for new content and does not require page configuration.
+
+Fade verification: 13 targeted tests passed, covering prior activity/timer behavior, pointer transitions through descendants, reversal and stale finish callbacks, motion/contrast changes, disposal, large nested subtrees and content growing during activity. TypeScript/production build, Rust check and scoped diff checks passed; independent read-only review found no actionable defects. Full `npm.cmd run check` passed data-contract checks but stopped with two out-of-scope chat test failures: committed-edit recovery in `src/chat/useConversationWorkspace.test.tsx` and subscription spying (`Cannot redefine property: subscribe`) in `src/ui/chat/useConversationNavigation.test.tsx` (129 files / 2113 tests passed, 2 files / 2 tests failed at that run). Their module changes belong to other concurrent work and were preserved.
+
+The isolated browser fixtures use ignored `ui-review.local/vite104.config.ts` on port 1504 (no HMR/watch). `scrollbar104-fade.html?small` uses 100 synthetic rows and samples actual thumb background alpha throughout the 150/200ms animation, confirming intermediate colors and no remaining animation after idle. Genuine pointer hover affects the corresponding container, and a dragged thumb remains visible past 700ms, including moving outside while held; release outside immediately begins fade-out. PageDown without hover reveals then hides, new content inherits styles, reduced-motion switches directly, and forced colors restores standard `auto` styling. Content width stays 346px.
+
+Performance samples compare three-second idle and five reveal/hide cycles using the same test-only frame sampler. In this browser, idle p95 frame gap was 7.0ms; 100-row animated content was 7.0ms and protected 5000-row content 7.1ms, with no ongoing idle animation. Before the protection, 5000-row cycles spent about 1.8s recalculating styles; afterwards about 0.10s, and 100-row cycles about 0.12s. Layout count stayed two in each sample (test report changes), and width stayed fixed. These are bounded synthetic browser results, not a native WebView or hardware-wide guarantee. Firefox/native Windows interactions remain unverified; the user already accepted the baseline and idle hiding, with fade acceptance pending their local experience.
+
+`src/scrollbars.css`, imported by `App.css`, owns all scrollbar visuals. New scroll containers require only ordinary overflow styles. Keep `scrollbar-gutter` decisions local and do not add component-level width/color or pseudo-element overrides; Chromium standard width/color must remain `auto` so the detailed pseudo-element styling applies. Dimensions, fallback and forced-colors rules are recorded in [UI-DESIGN.md](UI-DESIGN.md).
+
+The initial idle-hiding follow-up (before the hover correction above) enabled hiding through `src/ui/scrollbarAutoHide.ts`, installed once in `main.tsx` and disposed on HMR. It revealed on whole-container hover or scroll activity; the latest correction narrows hover to the scrollbar edge. Isolated frontend fixtures must explicitly install the same helper, otherwise CSS intentionally retains the original visible-thumb fallback. `npm.cmd test -- src/ui/scrollbarAutoHide.test.ts` covers non-bubbling/new/nested/document scrolling, independent/reset idle timers and detached/disposed cleanup. The original verification below describes earlier idle-hiding and visible-thumb baselines.
+
+Follow-up verification passed the five targeted tests and full `npm.cmd run check` (124 files / 1989 tests, data contracts, TypeScript and production build), Rust check, scoped diff checks and independent read-only review. In-app browser checks confirmed idle transparency, hover reveal limited to the corresponding region, dynamic content inheriting idle hiding, and genuine PageDown scrolling without hover showing the thumb until the idle timeout. Content width remained 346px in idle, hover, scroll and drag states. Holding the dragged thumb past the idle delay retained active feedback; releasing outside the container hid it. Viewport wheel scrolling with the pointer outside the page likewise showed then hid the root thumb. Light/dark and forced-colors fallback passed; screenshot: ignored `ui-review.local/scrollbar104-autohide-dark.jpg`. No native WebView interaction was automated.
+
+Verification: `npm.cmd run check` passed data-contract checks, 123 test files / 1984 tests and TypeScript/Vite production build; `cargo check --locked --manifest-path src-tauri/Cargo.toml` passed. Scoped diff checks passed. The shared working tree's full diff check additionally reported a blank line at EOF in unrelated `src/avatar/assistantDefaults.ts`; that file was left untouched by #104. The production build retained the existing large-chunk warning.
+
+The baseline in-app browser verification used a separate localhost origin on port 1504 with the existing `scripts/navigation81/vite.config.ts`. The ignored `ui-review.local/scrollbar104.html` fixture imports the real global stylesheet and appearance resolver, with synthetic lists, nested containers, textareas, horizontal/two-axis overflow, body-mounted content and a dynamically appended scroll area. All inherited 12px scrollbar styling without a scrollbar-specific class. Light/dark, reading and custom canvas colors were checked; keyboard vertical scroll, horizontal wheel scroll and thumb dragging worked. Dragging moved the list from 0 to about 506px without changing its 346px content width. A 320×520 fixture had document width 320px. Real chat navigation at the default viewport inherited the same styles; the real browser-only drawing fixture at 720×520 also inherited them, with document width 720px. Forced-colors emulation restored `auto` scrollbar width/color and browser button/radius defaults. Light/dark screenshots are saved in the ignored review folder; fade screenshot: `ui-review.local/scrollbar104-fade-dark.jpg`.
+
+This is frontend styling only: no provider calls, live credentials, production databases, native capability or stored preference changes. Firefox fallback and actual Windows 10/11 WebView scrollbar interactions were not separately exercised; no native automation or Tauri restart was needed for this frontend change. The user accepted the baseline appearance and idle hiding; the fade follow-up remains their hands-on acceptance.
+
+## Chat toolbar layout entry (#95, 2026-10-02)
+
+The header and composer width toggles share the existing `useChatLayout` state/callback and preference. Input height expansion remains local to Composer, using up/down double chevrons. Run `npm.cmd test -- src/ui/chat/ChatLayout.test.tsx src/ui/chat/Composer.test.tsx` for entry synchronization, generation-time switching, remount persistence, independent height state and draft/selection preservation. No new storage fields or native behavior are introduced.
+
+Verification: 12 targeted tests, the full `npm.cmd run check` (1939 tests, data contracts and production build), `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks passed. Independent scoped review found no actionable defects. The in-app browser mounted real ChatWorkspace/Composer with synthetic content and no providers/credentials at a separate localhost origin: 1440×900, 720×520, 360×520 and 320×360; light/dark, compact/expanded states, long model label, synchronized widths/pressed state, mouse and Enter/Space toggling, Escape collapse and preference restoration passed. Controls stayed within the viewport with no page horizontal overflow. Browser acceptance does not establish native WebView interaction; no native launch or live provider request was needed for this frontend change.
+
+## Idle native close permission regression (2026-10-02)
+
+An idle dev window could remain in its closing state with `window.destroy not allowed`. Tauri's installed SDK calls `destroy()` after an `onCloseRequested` handler allows the event, so main needs both `core:window:allow-close` and `core:window:allow-destroy`. Only the latter permission was added; confirmation, settling and unsaved-image guards stay unchanged. Permission edits require restarting `npm.cmd run tauri dev`, not just frontend hot reload.
+
+`src/drawing/windowClosePermissions.test.ts` runs the real SDK listener wrapper against an IPC mock gated by the capability configuration; it failed with the same error before the fix. That test plus the existing close-hook suite pass (8 tests). An isolated native check uses the real `useDrawingWorkspace` with an empty private database, the production capability and a separate `closeprobe` identifier. Start the evidence Vite server documented in `scripts/drawing110/README.md`, then run `npm.cmd run tauri dev -- --config scripts/drawing110/close-probe.config.json --no-watch` (use the isolated target directory if the ordinary executable is in use). It writes `.drawing110.local/close-report.json` before requesting close; successful exit of the native process, not the report alone, is the acceptance signal. This run initialized idle with zero tasks/results and exited with code 0; log: `.drawing110.local/close-native.log`. It exercises a programmatic native close request, not an automated title-bar click. The user's original-window retest remains separate; no credentials or model requests are involved.
+
+The final probe additionally wraps only its own controller's `settleForClose`: it awaits local `guard-entered` and `guard-settled` reports around the real method. Acceptance requires the final `guard-settled` report **and** process exit code 0, proving the application guard ran rather than merely observing an unguarded window exit. Both were confirmed in the final run at 2026-10-02 01:27:01 Asia/Shanghai. The evidence server has watching disabled, so restart it after editing probe code to avoid testing cached transforms.
+
+## Session reference preparation (#110, 2026-10-02)
+
+Selection captures a byte-backed Blob once; full native import and durable task ownership wait for explicit submission. The baseline before/after measurement harness is [scripts/drawing110](../scripts/drawing110/README.md), port 1496, independent identifier `io.github.ayaseminami.ayasestudio.drawing110`; its fetch never contacts providers. `interactive.html` provides actual workspace controls with isolated mock boundaries. Follow [the implementation contract](ISSUE-110-IMPLEMENTATION.md) for legacy draft compatibility, scoped native import receipts, cancellation, maintenance reload protection, measurements and remaining native acceptance. Do not run the normal App against real data for these tests.
+
+## Reference preview loading (2026-10-01)
+
+Managed references use first-visible native thumbnails and retain mounted-card URLs until source change or unmount. New session references preview their captured original-byte Blob directly; explicit preview clicks read managed originals and closing releases dialog URLs. The thumbnail command accepts managed imported-reference paths as well as results, without a durable cache or changes to provider bytes. `DrawingReferences.test.tsx` covers reader separation, thumbnail failure without automatic original fallback, visibility, promotion, close cleanup and late responses. Rust drawing tests cover reference thumbnail dimensions/alpha, unchanged originals, format mismatch and invalid paths. #110 moves full native import to submission and uses binary IPC; its measurements and limitations are recorded separately.
+
+列表拖动即时触发（2026-10-01）：供应商、连接、助手、聊天的名称与把手统一采用 6px 移动门槛，取消 400ms 长按等待。定向回归为 `src/ui/chat/useNavigationListDrag.test.tsx` 与 `src/ui/settings/ConnectionSettings.test.tsx`，检查即时移动、静止长按／轻微抖动点击、拖动释放抑制、取消与原有排序边界；历史长按验收记录不代表当前触发规则。
+
+本轮 70 项拖动定向测试、数据契约检查、TypeScript/Vite 构建、Rust check 通过，独立只读复核无发现。全量 1857 项中 1856 通过，1 项聊天思考设置用例失败；该文件单独复跑 34 项全部通过，保留全量波动记录。隔离内置浏览器以无密钥样例实测四类名称按下后移动即时激活，助手释放不误展开、普通点击仍展开，连接名称拖动成功换序且详情不切换。未调用供应商，未验证原生 WebView／触屏手感。
+
+## Drawing task/log surface simplification (2026-10-01)
+
+The 2026-10-01 decision removes the gallery page and adds a homepage output-directory opener; #111 subsequently unifies generation and task/log content in one workspace. Task tabs stay below the form and keep the preview mounted. Queue/results/reference persistence, backup exclusions and crash-recovery receipts remain unchanged. The opener has no frontend path argument and uses the host-chosen existing `drawing/` tree; its original UUID layout includes `references/` and recovery manifests. Browser checks mock this native boundary and do not verify Windows Explorer. Native checks include fixed-directory creation/preservation/collision/reparse-point tests, cargo check and an isolated Tauri startup smoke. Actual folder-window display remains manual acceptance.
+
+The task log shows known persisted milestones/status/diagnostics; it is not a newly persisted full event stream. Metadata still loads as a complete snapshot. Earlier #94 measurements and screenshots describe the earlier three-view revision and remain historical evidence. For #111 reuse `scripts/drawing110/interactive.html` with its browser-only in-memory synthetic repository, files and transport; start `npx.cmd vite --config scripts/drawing110/vite.config.ts --port 1497`. Verify list/log tabs and keyboard focus, full task details, all task actions, independent pagination, persistent preview, wide/narrow and low-height light/dark layouts. Keep long prompts, expanded advanced options and multiple references reachable, with a bounded task scroll area. This entry does not mount App, read credentials or contact providers. See [#111 local implementation and evidence](ISSUE-111-IMPLEMENTATION.md).
+
+## Drawing integration acceptance #94 (2026-10-01)
+
+`DrawingWorkspace` 的任务／成果库／生成历史卡片每显示页 50 条，三者分别保存页码，删除后收敛到有效页；生成历史随外部选中成果跳到所在页，新完成成果保持可见。controller／repository 仍保留完整记录；全选、所选导出／删除及完成／失败历史清理跨页使用全部适用 ID，不增加参考图、等待队列或总记录上限。生成历史使用 memo 卡片，成果序号以 O(n) 映射预计算。#111 后续任务标签直接取既有 UUID 前 8 位，详情／悬停显示完整 ID，操作与确认始终绑定完整记录；测试覆盖重排、删除、重新挂载和同短前缀的独立操作。所有绘图视图显示仅内存保存失败的任务／图片数和增长／退出风险，提示用户暂停或本地重试；不自动暂停、丢图或限定保留容量。
+
+新增 `src/drawing/integrationAcceptance.test.ts` 和 `chatIntegrationAcceptance.test.ts` 使用隔离 fake IndexedDB 与真实 controller／SessionStore 验证 199 项混合协议队列、并发 1→4→1、冷恢复、同时聊天、请求归属及失败／删除／迟到回调。`DrawingWorkspace.test.tsx` 核对三种 51 项分页、历史跨页选择／外部新成果跳页、跨页全量操作、删除后页码和内存风险提示。执行常规 `npm.cmd run check`、Rust 门禁及 diff 检查；实际性能数字和未完成接受项见 [#94 验收记录](ISSUE-94-ACCEPTANCE.md)，不能用历史切片通过替代本轮结果。
+
+本地合成入口为 [scripts/drawing94](../scripts/drawing94/acceptance.tsx)，不挂载普通 App 或读取正式数据库／设置／凭据；真实 adapter 使用注入 fetch，供应商请求始终模拟。浏览器文件边界模拟；原生使用独立应用 identifier／私有目录。入口分别为 `index.html`（图库／队列及备份）、`probe.html`（原字节参考图）、`memory.html`（持续写盘失败）；报告在忽略目录 `.drawing94.local/`。开发服务运行方式：
+
+```powershell
+npm.cmd exec tsc -- --noEmit -p scripts/drawing94/tsconfig.json
+npm.cmd exec vite -- --config scripts/drawing94/vite.config.ts
+```
+
+内置浏览器打开 `http://127.0.0.1:1495/scripts/drawing94/index.html`。服务关闭 HMR／文件监听，修改源码后必须重启服务。原生可使用 [native.config.json](../scripts/drawing94/native.config.json)／[native-probe.config.json](../scripts/drawing94/native-probe.config.json)，启动前核对隔离 identifier、devUrl 和目录；带 `autorun=1` 自动执行五轮合成压力，已存在的合成成果可能复用，必须按 `seedReport` 记录实际起点。JS 堆和进程 private／WS 都是采样结果，WS 共享页可能重复计数；开发模式／debug 测量不等于 Release 门禁、真实供应商兼容、系统文件窗口或实际关闭重启接受。
+
+## Drawing protocol completion #101 (2026-10-01)
+
+Gemini 选项共享 `geminiOptions.ts` 校验，缺失时保持原默认；controller 冻结独立组，重启恢复写入之前预检全部历史新参数。`imageResponse.ts` 有界规范化服务响应 CR/LF 与严格图片 data-URL，不改变参考图原字节或供应商重试规则。新绘图设置模块 v2／最低读者 2；实际类型字段策略、备份投影和旧设置默认／未来参数边界同步。功能入口沿用现有控件，最终 UI 设计后置。
+
+定向门禁包括 `src/drawing`、`src/backup/drawingIntegration.test.ts`、`src/ui/drawing/DrawingWorkspace.test.tsx` 及 Rust drawing 测试，随后执行常规 check、cargo check、diff；独立 Sol/high 审查与隔离浏览器／Tauri 启动证据见 [#101 记录](ISSUE-101-IMPLEMENTATION.md)。不读取正式数据库／凭据，不调用真实服务；文件窗口、实际重启和 #94 压力单列接受。
+
+## Persistent data development #105 (2026-10-01)
+
+2026-10-02 finishing work adds strict appearance save/export/restore gates and search nested-field checks. Keep appearance display fallbacks separate from durable compatibility: unsupported original preferences must remain unchanged. The deterministic journal regressions now close the database and reopen it before recovery. Reproducible isolated browser/native/manual acceptance lives in [scripts/data105](../scripts/data105/README.md); its native identifier must be checked before opening the default database. Never run the seed/recovery probe with the production identifier. The full gate, independent review, actual staging/applying process recovery and browser restores passed; the user subsequently confirmed the isolated file-dialog/synthetic-backup manual acceptance passed. See [the #105 record](ISSUE-105-IMPLEMENTATION.md) for evidence and limits; full App lifecycle, pressure and power loss remain separate.
+
+Follow [DATA-CONTRACTS.md](DATA-CONTRACTS.md) as part of every persistent-data feature, without waiting for a user reminder. Register tables and preference keys (including exclusions and legacy sources), bind exhaustive field/nested policies to actual persisted types and real export projections, and define module versions, minimum readers, capabilities, migration steps and missing-field defaults. Local and backup reads reuse the pure migration seam; invalid structure must fail before writes and preserve original data. Future optional-parameter filtering is limited to declared session and drawing-setting areas; unknown protocols, credentials, references, preset structure and outer structure remain strict.
+
+`npm.cmd run check:data-contracts` runs deterministic checker regressions and TypeScript AST registration inspection; it is included in `npm.cmd run check`. The current registry covers 13 tables and 8 preference keys. Arbitrarily computed runtime storage keys are outside guaranteed static coverage and need explicit registration/review/tests. Type coverage cannot replace nested policies, semantic/resource validation or independent review. Changes to data format, migrations, cross-module protocols, security or release gates require independent Sol/high review.
+
+Add synthetic regression cases proportional to the change: old/current/skipped/repeated versions, approved defaults, invalid data with zero writes, compatible optional filtering and strict refusal boundaries, retained path reports, re-export warnings, and transaction/journal rollback. Never clear real WebView data or read real credentials to simulate upgrades. #93 exports backup document v5 with envelope v1; historical v1–v4 retain original contracts, including v4's seven-module set. Drawing settings/presets are `projected`, with separate `projectedBackupTables` inventory backed by real field policies; raw local rollback snapshots are private. #105 drawing integration and deterministic cross-version examples are supplied; remaining actual native acceptance and #94 pressure work are separate. [The #105 implementation record](ISSUE-105-IMPLEMENTATION.md) and [#93 implementation record](ISSUE-93-IMPLEMENTATION.md) track verification; older entries below retain historical test counts, format versions and pre-#93 gates.
+
+## Drawing settings and explicit preset backup #93 (2026-10-01)
+
+Local implementation adds optional, independently declared `drawing.settings` and `drawing.presets` with matching module stamps; new exports include both and add no Dexie schema version. Local draft/settings/preset reads share clone-based defaults and strict validation before task recovery. OpenAI size remains editable text without a new per-field length limit; transport validates generation dimensions. Preset bodies retain whitespace and duplicate names remain independent by ID. Merge/copy preserve local settings; replacement applies only present categories, patches current settings while keeping prompt/references, and missing old modules never clear drawing. Tasks, results, images and native pending-save receipts stay local. Restore planning maps drawing targets, reports retained history frozen provider/connection ID, protocol/address/upstream-model changes, and never adds drawing file writes.
+
+Before normal App reload, synchronous chat/drawing command gates drain queued writes, all loaded chat stores, drawing drafts/presets and reference/export/delete/save operations. Active requests and automatic naming must finish or be explicitly cancelled at their existing entry; maintenance never auto-aborts. Memory-only unsaved images refuse reload. Queued jobs survive; failed preparation releases gates and restores prior pause state. Native backup startup includes the drawing file mutex before recovery, business roots and GC. Cold maintenance preserves stale historical running markers for later ordinary drawing initialization. Backup journal rollback precedes drawing's own receipt recovery; old journals without drawing snapshots leave that scope alone.
+
+Focused synthetic verification should cover `drawing/settingsData.test.ts`, `drawing/repository.test.ts`, `drawing/controller.maintenance.test.ts`, `backup/drawingPresets.test.ts`, `backup/drawingIntegration.test.ts`, snapshot/compatibility/restore/runtime tests and App maintenance entry. Use isolated databases and mocked files/requests to exercise all strategies, old/missing categories, repeated imports, write failures and restart rollback with zero provider dispatch and zero drawing file read/write/delete. Record large text-preset/parameter processing time and available memory metrics under the existing 8 MiB text, 80 MiB document and 128 MiB file budgets; refuse over-budget input explicitly. Full-gallery pressure belongs to #94.
+
+Local verification is complete for `npm.cmd run check` (Node/checker tests, frontend tests, TypeScript and Vite), Rust tests, `cargo check --locked --manifest-path src-tauri/Cargo.toml`, scoped regressions after follow-up changes and Git diff checks. Independent Sol/high review cleared material findings, including frozen provider/connection identity checks. The isolated in-app browser used actual Dexie restore to verify retained prompt, future-parameter warnings and re-export; isolated Tauri compilation/startup verified the process. Exact run scopes and evidence are in [the #93 implementation record](ISSUE-93-IMPLEMENTATION.md). Isolated browser visual acceptance is complete at 1280×900 in light theme and 720×900 in dark/custom theme, with screenshots reviewed and no horizontal overflow; native file dialogs and actual close/restart are separate #94 manual acceptance, and real providers remain unauthorized. Local implementation is not commit/push, Issue closure or native interaction acceptance.
+
+## Drawing prompt presets #90
+
+Run `npm.cmd run check`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and Git diff checks. Preset CRUD, reopen persistence, v7-to-v8 preservation and five-field allowlisting are covered by `drawing/presets.test.ts`; controller integration covers direct text-only application, frozen queued inputs, close waiting, write failures, history/cross-protocol isolation, invalid models, missing references and zero provider dispatch. `ui/drawing/DrawingPresets.test.tsx` covers editor cancellation, focus, explicit update/save-as/delete, failures and duplicate submission; workspace tests cover task actions. The historical #90 preset-only backup ban is superseded by #93: `backup/drawingPresets.test.ts` now covers projection with a preset-only database. Browser acceptance must use an isolated origin/database and synthetic files/transport, with provider counters staying zero. See [#90 evidence and acceptance boundaries](ISSUE-90-IMPLEMENTATION.md).
+
+## Drawing gallery #89
+
+Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`, `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks. Ownership/reuse/export cases live in controller/repository/exportParameters tests; visibility/interaction in DrawingResults/workspace/hook/App tests. Native tests cover PNG/alpha, thumbnails, independent reads and completed cleanup. Latest gate: 1430 frontend and 29 drawing Rust tests pass. Browser acceptance is synthetic. Native startup initially met an occupied executable; after the user authorized ending that dev instance, the isolated retry compiled and created the Ayase window successfully (test entry HTTP 200). No Computer Use was required; dialogs/restart/live services remain pending. See [#89 evidence](ISSUE-89-IMPLEMENTATION.md).
+
+## Drawing lifecycle #88
+
+Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`, `cargo check --locked --manifest-path src-tauri/Cargo.toml`, and diff checks. `queue.test.ts` includes history deletion/regeneration/cancellation races, exact recovery inventory, indexed local-save retry, continuous disk failure and explicit memory release; `repository.test.ts` rejects deleted-row revival and preserves results. Native tests cover receipt inventory, indexed repair and scoped cleanup. Browser/native/pressure boundaries are recorded in [#88 implementation](ISSUE-88-IMPLEMENTATION.md). This supersedes the pending full #88 management note below.
+
+## Batch drawing queue #87
+
+Queue regressions: `src/drawing/queue.test.ts`, `controller.test.ts`, `repository.test.ts`, `useDrawingWorkspace.test.tsx`, drawing UI and App/chat concurrency tests. Run the default frontend/check gate plus `cargo test --locked --manifest-path src-tauri/Cargo.toml drawing::`. Tests never call providers. See [implementation and native startup limitation](ISSUE-87-IMPLEMENTATION.md). Full #88 history management remains separate.
+
+## Multiple reference images #86 (2026-10-01)
+
+本地完成多参考图输入、编号／排序／查看／移除、成果追加、持久草稿及冻结请求输入。PNG/JPG/JPEG/WebP/BMP 原字节私有保存和发送，无新增输入数量、容量或像素预算，无预处理；Gemini 使用 inlineData，OpenAI 有参考图时使用 multipart edits。完整归属和范围见 [#86 实施记录](ISSUE-86-IMPLEMENTATION.md)。
+
+`npm.cmd run check` 通过 95 文件／1350 项测试、TypeScript 与生产构建；Rust 绘图测试 19 项及 `cargo check --locked` 通过。独立审查无可操作发现。内置浏览器在隔离合成数据下通过选择／拖入／粘贴、去重／排序／预览、成果追加、运行草稿隔离、重载及失败／取消，覆盖浅深主题与桌面／窄窗口。原生隔离实例启动烟雾检查通过并停止；真实服务、原生文件选择器及实际关闭重启仍待用户验收。未读取真实凭据或请求供应商；实施检查阶段尚未执行 Git／远端交付，后续用户已授权提交、推送和 #86 验收通过，交付结果见 Issue 评论。
+
+## OpenAI Images #85 (2026-10-01)
+
+本地接入 `openai-images` 与当前官方 GPT／Gemini 尺寸选项；[实施记录](ISSUE-85-IMPLEMENTATION.md) 列明协议边界、模型限制和验证。定向测试：`npm.cmd test -- src/drawing src/ui/drawing src/chat/settings.test.ts src/chat/urlResolution.test.ts src/ui/settings/ConnectionSettings.test.tsx`，再运行默认代码检查。使用合成 Base64、HTTP 故障和原生文件 mock；不得为验证错误而发真实请求。浏览器隔离验收入口 `.drawing85.local/` 不读取真实数据或供应商凭据。原生网络与系统对话框必须与离线／浏览器／启动检查区分。
+
+## List sorting #99 (2026-10-01)
+
+续作补齐助手／聊天列表拖动和菜单上下移：`src/Workspace.test.tsx` 与 `src/ui/chat/useNavigationListDrag.test.tsx` 覆盖真实 repository 换序／重挂载、选中模型／草稿保持、手势取消／跨列表／首尾及误点击隔离；`src/chat/workspace.test.ts` 覆盖旧最近更新时间排序、原位不冻结、手动顺序、消息活动／重载／新建、同助手边界、助手排序和迁移。备份 snapshot／restore 测试覆盖可选排序字段及旧记录兼容。供应商／连接的原有定向用例继续执行。最终检查和浏览器验收详见 [#99 实施记录](ISSUE-99-IMPLEMENTATION.md)。
+
+最终全量 99 文件／1454 项测试、TypeScript、生产构建与 `cargo check --locked` 通过；独立审查无遗留发现。内置浏览器完成隔离真实指针／键盘换序、重载、取消、跨列表、窄屏滚动和浅深主题检查。桌面实际关闭重启仍待手动验收。以下历史切片失败记录不代表当前检查状态。
+
+以下为昨晚供应商／连接切片的历史验收，助手／聊天待讨论及当时构建阻碍由续作最终结果取代：
+
+历史 #99 连接树切片（触发方式已由上方即时拖动说明取代）：连接配置页为 1:2 双栏，以及供应商／连接的左侧把手和名称长按拖动；连接限定在所属供应商内排序。助手／聊天列表拖动仍待讨论，远端 Issue 未修改。
+
+最终定向检查 `npm.cmd test -- src/ui/settings/ConnectionSettings.test.tsx src/ui/settings/SettingsWorkspace.test.tsx src/App.test.tsx` 68 项通过；`npm.cmd test -- src/chat/settings.test.ts src/chat/useChatSession.concurrency.test.tsx -t moves` 4 项通过。覆盖手势激活与取消、误点击隔离、组内边界、原位、边缘滚动、菜单首尾、顺序保存与活动连接／模型保持，以及后台聊天和绘图忙碌保护。独立 Sol/high 只读审查发现的失焦缺少释放事件及候选长按取消后点击问题均已修复并复核，无本切片遗留发现。`cargo check --locked --manifest-path src-tauri/Cargo.toml` 与 `git diff --check` 通过。
+
+内置浏览器在隔离来源 `127.0.0.1:1486` 使用已有合成配置及无密钥供应商模板，以真实指针输入验证供应商／连接把手拖动、名称长按拖动、插入线、当前详情不切换、连接跨组拒绝、菜单换序及刷新持久化。1280px 与 600px 视口检查把手位置和横向溢出。未读取真实密钥、请求供应商或使用原生 UI 自动化；桌面主观效果仍由用户验收。
+
+本切片早期 TypeScript／Vite 构建通过。最后一次全量检查时，工作区并行绘图扩展导致 `openaiImages.test.ts` 引用当时尚未存在的模块，及 `settings.test.ts` 绘图模型选项旧断言未包含新增 `protocol`；1232 项通过、1 项断言失败、1 个测试文件加载失败。独立构建随后在并行绘图模型类型与新增 `openai-images` 协议的既有聊天预览调用处失败。此轮不将全量测试或最终构建记为通过，也不修改并行绘图实现来完成排序任务。
+
+## Background blur #96 (2026-10-01)
+
+用户报告外观预览调高模糊后背景整体放大。确定性回归先失败：32px 时仍输出额外缩放 `1.32`；修复后取消模糊与缩放绑定，改为共享图片内部模糊及外缘像素延展。初步浏览器验证发现直接删除 scale 会造成亮边，且仅设置 SVG `edgeMode` 未消除该亮边；显式延展八个边缘／角落采样区后亮边消失，原图尺寸与取景不变。
+
+最终 `npm.cmd run check` 通过 94 文件／1215 项测试、TypeScript 和 Vite 构建；`cargo check --locked --manifest-path src-tauri/Cargo.toml` 通过。保留既有大 chunk 提示。新增回归覆盖预览 0／16／32px、填充／适应、非中心取景与用户缩放、布局宽度变化后的模糊半径换算和 observer 清理。
+
+内置浏览器通过隔离合成图片页面 `.blur96.local/index.html` 检查真实预览组件及共享背景渲染路径：1280×900／720×520、浅深主题、cover／contain、0／16／32px 共 24 组，取景 viewBox 与背景边界不随模糊改变，背景无额外 transform，容器保持裁切。截图检查强模糊无原先泛白边缘、contain 留白和前景文字清晰；证据保留在忽略目录 `.blur96.local/`。未读取用户背景或凭据，未调用供应商。独立只读审查未发现遗留可操作缺陷。未进行原生 WebView2 视觉验收、极大图片压力测试或安装包验证；本次没有原生权限、窗口或主题首屏改动。面板局部毛玻璃已独立建立 [#98](https://github.com/AyaseMinami/AyaseStudio/issues/98)，#96 保持打开等待交付验收。
+
+## Gemini single-image implementation #84 (2026-10-01)
+
+用户认可 #83 常驻大图布局，并明确授权直接完成 #84。正式应用新增绘图入口与 Gemini 单张生成、任务状态／取消、自动私有保存、重启恢复、大图与历史切换、普通 PNG 导出及本地参数复用；完整实现范围见 [实施记录](ISSUE-84-IMPLEMENTATION.md)。参考图、批量调度及完整图库／备份属于后续任务。共享设置区分聊天／绘图；新增数据库 version 7，仅增加绘图表。绘图配置／数据存在时，旧备份的入口和底层 snapshot/restore 均明确阻断，直到 #93 扩展格式。
+
+最终 `npm.cmd run check` 通过 94 文件／1210 项测试、TypeScript 与 Vite 构建；`cargo test --locked --manifest-path src-tauri/Cargo.toml` 115 通过、1 ignored（其中 drawing 15 项）；`cargo check --locked` 与 `git diff --check` 通过。修正了旧 Cherry 迁移测试的最终数据库版本期待，以及 Vite 中已失效的 `@ts-expect-error`；保留既有构建大 chunk 提示。独立 Sol/high 审查发现并修复：保存失败退出静默丢图、原图先于成果清单的恢复缺口、生成页未显示本次失败，以及退出整理期间可再提交的竞态；最终复核无剩余可操作发现。
+
+内置浏览器用隔离 `localhost:1486` 验证实际 App 导航／共享设置／手动绘图模型配置、聊天选择器排除绘图模型、草稿及模型重载恢复、旧备份禁用提示。未填真实 Key、未点击模型目录或发起真实请求。独立合成接口／文件边界验证实际绘图组件及 controller：连续成功自动预览、历史切换同一窗口、失败保留旧图、保存失败后只重试本地写入（合成请求计数不增加），覆盖浅深主题、1040×760／720×520／600×740，页面无横向溢出。合成大图截图位于忽略目录 `.drawing-check.local/drawing84-desktop.png`；开发过程有验收入口 HMR 重新建 root 及 Vite 配置重启记录，重载后继续验证，不将这些临时 harness 提示视为正式应用错误。
+
+`npm.cmd run tauri dev -- --config .drawing-check.local/native-smoke.json --no-watch` 使用独立 application identifier 与本地前端完成最终编译、原生进程／窗口启动烟雾检查；随后仅停止此次隔离实例。未使用原生截图／桌面自动化。真实 Gemini／中转、真实 Tauri HTTP 请求、系统导出对话框、原生退出确认／窗口交互和实际关闭后重启仍待用户手动验收；确定性故障／模拟窗口事件和成功启动不能代替这些验收。原有安装包归档及同时出现的 Cherry 导入修改保持，未并作本需求修改；无 commit、push、远端 Issue 变更或 Release。
+
+## Drawing design review #83 (historical, 2026-09-30)
+
+后续用户按旧 GNBP UI 参考明确要求生成页常驻大图预览。草图已改为最新成功图自动显示、历史缩略图切换同一窗口、失败／取消保留上一张图，并提供当前预览图的直接复用／参考／导出入口；规格与 UI 约定已同步。脚本语法及离线 DOM 模拟通过空态、连续完成自动更新、历史切换不弹窗、后续成功回到最新图、失败保留及当前图参考／导出。当前 `file://` 页面被浏览器 URL 安全策略阻止自动化访问，未绕过；本次大图版本的浏览器视觉／响应式验收未完成，由用户刷新草图评审。下段浏览器记录和 `drawing83-sketch.jpg` 属于此前网格版本，不代表此次修改已取得视觉验收。
+
+当时交付 [独立绘图历史设计规格](archive/ISSUE-83-DRAWING-DESIGN-HISTORY.md) 与 [离线交互草图](archive/design/drawing-workspace-83.html)，尚未修改生产模块、协议实现、数据库或原生宿主。用户已确认独立模块、共享设置、并发 1–4、自动保存及默认无参数导出、重启后手动继续未发送队列；具体候选细则和性能目标待整体评审。已有 #91 后置，远端未更新。
+
+文档相对链接、脚本语法、diff 检查通过；内置浏览器验证浅深／1040×760／720×520／600×740、队列／动态并发／模拟退出恢复／图库／参考引用／复用／导出说明及提交防重，无页面横向溢出及捕获到的 warn/error。独立 Sol/high 审查的草图重复入队与成果输入归属问题已修复并复核。具体范围及验证边界见规格末节，合成截图保存在忽略目录 `ui-review.local/drawing83-sketch.jpg`。草图的 500ms 忙碌模拟不是正式持久化防重方案；实际生图、文件操作、性能及原生重启没有在本次测试。文档任务不需要应用／Rust 构建；原有安装包归档修改保留。
+
+## Custom context-menu verification #74 (2026-09-30)
+
+本次按用户修订范围完成四类列表的本地右键菜单与默认菜单屏蔽，范围见 [UI 约定](UI-DESIGN.md) 和 [计划](PLAN.md)。消息保留原按钮；输入框、编辑框及可编辑内容保留默认编辑菜单，Gemini 搜索建议 iframe 使用同一策略。共用 `ActionMenu` 及按目标 ID 派生的操作定义；不增加数据库、宿主权限或供应商请求。
+
+最终 `npm.cmd run check` 通过 87 文件／1151 项测试、TypeScript 与 Vite 构建；`cargo check --locked --manifest-path src-tauri/Cargo.toml`、`git diff --check` 通过。仅保留既有大 chunk 构建提示。确定性回归覆盖不同菜单所有者互斥、实际未选中对象、默认助手保护、运行中删除保护、对话行内确认与焦点交接、当前状态禁用更新、删除／隐藏／切换后关闭、供应商模板菜单互斥、键盘与重命名 Tab 草稿保存、输入例外以及 iframe 监听绑定／清理。独立 Sol/high 审查发现并修复重命名 Tab 提前关闭问题，最终复核无剩余发现；iframe 补充也经过独立复核。
+
+浏览器以 `127.0.0.1:1494`、独立合成数据库 `Ayase-Context74-Synthetic-v2` 和禁止模型／目录／搜索请求的模拟边界验证实际组件。覆盖助手、对话、供应商、树与概览中的连接菜单；右键不切换当前对象、删除转到行内确认且取消不删除、连接编辑、重命名取消与键盘完成、浅深／自定义主题、1440×900／1040×760／600×740、四角定位和无页面横向溢出。检查到主页面正文与 iframe 正文的 contextmenu 已取消，而主页面和 iframe 文本框事件未取消；输入 Ctrl+A 保留选区。实施截图保存在忽略目录 `ui-review.local/context74-menu.png`。
+
+`npm.cmd run tauri dev -- --config ui-review.local/context74-tauri.json --no-watch` 使用独立 identifier 与上述模拟页面完成编译及进程／窗口启动烟雾检查，随后仅停止本次验收实例；已有安装版进程保留。未使用原生截图或桌面 UI 自动化，浏览器检查和成功启动不代表原生编辑菜单的交互验收。用户随后反馈“效果不错，我测试了”，确认本需求通过并授权提交、推送和关闭 #74；交付状态以 Git 与 Issue 的实际记录为准。未读取真实凭据、调用供应商或打包发布；已有安装包归档相关修改保留在工作区，不并入本需求提交。
+
+## Exa API / MCP external search #80 (2026-09-30)
+
+后续用户修订为独立 Exa API（必填 Key）与 Exa MCP（Key 选填）。新增直接 API 适配器、两套配置迁移与四模式选择，备份 document v3 仍读取 v1/v2；接口见 [PROTOCOLS.md](PROTOCOLS.md)，当前行为见 [实现记录](ISSUE-80-IMPLEMENTATION.md)。以下 1049 项记录为首次 MCP-only 实现快照。
+
+本次最终 `npm.cmd run check` 通过 86 文件 / 1129 项测试、TypeScript 与 Vite 构建，Cargo check locked 通过。独立 Sol/high 审查发现的完整 v3 备份修复损坏配置问题已修复，回滚回归及独立复核通过。浏览器以模拟网络验证两卡保存隔离、API 缺 Key 阻断、MCP 空 Key、测试取消、重新加载、四模式及 API 搜索引用，覆盖浅深主题与宽窄视口；新增截图 `ui-review.local/search80-split-modes.png`。隔离 Tauri 程序再次编译启动；真实 API/MCP、模型、实际 Tauri HTTP 和原生交互未验证。Rust 未修改，下面 Cargo test 数字为首次实现记录。
+
+本地实现与验收范围见 [ISSUE-80-IMPLEMENTATION.md](ISSUE-80-IMPLEMENTATION.md)。网络搜索设置与聊天使用同一有限适配器；测试页面打开、保存、恢复备份和加载历史都不自动联网。确定性测试使用注入 fetch，覆盖 MCP 初始化、固定工具/schema、JSON/SSE、凭据隔离、错误、边界和取消；聊天测试覆盖四协议、最终预算、命名阻断、候选和并行会话、Anthropic continuation。真实服务探测仍需用户明确授权，不读取 `.env.probe.local`。
+
+最终 `npm.cmd run check` 通过 85 文件 / 1049 项测试、TypeScript 与 Vite 构建；`cargo test --locked --manifest-path src-tauri/Cargo.toml` 95 通过、1 ignored，Cargo check 通过。Rust 代码未修改。独立 Sol/high 只读审查的两处 Markdown 引用定位问题已修复并回归，最终无遗留发现。构建保留既有大 chunk 提示；本次未测量安装包/常驻内存增量。
+
+内置浏览器以隔离数据库、合成 Key、模拟搜索/模型接口检查实际设置与聊天组件：1440×900、600×740 浅深主题，显式保存/测试/停止、模式菜单键盘与焦点、来源摘录和引用、失败阻断、取消及持久化状态。页面无横向溢出。`tauri dev -- --no-watch` 使用隔离 identifier 与模拟页面编译启动；验收用 Vite 配置忽略 Rust target，避免原生编译的 DLL 文件锁中断监听。真实 Exa、匿名/Key、代理、Tauri HTTP 与原生窗口交互仍待授权或人工验收。未提交、推送、修改远端 Issue 或发布。
+
+## Ayase backup verification #79
+
+数据管理入口页样式整理：统一单一页面标题、两个同宽同圆角无阴影卡片，标题和按钮都在卡片内左对齐，移除两个独立页面容器叠加的大间距；修正 Ayase 说明为完整连接／密钥备份可选择加密。设置、Cherry 导入与工作区相关 46 项测试、TypeScript/Vite 构建和 diff 检查通过；隔离浏览器确认浅色宽屏两卡片左边缘／宽度／按钮左边缘一致，标题 16px、正文 14px，间距 16px；600px 深色页无页面横向溢出，按钮在模拟边界响应。原生与导入行为未修改。
+
+最新范围修订：依据用户明确指示，以当前实现行为完成 #79，并更新了远端 Issue 描述。导出固定包含连接及 API Key，仅有一个默认关闭的加密开关；明文可直接导出，加密密码二次确认只检查一致性，任何长度和字符均接受。备份准备时冻结应用交互并等待工作区队列与全部已加载会话写入完成，之后才重新加载用于导出。前次验证记录的测试数是当时快照，最终验证数据见本次提交记录。浏览器合成数据验证不读取真实凭据；原生文件窗口、真实用户备份恢复及重启／断电场景仍需人工验收。以下记录保留此前设计及验收背景，以本段和备份指南为当前行为。
+
+2026-09-30（历史记录）：已完整读取 Issue 正文及交接信息，在原有 `dev` 工作区分阶段完成本地实现，保留原 `PLAN.md` 修改和 `ISSUE-79-BACKUP-RESEARCH.md`。范围、格式、冲突政策与操作方法见 [AYASE-BACKUP.md](AYASE-BACKUP.md)。既有 Cherry 导入仍单独保留；当时尚未提交、推送或修改远端 Issue。
+
+后续按用户新要求，将“加密备份”改为独立且默认关闭的开关；加密不再取决于是否包含 API Key。明文含密钥可无密码直接导出、校验和恢复，仅显示提示；开启时任何备份都需密码，关闭时清空密码，取消连接仍取消密钥但不改变加密状态。格式版本仍为 1，旧备份保持可读。Issue 的旧强制加密要求现已在远端描述中按当前代码行为修订。此前阶段验证了含密钥明文导出不出现密码、直接预览并另存副本（对话 1→2），无连接／无密钥时仍可加密，关闭后可直接导出；完整四种密钥／加密组合也通过 runtime 保存载荷与恢复回归。未读取真实密钥或调用供应商。
+
+阶段验收：
+
+- 数据清单与格式：显式允许字段、八张持久表、受支持偏好和原始资源；不含运行时草稿、源绝对路径和派生背景缩略图。默认包含连接、不含 API Key，含密钥强制整包认证加密。覆盖密码错误、篡改、未知版本、字段排除、资源摘要、大小与图像像素预算、候选消息及已删除提问的历史回复。
+- 恢复一致性：覆盖合并保留现有密钥、另存副本重映射、替换明确确认、缺失模型、文件碰撞、文件／数据库／偏好阶段失败、重复回滚及启动恢复。日志读取也失败时保留回滚错误并锁住所有后续操作。数据库版本升至 6，新增恢复日志；旧表不被升级清空。
+- 独立只读审查：修复图像解码前尺寸预算、Base64 大输入正则溢出、转义容器上限不一致、历史孤儿回复、空工作区入口、头像上限和回滚失败锁定。没有扩大到供应商协议或真实凭据探测。
+- 浏览器：内置浏览器在 `localhost:1486` 的忽略目录 `backup-acceptance.local/` 使用独立 `Ayase-Backup-Synthetic-Acceptance` 数据库、合成密钥及模拟文件窗口，实际调用格式、计划及恢复仓库。验证导出选项联动、密码确认、加密导出与摘要、错误密码零写入、解密前无内容预览、替换范围和密钥单独确认。另存副本后对话由 1 增至 2；随后损坏文件拒绝且写入次数仍为 1。浅色 1440×900、深色 420×740 均无横向溢出，预览和策略可纵向滚动；主观最终视觉尚待用户确认。
+- 原生：Rust 合成测试覆盖受管引用、大小、格式、路径穿越、目录链接／Windows junction、写入不覆盖、预留检查及删除；原有真实样本测试保持 ignored。Windows 文件 symlink 权限不具备时该分支没有实际创建链接，不能宣称已验证。`tauri dev -- --no-watch` 完成编译并启动；开发时入口热更新曾产生重复 createRoot 警告，已将根组件移入 `BackupApp.tsx` 并重新启动验证。
+
+最终检查：`npm.cmd run check`（77 文件 / 882 项测试、TypeScript 与 Vite 生产构建）、`cargo test --locked --manifest-path src-tauri/Cargo.toml`（95 通过、1 ignored）、`cargo check --locked --manifest-path src-tauri/Cargo.toml` 和 `git diff --check`。完整运行曾暴露原有并发测试在 React 快照未就绪时编辑的时序问题；测试改为等待 `workspace.canSend()` 后执行用户操作，未改变生产编辑逻辑。构建保留既有大 chunk 提示。浏览器测试不读取用户内容、真实凭据，不发供应商请求。
+
+待人工验收：在原生设置 → 数据管理检查保存／选择窗口及取消；分别导出不含连接、含连接无密钥、含密钥三种备份，逐类核对助手、对话、候选消息、附件、头像、背景及偏好；在可丢弃数据上检查三种策略，特别是替换范围及密钥确认；检查真实桌面中断／重启后的日志恢复。真实用户数据、原生文件窗口、实际断电和窗口交互未由本轮浏览器或编译验收替代。
+
+## Cherry import verification (#77)
+
+2026-09-30 空对话归属回归：两个获授权本地 1.9.13 格式 6 样例均在预览阶段复现 `cherry-conflicting-owner`；原因是空对话唯一属于某个助手列表，但元数据仍引用另一个现存助手。最小合成测试修复前失败；新增唯一归属恢复、重复归属拒绝、非空归属冲突拒绝、消息归属冲突拒绝及 Chromium ZIP 全流程回归。修复后两份原样例各解析出 7 个话题 / 37 条消息，通过临时本地桥接调用真实 TypeScript 映射及仓储，在 fake-indexeddb 隔离数据库中各导入 8 条分支对话 / 38 条消息，原始消息 ID 全部保留，再次导入跳过全部 8 条。分支展开会复制共有消息。未写入用户当前应用数据库，也未进行原生文件选择与安装版交互验收；私有投影文件及临时桥接测试已清理。
+
+本轮验证：导入相关前端 76 项、Rust 100 项测试通过（另 1 项私有样例测试默认忽略，已对两份授权样例单独执行）；Rust check 与 diff 检查通过，独立审查无可操作发现。`tauri dev` 使用独立应用标识和端口 1491 编译并启动原生进程，随后停止；只证明启动，不代表导入弹窗或原生交互通过。全量前端检查当时为 1153 通过 / 1 失败，失败属于工作区已有的绘图导航测试；单独生产构建被绘图组件新增必填属性尚未接入的 TypeScript 错误阻挡。未修改这些无关工作，也未打包或发布。
+
+The importer accepts only the pinned backup structures documented in [CHERRY-IMPORT.md](CHERRY-IMPORT.md). Local implementation, deterministic fixtures and acceptance boundaries are recorded in [ISSUE-77-IMPLEMENTATION.md](ISSUE-77-IMPLEMENTATION.md). Run `npm.cmd run check`, `cargo test --locked --manifest-path src-tauri/Cargo.toml`, and `cargo check --locked --manifest-path src-tauri/Cargo.toml` before handoff. Native tests construct synthetic ZIP, Chromium and SQLite snapshots; the ignored private-sample comparison runs only with explicitly supplied local inputs, prints aggregate results, and never writes active application data. Do not add real backup content, credentials or source IDs to fixtures or documentation.
+
+## Built-in color presets #66 (2026-09-29)
+
+阅读入口恢复：顶部恢复四个并列按钮，阅读快捷应用浅色纸页；退出阅读回到默认方案，其他配色保留独立明暗切换。新增进入/退出阅读回归，`npm.cmd run check` 通过 66 文件 / 683 测试及 TypeScript/Vite 构建，Cargo check 通过。内置浏览器隔离来源 `127.0.0.1:1486` 确认四项同排，键盘进入阅读同步选中纸页，退出至深色同步恢复晴蓝；截图 `ui-review.local/reading-restored.png`。未调用真实模型或原生文件接口，未重复原生启动；构建保留既有大 chunk 提示。
+
+后续圆形色卡微调：七项改为单排圆形多色色卡，移除常驻中文名，保留名称悬停提示、无障碍名称和选中角标。外观组件 10 项定向测试与 diff 检查通过。本轮内置浏览器连接报 `nodeRepl.fetch request failed`，未取得修改后的视觉验收；以下全量检查和浏览器记录属于微调之前的实现。
+
+最终 `npm.cmd run check` 通过 66 文件 / 679 项测试及 TypeScript/Vite 构建，Cargo check 和 diff 检查通过，独立只读审查无遗留可操作发现。构建保留既有大 chunk 提示。截图：`ui-review.local/presets66-light.png`（忽略的本地隔离验收证据）。
+
+新增七套浅深主题配色、主题卡片内缩略选择器和只恢复颜色的入口。确定性用例覆盖每套方案保存/重建、跟随系统变化、微调保留与恢复、旧 ID/非法 ID、背景及透明度隔离、浅深文字/按钮/焦点及不同透明度用户气泡对比度，以及 UI 回调范围与缩略色值。
+
+内置浏览器使用独立 `127.0.0.1:1486` 来源和空连接配置，无真实凭据或供应商请求，验证宽屏 1600×900、窄屏 720×520、方向键从青竹切到海盐、深色配色和刷新后琥珀/深色恢复，页面与方案网格无横向溢出。纯浏览器缺少 Tauri 文件接口，现有背景清理提示不作为原生文件验收。隔离 identifier 执行 `npm.cmd run tauri dev -- --no-watch --config ui-review.local/presets66-tauri.json`，编译并启动成功，有 libpng iCCP profile 警告。启动不等于真实桌面主题切换、首屏观感或窗口操作验收，这些仍由用户手动确认。未提交、推送或修改远端 Issue。
+
+## Input history #64 (2026-09-29)
+
+用户随后确认功能正确，并要求在输入框占位提示中加入历史浏览快捷键。提示已补充，Composer 7 项测试及 diff 检查通过；用户确认后授权提交、推送并关闭 #64。真实 Windows IME 未单独取得专项验收记录。
+
+实现第一/最后显示行 ↑/↓ 浏览当前对话已提交用户文本，原草稿与候选修改分别暂存、按对话隔离，发送沿用修订号保护。需求细则及软折行交界处的保守光标策略见 [UI 约定](UI-DESIGN.md#历史输入浏览64)，数据归属见 [架构说明](ARCHITECTURE.md#input-history-64)。不增加持久化表或原生权限，未修改远端 Issue。
+
+最终 `npm.cmd run check` 通过 66 文件 / 659 项测试及 TypeScript/Vite 构建，Cargo check 和 Git diff 检查通过；保留既有大 chunk 提示。新增确定性测试覆盖历史顺序/边界、精确保留原草稿和光标、候选修改、删除/换版本后的修改稿保留、对话隔离与运行期生命周期、发送恢复、预检失败、后台提交期间继续编辑及切换对话、键盘/选区/IME 标记保护、选择事件竞态和模拟折行几何。独立只读复核无遗留可操作发现。
+
+内置浏览器使用隔离数据库及 `127.0.0.1:1485/ui-review.local/history64.html`，真实 Composer/工作区 hook/CSS，模拟发送只消费草稿，不访问供应商。已验证原草稿恢复、历史修改往返、A/B 隔离、页面卸载重挂后保留、模拟发送恢复原草稿、宽/窄输入区、浅/深色及自动折行中间行移动；窄输入内容宽约 299px 时，Ctrl+Home → End → ↑ 能从首行末尾调出历史，调出光标为 0。浏览器发现并修复了同次按键旧 selection 事件覆盖目标光标的问题。合成 IME 事件保护有测试，真实 Windows 中文候选操作仍待人工验收；本次无原生改动，未运行原生 UI 自动化或重复 Tauri 启动。
+
+## Send scroll #75 (2026-09-29)
+
+`MessageList` 根据相邻列表的用户消息 ID 识别成功加入的新发送，在绘制前恢复跟随并滚到底部，复用既有流式滚动。新增 3 项组件用例覆盖文字/空正文消息、发送后继续跟随、再次上滚暂停、下一次发送重新恢复，以及同用户 ID 的编辑/回复更新不强制滚动。定向 25 项和全量 64 文件 / 640 项测试通过，TypeScript/Vite 构建、Cargo check、diff 检查通过；构建保留既有大 chunk 提示。独立只读复核确认重试与版本切换复用用户 ID、会话切换重建组件，无可操作发现；未将真实重试/版本切换与滚动组件串成集成测试。
+
+内置浏览器隔离来源 `127.0.0.1:1483/ui-review.local/scroll75.html` 使用真实 MessageList/CSS 与合成消息。上滚后更新回复保持 scrollTop 2815，发送后距底部 0，新增流式段落后仍为 0；再次上滚后新增段落保持 scrollTop 3806，再发送回到底部（约 1px 的取整差）。截图 `ui-review.local/scroll75.png` 为忽略的本地验收证据。未读取凭据或调用供应商；此次仅改前端消息滚动，未重复原生启动。用户随后确认“效果不错”，验收通过，并授权提交、推送及关闭 #75。
+
+## Chat empty state #73 (2026-09-29)
+
+按用户当前要求，空状态复用当前助手头像，只保留“发送消息以开始对话。”，文字固定为 65% 不透明度，容器固定透明且无边框、阴影；不新增入口。与 Issue 原正文的引导方向差异已记录在 UI 约定。
+
+`npm.cmd run check` 通过 64 文件 / 637 项测试及 TypeScript/Vite 构建，Cargo check 通过，保留既有大 chunk 提示。新增组件回归覆盖空状态唯一文案、自定义/内置头像、切换助手、图片损坏回退、无助手默认与进入已有消息后隐藏空状态。浏览器发现头像尺寸受样式顺序影响后提高局部选择器优先级，最终确认 48px，并重跑前端构建。
+
+隔离内置浏览器使用 `127.0.0.1:1481/ui-review.local/empty73.html`，真实 MessageList 与 CSS 搭配合成头像和渐变背景。浅色 1280×800、深色 720×520、切换助手及有/无背景均核对；容器计算背景为 `rgba(0, 0, 0, 0)`、边框 0、阴影 none，无页面横向溢出。截图 `ui-review.local/empty73.png` 为忽略的验收证据。未读取真实凭据或发送模型请求。后续句号及文字透明度微调通过 MessageList 22 项测试与 diff 检查，用户确认效果并授权提交、推送及通过 #73。
+
+## Local background library #70 (2026-09-29)
+
+持久缩略图后续：新增 `backgrounds/thumbnails/<原文件名>.png`（长边最多 512、等比、不放大、保留透明度），导入时生成，旧图库按需补图；缺失/损坏可重建。图库只为可见区域附近解析小图，选中才解析原图；二者会话缓存与失败重试独立，原图保存不变。原生导入/解析/清理由共享互斥锁串行保护，在后台工作线程执行；现有 tempfile 从开发依赖移到运行依赖实现同目录原子持久化，锁文件版本未变。清理保留当前/图库/草稿原引用对应的整对文件，释放最后引用时删除原图及缩略图，并整理托管孤立小图。
+
+本轮验证：64 文件 / 636 前端测试通过，TypeScript/Vite 构建通过（测试中 Array.at 与既有目标不兼容已改为下标）；17 项 Rust 背景测试、Cargo check 通过。内置浏览器隔离来源确认 6 张图库图片实际为 512×288、候选原图仍 960px 宽，重开全部加载且无读取提示，截图 `ui-review.local/background70-thumbnails.png`。模拟适配器不代表真实 asset 协议验收；原生启动烟雾已尝试，因用户现有 `target/debug/ayase-studio.exe` 占用导致拒绝访问，未关闭该进程。桌面选图、私有缩略图实际显示与重启恢复仍待手动验收。未提交或推送。
+
+重复打开加载优化：控制器按不可变文件引用缓存预览解析结果及进行中的读取，关闭弹窗不清空；失败不缓存，图片重试强制刷新，应用/恢复/启动仍重新校验，清理时移除无引用项。缓存只持有资源地址与元数据，原图保存方式不变。新增 6 项回归覆盖重复/并发读取、失败与强制刷新、旧请求竞态、删除与控制器重建，以及真实控制器下弹窗卸载重开和图片错误重试。`npm.cmd run check` 通过 63 文件 / 629 测试及构建，Cargo check 和 diff 检查通过。内置浏览器隔离页面关闭重开后 6 张合成图片全部加载完成，截图 `ui-review.local/background70-cache.png`；真实桌面大图的耗时未量化，浏览器验证使用模拟文件适配器。
+
+弹窗内参数编辑后续：复用外观页的适配、遮罩、模糊及恢复控件，取景编辑器作为同窗子页使用；完整原图保存方式不变。候选参数按图片版本暂存，只有最终应用所选图片时才一次持久化库参数与当前外观；取消丢弃草稿，失败可重试，过期版本不可覆盖替换后的图片。定向 38 项测试通过，最终 `npm.cmd run check` 通过 63 文件 / 623 项测试及 TypeScript/Vite 构建；Cargo check、diff 检查及独立只读复核通过。新增覆盖参数隔离/切图保留、取消/恢复默认值、取景子页取消与焦点、原子保存失败及版本校验；修复取景缩放滑块在函数式更新中读取已失效事件的旧问题。
+
+同一隔离浏览器来源确认：1600×900 浅色下控件位于右侧预览下，参数/取景调整不改变外观页；取消重开恢复原值，点击应用后外观页同步为 35% 遮罩和 1px 模糊。取景预览继承候选的效果参数且只有一个 dialog；Escape 回到图库并恢复“调整取景中心”焦点。720×520 深色下控件可滚动访问，无横向溢出，底栏位于视口内。截图：`ui-review.local/background70-controls-light.png`、`ui-review.local/background70-controls-dark.png`。本轮未修改原生接口或文件保存方式，未重复原生启动；之前的原生选图与桌面恢复待验收边界仍然有效。
+
+按用户确认统一头像库语义：背景库提供无命名导入、横向图片宫格、候选预览与显式应用、管理多选/全选/批量删除、单选替换预览与保存。删除和替换不改变当前背景，停用/恢复与恢复默认保留图片参数。旧背景兼容入库；替换后的旧图仅由当前背景持有，图库与当前均不引用后清理。远端 #70 的删除回退及不做批量管理规则已被本次用户指示替代，远端未修改。
+
+确定性测试覆盖独立导入、每图参数、旧图替换保留及释放、批量删除/重裁/停用重启恢复、默认外观恢复、旧格式兼容、整批保存失败、替换重试、应用失败、导入清理互斥、草稿引用保护、物理清理失败重试、缺失资源与损坏元数据保护。UI 覆盖候选与管理选择分离、当前候选初始化、显式应用、替换/导入保存失败重试、取消和 Escape、焦点、失败图片重试；补充稳定原生解析回调回归，避免无关界面更新重复读取/解码图库与停用背景。最终 `npm.cmd run check` 通过 63 文件 / 616 项测试及 TypeScript/Vite 构建，保留既有大 chunk 提示；独立只读复核无遗留可操作发现，`git diff --check` 通过。
+
+内置浏览器使用隔离来源 `127.0.0.1:1477/ui-review.local/background70.html`，真实 App/外观控制器搭配合成图片和模拟文件适配器，无凭据、真实图片或模型请求。已验证：从 18 张库图中批量删除包含当前背景的两张后剩余 16 张，当前背景仍显示、未删除候选保留；显式应用后替换同一库项，当前缩略图内容不变；停用刷新后状态及 45% 遮罩保留并可重新启用；导入后取消应用仍保留库项；全选删除后空库入口可用、当前图仍可重裁。浅色 1600×900 和深色 720×520 下无横向溢出；低高度弹窗内容滚动、底部确认按钮固定可达。浏览器按钮使用键盘操作。截图：`ui-review.local/background70-light.png`（忽略目录，仅为隔离验收证据）。
+
+Rust 背景专项 8 项测试及 `cargo check --locked --manifest-path src-tauri/Cargo.toml` 通过。使用隔离 identifier 执行 `npm.cmd run tauri dev -- --no-watch --config ui-review.local/background70-tauri.json`，因现有 `src-tauri/target/debug/ayase-studio.exe` 被占用而拒绝访问，原生启动烟雾未完成，未关闭用户现有进程。Windows 原生选图、实际私有目录运行时加载及桌面重启恢复仍待人工验收；浏览器模拟与 Rust 测试不替代这些原生验收。未提交、推送、关闭 Issue 或发布。
+
+## Local avatar library #69 (2026-09-28)
+
+紧凑宫格与批量管理：64px 头像、6px 间距，去掉名称输入/重命名，自动以文件名作为内部标签。管理选择与应用候选独立；批量删除在一个事务中校验、解除来源并删除，任一失败全部回滚。全量 59 文件 / 588 项测试、TypeScript/Vite 构建、Rust check、diff 检查与独立只读复核通过。隔离浏览器 `127.0.0.1:1473/ui-review.local/avatar-grid.html` 用 18 张合成头像核对宽屏布局，实测勾选两张、确认删除后剩余 16 张，退出管理保留未删除候选；720×520 下实测单元 64px、间距 6px，网格 scrollWidth/clientWidth 均为 598，无横向溢出。本次没有访问真实图片、凭据或模型，没有重复 Windows 原生选图验收。
+
+用户头像与头像库合并卡片：顶部唯一导入按钮复用库的选图/裁切/命名流程，保存后自动选中新候选，但显式应用前不写用户头像。定向 22 项测试、全量 59 文件 / 581 项测试、TypeScript/Vite 构建、Rust check 与 diff 检查通过；独立只读复核无本次变更的可操作发现。内置浏览器检查 1920×1080 与 720×520 的合并卡片、唯一入口和布局。导入选中、显式应用、取消保留候选及焦点、重裁与恢复默认由确定性测试覆盖；此次未重复原生选图验收。
+
+头像页紧凑布局后续调整：合并外层页面留白，聊天预览改为宽屏右侧固定列、左侧配置独立滚动；与外观页共用 1440×700 的分栏条件。定向设置/头像库/助手头像组件 21 项测试与 TypeScript/Vite 构建通过。隔离内置浏览器在 1600×900 下确认左右分栏，左侧滚动 28px 后预览顶部仍为 162.6px；720×520 下回到纵向布局，页面和配置区无横向溢出。本次仅调整前端布局，未重复原生启动或改动头像持久化。主观视觉效果以用户反馈为准。
+
+后续删除语义调整：从头像库删除只原子解除用户/助手的来源关系并移除库条目，已有对象保留原图、缩略图和裁切；已选草稿和正在重裁的对象在之后保存时转为独立图片。提示不再列出使用者或阻止删除。新增覆盖各版本与无关对象保留、删除失败整体回滚、删除/保存并发、过期草稿可保存、重裁和重新读取。最终 `npm.cmd run check` 通过 59 文件 / 580 项测试及 TypeScript/Vite 构建，Rust check 和 diff 检查通过，独立只读复核无遗留发现。构建仍有既有大 chunk 提示。
+
+此次浏览器回归使用同一隔离来源：先让用户与助手共同选用合成图片，从库删除后条目消失，但两者图片仍能加载；用户重裁为 101% 并保存，刷新后图片及该裁切值保留。原生选图/桌面恢复沿用下述待验收边界，不将浏览器刷新等同于原生重启。以下首次实现的阻止删除验收属于历史记录，已被本次规则取代。
+
+头像库与用户头像现在保存在 WebView 的 `AyaseStudio` IndexedDB 专用表，助手仍保存自身图片快照。旧 `ayase-studio-avatars` 在首次读取用户头像时兼容复制，保留旧数据库作为备份；空记录标记已迁移/已恢复默认，避免旧图复活。此前手工备份要求包含完整 WebView 数据目录；#79 自有备份使用显式字段和 Blob 清单，见 [备份指南](AYASE-BACKUP.md)。四项已确认的产品规则及版本持有/回收约定见架构文档和计划文档，远端 Issue 未修改。
+
+确定性验证重点：导入格式/大小/命名/解码失败、裁切与取消、候选与正式应用、多个对象独立裁切、替换版本保留、删除保护、过期草稿、并发保存与删除、旧用户和助手兼容迁移、损坏回退、失败迁移后的显式恢复、迟到迁移不能覆盖新值，以及成功保存后刷新失败不得重复导入。相关用例位于 `src/avatar/library.test.ts`、`src/avatar/useUserAvatar.test.tsx`、`src/ui/avatar/AvatarLibrary.test.tsx` 和 `src/ui/chat/AssistantAvatarEditor.test.tsx`。
+
+首次实现 `npm.cmd run check` 通过 59 个文件、577 项测试及 TypeScript/Vite 生产构建，保留既有大 chunk 警告。头像库仓库专项 36 项、相关界面定向 21 项通过；`git diff --check` 通过。独立只读审查发现的旧备份读取失败阻止显式恢复、保存成功后刷新失败造成重复导入两项问题已修复并回归，无遗留可操作发现。
+
+内置浏览器使用隔离来源 `127.0.0.1:1469/ui-review.local/avatar69.html` 和合成图形/助手数据，无模型服务配置。已确认选择候选不会直接应用、显式用作用户头像、刷新恢复、删除使用中的资源列出用户及助手并禁用确认、助手选择器与设置页共享同一库、文件选择→裁切/命名→保存到库、Escape 返回保留候选、取消助手编辑保留入库资源且原助手不变、恢复默认保留库并刷新使用关系。检查浅/深色、720×520 与 1280×900、长名称省略与完整提示；页面和网格无横向溢出。按钮主要使用键盘，文件选择采用浏览器 filechooser 接口；这些不等于 Windows 原生选图验收。截图：`ui-review.local/avatar69-dark.png`。
+
+`cargo check --locked --manifest-path src-tauri/Cargo.toml` 通过。尝试隔离 identifier 的 `npm.cmd run tauri dev -- --no-watch --config ui-review.local/avatar69-tauri.json` 时，编译因现有进程占用 `src-tauri/target/debug/ayase-studio.exe` 而报拒绝访问；保留现有进程，未强制关闭。此次原生启动烟雾未通过，Windows 原生文件选择及真实桌面重启恢复仍待人工验收。未读取真实凭据、发送模型请求、提交、推送或关闭 Issue。
+
+## Assistant avatars #67 (2026-09-28)
+
+提交前验证：最终 40px 聊天头像版本通过 `npm.cmd run check`（57 个文件、529 项测试及 TypeScript/Vite 构建）、`cargo check --locked --manifest-path src-tauri/Cargo.toml`。构建保留既有大 chunk 提示；下文 32px 浏览器测量属于此前版本，本次未重复视觉或原生交互验收。
+
+后续用户确认未设置用户图片时也应显示默认头像：用户消息和设置预览新增默认人形图标，图片加载失败、移除时回退该图标。消息与用户头像两套测试共 22 项通过，TypeScript 和 diff 检查通过；新增覆盖双方头像共存、切换助手互不影响、图片失败和移除回退。内置浏览器合成数据确认用户人形头像与助手图片同时显示，均为 32×32，无页面横向溢出。此轮仅调整前端默认显示，不重复原生检查或全量构建。
+
+`npm.cmd run check` passed 54 files / 516 tests and TypeScript/Vite production build. After adding focused component tests and correcting sidebar square sizing, five targeted suites passed 31 tests (assistant defaults, persistence, display, crop editor, message regression); the worker also checked the existing user-avatar suites. `cargo check --manifest-path src-tauri/Cargo.toml` passed. Independent read-only review found no actionable defect in persistence, request privacy, crop lifecycle, or defaults. The build retains the existing large-chunk warning.
+
+The isolated in-app browser origin `127.0.0.1:1467/ui-review.local/assistant67.html` uses synthetic local image/chat data and no configured provider. Verified crop zoom/drag, Escape cancel retaining the outer editor, Apply followed by Save Assistant, 256×256 thumbnail recovery after reload, removal falling back to the saved built-in and editor cancellation retaining the custom image, and a changed global default appearing in a new assistant draft. At 720×520 the message avatar is 32×32 with no page horizontal overflow; dark low-height crop controls remain visible. The normal light viewport was also inspected. Controls were exercised by keyboard and crop dragging by pointer; no native file dialog was automated.
+
+Screenshot: `ui-review.local/assistant67-crop-dark.png` (ignored local evidence). Native file selection and actual desktop restart remain manual acceptance; no native permission, filesystem command, or transport contract changed, so this run did not relaunch the desktop app. Subjective visual acceptance remains with the user. No commit, push, or remote Issue update was performed.
+
+## User avatar #32 / #34 verification (2026-09-28)
+
+首次实现时头像原图、裁切参数及缩略图保存于 WebView 的 `ayase-studio-avatars` IndexedDB，手工备份需包含 WebView 本地目录，没有单独的头像文件目录。后来头像库已迁入 `AyaseStudio`，#79 自有备份按允许清单导出头像 Blob。浏览器验收数据与桌面应用分离。
+
+头像仓库/几何、Hook 保存失败、MessageList 和 SettingsWorkspace 共四个文件 28 项定向测试通过；TypeScript/Vite 构建、Cargo check 和 diff 检查通过。独立只读审查无待修复问题。未运行全量协议测试或真实供应商探针。
+
+内置浏览器使用隔离来源 `127.0.0.1:1462`、合成聊天和仓库图标验收：本地选图、正方形预览、缩放、指针拖动、重裁、取消保留旧取景、损坏图片、移除及页面刷新恢复通过。检查浅/深主题、1280×900 与 720×520，消息头像为 32px，无横向溢出；低高度裁切按钮可见。按钮使用键盘操作，因浏览器点击自动化未触发；拖动可用。未读取凭据或发送供应商请求。
+
+使用临时隔离 identifier 配置运行 `npm.cmd run tauri dev -- --no-watch --config ui-review.local/avatars-tauri.json`，编译并启动成功。原生文件选择、生产 WebView 图片显示及真实桌面重启恢复仍待人工验收；启动成功和浏览器验收不代表这些原生交互已通过。
+
 2026-09-28 后续外观微调：色盘、透明度和背景数值旁补充单项恢复按钮；统一色和统一透明度分别原子恢复其覆盖范围内的方案默认值。沿用用户暂不测试的要求，仅做源码复核与 diff 检查，dev 视觉和交互由用户确认。
 
 ## 统一主题色与独立子项（2026-09-28）
@@ -205,10 +574,13 @@ Tauri 打包使用 `src-tauri/icons` 中的 PNG、Windows `icon.ico` 和 macOS `
 已有 EXE 不会随资源文件自动更新，需重新构建；Windows 图标缓存可能延迟显示变化。
 正式安装包和任务栏外观需另行实机验收。
 
-当前 Alpha 阶段只发布 NSIS 安装程序（setup EXE），暂不发布 MSI。统一运行
+当前 Beta 阶段只发布 NSIS 安装程序（setup EXE），暂不发布 MSI。统一运行
 `npm.cmd run build:windows` 构建 NSIS 包，输出位于
-`src-tauri/target/release/bundle/nsis`。应用及安装包版本使用 `0.1.0-alpha.N`；
-若内部临时测试 MSI，Tauri 要求 MSI 预发布标识为数字，因此 alpha 字符串版本不能用于 MSI。
+`src-tauri/target/release/bundle/nsis`。应用及安装包版本使用 `0.1.0-beta.N`，首个 Beta 基线为 `0.1.0-beta.1`；
+每次成功打包会保留 Tauri 标准文件，并复制一份带本机日期时间后缀的安装包，
+例如 `Ayase Studio_0.1.0-alpha.3_x64-setup_20260930-205336.exe`；若同一秒重复打包，
+文件名会追加序号以保留每份产物。
+若内部临时测试 MSI，Tauri 要求 MSI 预发布标识为数字，因此 alpha／beta 字符串版本不能用于 MSI。
 仓库默认 bundle target 与打包脚本均限制为 NSIS。
 `bundle.windows.nsis.installerIcon` 和 `uninstallerIcon` 显式指向 `icons/icon.ico`；
 它们控制 NSIS 安装/卸载程序自身图标，区别于 `bundle.icon` 控制的应用图标。
@@ -356,6 +728,7 @@ Issue #15 的定向回归：`npm.cmd test -- src/chat/SafeMarkdown.test.tsx src/
 | Unit and integration tests | `npm.cmd test` |
 | Test watch mode | `npm.cmd run test:watch` |
 | TypeScript and Vite build | `npm.cmd run build` |
+| Persistent data registry and checker regressions | `npm.cmd run check:data-contracts` |
 | Frontend check bundle | `npm.cmd run check` |
 | Rust compile check | `cargo check --manifest-path src-tauri/Cargo.toml` |
 | Production desktop bundle | `npm.cmd run tauri build` |
@@ -393,6 +766,7 @@ npm.cmd run tauri dev
 - [Architecture and project structure](ARCHITECTURE.md)
 - [v0.1 plan](PLAN.md)
 - [Protocol compatibility contract](PROTOCOLS.md)
+- [Persistent data contracts](DATA-CONTRACTS.md)
 
 ## Conversation configuration and deterministic checks
 

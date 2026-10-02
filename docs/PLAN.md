@@ -1,5 +1,127 @@
 # Ayase Studio v0.1 Plan
 
+## 内置供应商与厂商头像 #100
+
+11 家直接初始化，旧数据保持自定义，32 条默认连接含已适配绘图。加号命名自定义置顶，保存拖动顺序；内置可编辑／删除／重加，连接重置保留 Key／模型。厂商图标进入共用头像库，头像与协议独立。承接 #103，数据合同和范围见 [#100](ISSUE-100-IMPLEMENTATION.md)；未授权 Git 或远程交付。
+
+## 首批其他搜索服务 #82
+
+2026-10-02 用户确认 Tavily 与智谱，增加独立官方 API 设置、费用／Key 说明及默认关闭开关，启用保存后才显示聊天入口。沿用检索／来源／引用及取消／错误流程，默认不自动回退。范围和数据兼容见 [#82 本地实现记录](ISSUE-82-IMPLEMENTATION.md)；未授权修改远程 Issue 或 Git 交付。
+
+## Grok / Seedream 协议兼容 #103
+
+2026-10-02 用户授权本地完成生成／有序参考图编辑、明确版本参数、共享设置与地址预览、自动保存／复用／导出、#93 设置备份兼容。完整会话续传与 #102 分开，关联组图保持关闭。具体实现和验证见 [#103 记录](ISSUE-103-IMPLEMENTATION.md)。本地实施不替代真实服务／中转或原生交互验收，不授权提交、推送或关闭 Issue。
+
+## Chat generation statistics #107 (2026-10-02)
+
+用户确认统计随回复保存，并按 Harness 截图放在输入框底部。四种聊天协议统一输入／输出、缓存读取／写入、思考 Token 及请求计时；未知与零区分，暂停／继续按请求保存，失败／停止保留部分用量。详情可查看回复及请求，备份包括轮次历史。没有费用、全局累计或任务步数；中转站长对话／真实正缓存命中由用户后续验证，不再追加实时探测。见 [实现与验证](ISSUE-107-IMPLEMENTATION.md)；本地完成不代表提交、推送或关闭 Issue。
+
+## Drawing single-page task panel #111 (2026-10-02)
+
+用户授权实施单页布局并补充左上角横向任务／日志标签的表格截图。配置下方为独立限高任务面板，队列状态和控制迁入标题区；右侧预览和历史常驻。保留完整参数展开、50 项独立分页、任务操作及风险提示，不改变队列或持久数据，也不扩大 #108／#109／#110。相关设计以 [UI 约定](UI-DESIGN.md) 为准；验证结果与人工边界见 [实施记录](ISSUE-111-IMPLEMENTATION.md)。本地实现不代表提交、推送或远端 Issue 关闭。
+
+## Session reference preparation #110 (2026-10-02)
+
+参考图改为当前会话选择，先捕获原字节并预览；显式提交时冻结顺序、准备受管原图，再原子登记整批任务。新增独立取消准备、二进制导入和按来源隔离的中断导入恢复记录；旧草稿绑定保守保留，新会话参考图不写入草稿或可移植备份。原字节、格式、尺寸和透明度不转换。实现、隔离测量与接受边界见 [#110 实施记录](ISSUE-110-IMPLEMENTATION.md)；真实供应商、原生文件窗口／关闭重启及远端交付分别处理。
+
+## Drawing protocol completion #101 (2026-10-01)
+
+用户授权功能优先、本地实施，不重新设计 UI。Gemini 可选温度／统一四类安全阈值／输出模式接入草稿、快照、复用、显式参数 PNG 和绘图设置备份；移除 Gemini 借用字符上限，OpenAI 按 Unicode 码点校验 32,000 字符。补齐 GNBP 单对象响应及有界 CR/LF／合法 data-URL 兼容。绘图设置模块 v2／最低读者 2，文档 v5、信封 v1、schema v8 保持。官方和固定版本参考已重新核对；验证与独立审查见 [#101 实施记录](ISSUE-101-IMPLEMENTATION.md)。远端交付／关闭、真实服务和 #94 压力接受分别处理。
+
+## Persistent data contracts #105 (2026-10-01)
+
+用户授权本地实现统一模块数据注册、实际类型字段策略、纯迁移、备份 v4 兼容声明和限定参数降级，并将这些规则写入未来开发合同。当前注册覆盖 13 张表／8 个偏好键；连接 v2 → v3、搜索 v1 → v2 及会话读取共享迁移基础。工作区非法结构在事务写入前拒绝。新备份保持信封／加密 v1，历史文档 v1/v2/v3 严格读取；只过滤兼容未来会话的声明可选参数，报告路径并保留再次导出可能丢失参数的警告，不改写原文件。
+
+开发者须随数据变化同步注册、嵌套字段策略与真实投影、迁移／默认政策、确定性测试和独立 Sol/high 审查，无需用户提醒。静态检查不保证任意动态键或语义迁移，旧客户端也不会因此自动支持新格式。详见 [持续开发合同](DATA-CONTRACTS.md) 和 [本地实施／验证记录](ISSUE-105-IMPLEMENTATION.md)。
+
+#93 已本地接入 `drawingSettings`／`drawingPresets`，使用独立字段投影和维护协调取代旧绘图范围禁用规则；#105 的 v4 基础历史保持，新导出由 #93 升为 v5。范围不包括自动草稿提示词、参考图、任务／结果历史或图片；旧 #83 全图库备份提案由最新决定明确取代。#105 接入和确定性跨版本样例已补齐，剩余实际原生接受项与 #94 压力独立验收。用户随后授权提交推送本项及必要基础代码、关闭 #93；#105 和 #94 保持打开，交付结果见 #93 评论。
+
+2026-10-02 #105 收尾修正搜索／外观未知结构的持久覆盖风险，补齐真实数据库重开回归；全量门禁及独立复审通过。隔离备份专用原生入口已完成 staging／applying 两种跨进程恢复、快照精确回滚和日志附件清理；内置浏览器实际恢复三种策略、旧版与未来参数及加密预览通过。用户明确确认本轮系统文件对话框／合成备份人工验收通过，#105 本地收尾完成。完整应用生命周期、真实用户数据和 #94 压力边界保持独立；用户随后授权提交、推送及关闭 #105，实际交付以远端验收评论及 Git 历史为准。具体证据见 [收尾记录](ISSUE-105-IMPLEMENTATION.md#实际运行结果与人工交接)。
+
+## Drawing settings and explicit preset backup #93 (2026-10-01)
+
+用户授权本地规划及实施，本地代码门禁、定向回归和独立 Sol/high 审查已完成。新导出文档 v5／信封 v1，严格保留旧 v1–v4 合同及 v4 原七模块集合。`drawing.settings`、`drawing.presets` 独立可选并匹配模块声明；新导出包含两类，预设为空与类别缺失语义不同。设置投影不带 prompt／references，显式预设保持正文空白及同名不同 ID。绘图读入口共享克隆、默认与结构验证，不新增 schema 或 OpenAI 尺寸文本字段长度限制，生成尺寸由 transport 校验。
+
+合并／副本保留本机设置；替换只应用包含的绘图类别，补丁更新设置但保留当前 prompt／references，旧包或缺失类别不清空绘图。原始当前草稿／预设仅参与私有恢复日志与原子提交；旧日志未捕获时跳过对应类别。历史、图片及未决本地保存日志保留，目标变化按冻结的供应商／连接 ID、协议／地址／实际上游模型 ID 报告，恢复不发请求、不操作绘图文件。正常入口同步封锁聊天／绘图并排空既有操作；活动请求／自动命名需先完成或明确取消，仅内存图片拒绝重载，queued 项保留。原生绘图文件锁加入启动恢复围栏，备份回滚先于绘图初始化和 GC。
+
+已完成隔离数据及模拟文件／请求的恢复、回滚、兼容、维护和预算回归、本地代码门禁及独立 Sol/high 审查。隔离内置浏览器通过实际 Dexie 恢复验证提示词保留、未来参数过滤警告和再次导出；隔离 Tauri 编译／启动确认进程。隔离浏览器浅色宽窗口与深色／自定义主题窄窗口视觉验收已完成，截图已检查且无横向溢出；原生文件窗口和真实关闭重启单列为 #94 人工接受项，真实供应商待另行授权。具体运行范围与证据见 [#93 记录](ISSUE-93-IMPLEMENTATION.md)；完整图库压力仍由 #94 承担，本地实现不代表交付／Issue 关闭。
+
+## List sorting #99 (2026-10-01)
+
+用户授权继续完成助手／聊天拖动排序。供应商与连接配置树的既有切片保持；新增两类导航列表的把手／名称长按、插入提示、边缘滚动、取消与误点击隔离、菜单上下移和独立持久化。聊天首次实际手动换序后固定同助手顺序，新建聊天置顶；工作区与备份保存顺序。实现与验证见 [开发指南](DEVELOPMENT.md#list-sorting-99-2026-10-01)。实施检查后用户已授权提交、推送及关闭 #99；实际交付状态以 [Issue 评论](https://github.com/AyaseMinami/AyaseStudio/issues/99) 为准，原生关闭重启验收边界保持。
+
+#87 queue is locally implemented: batches 1–99, persistent FIFO, concurrency 1–4, pause/resume, cancellation and conservative restart recovery. [#87 implementation](ISSUE-87-IMPLEMENTATION.md) records the initial subset; [#88 lifecycle implementation](ISSUE-88-IMPLEMENTATION.md) adds batch cancellation, regeneration/source deduplication, terminal history cleanup, local recovery inventory and sanitized diagnostics. Native interaction and #94 pressure acceptance remain separate. No remote delivery or issue closure is implied.
+
+## Drawing prompt presets and parameter reuse #90 (2026-10-01)
+
+Local implementation adds pure-text name/content presets in database v8, explicit CRUD and save-as, direct text-only application, and task prompt copying/full parameter reuse through the existing result reuse path. It keeps per-protocol controls and ordered input references independent, reports invalid targets/missing files and never generates implicitly. The historical pre-#93 backup gate included presets and is superseded by #93's projection and maintenance coordination; PNG parameter export remains #89, old PNG import remains #92, and drawing/chat exchange remains #91. See [#90 implementation and verification](ISSUE-90-IMPLEMENTATION.md); local work does not imply Git delivery or remote acceptance.
+
+## Beta drawing scope #23 / #83
+
+Current scope and per-slice evidence are indexed in [#83](ISSUE-83-DRAWING-SPEC.md). #84–#90, #93, #94 and #101 cover independent drawing, both protocols, reference input, batches, lifecycle, gallery/export, presets, settings backup and integration acceptance. Later #110 makes new references session-local until explicit submission; #111 replaces the three-view layout with a single page. Their implementation records and the current UI/data contracts supersede the corresponding early proposals.
+
+Same-prompt batches are 1–99, concurrency is 1–4 (default 1), save failures affect their task, and queued work restarts paused. Possibly sent requests never retry automatically. Ordinary PNG export omits generation parameters; explicit parameter export follows #89. Portable backup includes drawing settings and explicit pure-text presets, excluding automatic prompt drafts, references, tasks/results and images.
+
+#91 chat image exchange and #92 legacy PNG parameter reading remain later; independent drawing does not depend on them. [Archived design and requirements audit](archive/ISSUE-83-DRAWING-DESIGN-HISTORY.md) retain the original candidate decisions and source versions. The old sketch is historical illustration, and each implementation/acceptance record states its actual verification boundary.
+
+## Custom context menus #74 scope revision (2026-09-30)
+
+The user revised #74 to suppress default WebView context menus throughout the application while retaining native editing menus in inputs, textareas and editable text. Only assistant rows, conversation rows, provider rows and connection rows (tree and provider overview) receive custom object menus. Message actions remain in their existing buttons; blank list areas do not open a menu. Existing business operations, generation guards and deletion confirmations remain authoritative. This supersedes the original issue's message-menu direction and adds provider/connection menus. The user has tested and accepted the result and authorized syncing the remote issue to this scope, committing, pushing and closing it. Current interaction rules are recorded in [UI-DESIGN.md](UI-DESIGN.md).
+
+## Exa external search #80 scope revision (2026-09-30)
+
+The user's later instruction splits external search into Exa API (required Key) and Exa MCP (optional Key), each with independent saved endpoint, credentials and result count. Conversation/assistant controls choose either explicitly; no automatic fallback. Legacy MCP settings remain MCP, existing native search remains native. Both share the bounded retrieval-to-answer pipeline and sources. New backups use document v3, with v1/v2 import compatibility and unchanged encryption envelope. This supersedes the earlier MCP-only scope without adding arbitrary MCP, OAuth, a tool runtime or autonomous research. See [implementation](ISSUE-80-IMPLEMENTATION.md).
+
+## Ayase data backup and restore #79 (2026-09-30)
+
+The user's latest request supersedes the previous category checkboxes and mandatory encryption rule: export always includes connection configuration and API Keys, exposing only a default-off encryption switch button. Connection configuration includes provider groups, connection names, protocols, addresses and configured models. The switch alone decides the envelope type: plaintext backups need no password or extra export confirmation; encrypted backups require password confirmation by equality only, with no length or character restrictions (including Chinese and empty matching values). Password input is used as entered, without trimming or normalization. Show a brief plaintext credential warning when applicable. Decrypt and validate encrypted backups locally before content preview or any persistent write; an incorrect password, corruption or tampering leaves current data unchanged. Passwords are not retained or uploaded, and forgotten passwords cannot be recovered by Ayase. Older backups excluding connections or keys remain readable.
+
+Preview and results explicitly state the connection, credential and encryption status. Newly restored connections without credentials require re-entry; merging into retained existing connections must not erase their credentials because a backup omits them. Restoring included credentials requires an explicit conflict decision and must not silently overwrite existing keys. Build exports from explicit allowed fields instead of archiving raw application/browser storage. Current exports deliberately include configured API Keys; only legacy backups may omit credentials. Excluded fields do not promise to remove secrets users have embedded in chat text or attachments. [Cherry Studio research](ISSUE-79-BACKUP-RESEARCH.md) is a reference, not Ayase's security contract. The user has confirmed that current code behavior is authoritative for #79: credentials are always included and encryption remains an independent default-off switch. The remote issue description has been updated to record this scope revision. Local implementation and verification are recorded in [the development guide](DEVELOPMENT.md#ayase-backup-verification-79), with native interaction acceptance tracked separately.
+
+Issue #79 also records the shared data-management settings page, persistence consistency and independent security-review gates. The user has confirmed successful Cherry import; preserve that existing behavior. The dev workspace contains the local format/export/preview/restore implementation described in [the backup guide](AYASE-BACKUP.md), including merge/copy/replace policies and startup rollback gating. Native file dialogs, real user backup restore and restart/power-loss acceptance remain separate manual checks.
+
+## Cherry chat backup import #77 (2026-09-30)
+
+Local chat-only import preserves assistant grouping, titles, messages, thinking and supported internal attachments. The user clarified that importing model/provider configuration is outside this task; imported chats have no Cherry model binding. Parallel replies and historical branches become independent conversations so all supported paths remain readable. Preview selection and skip/copy duplicate handling protect existing data; files are staged and verified before one atomic metadata commit. Supported pinned formats and remaining real-export/native interaction acceptance are documented in [CHERRY-IMPORT.md](CHERRY-IMPORT.md) and [ISSUE-77-IMPLEMENTATION.md](ISSUE-77-IMPLEMENTATION.md). The remote Issue remains unchanged.
+
+## Built-in color presets #66 (2026-09-29)
+
+七套本地内置方案：晴蓝、纸页、青竹、海盐、鸢尾、蔷薇、琥珀，均包含浅深两组组件、画布及双方气泡颜色。按用户最新要求，顶部恢复跟随系统/浅色/深色/阅读四个并列按钮，下方保留七个配色缩略选项。阅读快捷应用浅色纸页，保留 `reading` ID 及既有浅色主要颜色；退出阅读恢复默认方案，其他状态切换明暗保留方案。
+
+切换方案或“恢复方案配色”只清除颜色微调，保留明暗模式、图片、取景、透明度、连接与聊天状态。单项微调继续即时持久化，重启恢复；全局恢复外观沿用原行为，回到晴蓝并恢复透明度、停用背景且保留图库。不扩展 #71 的命名自定义方案管理。尚未提交、推送或关闭 Issue。
+
+## Local background library #70 (2026-09-29)
+
+用户确认增加独立持久缩略图以降低大图库开销：新导入生成、旧库按需补生成，图库按可见范围加载小图，候选大预览继续原图。缩略图随原图实际清理成对删除，仍被当前背景引用时成对保留。此项不改变原图分辨率，不引入 2K/4K 降采样存储策略。
+
+后续用户确认：在背景库弹窗内提供适配、遮罩、模糊及取景编辑，外观页继续可编辑。弹窗修改仅用于候选预览，最终“应用背景”保存所选图片参数并应用；取消放弃未应用参数。不同图片的临时参数互不覆盖，保存失败可重试。维持完整原图私有副本及独立显示参数的既有保存方式。该调整取代原 #70“不在图库内复制配置表单”的范围限制。
+
+用户本次确认与头像库统一操作语义：图库是收藏，当前背景独立持有图片版本及显示参数。删除只移出图库；替换仅改变库中的图片，当前背景保留旧版本，明确“应用背景”才切换。此规则取代远端 #70 的“删除当前背景后停用”要求。横向纯图片宫格、独立管理模式、多选/全选/批量删除、单选替换取代逐图菜单及“不做批量管理”的旧限制；不再提供命名输入或重命名，文件名用于提示。批量管理不包括批量导入。
+
+外观页“选择背景”打开库弹窗，候选预览不改变真实背景。成功导入保存到库并选为候选，取消弹窗不撤销已保存的导入或管理操作。替换先预览再明确保存，保留适配/遮罩/模糊并重置新图取景，之后可在外观页调整；失败保留原条目。每个库图片保存独立参数，当前背景调整仅更新相同图片版本的库条目，不能污染已替换的新版本。
+
+停用背景保留当前图片和参数，可重新启用。恢复默认外观重置颜色及透明度并停用背景，保留图库与当前图片参数。旧单背景连同全部取景和显示参数兼容入库；缺失或损坏资源保留记录并安全显示基础画布。所有图片仅存在本机私有目录，不上传、不进入聊天请求。用户授权本地实施与验证，未授权提交、推送或修改远端 Issue。
+
+## Local avatar library #69 (2026-09-28)
+
+后续用户修订：头像库改为小间距纯头像宫格，管理模式提供多选批量删除和单图替换；删除确认后整批原子保存，保留已应用的图片。移除名称输入和重命名功能，导入默认采用文件名供悬停与无障碍识别。以上取代此前命名及独立条目菜单的界面约定，远端未修改。
+
+后续界面确认：用户头像与头像库合并为一张卡片，唯一导入入口放在当前头像旁。裁切命名并保存到库后自动选中新图片，仍由「用作用户头像」明确应用；取消导入保留原候选，助手选择器不变。
+
+当前用户确认四项规则：库保存默认裁切，对象独立裁切；替换库图片保留已有对象的旧版本；从库中删除不影响已有头像，保留显示、独立裁切及重启恢复；助手编辑中已保存到库的图片不因取消编辑而删除。删除规则按用户后续要求替代“使用中阻止删除”，删除时原子解除来源关系，已选草稿保存时也可转为独立图片。旧版本仅由使用对象持有，对象更换/移除或删除后释放，不另建历史版本库。既有用户头像一次性兼容迁移，旧助手头像原样保留，不强制入库。
+
+设置 → 头像直接管理共享库，保留当前用户头像、聊天预览及新助手内置默认值。导入与应用分开；助手选择器仅回填草稿，保存助手才生效。支持命名、重命名、替换、从库中删除及恢复默认。图片仅本地使用，不扩展到 #70 背景库、市场、同步或自动生成。上述规则取代远端 Issue 中对应的待确认建议；当前未授权修改远端、提交或推送。验证记录见开发指南。
+
+## Assistant avatars #67 (2026-09-28)
+
+以选图、正方形裁切、重裁和移除替换助手 Emoji 选择器，复用用户头像处理。每个助手独立保存原图、缩略图与取景；裁切先进入编辑草稿，保存助手后生效。侧栏与既有助手消息显示当前头像。内置四种矢量默认头像，可为单个助手选择，也可设置以后新助手的初始默认值；旧 Emoji 兼容显示。图片损坏回退默认，头像不进入会话配置或模型请求。本轮不包含共享头像库；远端 Issue 未修改。
+
+## User avatar #32 / #34 (2026-09-28)
+
+本地实现独立头像设置页、全局用户消息头像、正方形缩放/位置裁切、保留原图重裁、更换及移除。原图/裁切参数/缩略图原子保存于独立本地 IndexedDB，不进入模型请求。按用户最新确认，未设置、移除或无法读取时显示默认人形头像，聊天双方头像尺寸已调整为 40px；用户与助手头像独立且同时显示，助手布局见 #67。
+
+这是 Epic #68 的首个限定范围实现；助手头像见上方 #67，共享头像/背景库留待后续。定向自动验证和内置浏览器验收完成，主观视觉及原生选图/桌面重启验收待用户确认。远端 Issue 未更新或关闭。
+
 ## Goal
 
 Build a fast, local-first desktop chat client with a deliberately small feature set. Ayase Studio is a new implementation, not a Cherry Studio fork.
@@ -47,7 +169,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ## Explicitly out of scope
 
-- Agents, MCP, RAG, knowledge bases, and client-executed tools/search.
+- Agents, arbitrary MCP servers/tools, RAG and knowledge bases. Issue #80 approves only a fixed Exa MCP external search step, without a general client tool runtime or model tool loop.
 - Provider Files API uploads, audio/video attachments, local Office parsing/conversion, and unsent attachment persistence.
 - Saved edit/regeneration versions and arrow navigation (separate Issue #17).
 - Accounts, cloud sync, telemetry, auto-update, plugins, and marketplace features.

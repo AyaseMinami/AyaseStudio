@@ -34,37 +34,44 @@ function ClearConfirmation({ disabled, onClose, onConfirm }: {
 }
 
 export interface ChatHeaderProps {
+  conversationId?: string;
   layout?: ChatLayout;
   onToggleLayout?(): void;
   title: string;
   isHydrated: boolean;
+  isWorkspaceBusy?: boolean;
   isGenerating: boolean;
   onClear(): void;
 }
 
 export function ChatHeader({
+  conversationId,
   layout = "narrow",
   onToggleLayout,
   title,
   isHydrated,
+  isWorkspaceBusy = false,
   isGenerating,
   onClear,
 }: ChatHeaderProps) {
-  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearRequest, setClearRequest] = useState<{ conversationId?: string }>();
+  const confirmingClear = !!clearRequest && clearRequest.conversationId === conversationId;
+  // Identity, rather than title, owns destructive confirmation; the titlebar stays mounted.
+  useEffect(() => { setClearRequest(undefined); }, [conversationId]);
   return (
     <header className="chat-header" aria-label={title} data-tauri-drag-region>
       <div className="chat-header-actions">
         {onToggleLayout && <button className="chat-layout-button" type="button"
-          aria-label={layout === "narrow" ? "展开聊天内容" : "收窄聊天内容"}
-          title={layout === "narrow" ? "展开聊天内容" : "收窄聊天内容"}
+          aria-label={layout === "narrow" ? "切换为宽屏" : "切换为窄屏"}
+          title={layout === "narrow" ? "当前窄屏；切换为宽屏" : "当前宽屏；切换为窄屏"}
           aria-pressed={layout === "wide"} onClick={onToggleLayout}>
-          <MoveHorizontal size={16} />
+          <MoveHorizontal size={16} aria-hidden="true" />
         </button>}
-        <button className="clear-button" onClick={() => setConfirmingClear(true)} disabled={isGenerating || !isHydrated} type="button">清空</button>
+        <button className="clear-button" onClick={() => setClearRequest({ conversationId })} disabled={isGenerating || !isHydrated} data-busy-only={isWorkspaceBusy && !isHydrated && !isGenerating} type="button">清空</button>
         <WindowControls />
       </div>
-      {confirmingClear && <ClearConfirmation disabled={isGenerating || !isHydrated} onClose={() => setConfirmingClear(false)} onConfirm={() => {
-        setConfirmingClear(false);
+      {confirmingClear && <ClearConfirmation disabled={isGenerating || !isHydrated} onClose={() => setClearRequest(undefined)} onConfirm={() => {
+        setClearRequest(undefined);
         onClear();
       }} />}
     </header>

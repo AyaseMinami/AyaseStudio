@@ -1,5 +1,12 @@
 mod background;
+mod drawing;
 mod attachments;
+mod ayase_backup;
+mod cherry_import;
+mod cherry_legacy;
+mod cherry_leveldb;
+mod cherry_sqlite;
+mod cherry_v8;
 #[cfg(desktop)]
 mod instance_lock;
 
@@ -58,6 +65,19 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            drawing::save_drawing_result,
+            drawing::recover_drawing_result,
+            drawing::inspect_drawing_recovery,
+            drawing::discard_drawing_recovery,
+            drawing::resume_drawing_recovery,
+            drawing::read_drawing_result,
+            drawing::read_drawing_thumbnail,
+            drawing::export_drawing_result,
+            drawing::open_drawing_output_directory,
+            drawing::import_drawing_reference,
+            drawing::import_drawing_reference_bytes,
+            drawing::list_drawing_references,
+            drawing::remove_drawing_references,
             background::select_background_image,
             background::resolve_background_image,
             background::cleanup_background_images,
@@ -66,6 +86,16 @@ pub fn run() {
             attachments::verify_sent_attachments,
             attachments::discard_uncommitted_attachments,
             attachments::cleanup_sent_attachments,
+            ayase_backup::select_ayase_backup,
+            ayase_backup::save_ayase_backup,
+            ayase_backup::read_ayase_resource,
+            ayase_backup::write_ayase_resource,
+            ayase_backup::remove_ayase_resources,
+            ayase_backup::assert_ayase_resources_available,
+            ayase_backup::ayase_backup_fence,
+            cherry_import::select_cherry_backup,
+            cherry_import::read_cherry_file,
+            cherry_import::close_cherry_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

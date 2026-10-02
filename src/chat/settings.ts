@@ -1,5 +1,13 @@
-import { getProtocolOption, protocolOptions } from "./protocolOptions";
+import { getProtocolOption, isDrawingProtocol, protocolOptions, type ServiceProtocol } from "./protocolOptions";
 import type { ChatProtocol } from "./types";
+import type { DrawingModelOption, DrawingProtocol } from "../drawing/types";
+import { dataCheck, dataRecord, backupFields, migrateData, type DataMigration } from "../storage/dataContract";
+import { dataPolicies } from "../storage/dataPolicies";
+import { isBrandId, type BrandId, type ProviderAvatarSelection } from "../avatar/brandIds";
+import { providerTemplates, getConnectionTemplate, type ProviderTemplateId } from "./providerPresets";
+export { providerTemplates } from "./providerPresets";
+export type { ProviderTemplateId, ProviderTemplate } from "./providerPresets";
+export type { ServiceProtocol } from "./protocolOptions";
 
 export interface ConfiguredModel {
   id: string;
@@ -10,27 +18,31 @@ export interface ConfiguredModel {
 export interface ConnectionProfile {
   id: string;
   name: string;
-  protocol: ChatProtocol;
+  protocol: ServiceProtocol;
   baseUrl: string;
   apiKey: string;
   models: ConfiguredModel[];
+  presetProtocol?: ServiceProtocol;
 }
 
 export interface ProviderGroup {
   id: string;
   name: string;
   connections: ConnectionProfile[];
+  presetId?: BrandId;
+  avatar?: ProviderAvatarSelection;
 }
 
 export interface ConnectionSettingsState {
   version: 3;
   providers: ProviderGroup[];
   activeModelId: string | null;
+  builtinsInitialized?: true;
 }
 
 export interface ActiveModelTarget {
   provider: ProviderGroup;
-  connection: ConnectionProfile;
+  connection: ConnectionProfile & { protocol: ChatProtocol };
   model: ConfiguredModel;
 }
 
@@ -41,20 +53,6 @@ export interface SettingsStorage {
 
 export type ConnectionField = "name" | "protocol" | "baseUrl" | "apiKey";
 export type ModelField = "modelId" | "displayName";
-export type ProviderTemplateId = "openai" | "gemini" | "anthropic" | "custom";
-
-interface ConnectionTemplate {
-  name: string;
-  protocol: ChatProtocol;
-  baseUrl: string;
-}
-
-export interface ProviderTemplate {
-  id: ProviderTemplateId;
-  label: string;
-  providerName: string;
-  connections: readonly ConnectionTemplate[];
-}
 
 export const connectionSettingsStorageKey =
   "ayase-studio.connection-settings.v3";
@@ -69,57 +67,8 @@ export const emptyConnectionSettings: ConnectionSettingsState = {
   activeModelId: null,
 };
 
-export const providerTemplates: readonly ProviderTemplate[] = [
-  {
-    id: "openai",
-    label: "OpenAI",
-    providerName: "OpenAI",
-    connections: [
-      {
-        name: "OpenAI Chat",
-        protocol: "openai-chat",
-        baseUrl: "https://api.openai.com/v1",
-      },
-      {
-        name: "OpenAI Responses",
-        protocol: "openai-responses",
-        baseUrl: "https://api.openai.com/v1",
-      },
-    ],
-  },
-  {
-    id: "gemini",
-    label: "Gemini",
-    providerName: "Google Gemini",
-    connections: [
-      {
-        name: "Gemini Native",
-        protocol: "gemini-native",
-        baseUrl: "https://generativelanguage.googleapis.com",
-      },
-    ],
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    providerName: "Anthropic",
-    connections: [
-      {
-        name: "Anthropic Native",
-        protocol: "anthropic-native",
-        baseUrl: "https://api.anthropic.com",
-      },
-    ],
-  },
-  {
-    id: "custom",
-    label: "自定义",
-    providerName: "自定义供应商",
-    connections: [],
-  },
-];
 
-const protocolValues = new Set<ChatProtocol>(
+const protocolValues = new Set<ServiceProtocol>(
   protocolOptions.map((option) => option.value),
 );
 
@@ -127,8 +76,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isProtocol(value: unknown): value is ChatProtocol {
-  return typeof value === "string" && protocolValues.has(value as ChatProtocol);
+function isProtocol(value: unknown): value is ServiceProtocol {
+  return typeof value === "string" && protocolValues.has(value as ServiceProtocol);
+}
+
+export function isChatConnection(connection: ConnectionProfile): connection is ConnectionProfile & { protocol: ChatProtocol } {
+  return !isDrawingProtocol(connection.protocol);
 }
 
 function allConnections(state: ConnectionSettingsState): ConnectionProfile[] {
@@ -142,16 +95,17 @@ function allModels(state: ConnectionSettingsState): ConfiguredModel[] {
 function repairActiveModel(
   providers: ProviderGroup[],
   requestedId: string | null,
+  original?: ConnectionSettingsState,
 ): ConnectionSettingsState {
   const activeModelId = providers.some((provider) =>
     provider.connections.some((connection) =>
-      connection.models.some((model) => model.id === requestedId),
+      isChatConnection(connection) && connection.models.some((model) => model.id === requestedId),
     ),
   )
     ? requestedId
     : null;
 
-  return { version: 3, providers, activeModelId };
+  return { ...original, version: 3, providers, activeModelId };
 }
 
 export function getConnection(
@@ -169,6 +123,7 @@ export function getActiveTarget(
   }
   for (const provider of state.providers) {
     for (const connection of provider.connections) {
+      if (!isChatConnection(connection)) continue;
       const model = connection.models.find(
         (candidate) => candidate.id === state.activeModelId,
       );
@@ -188,8 +143,32 @@ export function getActiveProvider(
 
 export function getActiveConnection(
   state: ConnectionSettingsState,
-): ConnectionProfile | undefined {
+): ActiveModelTarget["connection"] | undefined {
   return getActiveTarget(state)?.connection;
+}
+
+export function getDrawingTarget(state: ConnectionSettingsState, configuredModelId: string | null): {
+  provider: ProviderGroup;
+  connection: ConnectionProfile & { protocol: DrawingProtocol };
+  model: ConfiguredModel;
+} | undefined {
+  if (!configuredModelId) return undefined;
+  for (const provider of state.providers) {
+    for (const connection of provider.connections) {
+      if (!isDrawingProtocol(connection.protocol)) continue;
+      const model = connection.models.find((candidate) => candidate.id === configuredModelId);
+      if (model) return { provider, connection: { ...connection, protocol: connection.protocol }, model };
+    }
+  }
+  return undefined;
+}
+
+export function getDrawingModels(state: ConnectionSettingsState): DrawingModelOption[] {
+  return state.providers.flatMap((provider) => provider.connections
+    .filter((connection): connection is ConnectionProfile & { protocol: DrawingProtocol } => isDrawingProtocol(connection.protocol))
+    .flatMap((connection) => connection.models.map((model) => ({
+      id: model.id, label: `${provider.name} / ${connection.name} / ${model.displayName || model.modelId}`, protocol: connection.protocol,
+    }))));
 }
 
 export function getActiveModel(
@@ -266,6 +245,7 @@ function sanitizeConnection(
     baseUrl,
     apiKey,
     models: sanitizedModels,
+    ...(value.presetProtocol !== undefined ? { presetProtocol: value.presetProtocol as ServiceProtocol } : {}),
   };
 }
 
@@ -308,6 +288,8 @@ function sanitizeProviders(value: unknown): ProviderGroup[] | undefined {
       id,
       name: name.trim(),
       connections: sanitizedConnections,
+      ...(candidate.presetId !== undefined ? { presetId: candidate.presetId as BrandId } : {}),
+      ...(candidate.avatar !== undefined ? { avatar: structuredClone(candidate.avatar) as ProviderAvatarSelection } : {}),
     });
   }
   return providers;
@@ -323,7 +305,7 @@ function parseVersionThree(value: unknown): ConnectionSettingsState | undefined 
   }
   const requestedId =
     typeof value.activeModelId === "string" ? value.activeModelId : null;
-  return repairActiveModel(providers, requestedId);
+  return { ...repairActiveModel(providers, requestedId), ...(value.builtinsInitialized === true ? { builtinsInitialized: true as const } : {}) };
 }
 
 interface PreviousConnectionProfile {
@@ -346,7 +328,7 @@ function parsePreviousConnection(
     typeof id !== "string" ||
     !id.trim() ||
     connectionIds.has(id) ||
-    !isProtocol(protocol) ||
+    !isProtocol(protocol) || isDrawingProtocol(protocol) ||
     typeof baseUrl !== "string" ||
     typeof apiKey !== "string" ||
     typeof model !== "string"
@@ -446,11 +428,18 @@ function parseLegacyProfile(value: unknown): LegacyProviderProfile | undefined {
 }
 
 function migrateLegacy(value: unknown): ConnectionSettingsState {
-  if (!isRecord(value)) {
-    return emptyConnectionSettings;
+  if (value === undefined) return structuredClone(emptyConnectionSettings);
+  dataRecord(value);
+  dataCheck(Object.keys(value).every(key => ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"].includes(key)),
+    "旧连接配置包含不支持的协议；原数据未被修改，请升级应用。");
+  for (const profile of Object.values(value)) {
+    dataRecord(profile);
+    dataCheck(Object.keys(profile).every(key => ["baseUrl", "apiKey", "model"].includes(key))
+      && ["baseUrl", "apiKey", "model"].every(key => typeof profile[key] === "string"),
+    "旧连接配置结构无法安全迁移；原数据未被修改。");
   }
 
-  const connections = protocolOptions.flatMap(({ value: protocol, label }) => {
+  const connections = protocolOptions.filter((option) => !isDrawingProtocol(option.value)).flatMap(({ value: protocol, label }) => {
     const profile = parseLegacyProfile(value[protocol]);
     if (!profile) {
       return [];
@@ -470,7 +459,7 @@ function migrateLegacy(value: unknown): ConnectionSettingsState {
     ];
   });
   if (connections.length === 0) {
-    return emptyConnectionSettings;
+    return structuredClone(emptyConnectionSettings);
   }
   const firstModelId = connections.flatMap((connection) => connection.models)[0]?.id;
   return {
@@ -490,35 +479,93 @@ function parseStoredJson(storage: SettingsStorage, key: string): unknown {
   try {
     return JSON.parse(serialized) as unknown;
   } catch {
-    return undefined;
+    throw new Error("连接配置已损坏；原数据未被修改，请修复后重试。");
   }
 }
 
 export function loadConnectionSettings(
   storage: SettingsStorage = localStorage,
 ): ConnectionSettingsState {
-  const current = parseVersionThree(
-    parseStoredJson(storage, connectionSettingsStorageKey),
-  );
-  if (current) {
-    return current;
-  }
-  const previous = migrateVersionTwo(
-    parseStoredJson(storage, previousConnectionSettingsStorageKey),
-  );
-  if (previous) {
-    return previous;
-  }
+  const current = parseStoredJson(storage, connectionSettingsStorageKey);
+  if (current !== undefined) return readConnectionSettingsData(current);
+  const previous = parseStoredJson(storage, previousConnectionSettingsStorageKey);
+  if (previous !== undefined) return readConnectionSettingsData(previous);
   return migrateLegacy(
     parseStoredJson(storage, legacyProviderProfilesStorageKey),
   );
+}
+
+export const connectionDataMigration: DataMigration = {
+  version: 3, oldestVersion: 2,
+  migrations: { 2: value => {
+    assertConnectionStructure(value, 2);
+    const migrated = migrateVersionTwo(value);
+    dataCheck(migrated, "连接配置迁移失败；原数据未被修改。");
+    return migrated as unknown as Record<string, unknown>;
+  } },
+};
+
+export function readConnectionSettingsData(raw: unknown): ConnectionSettingsState {
+  const value = migrateData(raw, connectionDataMigration);
+  assertConnectionStructure(value, 3);
+  const parsed = parseVersionThree(value);
+  dataCheck(parsed, "连接配置结构不受支持；原数据未被修改。");
+  return parsed;
+}
+
+function assertConnectionStructure(raw: unknown, version: 2 | 3): void {
+  function record(value: unknown, allowed: string[], required = allowed): asserts value is Record<string, any> {
+    dataRecord(value);
+    dataCheck(Object.keys(value).every(key => allowed.includes(key)) && required.every(key => key in value),
+      "连接配置含不支持的字段或结构；原数据未被修改，请升级应用或修复数据。");
+  }
+  record(raw, version === 3 ? backupFields(dataPolicies.connections) : ["version", "providers", "activeConnectionId"], ["version", "providers"]);
+  if (version === 3) dataCheck(raw.builtinsInitialized === undefined || raw.builtinsInitialized === true);
+  dataCheck(Array.isArray(raw.providers));
+  const ids = new Set<string>();
+  function unique(value: unknown) {
+    dataCheck(typeof value === "string" && value.trim().length > 0 && !ids.has(value)); ids.add(value);
+  }
+  for (const provider of raw.providers) {
+    record(provider, version === 3 ? backupFields(dataPolicies.provider) : ["id", "name", "connections"], ["id", "name", "connections"]); unique(provider.id);
+    if (version === 3) {
+      dataCheck(provider.presetId === undefined || isBrandId(provider.presetId));
+      if (provider.avatar !== undefined) {
+        record(provider.avatar, ["kind", "id"]);
+        dataCheck(provider.avatar.kind === "builtin" ? isBrandId(provider.avatar.id)
+          : provider.avatar.kind === "image" && typeof provider.avatar.id === "string" && !!provider.avatar.id.trim());
+      }
+    }
+    dataCheck(typeof provider.name === "string" && provider.name.trim() && Array.isArray(provider.connections));
+    for (const connection of provider.connections) {
+      record(connection, version === 3 ? backupFields(dataPolicies.connection, true) : ["id", "protocol", "baseUrl", "apiKey", "model"], version === 3 ? ["id", "name", "protocol", "baseUrl", "apiKey", "models"] : ["id", "protocol", "baseUrl", "apiKey", "model"]);
+      if (version === 3) dataCheck(connection.presetProtocol === undefined || !!getConnectionTemplate(provider.presetId, connection.presetProtocol), "内置连接身份无效，原数据未被修改。");
+      unique(connection.id);
+      dataCheck(isProtocol(connection.protocol) && (version === 3 || !isDrawingProtocol(connection.protocol)),
+        "连接协议不受支持；原数据未被修改，请升级应用。");
+      dataCheck(typeof connection.baseUrl === "string" && typeof connection.apiKey === "string");
+      if (version === 2) { dataCheck(typeof connection.model === "string"); continue; }
+      dataCheck(typeof connection.name === "string" && connection.name.trim() && Array.isArray(connection.models));
+      const actualIds = new Set<string>();
+      for (const model of connection.models) {
+        record(model, backupFields(dataPolicies.model), ["id", "modelId"]); unique(model.id);
+        dataCheck(typeof model.modelId === "string" && model.modelId.trim() && !actualIds.has(model.modelId.trim()));
+        actualIds.add(model.modelId.trim());
+        dataCheck(model.displayName === undefined || typeof model.displayName === "string");
+      }
+    }
+  }
+  dataCheck(version === 3 ? raw.activeModelId === undefined || raw.activeModelId === null || typeof raw.activeModelId === "string"
+    : raw.activeConnectionId === undefined || raw.activeConnectionId === null || typeof raw.activeConnectionId === "string");
 }
 
 export function saveConnectionSettings(
   state: ConnectionSettingsState,
   storage: SettingsStorage = localStorage,
 ): void {
-  storage.setItem(connectionSettingsStorageKey, JSON.stringify(state));
+  // Strictly preflight both the original durable record and the replacement.
+  loadConnectionSettings(storage);
+  storage.setItem(connectionSettingsStorageKey, JSON.stringify(readConnectionSettingsData(state)));
 }
 
 export function createProviderFromTemplate(
@@ -526,8 +573,9 @@ export function createProviderFromTemplate(
   templateId: ProviderTemplateId,
   options: {
     providerId: string;
-    connectionIds?: Partial<Record<ChatProtocol, string>>;
+    connectionIds?: Partial<Record<ServiceProtocol, string>>;
     name?: string;
+    prepend?: boolean;
   },
 ): ConnectionSettingsState {
   const template = providerTemplates.find((candidate) => candidate.id === templateId);
@@ -558,13 +606,52 @@ export function createProviderFromTemplate(
       baseUrl: connectionTemplate.baseUrl,
       apiKey: "",
       models: [],
+      ...(templateId !== "custom" ? { presetProtocol: connectionTemplate.protocol } : {}),
     });
   }
 
-  return {
-    ...state,
-    providers: [...state.providers, { id: options.providerId, name, connections }],
-  };
+  const provider: ProviderGroup = { id: options.providerId, name, connections, ...(templateId !== "custom" ? { presetId: templateId } : {}) };
+  return { ...state, providers: options.prepend ? [provider, ...state.providers] : [...state.providers, provider] };
+}
+
+/** Explicit application initialization, never run by backup readers or migrations. */
+export function initializeProviderPresets(state: ConnectionSettingsState): ConnectionSettingsState {
+  if (state.builtinsInitialized) return state;
+  let next = readConnectionSettingsData(state);
+  const used = new Set(next.providers.flatMap(p => [p.id, ...p.connections.flatMap(c => [c.id, ...c.models.map(m => m.id)])]));
+  function allocate(base: string) {
+    let id = base, suffix = 1;
+    while (used.has(id)) id = `${base}:${suffix++}`;
+    used.add(id); return id;
+  }
+  for (const template of providerTemplates.filter(p => p.id !== "custom")) {
+    if (next.providers.some(p => p.presetId === template.id)) continue;
+    next = createProviderFromTemplate(next, template.id, {
+      providerId: allocate(`builtin:provider:${template.id}`),
+      connectionIds: Object.fromEntries(template.connections.map(c => [c.protocol, allocate(`builtin:connection:${template.id}:${c.protocol}`)])),
+    });
+  }
+  return { ...next, builtinsInitialized: true };
+}
+
+export function setProviderAvatar(state: ConnectionSettingsState, providerId: string, avatar: ProviderAvatarSelection | undefined): ConnectionSettingsState {
+  const next = { ...state, providers: state.providers.map(p => {
+    if (p.id !== providerId) return p;
+    const { avatar: _old, ...provider } = p;
+    return { ...provider, ...(avatar ? { avatar } : {}) };
+  }) };
+  return readConnectionSettingsData(next);
+}
+
+export function resetPresetConnection(state: ConnectionSettingsState, connectionId: string): ConnectionSettingsState {
+  let changed = false;
+  const providers = state.providers.map(p => ({ ...p, connections: p.connections.map(c => {
+    if (c.id !== connectionId) return c;
+    const defaults = getConnectionTemplate(p.presetId, c.presetProtocol);
+    if (!defaults) return c;
+    changed = true; return { ...c, name: defaults.name, protocol: defaults.protocol, baseUrl: defaults.baseUrl };
+  }) }));
+  return changed ? repairActiveModel(providers, state.activeModelId, state) : state;
 }
 
 export function renameProvider(
@@ -594,7 +681,7 @@ export function deleteProvider(
   const providers = state.providers.filter((provider) => provider.id !== providerId);
   return providers.length === state.providers.length
     ? state
-    : repairActiveModel(providers, state.activeModelId);
+    : repairActiveModel(providers, state.activeModelId, state);
 }
 
 export function moveProvider(
@@ -611,13 +698,33 @@ export function moveProvider(
   return providers.every((item, index) => item === state.providers[index]) ? state : { ...state, providers };
 }
 
+export function moveConnection(
+  state: ConnectionSettingsState,
+  connectionId: string,
+  targetId: string,
+  placement: "before" | "after",
+): ConnectionSettingsState {
+  if (connectionId === targetId) return state;
+  const provider = state.providers.find((item) => item.connections.some((connection) => connection.id === connectionId));
+  const connection = provider?.connections.find((item) => item.id === connectionId);
+  if (!provider || !connection || !provider.connections.some((item) => item.id === targetId)) return state;
+  const connections = provider.connections.filter((item) => item.id !== connectionId);
+  const targetIndex = connections.findIndex((item) => item.id === targetId);
+  connections.splice(targetIndex + (placement === "after" ? 1 : 0), 0, connection);
+  if (connections.every((item, index) => item === provider.connections[index])) return state;
+  return {
+    ...state,
+    providers: state.providers.map((item) => item === provider ? { ...provider, connections } : item),
+  };
+}
+
 export function addConnection(
   state: ConnectionSettingsState,
   providerId: string,
   connection: {
     id: string;
     name: string;
-    protocol: ChatProtocol;
+    protocol: ServiceProtocol;
     copyFromConnectionId?: string;
   },
 ): ConnectionSettingsState {
@@ -682,7 +789,8 @@ export function updateConnection(
       return { ...connection, [field]: normalizedValue };
     }),
   }));
-  return changed ? { ...state, providers } : state;
+  if (!changed) return state;
+  return field === "protocol" ? repairActiveModel(providers, state.activeModelId, state) : { ...state, providers };
 }
 
 export function deleteConnection(
@@ -701,7 +809,7 @@ export function deleteConnection(
     return { ...provider, connections };
   });
   return changed
-    ? repairActiveModel(providers, state.activeModelId)
+    ? repairActiveModel(providers, state.activeModelId, state)
     : state;
 }
 
@@ -819,14 +927,14 @@ export function deleteModel(
       return { ...connection, models };
     }),
   }));
-  return changed ? repairActiveModel(providers, state.activeModelId) : state;
+  return changed ? repairActiveModel(providers, state.activeModelId, state) : state;
 }
 
 export function selectModel(
   state: ConnectionSettingsState,
   configuredModelId: string,
 ): ConnectionSettingsState {
-  return allModels(state).some((model) => model.id === configuredModelId)
+  return allConnections(state).filter(isChatConnection).some((connection) => connection.models.some((model) => model.id === configuredModelId))
     ? { ...state, activeModelId: configuredModelId }
     : state;
 }

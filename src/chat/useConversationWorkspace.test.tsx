@@ -24,6 +24,82 @@ describe("workspace failure recovery", () => {
     await act(async () => root.render(<Probe />)); await wait(() => current.isReady);
   }
 
+  it.each([false, true])("distinguishes the first transcript read from later busy guards (readFails=%s)", async readFails => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const repo = createChatRepository(`BusyPresentation-${crypto.randomUUID()}`);
+    const load = repo.load.bind(repo);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(repo, "load").mockImplementationOnce(async id => {
+      await gate;
+      if (readFails) throw new Error("synthetic initial read failure");
+      return load(id);
+    });
+    function Probe() { current = useConversationWorkspace(repo, null, [], () => false); return null; }
+    container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+    try {
+      await act(async () => root.render(<Probe />));
+      await wait(() => !!current.snapshot);
+      expect(current.busy).toBe(true);
+      expect(current.isReady).toBe(false);
+      expect(current.isTemporarilyBusy).toBe(false);
+      expect(current.canSend()).toBe(false);
+    } finally { await act(async () => release()); }
+    await wait(() => !current.busy);
+    expect(current.isTemporarilyBusy).toBe(false);
+    if (readFails) {
+      expect(current.loadError).toContain("无法读取本地工作区");
+      await act(async () => current.retry());
+    }
+    await wait(() => current.isReady);
+    const execute = repo.execute.bind(repo);
+    let finish!: () => void;
+    const operation = new Promise<void>(resolve => { finish = resolve; });
+    vi.spyOn(repo, "execute").mockImplementationOnce(async command => { await operation; return execute(command); });
+    let result!: Promise<boolean>;
+    try {
+      await act(async () => { result = current.execute({ type: "create-conversation", id: "next", assistantId: "default" }); });
+      expect(current.busy).toBe(true);
+      expect(current.isTemporarilyBusy).toBe(true);
+      expect(current.isReady).toBe(false);
+      expect(current.canSend()).toBe(false);
+    } finally { await act(async () => { finish(); await result; }); }
+    await wait(() => current.isReady);
+    expect(current.isTemporarilyBusy).toBe(false);
+  });
+
+  it("isolates history, edits, original drafts and delayed send consumption by conversation", async () => {
+    const repo = createChatRepository(`History-${crypto.randomUUID()}`);
+    await repo.initializeWorkspace(null, []);
+    await repo.save({ id: "current", updatedAt: 1, messages: [{ id: "a", role: "user", content: "A history", status: "complete" }] });
+    await repo.execute({ type: "create-conversation", id: "b", assistantId: "default" });
+    await repo.save({ id: "b", updatedAt: 1, messages: [{ id: "b", role: "user", content: "B history", status: "complete" }] });
+    await repo.execute({ type: "select", assistantId: "default", conversationId: "current" });
+    await mount(repo);
+    await act(async () => current.setDraft("A unsent"));
+    await act(async () => { expect(current.browseHistory(-1, { start: 2, end: 2 })).toBe(true); });
+    await act(async () => current.setDraft("A edited"));
+    const a = current;
+    await act(async () => { await current.execute({ type: "select", assistantId: "default", conversationId: "b" }); });
+    await act(async () => current.setDraft("B unsent"));
+    await act(async () => { current.browseHistory(-1, { start: 0, end: 0 }); });
+    expect(current.view.draft).toBe("B history");
+    await act(async () => a.clearDraftIfUnchanged(a.view.draftRevision));
+    expect(current.view.draft).toBe("B history");
+    await act(async () => { await current.execute({ type: "select", assistantId: "default", conversationId: "current" }); });
+    expect(current.view.draft).toBe("A unsent");
+    expect(current.view.draftSelection).toEqual({ start: 2, end: 2 });
+    await act(async () => { await current.execute({ type: "select", assistantId: "default", conversationId: "b" }); });
+    expect(current.view.draft).toBe("B history");
+    await act(async () => { current.browseHistory(1, { start: 9, end: 9 }); });
+    expect(current.view.draft).toBe("B unsent");
+    expect((await repo.load("current"))?.messages[0].content).toBe("A history");
+    await act(async () => root.unmount()); container.remove();
+    await mount(repo);
+    expect(current.view.draft).toBe("");
+    expect(current.view.inputHistory).toBeUndefined();
+  });
+
   it("does not repeat a committed create when loading its new transcript fails", async () => {
     const repo = createChatRepository(`Recovery-${crypto.randomUUID()}`); await mount(repo);
     vi.spyOn(repo, "load").mockRejectedValueOnce(new Error("temporary read failure"));
@@ -64,7 +140,13 @@ describe("workspace failure recovery", () => {
     ] });
     await mount(repo);
     await act(async () => current.setDraft("unsent"));
-    vi.spyOn(repo, "load").mockRejectedValueOnce(new Error("read failed"));
+    const execute = repo.execute.bind(repo);
+    vi.spyOn(repo, "execute").mockImplementationOnce(async command => {
+      const committed = await execute(command);
+      // Fail the post-commit reload, after the command's validated read succeeds.
+      vi.spyOn(repo, "load").mockRejectedValueOnce(new Error("read failed"));
+      return committed;
+    });
     await act(async () => { expect(await current.execute({ type: "edit-message", conversationId: "current", messageId: "u", content: "edited" })).toBe(true); });
     expect(current.canSend()).toBe(false);
     expect(current.loadError).toContain("操作已保存");

@@ -1,0 +1,12 @@
+{
+  "identifier": "io.github.ayaseminami.ayasestudio.drawing94probe",
+  "build": {
+    "beforeDevCommand": "",
+    "devUrl": "http://127.0.0.1:1495/scripts/drawing94/probe.html?autorun=1"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1495; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+    }
+  }
+}

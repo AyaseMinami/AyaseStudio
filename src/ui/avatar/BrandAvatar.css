@@ -1,0 +1,7 @@
+.assistant-avatar.brand-avatar { background: transparent; }
+.brand-avatar img { box-sizing: border-box; padding: 7.8125%; object-fit: contain; }
+:root[data-theme="dark"] .brand-avatar[data-brand="openai"] img,
+:root[data-theme="dark"] .brand-avatar[data-brand="anthropic"] img,
+:root[data-theme="dark"] .brand-avatar[data-brand="xai"] img,
+:root[data-theme="light"] .brand-avatar[data-brand="zhipu"] img,
+:root[data-theme="light"] .brand-avatar[data-brand="moonshot"] img { filter: invert(1); }

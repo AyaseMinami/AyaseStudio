@@ -141,4 +141,91 @@ describe("assistant and conversation repository", () => {
     expect(moved.assistants.map((item) => item.id)).toEqual(["writer", "default"]);
     await expect(repo.execute({ type: "select", assistantId: "writer", conversationId: "current" })).rejects.toThrow("不属于");
   });
+
+  it("keeps manual conversation order across activity/reload, isolates assistants and puts new conversations first", async () => {
+    const databaseName = name(), repo = createChatRepository(databaseName);
+    await repo.initializeWorkspace(null, []);
+    await repo.execute({ type: "create-assistant", id: "writer", input: input() });
+    for (const id of ["a", "b", "c"]) await repo.execute({ type: "create-conversation", id, assistantId: "writer" });
+    // Deterministic legacy recency, independent of test execution speed.
+    for (const [id, updatedAt] of [["a", 10], ["b", 20], ["c", 30]] as const) await repo.save({ id, updatedAt, messages: [] });
+    await repo.execute({ type: "select", assistantId: "default", conversationId: "current" });
+    const before = await repo.initializeWorkspace(null, []);
+    const moved = await repo.execute({ type: "reorder-conversation", id: "a", targetId: "c", placement: "before" });
+    expect(moved.conversations.filter(c => c.assistantId === "writer").map(c => c.id)).toEqual(["a", "c", "b"]);
+    expect(moved.selection).toEqual(before.selection);
+    expect(moved.assistants).toEqual(before.assistants);
+    expect(moved.conversations.find(c => c.id === "current")).toEqual(before.conversations.find(c => c.id === "current"));
+    await repo.save({ id: "b", updatedAt: 100, messages: [{ id: "u", role: "user", content: "Keep", status: "complete" }] });
+    await repo.execute({ type: "rename-conversation", id: "b", title: "renamed" });
+    const restored = await createChatRepository(databaseName).initializeWorkspace(null, []);
+    expect(restored.conversations.filter(c => c.assistantId === "writer").map(c => c.id)).toEqual(["a", "c", "b"]);
+    await expect(repo.execute({ type: "reorder-conversation", id: "a", targetId: "current", placement: "after" })).rejects.toThrow("同一助手");
+    expect(await repo.initializeWorkspace(null, [])).toEqual(restored);
+    const added = await repo.execute({ type: "create-conversation", id: "new", assistantId: "writer" });
+    expect(added.conversations.filter(c => c.assistantId === "writer").map(c => c.id)).toEqual(["new", "a", "c", "b"]);
+    const down = await repo.execute({ type: "move-conversation", id: "a", direction: 1 });
+    expect(down.conversations.filter(c => c.assistantId === "writer").map(c => c.id)).toEqual(["new", "c", "a", "b"]);
+    expect(await repo.load("b")).toMatchObject({ messages: [{ content: "Keep" }], updatedAt: 100 });
+  });
+
+  it("does not freeze legacy order on no-op drops, singleton and menu boundaries", async () => {
+    const repo = createChatRepository(name());
+    const initial = await repo.initializeWorkspace(null, []);
+    expect(await repo.execute({ type: "move-conversation", id: "current", direction: -1 })).toEqual(initial);
+    expect(await repo.execute({ type: "reorder-conversation", id: "current", targetId: "current", placement: "after" })).toEqual(initial);
+    await repo.execute({ type: "create-conversation", id: "a", assistantId: "default" });
+    await repo.save({ id: "current", updatedAt: 10, messages: [] });
+    await repo.save({ id: "a", updatedAt: 20, messages: [] });
+    const before = await repo.initializeWorkspace(null, []);
+    expect(await repo.execute({ type: "reorder-conversation", id: "a", targetId: "current", placement: "before" })).toEqual(before);
+    await repo.save({ id: "current", updatedAt: 30, messages: [] });
+    expect((await repo.initializeWorkspace(null, [])).conversations.map(c => c.id)).toEqual(["current", "a"]);
+    await expect(repo.execute({ type: "reorder-conversation", id: "a", targetId: "gone", placement: "after" })).rejects.toThrow("不存在");
+  });
+
+  it("places branches first and rolls rank normalization back when creation fails", async () => {
+    const databaseName = name(), repo = createChatRepository(databaseName);
+    await repo.initializeWorkspace(null, []);
+    await repo.execute({ type: "create-conversation", id: "a", assistantId: "default" });
+    await repo.save({ id: "current", updatedAt: 10, messages: [{ id: "u", role: "user", content: "Branch source", status: "complete" }] });
+    await repo.save({ id: "a", updatedAt: 20, messages: [] });
+    await repo.execute({ type: "reorder-conversation", id: "current", targetId: "a", placement: "before" });
+    const raw = new Dexie(databaseName); await raw.open();
+    const before = await raw.table("conversations").toArray();
+    const selection = await raw.table("workspace").get("selection");
+    await raw.table("chats").put({ id: "collision", updatedAt: 0, messages: [] });
+    await expect(repo.execute({ type: "create-conversation", id: "collision", assistantId: "default" })).rejects.toThrow();
+    expect(await raw.table("conversations").toArray()).toEqual(before);
+    expect(await raw.table("workspace").get("selection")).toEqual(selection);
+    const forked = await repo.execute({ type: "fork-conversation", id: "branch", conversationId: "current", messageId: "u",
+      creationConfig: { modelId: null, config: defaultSessionConfig() } });
+    expect(forked.conversations.map(c => c.id)).toEqual(["branch", "current", "a"]);
+    expect(forked.conversations.map(c => c.sortOrder)).toEqual([0, 1, 2]);
+    expect(await repo.load("branch")).toMatchObject({ messages: [{ content: "Branch source" }] });
+    raw.close();
+  });
+
+  it("inserts assistants at any position without navigation, and appends transferred chats to a manually ordered destination", async () => {
+    const repo = createChatRepository(name());
+    await repo.initializeWorkspace(null, []);
+    for (const id of ["writer", "reader"]) await repo.execute({ type: "create-assistant", id, input: input() });
+    await repo.execute({ type: "create-conversation", id: "a", assistantId: "default" });
+    await repo.execute({ type: "create-conversation", id: "b", assistantId: "writer" });
+    await repo.execute({ type: "create-conversation", id: "c", assistantId: "writer" });
+    await repo.save({ id: "current", updatedAt: 10, messages: [] });
+    await repo.save({ id: "a", updatedAt: 20, messages: [] });
+    await repo.save({ id: "b", updatedAt: 10, messages: [] });
+    await repo.save({ id: "c", updatedAt: 20, messages: [] });
+    await repo.execute({ type: "reorder-conversation", id: "current", targetId: "a", placement: "before" });
+    await repo.execute({ type: "reorder-conversation", id: "b", targetId: "c", placement: "before" });
+    const before = await repo.initializeWorkspace(null, []);
+    const moved = await repo.execute({ type: "reorder-assistant", id: "reader", targetId: "default", placement: "before" });
+    expect(moved.assistants.map(a => a.id)).toEqual(["reader", "default", "writer"]);
+    expect(moved.selection).toEqual(before.selection);
+    expect(moved.conversations).toEqual(before.conversations);
+    const transferred = await repo.execute({ type: "delete-assistant", id: "writer", mode: "move" });
+    expect(transferred.conversations.filter(c => c.assistantId === "default").map(c => c.id)).toEqual(["current", "a", "b", "c"]);
+    expect((await repo.initializeWorkspace(null, [])).conversations).toEqual(transferred.conversations);
+  });
 });

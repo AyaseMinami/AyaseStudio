@@ -18,6 +18,7 @@ it("opens one combined feedback draft only on click and copies only explicit pub
     await act(async () => root.render(<AboutSettings />));
     expect(openExternal).not.toHaveBeenCalled();
     expect(writeText).not.toHaveBeenCalled();
+    expect(host.querySelector('.about-alpha')?.textContent).toBe("Beta");
     const links = [...host.querySelectorAll<HTMLAnchorElement>(".about-feedback-link")];
     expect(links).toHaveLength(1);
     const bug = new URL(links[0].href);
@@ -30,7 +31,7 @@ it("opens one combined feedback draft only on click and copies only explicit pub
     expect(writeText).toHaveBeenLastCalledWith("ayasechikage@gmail.com");
     expect(host.querySelector('[role="status"]')?.textContent).toBe("已复制邮箱地址");
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="复制版本信息"]')!.click());
-    expect(writeText).toHaveBeenLastCalledWith(`Ayase Studio ${version} (Alpha)`);
+    expect(writeText).toHaveBeenLastCalledWith(`Ayase Studio ${version} (Beta)`);
     expect(host.querySelector('.about-version [role="status"]')?.textContent).toBe("已复制版本信息");
     expect(host.querySelector('.about-footer [role="status"]')).toBeNull();
     writeText.mockRejectedValueOnce(new Error("clipboard unavailable"));

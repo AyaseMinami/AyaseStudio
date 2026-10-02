@@ -39,5 +39,12 @@ export function useAppearance() {
     cancelBackgroundFocus: () => controller.cancelBackgroundFocus(),
     removeBackground: () => controller.removeBackground(),
     resetCustomAppearance: () => controller.resetCustomAppearance(),
+    prepareLibraryBackground: controller.prepareLibraryBackground,
+    saveLibraryBackground: controller.saveLibraryBackground,
+    discardLibraryBackground: controller.discardLibraryBackground,
+    resolveLibraryBackground: controller.resolveLibraryBackground,
+    applyLibraryBackground: controller.applyLibraryBackground,
+    removeLibraryBackgrounds: controller.removeLibraryBackgrounds,
+    restoreBackground: controller.restoreBackground,
   };
 }

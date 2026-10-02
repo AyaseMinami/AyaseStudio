@@ -1,9 +1,24 @@
 import { focusFromLegacyCrop, normalizeBackgroundFocus, type BackgroundFocus } from "./backgroundFocus";
+import { getColorPresetPalette, isColorPreset, type ColorPreset } from "./colorPresets";
+import { backupFields, dataCheck, dataRecord, DataContractError } from "../storage/dataContract";
+import { dataPolicies } from "../storage/dataPolicies";
+export type { ColorPreset } from "./colorPresets";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<ThemeMode, "system">;
 export type BackgroundFit = "cover" | "contain";
-export type ColorPreset = "default" | "reading";
+
+export interface BackgroundLibraryEntry {
+  id: string;
+  name: string;
+  reference: string;
+  focus: BackgroundFocus | null;
+  fit: BackgroundFit;
+  mask: number;
+  blur: number;
+}
+
+export type BackgroundLibraryEdit = Pick<BackgroundLibraryEntry, "reference" | "focus" | "fit" | "mask" | "blur">;
 
 export interface AppearancePreferences {
   colorPreset: ColorPreset;
@@ -23,6 +38,9 @@ export interface AppearancePreferences {
   backgroundFit: BackgroundFit;
   backgroundMask: number;
   backgroundBlur: number;
+  backgroundLibrary: BackgroundLibraryEntry[];
+  backgroundEnabled: boolean;
+  backgroundName: string | null;
 }
 
 export interface AppearanceStorage {
@@ -48,6 +66,7 @@ export interface SystemThemeSource {
 export interface BackgroundResource {
   reference: string;
   url: string;
+  name?: string;
 }
 
 export interface BackgroundDraft extends BackgroundResource {
@@ -56,7 +75,7 @@ export interface BackgroundDraft extends BackgroundResource {
 
 export interface BackgroundResourceStore {
   selectAndImport(): Promise<BackgroundResource | null>;
-  resolve(reference: string): Promise<BackgroundResource>;
+  resolve(reference: string, options?: { thumbnail?: boolean; refresh?: boolean }): Promise<BackgroundResource>;
   cleanup(retainedReferences: readonly string[]): Promise<void>;
 }
 
@@ -106,6 +125,13 @@ export interface AppearanceController {
   cancelBackgroundFocus(): Promise<void>;
   removeBackground(): Promise<void>;
   resetCustomAppearance(): Promise<void>;
+  prepareLibraryBackground(): Promise<BackgroundResource | null>;
+  saveLibraryBackground(resource: BackgroundResource, replaceId?: string): Promise<BackgroundLibraryEntry>;
+  discardLibraryBackground(reference: string): Promise<void>;
+  resolveLibraryBackground(reference: string, options?: { thumbnail?: boolean; refresh?: boolean }): Promise<BackgroundResource>;
+  applyLibraryBackground(id: string, edit?: BackgroundLibraryEdit): Promise<void>;
+  removeLibraryBackgrounds(ids: string[]): Promise<void>;
+  restoreBackground(): Promise<void>;
   destroy(): void;
 }
 
@@ -128,6 +154,9 @@ export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   backgroundFit: "cover",
   backgroundMask: 65,
   backgroundBlur: 0,
+  backgroundLibrary: [],
+  backgroundEnabled: true,
+  backgroundName: null,
 };
 
 function normalizeHexColor(value: unknown): string | null {
@@ -184,7 +213,7 @@ export function loadAppearancePreferences(
       : transparencyInRange(stored.unifiedTransparency, defaultAppearancePreferences.unifiedTransparency);
 
     return {
-      colorPreset: stored.colorPreset === "reading" ? "reading" : "default",
+      colorPreset: isColorPreset(stored.colorPreset) ? stored.colorPreset : "default",
       themeMode:
         stored.themeMode === "light" ||
         stored.themeMode === "dark" ||
@@ -221,16 +250,96 @@ export function loadAppearancePreferences(
         32,
         defaultAppearancePreferences.backgroundBlur,
       ),
+      backgroundEnabled: stored.backgroundEnabled !== false,
+      backgroundName: typeof stored.backgroundName === "string" ? stored.backgroundName.slice(0, 100) : null,
+      backgroundLibrary: normalizeBackgroundLibrary(stored),
     };
   } catch {
     return { ...defaultAppearancePreferences };
   }
 }
 
+function normalizeBackgroundLibrary(stored: Partial<AppearancePreferences> & { backgroundCrop?: unknown }): BackgroundLibraryEntry[] {
+  // An absent field is the pre-library format. Preserve its original file and every display parameter.
+  if (stored.backgroundLibrary === undefined && isBackgroundReference(stored.backgroundReference)) {
+    return [{ id: stored.backgroundReference, name: "原有背景", reference: stored.backgroundReference,
+      focus: normalizeBackgroundFocus(stored.backgroundFocus) ?? focusFromLegacyCrop(stored.backgroundCrop),
+      fit: stored.backgroundFit === "contain" ? "contain" : "cover",
+      mask: numberInRange(stored.backgroundMask, 35, 90, 65), blur: numberInRange(stored.backgroundBlur, 0, 32, 0) }];
+  }
+  if (!Array.isArray(stored.backgroundLibrary)) return [];
+  const ids = new Set<string>();
+  return stored.backgroundLibrary.flatMap((entry) => {
+    if (!entry || typeof entry.id !== "string" || !entry.id || ids.has(entry.id) || !isBackgroundReference(entry.reference)) return [];
+    ids.add(entry.id);
+    return [{ id: entry.id, reference: entry.reference,
+      name: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim().slice(0, 100) : "背景",
+      focus: normalizeBackgroundFocus(entry.focus), fit: entry.fit === "contain" ? "contain" as const : "cover" as const,
+      mask: numberInRange(entry.mask, 35, 90, 65), blur: numberInRange(entry.blur, 0, 32, 0) }];
+  });
+}
+
+/** Durable reads accept known legacy omissions/crop, but never authorize a display fallback write. */
+export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getItem">): AppearancePreferences {
+  const encoded = storage.getItem(APPEARANCE_STORAGE_KEY);
+  if (encoded === null) return structuredClone(defaultAppearancePreferences);
+  let stored: unknown;
+  try { stored = JSON.parse(encoded); }
+  catch { throw new DataContractError("外观配置已损坏，原数据已保留；请通过数据管理恢复。"); }
+  dataRecord(stored);
+  const supported = (value: Record<string, unknown>, fields: readonly string[]) =>
+    dataCheck(Object.keys(value).every(key => fields.includes(key)), "外观配置包含不支持字段，原数据已保留；请升级应用或通过数据管理恢复。");
+  supported(stored, [...backupFields(dataPolicies.appearance), "backgroundCrop"]);
+  const optional = (value: Record<string, unknown>, key: string, valid: (value: unknown) => boolean) => {
+    if (value[key] !== undefined) dataCheck(valid(value[key]), "外观配置结构无效，原数据已保留；请通过数据管理恢复。");
+  };
+  const focus = (value: unknown) => {
+    if (value === null) return true;
+    dataRecord(value); supported(value, backupFields(dataPolicies.backgroundFocus));
+    return normalizeBackgroundFocus(value) !== null;
+  };
+  const range = (minimum: number, maximum: number, integer = false) => (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum && (!integer || Number.isInteger(value));
+  optional(stored, "colorPreset", isColorPreset);
+  optional(stored, "themeMode", value => ["light", "dark", "system"].includes(value as string));
+  for (const key of ["accentColor", "userBubbleColor", "unifiedThemeColor", "canvasColor", "assistantBubbleColor"])
+    optional(stored, key, value => value === null || normalizeHexColor(value) !== null);
+  for (const key of ["unifiedTransparency", "sidebarTransparency", "composerTransparency", "assistantBubbleTransparency"])
+    optional(stored, key, range(0, 100, true));
+  optional(stored, "backgroundReference", value => value === null || isBackgroundReference(value));
+  optional(stored, "backgroundFocus", focus);
+  optional(stored, "backgroundFit", value => value === "cover" || value === "contain");
+  optional(stored, "backgroundMask", range(35, 90));
+  optional(stored, "backgroundBlur", range(0, 32));
+  optional(stored, "backgroundEnabled", value => typeof value === "boolean");
+  optional(stored, "backgroundName", value => value === null || typeof value === "string" && value.length <= 100);
+  if (stored.backgroundCrop !== undefined && stored.backgroundCrop !== null) {
+    dataRecord(stored.backgroundCrop); supported(stored.backgroundCrop, ["x", "y", "width", "height"]);
+    dataCheck(["x", "y", "width", "height"].every(key => typeof (stored.backgroundCrop as Record<string, unknown>)[key] === "number"
+      && Number.isFinite((stored.backgroundCrop as Record<string, unknown>)[key])));
+  }
+  if (stored.backgroundLibrary !== undefined) {
+    dataCheck(Array.isArray(stored.backgroundLibrary));
+    const ids = new Set<string>();
+    for (const entry of stored.backgroundLibrary) {
+      dataRecord(entry); supported(entry, backupFields(dataPolicies.background));
+      dataCheck(typeof entry.id === "string" && entry.id.length > 0 && !ids.has(entry.id) && isBackgroundReference(entry.reference));
+      ids.add(entry.id);
+      optional(entry, "name", value => typeof value === "string" && value.length <= 100);
+      optional(entry, "focus", focus);
+      optional(entry, "fit", value => value === "cover" || value === "contain");
+      optional(entry, "mask", range(35, 90)); optional(entry, "blur", range(0, 32));
+    }
+  }
+  return loadAppearancePreferences({ getItem: () => encoded, setItem: () => {} });
+}
+
 export function saveAppearancePreferences(
   storage: AppearanceStorage,
   preferences: AppearancePreferences,
 ): void {
+  readAppearancePreferences(storage);
+  readAppearancePreferences({ getItem: () => JSON.stringify(preferences) });
   storage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(preferences));
 }
 
@@ -348,7 +457,7 @@ function rgbHex(color: Rgb): string {
 }
 
 function userBubbleColorFor(preferences: AppearancePreferences, theme: ResolvedTheme): string {
-  return preferences.userBubbleColor ?? (theme === "dark" ? "#93c5fd" : preferences.colorPreset === "reading" ? "#eef2f6" : "#d2e3f7");
+  return preferences.userBubbleColor ?? getColorPresetPalette(preferences.colorPreset, theme).userBubble;
 }
 
 function deriveAppearanceVariables(
@@ -360,8 +469,8 @@ function deriveAppearanceVariables(
   effectiveAccentColor: string;
   effectiveCanvasColor: string;
 } {
-  const reading = resolvedTheme === "light" && preferences.colorPreset === "reading";
-  const base = reading ? { ...basePalette.light, canvas: [247, 247, 245] as Rgb } : basePalette[resolvedTheme];
+  const preset = getColorPresetPalette(preferences.colorPreset, resolvedTheme);
+  const base = { ...basePalette[resolvedTheme], canvas: parseHexColor(preset.canvas), accent: parseHexColor(preset.accent) };
   const variables = new Map<string, string>();
   const readabilityWarnings: string[] = [];
   let panel = base.panel;
@@ -370,10 +479,10 @@ function deriveAppearanceVariables(
   const effectiveUserBackground = parseHexColor(userBubbleColorFor(preferences, resolvedTheme));
   let effectiveUserText: Rgb = resolvedTheme === "light" ? [41, 42, 45] : [15, 23, 42];
 
-  if (reading) {
+  if (preferences.colorPreset !== "default") {
     variables.set("--color-canvas", rgbValue(base.canvas));
     variables.set("--color-user-message", rgbValue(effectiveUserBackground));
-    variables.set("--color-assistant-bubble", "240 240 237");
+    variables.set("--color-assistant-bubble", rgbValue(parseHexColor(preset.assistantBubble)));
   }
 
   if (preferences.assistantBubbleColor) {
@@ -384,8 +493,8 @@ function deriveAppearanceVariables(
     variables.set("--color-user-message", rgbValue(effectiveUserBackground));
   }
 
-  if (preferences.canvasColor) {
-    const requestedCanvas = parseHexColor(preferences.canvasColor);
+  if (preferences.canvasColor || preferences.colorPreset !== "default") {
+    const requestedCanvas = parseHexColor(preferences.canvasColor ?? preset.canvas);
     const canvas = ensureContrast(
       requestedCanvas,
       base.text,
@@ -418,8 +527,8 @@ function deriveAppearanceVariables(
     }
   }
 
-  if (preferences.accentColor) {
-    const requestedAccent = parseHexColor(preferences.accentColor);
+  if (preferences.accentColor || preferences.colorPreset !== "default") {
+    const requestedAccent = parseHexColor(preferences.accentColor ?? preset.accent);
     const accentText = ensureContrast(
       requestedAccent,
       panel,
@@ -511,7 +620,7 @@ function initialBackgroundRuntime(
 ): BackgroundRuntimeState {
   return {
     backgroundUrl: null,
-    backgroundStatus: preferences.backgroundReference ? "loading" : "none",
+    backgroundStatus: preferences.backgroundReference && preferences.backgroundEnabled ? "loading" : "none",
     backgroundBusy: Boolean(preferences.backgroundReference),
     backgroundError: null,
     backgroundDraft: null,
@@ -535,7 +644,6 @@ function applyBackgroundVariables(
     "--appearance-background-blur",
     `${preferences.backgroundBlur}px`,
   );
-  target.style.setProperty("--appearance-background-scale", String(1 + preferences.backgroundBlur / 100));
   if (runtime.backgroundUrl) {
     target.style.setProperty(
       "--appearance-background-image",
@@ -634,8 +742,41 @@ export function createAppearanceController({
     backgroundFit: snapshot.backgroundFit,
     backgroundMask: snapshot.backgroundMask,
     backgroundBlur: snapshot.backgroundBlur,
+    backgroundLibrary: snapshot.backgroundLibrary,
+    backgroundEnabled: snapshot.backgroundEnabled,
+    backgroundName: snapshot.backgroundName ?? (snapshot.backgroundReference ? "原有背景" : null),
   };
-  let persistedBackgroundReference = preferences.backgroundReference;
+  let persistedReferences = retainedReferences(preferences);
+  const pendingResources = new Map<string, BackgroundResource>();
+  // Immutable file references let previews share validation and asset URLs for this session.
+  // Keep promises too so simultaneous thumbnails do not decode the same file twice.
+  const previewResources = new Map<string, Promise<BackgroundResource>>();
+  const thumbnailResources = new Map<string, Promise<BackgroundResource>>();
+  function resolveBackgroundResource(reference: string, refresh = false, thumbnail = false): Promise<BackgroundResource> {
+    if (!backgroundResources || !isBackgroundReference(reference)) return Promise.reject(new BackgroundResourceError("背景资源不可用。"));
+    const cache = thumbnail ? thumbnailResources : previewResources;
+    const cached = cache.get(reference);
+    if (cached && !refresh) return cached;
+    const pending = Promise.resolve().then(() => backgroundResources.resolve(reference, { thumbnail, refresh })).catch((error: unknown) => {
+      if (cache.get(reference) === pending) cache.delete(reference);
+      throw error;
+    });
+    cache.set(reference, pending);
+    return pending;
+  }
+  // A malformed/unreadable metadata record must never authorize deletion of its files.
+  let cleanupSafe = true;
+  try {
+    readAppearancePreferences(storage);
+    const raw = storage.getItem(APPEARANCE_STORAGE_KEY);
+    const stored = raw === null ? null : JSON.parse(raw);
+    cleanupSafe = raw === null || (!!stored && typeof stored === "object" && !Array.isArray(stored));
+    if (stored?.backgroundLibrary !== undefined) {
+      cleanupSafe = cleanupSafe && Array.isArray(stored.backgroundLibrary)
+        && stored.backgroundLibrary.length === preferences.backgroundLibrary.length;
+    }
+    if (stored?.backgroundReference && !isBackgroundReference(stored.backgroundReference)) cleanupSafe = false;
+  } catch { cleanupSafe = false; }
   let backgroundRuntime: BackgroundRuntimeState = {
     backgroundUrl: snapshot.backgroundUrl,
     backgroundStatus: snapshot.backgroundStatus,
@@ -649,7 +790,31 @@ export function createAppearanceController({
     listeners.forEach((listener) => listener());
   }
 
-  function updatePreferences(next: AppearancePreferences): boolean {
+  function retainedReferences(value: AppearancePreferences): string[] {
+    return [...new Set([value.backgroundReference, ...value.backgroundLibrary.map((entry) => entry.reference)]
+      .filter((reference): reference is string => reference !== null))];
+  }
+
+  async function cleanup(): Promise<void> {
+    if (!cleanupSafe) return;
+    const draft = backgroundRuntime.backgroundDraft?.reference;
+    const retained = new Set([...persistedReferences, ...retainedReferences(preferences),
+      ...pendingResources.keys(), ...(draft ? [draft] : [])]);
+    for (const reference of previewResources.keys()) if (!retained.has(reference)) previewResources.delete(reference);
+    for (const reference of thumbnailResources.keys()) if (!retained.has(reference)) thumbnailResources.delete(reference);
+    await backgroundResources?.cleanup([...retained]);
+  }
+
+  function updatePreferences(next: AppearancePreferences, requireSave = false): boolean {
+    let persisted = true;
+    try {
+      saveAppearancePreferences(storage, next);
+      persistedReferences = retainedReferences(next);
+    } catch (error) {
+      if (requireSave) throw new BackgroundResourceError("无法保存背景设置，原图片和配置保持不变，请重试。");
+      if (error instanceof DataContractError) backgroundRuntime = { ...backgroundRuntime, backgroundError: error.message };
+      persisted = false;
+    }
     preferences = next;
     snapshot = createSnapshot(
       preferences,
@@ -657,16 +822,38 @@ export function createAppearanceController({
       target,
       backgroundRuntime,
     );
-    let persisted = true;
-    try {
-      saveAppearancePreferences(storage, preferences);
-      persistedBackgroundReference = preferences.backgroundReference;
-    } catch {
-      // Appearance changes remain usable if local storage is unavailable.
-      persisted = false;
-    }
     notify();
     return persisted;
+  }
+
+  function backgroundPreferences(patch: Partial<AppearancePreferences>): AppearancePreferences {
+    const next = { ...preferences, ...patch };
+    // Only the same immutable image version receives current display edits. A replacement or
+    // deleted library entry must never receive edits intended for the independently held old image.
+    next.backgroundLibrary = next.backgroundLibrary.map((entry) => entry.reference === next.backgroundReference
+      ? { ...entry, focus: next.backgroundFocus, fit: next.backgroundFit, mask: next.backgroundMask, blur: next.backgroundBlur }
+      : entry);
+    return next;
+  }
+
+  function updateBackgroundPreferences(patch: Partial<AppearancePreferences>): void {
+    if (backgroundRuntime.backgroundBusy || backgroundRuntime.backgroundDraft) return;
+    try {
+      updatePreferences(backgroundPreferences(patch), true);
+      updateBackgroundRuntime({ backgroundError: null });
+    } catch (error) { updateBackgroundRuntime({ backgroundError: (error as Error).message }); }
+  }
+
+  async function backgroundOperation<T>(action: () => Promise<T>): Promise<T> {
+    if (backgroundRuntime.backgroundBusy || backgroundRuntime.backgroundDraft) throw new BackgroundResourceError("背景正在处理中，请稍后重试。");
+    updateBackgroundRuntime({ backgroundBusy: true, backgroundError: null });
+    try { return await action(); }
+    finally { updateBackgroundRuntime({ backgroundBusy: false }); }
+  }
+
+  async function cleanupAfterSave(): Promise<void> {
+    try { await cleanup(); }
+    catch { updateBackgroundRuntime({ backgroundError: "更改已保存，未使用的私有图片暂时无法清理，将在下次启动时重试。" }); }
   }
 
   function updateBackgroundRuntime(
@@ -711,15 +898,15 @@ export function createAppearanceController({
       }
       return;
     }
-    if (!reference) {
+    if (!reference || !preferences.backgroundEnabled) {
       updateBackgroundRuntime({ backgroundBusy: true });
-      await backgroundResources.cleanup([]).catch(() => undefined);
+      await cleanupAfterSave();
       updateBackgroundRuntime({ backgroundBusy: false });
       return;
     }
 
     try {
-      const resource = await backgroundResources.resolve(reference);
+      const resource = await resolveBackgroundResource(reference, true);
       if (preferences.backgroundReference !== reference) {
         return;
       }
@@ -729,7 +916,7 @@ export function createAppearanceController({
         backgroundBusy: true,
         backgroundError: null,
       });
-      await backgroundResources.cleanup([reference]).catch(() => undefined);
+      await cleanupAfterSave();
       updateBackgroundRuntime({ backgroundBusy: false });
     } catch {
       if (preferences.backgroundReference !== reference) {
@@ -742,18 +929,7 @@ export function createAppearanceController({
         backgroundError: "已保存的背景不可用，已回退到基础主题。",
         backgroundDraft: null,
       };
-      const persisted = updatePreferences({
-        ...preferences,
-        backgroundReference: null,
-        backgroundFocus: null,
-      });
-      await backgroundResources
-        .cleanup(
-          persisted || !persistedBackgroundReference
-            ? []
-            : [persistedBackgroundReference],
-        )
-        .catch(() => undefined);
+      // Keep unavailable resources and parameters for recovery or explicit removal.
       updateBackgroundRuntime({ backgroundBusy: false });
     }
   })();
@@ -777,7 +953,7 @@ export function createAppearanceController({
       const normalized = color === null ? null : normalizeHexColor(color);
       if (normalized !== null || color === null) {
         const next = { ...preferences, accentColor: normalized };
-        const component = normalized ?? rgbHex(basePalette[snapshot.resolvedTheme].accent);
+        const component = normalized ?? getColorPresetPalette(preferences.colorPreset, snapshot.resolvedTheme).accent;
         updatePreferences(component === userBubbleColorFor(next, snapshot.resolvedTheme) ? { ...next, unifiedThemeColor: component } : next);
       }
     },
@@ -842,21 +1018,19 @@ export function createAppearanceController({
     },
     setBackgroundFit(fit) {
       if (fit === "cover" || fit === "contain") {
-        updatePreferences({ ...preferences, backgroundFit: fit });
+        updateBackgroundPreferences({ backgroundFit: fit });
       }
     },
     setBackgroundMask(mask) {
       if (Number.isFinite(mask)) {
-        updatePreferences({
-          ...preferences,
+        updateBackgroundPreferences({
           backgroundMask: Math.round(Math.min(90, Math.max(35, mask))),
         });
       }
     },
     setBackgroundBlur(blur) {
       if (Number.isFinite(blur)) {
-        updatePreferences({
-          ...preferences,
+        updateBackgroundPreferences({
           backgroundBlur: Math.round(Math.min(32, Math.max(0, blur))),
         });
       }
@@ -906,104 +1080,128 @@ export function createAppearanceController({
       const draft = backgroundRuntime.backgroundDraft;
       const normalized = normalizeBackgroundFocus(focus);
       if (!draft || !normalized || backgroundRuntime.backgroundBusy) return;
-      backgroundRuntime = {
-        backgroundUrl: draft.url, backgroundStatus: "ready", backgroundBusy: true,
-        backgroundError: null, backgroundDraft: null,
-      };
-      const persisted = updatePreferences({ ...preferences, backgroundReference: draft.reference, backgroundFocus: normalized });
+      updateBackgroundRuntime({ backgroundBusy: true });
       try {
-        await backgroundResources?.cleanup([...new Set([persistedBackgroundReference, draft.reference].filter((reference): reference is string => reference !== null))]);
-      } catch {
-        updateBackgroundRuntime({ backgroundError: "背景已更新，但旧的私有副本暂时无法清理。" });
+        let next = backgroundPreferences({ backgroundReference: draft.reference, backgroundFocus: normalized, backgroundEnabled: true });
+        if (draft.reference !== preferences.backgroundReference) {
+          const entry: BackgroundLibraryEntry = { id: draft.reference, name: draft.name || "背景", reference: draft.reference,
+            focus: normalized, fit: next.backgroundFit, mask: next.backgroundMask, blur: next.backgroundBlur };
+          next = { ...next, backgroundName: entry.name, backgroundLibrary: [...next.backgroundLibrary, entry] };
+        }
+        updatePreferences(next, true);
+        updateBackgroundRuntime({ backgroundUrl: draft.url, backgroundStatus: "ready", backgroundError: null, backgroundDraft: null });
+        await cleanupAfterSave();
+      } catch (error) {
+        updateBackgroundRuntime({ backgroundError: (error as Error).message });
       }
-      if (!persisted) updateBackgroundRuntime({ backgroundError: "背景已预览，但本机偏好暂时无法保存。" });
       updateBackgroundRuntime({ backgroundBusy: false });
     },
     async cancelBackgroundFocus() {
       if (!backgroundRuntime.backgroundDraft || backgroundRuntime.backgroundBusy) return;
       updateBackgroundRuntime({ backgroundDraft: null, backgroundBusy: true });
-      try {
-        await backgroundResources?.cleanup([...new Set([persistedBackgroundReference, preferences.backgroundReference].filter((reference): reference is string => reference !== null))]);
-      } catch {
-        updateBackgroundRuntime({ backgroundError: "已取消取景，但临时背景副本暂时无法清理。" });
-      }
+      await cleanupAfterSave();
       updateBackgroundRuntime({ backgroundBusy: false });
     },
     async removeBackground() {
-      const previousReference = preferences.backgroundReference;
-      if (!previousReference || backgroundRuntime.backgroundBusy || backgroundRuntime.backgroundDraft) {
-        return;
-      }
-      updateBackgroundRuntime({ backgroundBusy: true, backgroundError: null });
-      backgroundRuntime = {
-        backgroundUrl: null,
-        backgroundStatus: "none",
-        backgroundBusy: true,
-        backgroundError: null,
-        backgroundDraft: null,
-      };
-      const persisted = updatePreferences({
-        ...preferences,
-        backgroundReference: null,
-        backgroundFocus: null,
-      });
-      if (backgroundResources) {
-        try {
-          await backgroundResources.cleanup(
-            persisted || !persistedBackgroundReference
-              ? []
-              : [persistedBackgroundReference],
-          );
-        } catch {
-          updateBackgroundRuntime({
-            backgroundError: "背景已移除，但私有副本暂时无法清理。",
-          });
-        }
-      }
-      if (!persisted) {
-        updateBackgroundRuntime({
-          backgroundError: "背景已隐藏，但本机偏好暂时无法保存。",
+      if (!preferences.backgroundReference || backgroundRuntime.backgroundBusy || backgroundRuntime.backgroundDraft) return;
+      try {
+        await backgroundOperation(async () => {
+          updatePreferences({ ...preferences, backgroundEnabled: false }, true);
+          updateBackgroundRuntime({ backgroundUrl: null, backgroundStatus: "none" });
         });
-      }
-      updateBackgroundRuntime({ backgroundBusy: false });
+      } catch (error) { updateBackgroundRuntime({ backgroundError: (error as Error).message }); }
     },
     async resetCustomAppearance() {
-      if (backgroundRuntime.backgroundBusy || backgroundRuntime.backgroundDraft) {
-        return;
-      }
-      updateBackgroundRuntime({ backgroundBusy: true, backgroundError: null });
-      backgroundRuntime = {
-        backgroundUrl: null,
-        backgroundStatus: "none",
-        backgroundBusy: true,
-        backgroundError: null,
-        backgroundDraft: null,
-      };
-      const persisted = updatePreferences({
-        ...defaultAppearancePreferences,
-        themeMode: preferences.themeMode,
-      });
-      if (backgroundResources) {
-        try {
-          await backgroundResources.cleanup(
-            persisted || !persistedBackgroundReference
-              ? []
-              : [persistedBackgroundReference],
-          );
-        } catch {
-          updateBackgroundRuntime({
-            backgroundError: "外观已重置，但私有背景副本暂时无法清理。",
-          });
-        }
-      }
-      if (!persisted) {
-        updateBackgroundRuntime({
-          backgroundError: "外观已重置，但本机偏好暂时无法保存。",
+      if (backgroundRuntime.backgroundBusy || backgroundRuntime.backgroundDraft) return;
+      try {
+        await backgroundOperation(async () => {
+          updatePreferences({ ...defaultAppearancePreferences, themeMode: preferences.themeMode,
+            backgroundLibrary: preferences.backgroundLibrary, backgroundReference: preferences.backgroundReference,
+            backgroundName: preferences.backgroundName, backgroundFocus: preferences.backgroundFocus,
+            backgroundFit: preferences.backgroundFit, backgroundMask: preferences.backgroundMask,
+            backgroundBlur: preferences.backgroundBlur, backgroundEnabled: false }, true);
+          updateBackgroundRuntime({ backgroundUrl: null, backgroundStatus: "none" });
         });
-      }
-      updateBackgroundRuntime({ backgroundBusy: false });
+      } catch (error) { updateBackgroundRuntime({ backgroundError: (error as Error).message }); }
+    },
+    async prepareLibraryBackground() {
+      return backgroundOperation(async () => {
+        if (!backgroundResources) throw new BackgroundResourceError("当前环境无法导入本地背景。");
+        const resource = await backgroundResources.selectAndImport();
+        if (!resource) return null;
+        if (!isBackgroundReference(resource.reference) || !resource.url) throw new BackgroundResourceError("背景导入结果无效。");
+        pendingResources.set(resource.reference, resource);
+        return resource;
+      });
+    },
+    async saveLibraryBackground(resource, replaceId) {
+      return backgroundOperation(async () => {
+        const pending = pendingResources.get(resource.reference);
+        if (!pending) throw new BackgroundResourceError("导入草稿已失效，请重新导入。");
+        const previous = replaceId ? preferences.backgroundLibrary.find((entry) => entry.id === replaceId) : undefined;
+        if (replaceId && !previous) throw new BackgroundResourceError("这张背景已不在库中，请重新选择。");
+        const entry: BackgroundLibraryEntry = { id: previous?.id ?? resource.reference,
+          name: previous?.name ?? (pending.name?.trim().slice(0, 100) || "背景"),
+          reference: pending.reference, focus: null, fit: previous?.fit ?? "cover", mask: previous?.mask ?? 65, blur: previous?.blur ?? 0 };
+        const backgroundLibrary = previous ? preferences.backgroundLibrary.map((item) => item.id === previous.id ? entry : item)
+          : [...preferences.backgroundLibrary, entry];
+        updatePreferences({ ...preferences, backgroundLibrary }, true);
+        pendingResources.delete(resource.reference);
+        await cleanupAfterSave();
+        return entry;
+      });
+    },
+    async discardLibraryBackground(reference) {
+      await backgroundOperation(async () => { pendingResources.delete(reference); await cleanupAfterSave(); });
+    },
+    async resolveLibraryBackground(reference, options) {
+      return resolveBackgroundResource(reference, options?.refresh, options?.thumbnail);
+    },
+    async applyLibraryBackground(id, edit) {
+      await backgroundOperation(async () => {
+        const entry = preferences.backgroundLibrary.find((item) => item.id === id);
+        if (!entry || !backgroundResources) throw new BackgroundResourceError("这张背景已不在库中，请重新选择。");
+        if (edit && edit.reference !== entry.reference) throw new BackgroundResourceError("这张背景已被替换，请重新选择后调整。");
+        const focus = edit?.focus === null ? null : normalizeBackgroundFocus(edit?.focus);
+        if (edit && ((edit.focus !== null && !focus) || !["cover", "contain"].includes(edit.fit)
+          || !Number.isFinite(edit.mask) || edit.mask < 35 || edit.mask > 90
+          || !Number.isFinite(edit.blur) || edit.blur < 0 || edit.blur > 32)) {
+          throw new BackgroundResourceError("背景参数无效，请重新调整。");
+        }
+        const applied = edit ? { ...entry, focus, fit: edit.fit, mask: Math.round(edit.mask), blur: Math.round(edit.blur) } : entry;
+        const resource = await resolveBackgroundResource(entry.reference, true);
+        updatePreferences({ ...preferences, backgroundReference: entry.reference, backgroundName: entry.name,
+          backgroundEnabled: true, backgroundFocus: applied.focus, backgroundFit: applied.fit,
+          backgroundMask: applied.mask, backgroundBlur: applied.blur,
+          backgroundLibrary: preferences.backgroundLibrary.map((item) => item.id === id ? applied : item) }, true);
+        updateBackgroundRuntime({ backgroundUrl: resource.url, backgroundStatus: "ready" });
+        await cleanupAfterSave();
+      });
+    },
+    async removeLibraryBackgrounds(ids) {
+      await backgroundOperation(async () => {
+        const selected = new Set(ids);
+        if (!selected.size) return;
+        if ([...selected].some((id) => !preferences.backgroundLibrary.some((entry) => entry.id === id))) {
+          throw new BackgroundResourceError("部分背景已不在库中，请重新选择。");
+        }
+        updatePreferences({ ...preferences, backgroundLibrary: preferences.backgroundLibrary.filter((entry) => !selected.has(entry.id)) }, true);
+        await cleanupAfterSave();
+      });
+    },
+    async restoreBackground() {
+      try {
+        await backgroundOperation(async () => {
+          if (!preferences.backgroundReference || !backgroundResources) return;
+          const resource = await resolveBackgroundResource(preferences.backgroundReference, true);
+          updatePreferences({ ...preferences, backgroundEnabled: true }, true);
+          updateBackgroundRuntime({ backgroundUrl: resource.url, backgroundStatus: "ready" });
+        });
+      } catch (error) { updateBackgroundRuntime({ backgroundError: (error as Error).message }); }
     },
     destroy() {
+      previewResources.clear();
+      thumbnailResources.clear();
       unsubscribeFromSystem();
       listeners.clear();
     },

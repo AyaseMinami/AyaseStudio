@@ -25,14 +25,15 @@ export function AboutSettings() {
       }}>{children}</a>;
   }
   return <section className="settings-page about-page" aria-label="关于 Ayase Studio">
+    <div className="about-card">
     <header className="about-brand">
       <img src={appIcon} alt="" width="80" height="80" />
       <h2>Ayase Studio</h2>
       <p>简洁、本地优先的 AI 桌面聊天客户端</p>
       <div className="about-version">
-        <span>v{version}</span><span className="about-alpha">Alpha</span>
+        <span>v{version}</span><span className="about-alpha">Beta</span>
         <span className="about-copy-anchor"><button type="button" title="复制版本信息" aria-label="复制版本信息"
-          onClick={() => void copy(`Ayase Studio ${version} (Alpha)`, "版本信息")}><Copy size={14} /></button>
+          onClick={() => void copy(`Ayase Studio ${version} (Beta)`, "版本信息")}><Copy size={14} /></button>
           {notice.target === "版本信息" && <span className="about-copy-notice" role="status">{notice.text}</span>}
         </span>
       </div>
@@ -60,5 +61,6 @@ export function AboutSettings() {
       </div>
     </footer>
     {notice.target === "link" && <p className="about-notice" role="status">{notice.text}</p>}
+    </div>
   </section>;
 }
