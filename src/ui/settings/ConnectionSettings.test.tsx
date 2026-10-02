@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionSettingsState } from "../../chat/settings";
 import { ConnectionSettings, type ConnectionSettingsProps } from "./ConnectionSettings";
+import { useConfirmation } from "../useConfirmation";
 
 const connectionSettings: ConnectionSettingsState = {
   version: 3,
@@ -57,12 +58,12 @@ describe("ConnectionSettings", () => {
     const props = makeProps();
     props.connectionSettings = structuredClone(connectionSettings);
     const connection = props.connectionSettings.providers[0].connections[0];
-    Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
     await render(props);
     const select = container.querySelector<HTMLSelectElement>("#connection-protocol")!;
     expect([...select.options].map(option => option.value)).toEqual(expect.arrayContaining(["grok-images", "seedream-images"]));
     for (const protocol of ["grok-images", "seedream-images"] as const) {
       await act(async () => { select.value = protocol; select.dispatchEvent(new Event("change", { bubbles: true })); });
+      await answerConfirmation(true);
       expect(props.onConnectionChange).toHaveBeenLastCalledWith(connection.id, "protocol", protocol);
       connection.protocol = protocol;
       connection.baseUrl = protocol === "grok-images" ? "https://api.x.ai" : "https://ark.example.invalid";
@@ -157,6 +158,88 @@ describe("ConnectionSettings", () => {
     expect(element).toBeInstanceOf(HTMLButtonElement);
     return element!;
   }
+
+  async function answerConfirmation(accept: boolean): Promise<void> {
+    const dialog = document.querySelector<HTMLDialogElement>(".confirmation-dialog")!;
+    expect(dialog?.open).toBe(true);
+    await act(async () => dialog.querySelectorAll<HTMLButtonElement>("button")[accept ? 1 : 0].click());
+  }
+
+  it.each(["Escape", "cancel"])("preserves a model draft and restores focus when confirmation is dismissed with %s", async (method) => {
+    await render(withSecondaryConnection());
+    await act(async () => button("编辑模型 beta-model").click());
+    const form = container.querySelector<HTMLButtonElement>('[aria-label="保存模型 beta-model"]')!.form!;
+    form.querySelector<HTMLInputElement>('[name="modelId"]')!.value = "unsaved-model";
+    const opener = button("查看连接 备用线路");
+    await act(async () => { opener.focus(); opener.click(); });
+    const dialog = document.querySelector<HTMLDialogElement>(".confirmation-dialog")!;
+    expect(document.activeElement).toBe(dialog.querySelector("button"));
+    await act(async () => dialog.dispatchEvent(method === "Escape"
+      ? new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })
+      : new Event("cancel", { cancelable: true })));
+    expect(document.querySelector(".confirmation-dialog")).toBeNull();
+    expect(form.querySelector<HTMLInputElement>('[name="modelId"]')!.value).toBe("unsaved-model");
+    expect(document.activeElement).toBe(opener);
+    expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
+  });
+
+  it.each(["streaming", "removed", "changed", "selection"])("does not delete a connection when its %s state changes while confirmation is open", async (change) => {
+    const props = withSecondaryConnection();
+    await render(props);
+    await rightClick(button("查看连接 备用线路"));
+    await act(async () => menuItem("删除连接 备用线路").click());
+    if (change === "streaming") props.isStreaming = true;
+    else if (change === "selection") await act(async () => button("示例供应商").click());
+    else {
+      props.connectionSettings = structuredClone(props.connectionSettings);
+      if (change === "removed") props.connectionSettings.providers[0].connections.pop();
+      else props.connectionSettings.providers[0].connections[1].models.push({ id: "new", modelId: "new-model" });
+    }
+    await render(props);
+    await answerConfirmation(true);
+    expect(props.onDeleteConnection).not.toHaveBeenCalled();
+  });
+
+  it("allows only one confirmation and keeps model-test duplicates blocked until the request settles", async () => {
+    const props = makeProps();
+    let finish!: () => void;
+    vi.mocked(props.onRunModelTest).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    await render(props);
+    await act(async () => { button("测试模型 beta-model").click(); button("测试模型 beta-model").click(); button("删除模型 alpha-model").click(); });
+    expect(document.querySelectorAll(".confirmation-dialog")).toHaveLength(1);
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("测试 beta-model");
+    await answerConfirmation(true);
+    await act(async () => button("测试模型 beta-model").click());
+    expect(props.onRunModelTest).toHaveBeenCalledExactlyOnceWith("connection-a", "model-b");
+    expect(props.onDeleteModel).not.toHaveBeenCalled();
+    expect(document.querySelector(".confirmation-dialog")).toBeNull();
+    await act(async () => finish());
+  });
+
+  it("settles pending hook requests on unmount and ignores a stale close event after StrictMode reopens the dialog", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    // A real modal makes the background inert, so replay cleanup cannot focus it yet.
+    vi.spyOn(opener, "focus").mockImplementation(() => {
+      if (!document.querySelector(".confirmation-dialog")) HTMLElement.prototype.focus.call(opener);
+    });
+    let confirmation!: ReturnType<typeof useConfirmation>;
+    function Harness() { confirmation = useConfirmation(); return confirmation.dialog; }
+    await act(async () => root.render(<StrictMode><Harness /></StrictMode>));
+    let result!: Promise<boolean>;
+    await act(async () => { result = confirmation.confirm({ title: "确认", message: "确认测试" }); });
+    const dialog = document.querySelector<HTMLDialogElement>(".confirmation-dialog")!;
+    expect(dialog.open).toBe(true);
+    await act(async () => dialog.dispatchEvent(new Event("close")));
+    expect(document.querySelector(".confirmation-dialog")).not.toBeNull();
+    expect(await confirmation.confirm({ title: "重复", message: "重复测试" })).toBe(false);
+    await act(async () => root.render(<div />));
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+    expect(await result).toBe(false);
+    expect(await confirmation.confirm({ title: "卸载", message: "卸载测试" })).toBe(false);
+  });
 
   function withSecondaryConnection(): ConnectionSettingsProps {
     const props = makeProps();
@@ -482,8 +565,6 @@ describe("ConnectionSettings", () => {
 
   it("opens overview rows without navigating and reuses their edit and delete actions", async () => {
     const props = withSecondaryConnection();
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     await render(props);
     await act(async () => button("示例供应商").click());
     const row = container.querySelectorAll<HTMLElement>(".provider-connection-row")[1];
@@ -491,7 +572,8 @@ describe("ConnectionSettings", () => {
     expect(container.querySelectorAll(".provider-connection-row")).toHaveLength(2);
     expect(container.querySelector("#base-url")).toBeNull();
     await act(async () => menuItem("删除连接 备用线路").click());
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("https://secondary.example.com"));
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("https://secondary.example.com");
+    await answerConfirmation(false);
     expect(props.onDeleteConnection).not.toHaveBeenCalled();
     await act(async () => {
       row.querySelector<HTMLElement>(".provider-connection-link")!.focus();
@@ -505,8 +587,6 @@ describe("ConnectionSettings", () => {
   it("uses the unselected provider and latest row data for move and deletion", async () => {
     const props = withSecondaryConnection();
     props.connectionSettings.providers.push({ id: "provider-b", name: "另一供应商", connections: [] });
-    const confirm = vi.fn(() => true);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     await render(props);
     await rightClick(button("另一供应商"));
     expect(menuItem("下移供应商 另一供应商").disabled).toBe(true);
@@ -519,15 +599,14 @@ describe("ConnectionSettings", () => {
     props.connectionSettings.providers[1].connections = [structuredClone(connectionSettings.providers[0].connections[0])];
     await render(props);
     await act(async () => menuItem("删除供应商 最新供应商名称").click());
-    expect(confirm).toHaveBeenCalledWith("删除供应商“最新供应商名称”以及其中 1 条连接、2 个模型？");
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("删除供应商“最新供应商名称”以及其中 1 条连接、2 个模型？");
+    await answerConfirmation(true);
     expect(props.onDeleteProvider).toHaveBeenCalledExactlyOnceWith("provider-b");
     expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
   });
 
   it("keeps context actions disabled when generation starts while the menu is open", async () => {
     const props = withSecondaryConnection();
-    const confirm = vi.fn(() => true);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     await render(props);
     await rightClick(button("查看连接 备用线路"));
     props.isStreaming = true;
@@ -536,7 +615,7 @@ describe("ConnectionSettings", () => {
     expect(items).toHaveLength(5);
     expect([...items].every((item) => item.disabled)).toBe(true);
     await act(async () => menuItem("删除连接 备用线路").click());
-    expect(confirm).not.toHaveBeenCalled();
+    expect(document.querySelector(".confirmation-dialog")).toBeNull();
     expect(props.onDeleteConnection).not.toHaveBeenCalled();
     expect(props.onConnectionChange).not.toHaveBeenCalled();
   });
@@ -564,18 +643,17 @@ describe("ConnectionSettings", () => {
 
   it("uses the existing unsaved-model confirmation when a menu edits another connection", async () => {
     const props = withSecondaryConnection();
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     await render(props);
     await act(async () => button("编辑模型 beta-model").click());
     await rightClick(button("查看连接 备用线路"));
     await act(async () => menuItem("编辑连接 备用线路").click());
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("当前模型编辑尚未保存");
+    await answerConfirmation(false);
     expect(container.querySelector('[aria-label="保存模型 beta-model"]')).not.toBeNull();
     expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
-    confirm.mockReturnValue(true);
     await rightClick(button("查看连接 备用线路"));
     await act(async () => menuItem("编辑连接 备用线路").click());
+    await answerConfirmation(true);
     expect(container.querySelector<HTMLInputElement>("#base-url")?.value).toBe("https://secondary.example.com");
     expect(props.onSelectModel).not.toHaveBeenCalled();
   });
@@ -608,8 +686,6 @@ describe("ConnectionSettings", () => {
       id: "connection-secondary", name: "备用线路", protocol: "anthropic-native",
       baseUrl: "https://secondary.example.com", apiKey: "", models: [],
     });
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     await render(props);
     await act(async () => button("示例供应商").click());
     const rows = container.querySelectorAll(".provider-connection-row");
@@ -624,10 +700,11 @@ describe("ConnectionSettings", () => {
     await act(async () => container.querySelector<HTMLButtonElement>(".provider-connection-link")!.click());
     await act(async () => button("编辑模型 beta-model").click());
     await act(async () => container.querySelector<HTMLButtonElement>(".connection-back-button")!.click());
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("当前模型编辑尚未保存");
+    await answerConfirmation(false);
     expect(container.querySelector('[aria-label="保存模型 beta-model"]')).not.toBeNull();
-    confirm.mockReturnValue(true);
     await act(async () => container.querySelector<HTMLButtonElement>(".connection-back-button")!.click());
+    await answerConfirmation(true);
     expect(container.querySelectorAll(".provider-connection-row")).toHaveLength(2);
     expect(props.onSelectModel).not.toHaveBeenCalled();
   });
@@ -635,20 +712,19 @@ describe("ConnectionSettings", () => {
   it("confirms list deletion, respects generation protection, and shows the empty state", async () => {
     const props = makeProps();
     props.connectionSettings = structuredClone(connectionSettings);
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     await render(props);
     await act(async () => button("示例供应商").click());
     await act(async () => button("删除连接 主线路").click());
     expect(props.onDeleteConnection).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("https://relay.example.com/v1"));
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("https://relay.example.com/v1");
+    await answerConfirmation(false);
     props.isStreaming = true;
     await render(props);
     expect(button("删除连接 主线路").disabled).toBe(true);
     props.isStreaming = false;
     await render(props);
-    confirm.mockReturnValue(true);
     await act(async () => button("删除连接 主线路").click());
+    await answerConfirmation(true);
     expect(props.onDeleteConnection).toHaveBeenCalledExactlyOnceWith("connection-a");
     expect(document.activeElement?.textContent).toContain("添加连接");
     props.connectionSettings = { version: 3, activeModelId: null,
@@ -661,7 +737,6 @@ describe("ConnectionSettings", () => {
 
   it("keeps models in connection details and retains model actions", async () => {
     const props = makeProps();
-    Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
     await render(props);
 
     await act(async () => button("查看连接 主线路").click());
@@ -673,16 +748,17 @@ describe("ConnectionSettings", () => {
     expect(props.onSelectModel).toHaveBeenCalledWith("model-b");
 
     await act(async () => button("测试模型 beta-model").click());
+    await answerConfirmation(true);
     expect(props.onRunModelTest).toHaveBeenCalledWith("connection-a", "model-b");
 
     await act(async () => button("编辑模型 beta-model").click());
     expect(container.querySelector('[aria-label="保存模型 beta-model"]')).toBeInstanceOf(HTMLButtonElement);
-    vi.mocked(window.confirm).mockClear();
     await act(async () => button("示例供应商").click());
-    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("当前模型编辑尚未保存");
+    await answerConfirmation(true);
     expect(container.querySelector('[aria-label="保存模型 beta-model"]')).toBeNull();
     await act(async () => button("查看连接 主线路").click());
-    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".confirmation-dialog")).toBeNull();
     expect(container.querySelector('[aria-label="保存模型 beta-model"]')).toBeNull();
   });
 
@@ -806,10 +882,10 @@ describe("ConnectionSettings", () => {
     const props = makeProps();
     props.connectionSettings = structuredClone(connectionSettings);
     props.connectionSettings.providers[0].connections[0].models = [connectionSettings.providers[0].connections[0].models[0]];
-    Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
     await render(props);
     button("删除模型 alpha-model").focus();
     await act(async () => button("删除模型 alpha-model").click());
+    await answerConfirmation(true);
     props.connectionSettings = structuredClone(props.connectionSettings);
     props.connectionSettings.providers[0].connections[0].models = [];
     await render(props);

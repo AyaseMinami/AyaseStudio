@@ -45,6 +45,21 @@ async function key(element: Element, value: string, shiftKey = false) {
   await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key: value, shiftKey, bubbles: true, cancelable: true })));
 }
 
+it("keeps folder access first in the preview toolbar and resets result disclosures when switching images", async () => {
+  const options = { ...props(), onOpenOutputDirectory: vi.fn() };
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  expect(host.querySelector(".drawing-preview-tools button")).toBe(button("打开输出文件夹"));
+  expect(button("导出图片").closest(".drawing-preview-tools")).not.toBeNull();
+  expect(button("导出带参数 PNG").closest("details")?.open).toBe(false);
+  const disclosure = host.querySelector<HTMLDetailsElement>(".drawing-result-disclosure")!;
+  expect(disclosure.open).toBe(false);
+  disclosure.open = true;
+  host.querySelector<HTMLDetailsElement>(".drawing-result-more")!.open = true;
+  await act(async () => root.render(<DrawingWorkspace {...options} selectedResultId={second.id} />));
+  expect(host.querySelector<HTMLDetailsElement>(".drawing-result-disclosure")!.open).toBe(false);
+  expect(host.querySelector<HTMLDetailsElement>(".drawing-result-more")!.open).toBe(false);
+});
+
 it("loads thumbnails once when first visible, retains them across scrolling and releases them on unmount", async () => {
   const observed: Array<{ element: Element; callback: IntersectionObserverCallback; disconnect: ReturnType<typeof vi.fn> }> = [];
   vi.stubGlobal("IntersectionObserver", class {

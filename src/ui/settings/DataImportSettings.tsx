@@ -112,13 +112,15 @@ export function DataImportSettings(props: DataImportSettingsProps) {
 
   return <section className="data-import-page" aria-label="从 Cherry Studio 迁移" aria-busy={Boolean(busy)}>
     <section className="settings-card data-import-intro" aria-label="Cherry 聊天导入说明">
-      <h3>从 Cherry Studio 迁移</h3>
+      <div className="data-management-entry-heading"><h3>从 Cherry Studio 迁移</h3><span className="data-management-entry-tag">其他应用数据</span></div>
       <p>从本机 Cherry Studio 备份导入助手分组、聊天记录和可恢复的附件。</p>
-      <p>支持备份格式 5（1.9.13 手机版）、6（1.9.13）和 7（2.1.3）。平行回答和树形分支将保留为独立对话。</p>
-      <p className="muted-text">不导入 API Key、账户、模型连接、助手提示词或生成配置，也不会执行工具。缺失或不支持的附件会明确提示。</p>
+      <p className="muted-text">支持备份格式 5（1.9.13 手机版）、6（1.9.13）和 7（2.1.3）。平行回答和树形分支将保留为独立对话。</p>
+      <div className="data-management-entry-footer">
+      <p className="data-management-entry-notice">不导入 API Key、账户、模型连接、助手提示词或生成配置，也不会执行工具。缺失或不支持的附件会明确提示。</p>
       <button type="button" className="settings-button" disabled={locked} onClick={() => void selectBackup()}>
         {busy === "select" ? "正在读取备份…" : "导入 Cherry Studio 聊天"}
       </button>
+      </div>
       {props.disabled && <p className="muted-text" role="status">请等待当前任务完成、工作区准备就绪后再导入。</p>}
     </section>
     {error && <p className="data-import-error" role="alert">{error}</p>}

@@ -24,7 +24,6 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   vi.clearAllMocks();
-  Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
   vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
   vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
   vi.mocked(avatarLibrary.list).mockResolvedValue([]); vi.mocked(avatarLibrary.usages).mockResolvedValue([]);
@@ -51,6 +50,11 @@ function button(label: string) {
   expect(result, label).toBeTruthy(); return result!;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
+async function answerConfirmation(accept: boolean) {
+  const dialog = document.querySelector<HTMLDialogElement>(".confirmation-dialog")!;
+  expect(dialog?.open).toBe(true);
+  await act(async () => dialog.querySelectorAll<HTMLButtonElement>("button")[accept ? 1 : 0].click());
+}
 async function submitName(name: string) {
   const input = host.querySelector<HTMLInputElement>('[name="providerName"]')!;
   await act(async () => { input.value = name; input.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
@@ -84,6 +88,7 @@ it("identifies builtins by preset ID, permits deletion and readdition, and prese
   expect(button("已添加 OpenAI").disabled).toBe(true);
   expect(button("添加 Anthropic").disabled).toBe(false);
   await click("管理供应商 已改名"); await click("删除供应商 已改名");
+  await answerConfirmation(true);
   expect(props.onDeleteProvider).toHaveBeenCalledWith("builtin");
   expect(button("添加 OpenAI").disabled).toBe(false);
   await click("添加 OpenAI");
@@ -133,12 +138,13 @@ it("closes stale chooser scope after provider selection changes and ignores late
 
 it("confirms exact preset defaults and keeps reset absent for arbitrary connections", async () => {
   await render();
-  vi.mocked(window.confirm).mockReturnValueOnce(false); await click("恢复内置默认值");
+  await click("恢复内置默认值");
   expect(props.onResetConnection).not.toHaveBeenCalled();
-  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("名称：OpenAI Chat"));
-  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("https://api.openai.com/v1"));
-  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("保留 API Key 和已添加模型"));
-  await click("恢复内置默认值"); expect(props.onResetConnection).toHaveBeenCalledWith("builtin-connection");
+  expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("名称：OpenAI Chat");
+  expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("https://api.openai.com/v1");
+  expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("保留 API Key 和已添加模型");
+  await answerConfirmation(false);
+  await click("恢复内置默认值"); await answerConfirmation(true); expect(props.onResetConnection).toHaveBeenCalledWith("builtin-connection");
   delete props.connectionSettings.providers[0].connections[0].presetProtocol;
   await render(); expect([...host.querySelectorAll("button")].some(button => button.textContent === "恢复内置默认值")).toBe(false);
 });

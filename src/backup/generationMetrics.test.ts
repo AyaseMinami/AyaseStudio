@@ -31,10 +31,10 @@ function messages(document: { rows: { chats: unknown[] } }): StoredChatMessage[]
 const options = { connections: false, credentials: false };
 
 describe("generation metrics backup contract", () => {
-  it("exports chat v2 and preserves each invocation and round history through restore/re-export", async () => {
+  it("exports chat v3 and preserves each invocation and round history through restore/re-export", async () => {
     const input = state(), original = structuredClone(input);
     const document = await createBackupDocument(input, options, files);
-    expect(document.compatibility!.modules.chat).toEqual({ version: 2, minimumReaderVersion: 2, requiredCapabilities: [] });
+    expect(document.compatibility!.modules.chat).toEqual({ version: 3, minimumReaderVersion: 3, requiredCapabilities: [] });
     const read = (await decodeBackup(await encodeBackup(document))).document;
     expect(messages(read)[1].generationMetrics).toEqual(input.rows.chats[0].messages[1].generationMetrics);
     expect(messages(read)[0].roundVersions!.pairs[0][1].generationMetrics).toEqual(messages(read)[1].generationMetrics);

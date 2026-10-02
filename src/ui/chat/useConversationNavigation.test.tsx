@@ -22,6 +22,22 @@ afterEach(async () => {
 });
 
 describe("conversation navigation subscriptions", () => {
+  it.each([false, true])("opens only conversations with assistantExpanded=%s", assistantExpanded => {
+    const controller = createConversationNavigationController(1200);
+    if (assistantExpanded) controller.expandAssistant();
+    controller.closeConversations();
+    controller.openConversations();
+    expect(controller.getSnapshot()).toEqual({ open: true, assistantExpanded, conversationsOpen: true });
+  });
+  it.each([false, true])("closing conversations preserves assistant expansion (%s)", expanded => {
+    const controller = createConversationNavigationController(1200);
+    if (expanded) controller.expandAssistant();
+    controller.closeConversations();
+    expect(controller.getSnapshot()).toEqual({ open: true, assistantExpanded: expanded, conversationsOpen: false });
+    controller.expandAssistant();
+    expect(controller.getSnapshot().conversationsOpen).toBe(true);
+  });
+
   it.each([861, 860, 600])("creates an immutable viewport snapshot at %i without browser or storage access", width => {
     const storage = vi.spyOn(Storage.prototype, "getItem");
     const controller = createConversationNavigationController(width);

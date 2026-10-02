@@ -1,5 +1,11 @@
 # 持久数据契约
 
+## 历史回复模型快照（2026-10-02）
+
+`StoredChatMessage.generationModel` 是可选的 assistant 回复模型快照：在回复创建时冻结请求使用的原始 API model ID，必须为非空白字符串，校验不裁切或改写原文。旧消息、导入消息及显式 undefined 保持缺失语义，不从当前模型配置、连接、统计或正文推断。消息与 `roundVersions` 共用 `generationMetricsData.ts` 的递归纯克隆入口；非法类型、空白或非 assistant 归属在本机读取、初始化、保存及备份恢复写入前拒绝，保留原始数据。没有语义迁移步骤，重复读取保持原值。
+
+chat 模块升为 v3／最低读者 3；原始 v4／v5 备份必须声明 chat 模块至少 v3 才能包含模型快照，递归检查先于版本重标，旧 v1–v3 文档不能携带此字段。旧 chat v1／v2 缺失快照仍可读取；统计仍需至少 chat v2。字段通过穷尽消息策略进入实际备份投影，导出、恢复与再导出保留消息和轮次候选的原始 ID。它不是连接引用，恢复无需重映射。Dexie v9、备份文档 v5／信封 v1 保持，不新增表、索引、偏好、凭据或受管资源；私有回滚保留原记录。以下 chat v2 说明记录快照加入前的历史合同。
+
 ## #100 供应商默认配置与图片（2026-10-02）
 
 connections 模块 v5／最低读者 5，Dexie v9 增加 `providerAvatars`；本机连接 v3、文档 v5／信封 v1 保持。可选品牌、头像、重置来源、初始化标记严格校验，缺失为旧自定义／未初始化；纯读取不初始化厂商。图片行／值／裁切共享严格克隆入口，未知结构不投影或覆盖。仅连接备份引用的图片导出；原始模块声明在重标前拒绝旧版本混入新字段。来源冲突、重映射、回滚和旧日志范围见 [#100 合同](ISSUE-100-IMPLEMENTATION.md)。下文 Dexie v8／connections v4 的历史说明由此接续。
@@ -36,7 +42,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。#93 当前新导出是文档 v5／信封 v1，不新增 Dexie schema；连接模块 v4（本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v2（最低读者 2）、绘图设置模块 v3（最低读者 3），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。#93 当前新导出是文档 v5／信封 v1，不新增 Dexie schema；连接模块 v4（本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、绘图设置模块 v3（最低读者 3），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 

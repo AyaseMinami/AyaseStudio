@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Crop, ImagePlus, UserRound } from "lucide-react";
+import { Crop, UserRound } from "lucide-react";
 import { centeredCrop, cropRectangle, decodeAvatar, renderAvatar } from "../../avatar/image";
 import type { AvatarCrop } from "../../avatar/repository";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
+import { AssistantAvatar } from "../chat/AssistantAvatar";
 import "./AvatarSettings.css";
 
 export interface Draft { original: Blob; image: HTMLImageElement; url: string; crop: AvatarCrop }
 
-export function AvatarSettings({ avatar, onImport, importBusy = false }: { avatar: UserAvatarState; onImport(): void; importBusy?: boolean }) {
+export function AvatarSettings({ avatar, importBusy = false }: { avatar: UserAvatarState; importBusy?: boolean }) {
   const [draft, setDraft] = useState<Draft>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -29,13 +30,12 @@ export function AvatarSettings({ avatar, onImport, importBusy = false }: { avata
       <div className="avatar-card-heading"><h3 id="user-avatar-title">用户头像</h3><span>仅在本机</span></div>
       <div className="avatar-profile">
         <div className={`avatar-large${avatar.url || avatar.value ? " avatar-large-image" : ""}`}>{avatar.url ? <img src={avatar.url} alt="当前用户头像" /> : <UserRound size={32} strokeWidth={1.5} />}</div>
-        <div><strong>{avatar.url ? "你的聊天头像" : "默认用户头像"}</strong><p className="muted-text">显示在用户消息右侧，所有对话共用。</p>
-          <div className="avatar-buttons"><button data-import-avatar type="button" className="settings-button settings-button-primary" disabled={busy} onClick={onImport}><ImagePlus size={15} />导入图片</button>
+        <div><p className="muted-text">{avatar.url ? "显示在用户消息气泡内，所有对话共用。" : "当前使用默认头像，可从下方头像库选择。"}</p>
+          <div className="avatar-buttons">
             {avatar.value && <button className="settings-button" disabled={busy} onClick={() => void open(avatar.value!.original, avatar.value!.crop)}><Crop size={15} />重新裁切</button>}
             {(avatar.value || avatar.error) && <button className="settings-button" disabled={busy} onClick={() => { setError(undefined); void avatar.save(); }}>恢复默认</button>}</div>
         </div>
       </div>
-      <p className="avatar-format">PNG、JPEG 或 WebP · 最大 20 MB · 支持正方形裁切</p>
     {(error || avatar.error) && <p role="alert" className="avatar-error">{error || avatar.error}</p>}
     {draft && <AvatarCropDialog draft={draft} saving={avatar.busy} onCancel={() => setDraft(undefined)} onSave={async (crop) => {
       try {
@@ -47,9 +47,15 @@ export function AvatarSettings({ avatar, onImport, importBusy = false }: { avata
 }
 
 export function AvatarPreview({ avatar }: { avatar: UserAvatarState }) {
-  return <section className="avatar-preview" aria-label="头像聊天效果预览"><div className="avatar-preview-label">聊天效果</div>
-    <div className="avatar-preview-user"><div className="avatar-preview-bubble">今天也聊点有趣的吧。</div>{avatar.url ? <img src={avatar.url} alt="" /> : <span className="message-user-avatar message-avatar-fallback" style={avatar.value ? { background: "transparent" } : undefined} role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>}</div>
-    <div className="avatar-preview-reply">好呀，你想从哪里开始？</div>
+  return <section className="avatar-preview" aria-label="头像聊天效果预览"><div className="avatar-preview-label">当前用户头像效果</div>
+    <div className="avatar-preview-user"><div className="user-message-group message-surface">
+      <div className="message-identity message-identity-user">{avatar.url ? <img className="message-user-avatar" src={avatar.url} alt="" /> : <span className="message-user-avatar message-avatar-fallback" style={avatar.value ? { background: "transparent" } : undefined} role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>}</div>
+      <div className="user-message message-body">今天也聊点有趣的吧。</div>
+    </div></div>
+    <div className="avatar-preview-reply assistant-message-group message-surface">
+      <div className="message-identity"><AssistantAvatar assistantName="示例助手" assistantId="avatar-settings-preview" className="message-assistant-avatar" /><span className="message-author">示例助手</span></div>
+      <div className="message-body">好呀，你想从哪里开始？</div>
+    </div>
   </section>;
 }
 

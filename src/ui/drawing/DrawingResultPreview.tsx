@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Image } from "lucide-react";
+import { SettingsHelp } from "../settings/SettingsHelp";
 
-export function DrawingResultPreview({ id, url, error, width, height }: {
+export function DrawingResultPreview({ id, url, error, width, height, children }: {
   id: string | null; url: string | null; error: string | null; width?: number; height?: number;
+  children?: ReactNode;
 }) {
   const [transform, setTransform] = useState({ zoom: 1, x: 0, y: 0 });
   const [decodeError, setDecodeError] = useState(false);
@@ -78,8 +80,12 @@ export function DrawingResultPreview({ id, url, error, width, height }: {
             <p>{id ? "正在加载图片…" : "生成后的图片会自动显示在这里"}</p></div>}
     </div>
     <div className="drawing-preview-tools">
-      <p id="drawing-preview-help" className="drawing-muted">滚轮缩放，放大后拖动；键盘 + / − 缩放、方向键移动、0 适应窗口。</p>
+      {children}
+      <div className="drawing-preview-view-tools">
+      <span id="drawing-preview-help" className="drawing-visually-hidden">滚轮缩放，放大后拖动；键盘 + / − 缩放、方向键移动、0 适应窗口。</span>
+      <SettingsHelp label="图片操作">滚轮缩放，放大后拖动；键盘 + / − 缩放、方向键移动、0 适应窗口。</SettingsHelp>
       <button type="button" className="drawing-button" disabled={!url || Boolean(failure)} onClick={fit}>适应窗口</button>
+      </div>
     </div>
   </>;
 }

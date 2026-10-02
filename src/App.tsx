@@ -12,6 +12,7 @@ import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
 import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
+import { useConfirmation } from "./ui/useConfirmation";
 import { openDrawingOutputDirectory } from "./drawing/runtime";
 import { getDrawingModels } from "./chat/settings";
 import { ChatHeader } from "./ui/chat/ChatHeader";
@@ -31,7 +32,8 @@ function App() {
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
   const navigation = useConversationNavigation();
-  const drawing = useDrawingWorkspace(activePage === "drawing");
+  const drawingCloseConfirmation = useConfirmation();
+  const drawing = useDrawingWorkspace(activePage === "drawing", drawingCloseConfirmation.confirm);
   const [backupError, setBackupError] = useState<string>();
   const chat = useChatSession({
     externalBusy: drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued") || drawing.closing,
@@ -49,6 +51,7 @@ function App() {
   return (
     <AppShell activePage={activePage} onPageChange={setActivePage} interactionDisabled={chat.backupPreparing || drawing.closing}
       background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur} /></div>}>
+      {drawingCloseConfirmation.dialog}
       {appearance.backgroundDraft && <BackgroundFocusDialog
         url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur}
         error={appearance.backgroundError}

@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import appIcon from "../../../assets/branding/ayase-icon.svg";
 import { version } from "../../../src-tauri/tauri.conf.json";
 import { openExternal } from "../../chat/externalLinks";
+import { SettingsHelp } from "./SettingsHelp";
 import "./AboutSettings.css";
 
 const projectUrl = "https://github.com/AyaseMinami/AyaseStudio";
@@ -41,9 +42,10 @@ export function AboutSettings() {
 
     <section className="about-feedback" aria-label="反馈渠道">
       <div className="about-feedback-row">
-        {link(feedbackUrl, "about-feedback-link", <><span>反馈与建议</span>
-          <span className="about-link-detail">GitHub Issues <ArrowUpRight size={15} /></span></>)}
-        <p className="about-feedback-note">反馈不会自动附带聊天记录、日志或附件。</p>
+        <div className="about-feedback-label"><span>反馈与建议</span>
+          <SettingsHelp label="反馈与建议">反馈不会自动附带聊天记录、日志或附件。</SettingsHelp>
+        </div>
+        {link(feedbackUrl, "about-feedback-link", <span className="about-link-detail">GitHub Issues <ArrowUpRight size={15} /></span>)}
       </div>
       <div className="about-email"><span>联系邮箱</span><div>
         <span>{email}</span><button type="button" title="复制邮箱" aria-label="复制邮箱"

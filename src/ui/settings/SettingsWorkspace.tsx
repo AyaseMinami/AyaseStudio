@@ -122,11 +122,14 @@ export function SettingsWorkspace({
                 <p className="muted-text">备份、恢复与迁移，所有处理均在本机完成。</p>
               </header>
               <section className="settings-card data-management-intro" aria-label="Ayase 备份与恢复入口">
-                <h3>Ayase 备份与恢复</h3>
-                <p>备份助手、对话、消息、设置、头像、背景和附件，包含连接配置与 API Key，可选择加密备份。</p>
-                <p className="muted-text">进入将重新加载工作区。未发送的草稿和附件不会保留，请先发送或复制草稿，并等待当前任务完成。</p>
+                <div className="data-management-entry-heading"><h3>Ayase 备份与恢复</h3><span className="data-management-entry-tag">本应用数据</span></div>
+                <p>备份助手、对话、消息、设置、头像、背景和附件。</p>
+                <p className="muted-text">包含连接配置与 API Key，可选择加密备份。</p>
+                <div className="data-management-entry-footer">
+                <p className="data-management-entry-notice">进入将重新加载工作区。未发送的草稿和附件不会保留，请先发送或复制草稿，并等待当前任务完成。</p>
+                <button type="button" className="settings-button settings-button-primary" disabled={backupDisabled || !onBackup} onClick={onBackup}>进入备份与恢复</button>
+                </div>
                 {backupError && <p className="error-banner" role="alert">{backupError}</p>}
-                <button type="button" className="settings-button" disabled={backupDisabled || !onBackup} onClick={onBackup}>进入备份与恢复</button>
               </section>
               {dataImport ? <DataImportSettings {...dataImport} /> : <p className="muted-text">请在桌面应用中导入聊天。</p>}
             </section>

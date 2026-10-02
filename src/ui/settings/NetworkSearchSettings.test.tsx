@@ -31,7 +31,7 @@ async function mount() {
   const card = (provider: ExternalSearchProvider = "exa-mcp") => host.querySelector<HTMLElement>('[aria-labelledby="' + provider + '-title"]')!;
   const button = (text: string, provider?: ExternalSearchProvider) => {
     const area = provider ? card(provider) : host;
-    return [...area.querySelectorAll("button")].find((element) => element.textContent === text)!;
+    return [...area.querySelectorAll("button")].find((element) => element.textContent === text || element.getAttribute("aria-label") === text)!;
   };
   const click = async (text: string, provider: ExternalSearchProvider = "exa-mcp") => {
     await act(async () => button(text, provider).click());

@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 import type { DrawingPresetInput, DrawingPromptPreset } from "../../drawing/presets";
 
 type PresetDialog = {
@@ -66,7 +67,7 @@ function PresetEditor({ initial, disabled, targetExists, onClose, onSave }: {
         else if (!event.shiftKey && (index < 0 || index === fields.length - 1)) { event.preventDefault(); fields[0]?.focus(); }
       }}>
       <div className="drawing-section-heading"><h2 id={titleId}>{title}</h2>
-        <button type="button" className="drawing-button" aria-label="关闭预设弹窗" disabled={saving} onClick={close}>关闭</button>
+        <button type="button" className="drawing-button drawing-preset-close" aria-label="关闭预设弹窗" disabled={saving} onClick={close}><X size={18} /></button>
       </div>
       {deleting ? <p>删除“{initial.name}”？当前提示词草稿和历史任务会保留。</p> : <>
         <label className="drawing-field"><span className="drawing-label">预设名称</span>
@@ -81,7 +82,7 @@ function PresetEditor({ initial, disabled, targetExists, onClose, onSave }: {
       {error && <p className="drawing-error" role="alert">{error}</p>}
       <div className="drawing-actions">
         <button type="button" className="drawing-button drawing-preset-cancel" disabled={saving} onClick={close}>取消</button>
-        <button type="submit" className="drawing-button" disabled={disabled || saving || !targetExists || (!deleting && (!name.trim() || !content.trim()))}>
+        <button type="submit" className={`drawing-button drawing-preset-submit${deleting ? " drawing-preset-delete" : ""}`} disabled={disabled || saving || !targetExists || (!deleting && (!name.trim() || !content.trim()))}>
           {saving ? "正在处理…" : deleting ? "确认删除预设" : "保存预设"}
         </button>
       </div>
@@ -131,8 +132,9 @@ export function DrawingPresets({ presets, prompt, disabled = false, onApply, onC
       </select>
       <div className="drawing-actions">
         {([
-          ["update", "更新预设"], ["save-as", "另存预设"], ["edit", "编辑预设"], ["delete", "删除预设"],
+          ["update", "更新"], ["save-as", "另存"], ["edit", "编辑"], ["delete", "删除"],
         ] as const).map(([kind, label]) => <button key={kind} type="button" className="drawing-button"
+          aria-label={`${label}预设`} title={`${label}预设`}
           disabled={disabled || (kind !== "save-as" && !selected)} onClick={event => open(kind, event.currentTarget)}>{label}</button>)}
       </div>
     </div>

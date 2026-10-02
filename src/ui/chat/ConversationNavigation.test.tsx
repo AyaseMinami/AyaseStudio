@@ -254,6 +254,12 @@ describe("conversation navigation runtime layout", () => {
     await click(ui.host.querySelector(".active-chat-workspace")!);
     expect(ui.layout().expanded).toBe("false");
     await click(ui.button("默认助手"));
+    await click(ui.host.querySelector(".chat-navigation-pane")!);
+    await click(ui.host.querySelector(".conversation-cascade-pane")!);
+    expect(ui.layout().expanded).toBe("true");
+    await click(ui.host.querySelector(".conversation-workspace-body")!);
+    expect(ui.layout().expanded).toBe("false");
+    await click(ui.button("默认助手"));
     await click(textarea);
     expect(ui.layout()).toEqual({ open: "true", conversations: "true", expanded: "false" });
     await click(ui.button("默认助手"));
@@ -291,19 +297,33 @@ describe("conversation navigation runtime layout", () => {
     expect(ui.layout().expanded).toBe("false");
   });
 
-  it("shows full assistants when conversations close and restores layout through sidebar toggles and page remounts", async () => {
+  it.each([false, true])("the conversation handle exists only when closed and preserves assistantExpanded=%s", async assistantExpanded => {
+    const ui = await mount();
+    if (assistantExpanded) await click(ui.button("默认助手"));
+    expect(ui.host.querySelector('.conversation-expand-handle')).toBeNull();
+    await click(ui.button("收起对话栏"));
+    await click(ui.button("展开对话列表"));
+    expect(ui.layout()).toEqual({ open: "true", conversations: "true", expanded: String(assistantExpanded) });
+    expect(ui.host.querySelector('.conversation-expand-handle')).toBeNull();
+    expect(document.activeElement).toBe(ui.button("默认助手"));
+    await click(ui.button("收起对话栏"));
+    expect(ui.button("展开对话列表")).toBeDefined();
+  });
+
+  it("keeps compact assistants when conversations close and restores layout through sidebar toggles and page remounts", async () => {
     const ui = await mount();
     await click(ui.button("收起对话栏"));
-    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "true" });
+    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "false" });
+    expect(document.activeElement).toBe(ui.button("默认助手"));
     await click(ui.button("助手与对话"));
     expect(ui.layout().open).toBe("false");
     await click(ui.host.querySelector(".composer-input")!);
     await click(ui.button("助手与对话"));
-    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "true" });
+    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "false" });
     await click(ui.button("切换测试页面"));
     expect(ui.host.querySelector(".conversation-workspace-body")).toBeNull();
     await click(ui.button("切换测试页面"));
-    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "true" });
+    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "false" });
     await click(ui.button("默认助手"));
     await click(ui.host.querySelector(".composer-input")!);
     await click(ui.button("助手与对话"));
@@ -332,7 +352,7 @@ describe("conversation navigation runtime layout", () => {
     expect(ui.button("展开输入框")).toBeDefined();
     expect(ui.layout().conversations).toBe("true");
     await key(ui.host.querySelector(".composer-input")!, "Escape");
-    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "true" });
+    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "false" });
     await key(ui.host.querySelector(".composer-input")!, "Escape");
     expect(ui.layout().open).toBe("false");
   });

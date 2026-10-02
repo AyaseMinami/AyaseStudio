@@ -1,0 +1,124 @@
+/* Shared finish for small surfaces; positioning and disclosure stay with owners. */
+:root :is(.action-menu, .provider-template-menu, .thinking-popover,
+  .web-search-popover, .generation-stats-panel, .drawing-result-more-content) {
+  border: 1px solid color-mix(in srgb, rgb(var(--color-border)) 75%, rgb(var(--color-panel)));
+  border-radius: 12px;
+  background: color-mix(in srgb, rgb(var(--color-panel)) 98%, rgb(var(--color-text)));
+  color: rgb(var(--color-text));
+  box-shadow: 0 2px 4px rgb(var(--color-shadow) / 0.06), 0 12px 32px rgb(var(--color-shadow) / 0.14);
+  overscroll-behavior: contain;
+}
+
+:root :is(.action-menu, .provider-template-menu, .thinking-popover, .web-search-popover) { padding: 6px; }
+:root :is(.action-menu > button, .provider-template-menu > button,
+  .web-search-popover > button, .thinking-option) {
+  min-height: 36px;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: var(--font-small);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  transition: background-color 120ms, color 120ms;
+  transform: none;
+}
+:root :is(.action-menu > button, .provider-template-menu > button,
+  .web-search-popover > button):hover:not(:disabled),
+:root .thinking-option:hover:not(:has(input:disabled)) { background: rgb(var(--color-accent) / 0.08); }
+:root :is(.web-search-popover > button[aria-checked="true"], .thinking-option:has(input:checked)) {
+  background: rgb(var(--color-accent) / 0.14);
+  color: rgb(var(--color-accent-text));
+  font-weight: 600;
+}
+:root :is(.action-menu > button, .provider-template-menu > button,
+  .web-search-popover > button):active:not(:disabled),
+:root .thinking-option:active:not(:has(input:disabled)) { background: rgb(var(--color-accent) / 0.22); transform: none; }
+:root .action-menu > .action-menu-danger { color: rgb(var(--color-error-text)); }
+:root .action-menu > .action-menu-danger:hover:not(:disabled) { background: rgb(var(--color-error-text) / 0.09); }
+:root .action-menu > .action-menu-danger:active:not(:disabled) { background: rgb(var(--color-error-text) / 0.16); }
+:root .action-menu > .action-menu-separated {
+  margin-top: 6px;
+  border-top-color: rgb(var(--color-border) / 0.65);
+}
+:root :is(.action-menu-note, .web-search-popover > p) {
+  margin: 6px 4px 2px;
+  padding: 8px 6px 4px;
+  border-top: 1px solid rgb(var(--color-border) / 0.65);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+:root .web-search-popover { max-height: min(420px, 65dvh); overflow-y: auto; }
+:root .web-search-popover > p + p { margin-top: 0; border-top: 0; }
+:root .provider-create-menu > .provider-template-menu { width: 220px; max-height: min(440px, 60dvh); max-width: calc(100vw - 32px); overflow-y: auto; }
+:root .provider-template-menu > button { display: flex; align-items: center; }
+:root .provider-template-menu > button > svg:last-child { margin-left: auto; flex-shrink: 0; }
+:root .provider-template-menu > button:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: -2px; }
+
+/* Rename is a small form, not a list of menu rows. */
+:root .action-menu[role="dialog"] { width: 19rem; padding: 16px; }
+:root .action-menu[role="dialog"] form { gap: 16px; }
+:root .action-menu[role="dialog"] input { width: 100%; min-width: 0; min-height: 36px; }
+:root .action-menu .connection-rename-footer { padding-top: 12px; border-top: 1px solid rgb(var(--color-border) / 0.65); }
+:root .action-menu .connection-rename-footer button[type="submit"] {
+  background: rgb(var(--color-accent)); border-color: rgb(var(--color-accent)); color: rgb(var(--color-on-accent));
+}
+
+:root .thinking-popover :is(.thinking-options legend, .thinking-hint, .thinking-notice) { padding: 8px 10px; line-height: 1.6; }
+:root .thinking-popover .thinking-summary-toggle { margin-top: 8px; padding: 12px 10px; border-color: rgb(var(--color-border) / 0.65); }
+:root .thinking-popover .thinking-select { display: flex; justify-content: space-between; padding: 4px 10px 8px; }
+:root .thinking-popover .thinking-select select { min-width: 0; flex: 1; }
+:root .thinking-popover .thinking-budget { gap: 8px; padding: 8px 10px; }
+:root .thinking-popover .thinking-budget :is(input, button) { min-height: 32px; }
+:root .thinking-popover .thinking-budget button { padding: 4px 8px; border-radius: 6px; background: rgb(var(--color-accent) / 0.1); }
+
+:root .generation-stats-panel { padding: 16px; }
+:root .generation-stats-selectors { gap: 12px; }
+:root .generation-stats-selectors select { min-height: 32px; border-radius: 6px; }
+:root .generation-stats-state { margin: 12px 0; padding-bottom: 12px; border-bottom: 1px solid rgb(var(--color-border) / 0.65); }
+:root .generation-stats dl { gap: 14px 20px; }
+:root .generation-stats dd { margin-top: 4px; line-height: 1.5; }
+
+:root .drawing-result-more-content { gap: 2px; padding: 6px; }
+:root .drawing-result-more-content > .drawing-button,
+:root .drawing-task-more .drawing-actions > .drawing-button {
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  white-space: normal;
+  transform: none;
+}
+:root :is(.drawing-result-more-content, .drawing-task-more .drawing-actions) > .drawing-button:hover:not(:disabled) { background: rgb(var(--color-accent) / 0.08); }
+:root :is(.drawing-result-more-content, .drawing-task-more .drawing-actions) > .drawing-button:active:not(:disabled) { background: rgb(var(--color-accent) / 0.22); transform: none; }
+:root .drawing-result-more-content > .drawing-menu-danger { color: rgb(var(--color-error-text)); }
+:root .drawing-result-more-content > .drawing-menu-danger:hover:not(:disabled) { background: rgb(var(--color-error-text) / 0.09); }
+:root .drawing-result-more-content > .drawing-muted { padding: 8px 10px; line-height: 1.6; border-top: 1px solid rgb(var(--color-border) / 0.65); }
+/* Task disclosures remain in flow so the scrolling table cannot clip them. */
+:root .drawing-task-more .drawing-actions { margin-top: 6px; padding: 4px; border: 1px solid rgb(var(--color-border) / 0.65); border-radius: 8px; background: rgb(var(--color-canvas) / 0.5); }
+
+:root .settings-help-tooltip {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgb(var(--color-panel));
+  color: rgb(var(--color-text-soft));
+  border-color: rgb(var(--color-border));
+  box-shadow: 0 2px 4px rgb(var(--color-shadow) / 0.06), 0 8px 24px rgb(var(--color-shadow) / 0.14);
+  font-size: var(--font-caption);
+  line-height: 1.65;
+}
+:root .settings-help-trigger:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+@media (max-width: 760px) {
+  :root .drawing-result-more-content { box-shadow: none; }
+}
+@media (max-width: 620px) {
+  /* Anchor to the whole composer toolbar when the icon is near the right edge. */
+  :root .web-search-toolbar { position: static; }
+  :root .web-search-popover { width: min(210px, 100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root :is(.action-menu > button, .provider-template-menu > button, .web-search-popover > button, .thinking-option) { transition: none; }
+}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, GripVertical, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, GripVertical, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { AssistantAvatarEditor } from "./AssistantAvatarEditor";
 import { useNavigationDocking } from "./useNavigationDocking";
@@ -17,6 +17,7 @@ import { ThinkingControl } from "./ThinkingControl";
 import { WebSearchControl } from "./WebSearchControl";
 import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 import { useNavigationListDrag } from "./useNavigationListDrag";
+import "./AssistantConfig.css";
 
 function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -236,7 +237,14 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       {backgroundRuns.length} 个其他对话正在生成。
       {backgroundRuns.map((running) => <button key={running.id} className="settings-button" type="button" disabled={busy} onClick={() => void execute({ type: "select", assistantId: running.assistantId, conversationId: running.id })}>查看 {running.title}</button>)}
     </div>}
-    <div ref={bodyRef} className="conversation-workspace-body" data-navigation-docked={docked} data-navigation-open={navigationOpen} data-conversations-open={navigationOpen && conversationPanelOpen} data-assistant-expanded={assistantExpanded}>
+    <div ref={bodyRef} className="conversation-workspace-body" data-navigation-docked={docked} data-navigation-open={navigationOpen} data-conversations-open={navigationOpen && conversationPanelOpen} data-assistant-expanded={assistantExpanded}
+      onClickCapture={(event) => {
+        // Include narrow-column gutters, but exclude navigation and portal/modal interactions.
+        if (event.button === 0 && event.detail > 0 && workspace.isReady
+          && event.currentTarget.contains(event.target as Node)
+          && !event.currentTarget.querySelector('[aria-modal="true"]')
+          && !(event.target as Element).closest('.chat-navigation-pane, .conversation-cascade-pane, .conversation-expand-handle, [role="dialog"], [role="menu"]')) navigation.activateDraft();
+      }}>
       <span className="navigation-space-probe" aria-hidden="true" />
       <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表" data-open={navigationOpen} inert={!navigationOpen} aria-hidden={!navigationOpen}>
         <div className="assistant-pane-tools">
@@ -307,13 +315,15 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
           </div>
             </li>)}</ul>
       </aside>}
-      <section className="active-chat-workspace" onClickCapture={(event) => {
-        // Portals bubble through React owners; local modal overlays also cover this region.
-        if (event.button === 0 && event.detail > 0 && workspace.isReady
-          && event.currentTarget.contains(event.target as Node)
-          && !event.currentTarget.querySelector('[aria-modal="true"]')
-          && !(event.target as Element).closest('[role="dialog"], [role="menu"]')) navigation.activateDraft();
-      }}>
+      {navigationOpen && !conversationPanelOpen && selectedAssistant && <button type="button" className="conversation-expand-handle"
+        aria-label="展开对话列表" title="展开对话列表"
+        aria-controls={`assistant-conversations-${selectedAssistant.id}`} aria-expanded={false} disabled={busy}
+        onClick={() => {
+          const selected = navigationRef.current?.querySelector<HTMLButtonElement>('.assistant-branch-toggle[aria-pressed="true"]');
+          (selected && !selected.disabled ? selected : toggleRef.current)?.focus({ preventScroll: true });
+          navigation.openConversations();
+        }}><svg className="conversation-expand-handle-shape" viewBox="0 0 14 40" aria-hidden="true"><path d="M0.5 0.5 C5 0.5 13.5 4 13.5 10 L13.5 30 C13.5 36 5 39.5 0.5 39.5 Z" /></svg><ChevronRight className="conversation-expand-handle-arrow" size={12} aria-hidden="true" /></button>}
+      <section className="active-chat-workspace">
         {snapshot && !conversation ? <div className="conversation-empty"><AssistantAvatar assistantName={selectedAssistant?.name} assistantId={selectedAssistant?.id} avatar={selectedAssistant?.avatar} defaultAvatar={selectedAssistant?.defaultAvatar} legacyIcon={selectedAssistant?.icon} /><h2>{selectedAssistant?.name}</h2><p>此助手还没有对话。新对话会复制助手当前的模型和生成配置。</p>
           <button className="settings-button" type="button" disabled={busy} onClick={() => selectedAssistant && void execute({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}>创建第一个对话</button>
           <button className="settings-button" type="button" disabled={busy} onClick={() => editAssistant(selectedAssistant)}>编辑助手设置</button>
@@ -331,19 +341,27 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       config={dialog.input.defaultConfig} errors={editorErrors} protocol={editorTarget?.connection.protocol} model={editorTarget?.model.modelId ?? ""}
       onChange={(config) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: config } })}
       onReset={() => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: defaultSessionConfig() } })} onClose={close}
-      footer={<><button className="settings-button" type="button" disabled={busy || avatarBusy} onClick={close}>取消</button><button className="settings-button" type="button" disabled={busy || avatarBusy || !dialog.input.name.trim() || Object.keys(editorErrors).length > 0}
+      footer={<><button className="settings-button" type="button" disabled={busy || avatarBusy} onClick={close}>取消</button><button className="settings-button settings-button-primary" type="button" disabled={busy || avatarBusy || !dialog.input.name.trim() || Object.keys(editorErrors).length > 0}
         onClick={() => void perform({ type: dialog.existing ? "edit-assistant" : "create-assistant", id: dialog.id, input: dialog.input })}>{dialog.existing ? "保存助手" : "创建助手"}</button></>}>
-      <section className="session-config-section">
+      <section className="session-config-section assistant-config-basics">
+        <h3>基本信息</h3>
+        <div className="assistant-config-identity">
+        <div className="assistant-config-name">
         <label htmlFor="assistant-name">助手名称</label>
         <div className="assistant-identity-row">
         <input id="assistant-name" placeholder="例如：写作助手" required value={dialog.input.name} disabled={busy || dialog.existing?.id === DEFAULT_ASSISTANT_ID} maxLength={100}
           onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, name: event.target.value } })} />
         </div>
+        </div>
         <AssistantAvatarEditor assistantName={dialog.input.name} assistantId={dialog.id} value={dialog.input.avatar} defaultAvatar={dialog.input.defaultAvatar} legacyIcon={dialog.input.icon} disabled={busy}
           onBusyChange={setAvatarBusy}
           onChange={(avatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, avatar } } : current)}
           onDefaultChange={(defaultAvatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, defaultAvatar, icon: "" } } : current)} />
-        <label htmlFor="assistant-model">助手模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
+        </div>
+      </section>
+      <section className="session-config-section assistant-config-model">
+        <h3>模型与能力</h3>
+        <label htmlFor="assistant-model">默认模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
           onChange={(event) => {
             const defaultModelId = event.target.value || null;
             const next = getActiveTarget({ ...settings, activeModelId: defaultModelId });
@@ -355,7 +373,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
           {settings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
         </select>
         <div className="session-config-capabilities">
-        <WebSearchControl config={dialog.input.defaultConfig} disabled={busy}
+        <WebSearchControl config={dialog.input.defaultConfig} disabled={busy} customSelect
           onChange={(defaultConfig) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig } })} />
         {editorTarget && <ThinkingControl
           key={`${editorTarget.connection.protocol}-${editorTarget.model.modelId}-${getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)?.budget}`}
@@ -369,8 +387,8 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     </SessionConfigPanel>}
     {dialog && dialog.type !== "assistant" && dialog.type !== "conversation" && <ManagementDialog title="删除确认" onClose={close}>
       {dialog.type === "delete-assistant" && <><p>助手“{dialog.name}”包含 {dialog.count} 个对话。迁移后保留各对话设置和消息，仅改变所属助手。</p>
-        {dialog.permanent ? <><p>将永久删除该助手、全部对话和消息，无法撤销。</p><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "delete" })}>确认永久删除助手及对话</button></>
-          : <><button className="settings-button" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "move" })}>迁移对话到默认助手并删除助手</button><button className="settings-button" type="button" disabled={busy} onClick={() => setDialog({ ...dialog, permanent: true })}>选择永久删除全部内容…</button></>}
+        {dialog.permanent ? <><p>将永久删除该助手、全部对话和消息，无法撤销。</p><button className="settings-button confirm-danger" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "delete" })}>确认永久删除助手及对话</button></>
+          : <><button className="settings-button confirm-primary" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "move" })}>迁移对话到默认助手并删除助手</button><button className="settings-button confirm-danger" type="button" disabled={busy} onClick={() => setDialog({ ...dialog, permanent: true })}>选择永久删除全部内容…</button></>}
       </>}
       {workspace.operationError && <p role="alert">{workspace.operationError}</p>}
       <button className="settings-button" type="button" disabled={busy} onClick={close}>取消</button>

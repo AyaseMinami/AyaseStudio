@@ -11,6 +11,7 @@ export interface ConversationNavigationController {
   subscribe(listener: () => void): () => void;
   setOpen(open: boolean): void;
   expandAssistant(): void;
+  openConversations(): void;
   closeConversations(): void;
   activateDraft(): void;
 }
@@ -38,7 +39,8 @@ export function createConversationNavigationController(viewportWidth: number): C
     },
     setOpen: (open: boolean) => update({ open }),
     expandAssistant: () => update({ assistantExpanded: true, conversationsOpen: true }),
-    closeConversations: () => update({ assistantExpanded: true, conversationsOpen: false }),
+    openConversations: () => update({ conversationsOpen: true }),
+    closeConversations: () => update({ conversationsOpen: false }),
     activateDraft: () => {
       if (snapshot.open && snapshot.assistantExpanded) update({ assistantExpanded: false });
     },

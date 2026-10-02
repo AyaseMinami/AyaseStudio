@@ -31,9 +31,11 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   dataCheck(Array.isArray(raw.rows.chats));
   const modern = raw.version === 4 || raw.version === 5;
   let permitted = false;
+  let modelPermitted = false;
   if (modern) {
     dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.chat);
     permitted = (raw.compatibility.modules.chat.version as number) >= 2;
+    modelPermitted = (raw.compatibility.modules.chat.version as number) >= 3;
     if (raw.connections !== undefined && raw.connections !== null) {
       dataRecord(raw.connections); dataCheck(Array.isArray(raw.connections.providers));
       for (const provider of raw.connections.providers) {
@@ -51,6 +53,7 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   function visit(message: unknown): void {
     dataRecord(message);
     if ("generationMetrics" in message) dataCheck(permitted, "生成统计与聊天模块版本不匹配，请升级应用。");
+    if (message.generationModel !== undefined) dataCheck(modelPermitted, "回复模型快照与聊天模块版本不匹配，请升级应用。");
     readMessageGenerationMetrics(message);
     if (message.roundVersions !== undefined) {
       dataRecord(message.roundVersions); dataCheck(Array.isArray(message.roundVersions.pairs));

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { X } from "lucide-react";
 import { backgroundViewport, centerBackgroundFocus, normalizeBackgroundFocus, type BackgroundFocus } from "../../appearance/backgroundFocus";
 import { BackgroundImage, useViewportAspectRatio } from "./BackgroundImage";
 import "./backgroundFocus.css";
@@ -79,7 +80,7 @@ export function BackgroundFocusEditor({ url, focus, fit, blur = 0, error, confir
 
   return <div className="background-focus-content">
     <div className="background-crop-scroll">
-      <header><div><h2 id="background-focus-title">背景中心取景</h2><p>拖动 16:9 参考框选择中心，缩放图片调整范围。允许超出图片边缘；实际背景随窗口比例显示。</p></div><button autoFocus className="settings-button" type="button" onClick={onCancel}>取消</button></header>
+      <header><div><h2 id="background-focus-title">背景中心取景</h2><p>拖动 16:9 参考框选择中心，缩放图片调整范围。允许超出图片边缘；实际背景随窗口比例显示。</p></div><button autoFocus className="settings-button background-focus-close" aria-label="关闭取景编辑" type="button" onClick={onCancel}><X size={18} /></button></header>
       <div className="background-crop-stage-wrap">
         {size && frame && editorBounds && <svg ref={stage} className="background-focus-editor" aria-label="原图与取景参考框"
           viewBox={`${editorBounds.x} ${editorBounds.y} ${editorBounds.width} ${editorBounds.height}`}

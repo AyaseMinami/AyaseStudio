@@ -46,7 +46,7 @@ async function click(label: string) {
 it("shows four persistent actions and enables selection-dependent actions only after choosing a preset", async () => {
   await act(async () => root.render(<DrawingPresets {...props()} />));
   const actions = ["更新预设", "另存预设", "编辑预设", "删除预设"];
-  expect([...host.querySelectorAll("button")].map(item => item.textContent)).toEqual(actions);
+  expect([...host.querySelectorAll("button")].map(item => item.textContent)).toEqual(["更新", "另存", "编辑", "删除"]);
   for (const action of actions) {
     expect(button(action).closest("[hidden]")).toBeNull();
     expect(button(action).disabled).toBe(action !== "另存预设");

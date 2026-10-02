@@ -94,8 +94,8 @@ export function AppearanceSettings({
         </label>
       </div>
     </fieldset>
-    <fieldset className="appearance-theme-group appearance-preset-group">
-      <legend>配色方案</legend>
+    <fieldset className="appearance-theme-group appearance-preset-group" aria-labelledby="appearance-preset-title">
+      <legend className="appearance-preset-heading"><span id="appearance-preset-title">配色方案</span><button className="settings-button appearance-secondary-action" type="button" title="清除自定义颜色，恢复当前方案配色；保留背景图片和透明度。" onClick={() => onColorPresetChange(colorPreset)}><RotateCcw size={15} aria-hidden="true" />恢复方案配色</button></legend>
       <div className="appearance-preset-options">
         {colorPresets.map((preset) => {
           const palette = getColorPresetPalette(preset.id, resolvedTheme);
@@ -111,7 +111,6 @@ export function AppearanceSettings({
         })}
       </div>
     </fieldset>
-    <button className="settings-button appearance-secondary-action" type="button" title="清除自定义颜色，恢复当前方案配色；保留背景图片和透明度。" onClick={() => onColorPresetChange(colorPreset)}><RotateCcw size={15} aria-hidden="true" />恢复方案配色</button>
     </div>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-colors-title">
@@ -126,16 +125,6 @@ export function AppearanceSettings({
       {readabilityWarnings.map((warning) => <p className="notice notice-warning appearance-inline-notice" key={warning}>{warning}</p>)}
     </section>
 
-    <section className="appearance-group appearance-group-card" aria-labelledby="appearance-transparency-title">
-      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。侧栏透明度同时控制聊天的助手栏、对话栏和设置分类导航。</GroupHeading>
-      <div className="appearance-rows">
-        <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖三个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
-        <div className="appearance-row appearance-range-row"><RowCopy title="侧栏透明度" /><RangeControl value={`${sidebarTransparency}%`} ariaLabel="侧栏透明度" valueNumber={sidebarTransparency} onChange={onSidebarTransparencyChange} onReset={() => onSidebarTransparencyChange(defaultAppearancePreferences.sidebarTransparency)} max="100" min="0" /></div>
-        <div className="appearance-row appearance-range-row"><RowCopy title="输入区域透明度" /><RangeControl value={`${composerTransparency}%`} ariaLabel="输入区域透明度" valueNumber={composerTransparency} onChange={onComposerTransparencyChange} onReset={() => onComposerTransparencyChange(defaultAppearancePreferences.composerTransparency)} max="100" min="0" /></div>
-        <div className="appearance-row appearance-range-row"><RowCopy title="消息气泡透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="消息气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} onReset={() => onAssistantBubbleTransparencyChange(defaultAppearancePreferences.assistantBubbleTransparency)} max="100" min="0" /></div>
-      </div>
-    </section>
-
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-background-title">
       <GroupHeading id="appearance-background-title" title="全局背景">聊天、绘图与设置共用此背景。图片仅保存在本机，不上传。支持 PNG、JPEG、WebP，最大 20 MB。删除或替换库图片不影响当前背景。</GroupHeading>
       {backgroundReference && <div className="appearance-current-background">{thumbnailUrl && <img src={thumbnailUrl} alt="当前背景缩略图" />}<span title={backgroundName ?? "当前背景"}>{backgroundName ?? "当前背景"}<small>{backgroundEnabled ? "已启用" : "已停用，图片和参数已保留"}</small></span></div>}
@@ -146,6 +135,16 @@ export function AppearanceSettings({
       </div>
       <BackgroundDisplayControls fit={backgroundFit} mask={backgroundMask} blur={backgroundBlur} disabled={!backgroundReference || backgroundBusy} onFitChange={onBackgroundFitChange} onMaskChange={onBackgroundMaskChange} onBlurChange={onBackgroundBlurChange} />
       {backgroundError && <p className="notice notice-warning appearance-inline-notice" role="alert">{backgroundError}</p>}
+    </section>
+
+    <section className="appearance-group appearance-group-card appearance-transparency-group" aria-labelledby="appearance-transparency-title">
+      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。侧栏透明度同时控制聊天的助手栏、对话栏和设置分类导航。</GroupHeading>
+      <div className="appearance-rows">
+        <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖三个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
+        <div className="appearance-row appearance-range-row"><RowCopy title="侧栏透明度" /><RangeControl value={`${sidebarTransparency}%`} ariaLabel="侧栏透明度" valueNumber={sidebarTransparency} onChange={onSidebarTransparencyChange} onReset={() => onSidebarTransparencyChange(defaultAppearancePreferences.sidebarTransparency)} max="100" min="0" /></div>
+        <div className="appearance-row appearance-range-row"><RowCopy title="输入区域透明度" /><RangeControl value={`${composerTransparency}%`} ariaLabel="输入区域透明度" valueNumber={composerTransparency} onChange={onComposerTransparencyChange} onReset={() => onComposerTransparencyChange(defaultAppearancePreferences.composerTransparency)} max="100" min="0" /></div>
+        <div className="appearance-row appearance-range-row"><RowCopy title="消息气泡透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="消息气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} onReset={() => onAssistantBubbleTransparencyChange(defaultAppearancePreferences.assistantBubbleTransparency)} max="100" min="0" /></div>
+      </div>
     </section>
 
     <section className="appearance-group appearance-group-card appearance-reset-group" aria-labelledby="appearance-reset-title">

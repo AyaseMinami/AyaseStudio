@@ -9,6 +9,19 @@ import { defaultSearchConfiguration, saveSearchConfiguration, SEARCH_SETTINGS_KE
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => localStorage.clear());
 
+it("maps the custom selector to the same search configuration without changing on open", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); const change = vi.fn(); const config = defaultSessionConfig();
+  try {
+    await act(async () => root.render(<WebSearchControl config={config} disabled={false} customSelect onChange={change} />));
+    await act(async () => host.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
+    expect(change).not.toHaveBeenCalled();
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === "Exa API")!;
+    await act(async () => option.click());
+    expect(change).toHaveBeenCalledExactlyOnceWith({ ...config, webSearch: true, webSearchProvider: "exa-api" });
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("keeps old enabled configs native and changes the provider explicitly", async () => {
   const host = document.createElement("div"); const root = createRoot(host); const change = vi.fn();
   const config = { ...defaultSessionConfig(), webSearch: true };

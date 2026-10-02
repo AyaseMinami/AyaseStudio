@@ -15,6 +15,24 @@ const messages: StoredChatMessage[] = [
   { id: "answer", role: "assistant", content: "Answer", status: "complete", replyToId: "user" },
 ];
 
+it("shows each reply's frozen model independently of the current assistant model and leaves legacy messages unlabeled", async () => {
+  const { host, root } = setup();
+  const assistant = { id: "a", name: "默认助手", icon: "", sortOrder: 0, defaultModelId: "current-a", defaultConfig: defaultSessionConfig() };
+  const replies: StoredChatMessage[] = [
+    { ...messages[1], generationModel: "historical-model-a" },
+    { ...messages[1], id: "b", generationModel: "historical-model-b" },
+    { ...messages[1], id: "legacy" },
+  ];
+  try {
+    await act(async () => root.render(<MessageList messages={replies} assistant={assistant} />));
+    const headers = () => [...host.querySelectorAll('.message-author')].map(e => e.textContent);
+    expect(headers()).toEqual(["默认助手 · historical-model-a", "默认助手 · historical-model-b", "默认助手"]);
+    await act(async () => root.render(<MessageList messages={replies} assistant={{ ...assistant, defaultModelId: "current-b" }} />));
+    expect(headers()).toEqual(["默认助手 · historical-model-a", "默认助手 · historical-model-b", "默认助手"]);
+    expect(host.querySelector('.message-body')?.textContent).toBe("Answer");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("keeps imported missing attachment names visible as safe text", async () => {
   const { host, root } = setup();
   try {
@@ -153,16 +171,23 @@ function setup(actions: Partial<MessageActions> = {}, actionsDisabled = false, o
   return { host, root, handlers, render };
 }
 
-it("keeps both action bars and copy feedback outside message bodies", async () => {
+it("keeps identity and actions in the same reading surface without including them in copied Markdown", async () => {
   const { host, root, render } = setup();
-  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(async () => {}) } });
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   try {
     await act(async () => render());
-    for (const group of host.querySelectorAll(".user-message-group, .assistant-message-group")) {
+    for (const [index, group] of [...host.querySelectorAll(".user-message-group, .assistant-message-group")].entries()) {
       const body = group.querySelector(".markdown")!;
+      expect(group.classList.contains("message-surface")).toBe(true);
+      expect(group.querySelector(".message-identity")?.parentElement).toBe(group);
+      expect(group.querySelector(".message-author")?.textContent).toBe(index === 0 ? undefined : "助手");
+      expect(group.querySelector(index === 0 ? ".message-user-avatar" : ".message-assistant-avatar")).not.toBeNull();
+      expect(body.querySelector(".message-identity")).toBeNull();
       expect(body.querySelector(".message-actions")).toBeNull();
       expect(body.nextElementSibling?.className).toBe("message-actions");
       await act(async () => group.querySelector<HTMLButtonElement>("[aria-label='复制']")!.click());
+      expect(writeText).toHaveBeenLastCalledWith(messages[index].content);
       expect(group.querySelector(".message-copy-feedback")?.parentElement).toBe(group);
     }
   } finally { await act(async () => root.unmount()); host.remove(); }
@@ -415,7 +440,7 @@ it("confirms deletion and retries directly from the linked user message", async 
     await act(async () => render());
     await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='删除']")!.click());
     expect(host.querySelector('[role="dialog"]')?.textContent).toContain("永久删除");
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .settings-button")!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-confirm-dialog .confirm-danger")!.click());
     expect(handlers.delete).toHaveBeenCalledWith("user");
     await act(async () => host.querySelector<HTMLButtonElement>("article:nth-child(2) [aria-label='重新生成']")!.click());
     expect(host.querySelector('[role="dialog"]')).toBeNull();

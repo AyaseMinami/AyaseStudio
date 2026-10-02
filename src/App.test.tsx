@@ -131,6 +131,12 @@ describe("App navigation", () => {
     });
   }
 
+  async function answerConfirmation(accept: boolean): Promise<void> {
+    const dialog = document.querySelector<HTMLDialogElement>(".confirmation-dialog")!;
+    expect(dialog?.open).toBe(true);
+    await act(async () => dialog.querySelectorAll<HTMLButtonElement>("button")[accept ? 1 : 0].click());
+  }
+
   async function openConnectionMenu(name: string): Promise<void> {
     await act(async () => {
       container.querySelector<HTMLElement>(`button[aria-label="管理连接 ${name}"]`)!.click();
@@ -848,10 +854,9 @@ describe("App navigation", () => {
     await clickButton("编辑模型 model-d");
     const draft = container.querySelector<HTMLInputElement>('.model-edit-form input[name="modelId"]')!;
     draft.value = "unsaved-model";
-    const confirmSwitch = vi.fn(() => false);
-    Object.assign(window, { confirm: confirmSwitch });
     await clickButton("查看连接 备用线路");
-    expect(confirmSwitch).toHaveBeenCalled();
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("当前模型编辑尚未保存");
+    await answerConfirmation(false);
     expect(container.querySelector<HTMLInputElement>('.model-edit-form input[name="modelId"]')?.value).toBe("unsaved-model");
     expect(getButton("查看连接 连接 2").getAttribute("aria-current")).toBe("true");
 
@@ -990,7 +995,6 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
     let observedRequest: ChatRequest | undefined;
     const transport: ChatTransport = {
       async *stream(request) {
@@ -1008,6 +1012,7 @@ describe("App navigation", () => {
     await renderApp();
     await clickButton("设置");
     await clickButton("测试模型 test-model");
+    await answerConfirmation(true);
     await waitFor(() => observedRequest !== undefined);
 
     const baseUrl = container.querySelector<HTMLInputElement>("#base-url");
@@ -1051,7 +1056,6 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
     const observedRequests: ChatRequest[] = [];
     const transport: ChatTransport = {
       async *stream(request) {
@@ -1069,8 +1073,10 @@ describe("App navigation", () => {
     await renderApp();
     await clickButton("设置");
     await clickButton("测试模型 model-one");
+    await answerConfirmation(true);
     await waitFor(() => observedRequests.length === 1);
     await clickButton("测试模型 model-two");
+    await answerConfirmation(true);
     await waitFor(() => observedRequests.length === 2);
 
     expect(observedRequests[0]?.signal?.aborted).toBe(true);
@@ -1103,8 +1109,6 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    const confirm = vi.fn(() => false);
-    Object.assign(window, { confirm });
 
     await renderApp();
     await clickButton("设置");
@@ -1123,9 +1127,10 @@ describe("App navigation", () => {
     });
     await clickButton("编辑模型 model-two");
 
-    expect(confirm).toHaveBeenCalledWith(
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain(
       "当前模型编辑尚未保存。切换后将放弃这些修改，是否继续？",
     );
+    await answerConfirmation(false);
     expect(
       container.querySelector<HTMLInputElement>(
         '.model-edit-form input[name="modelId"]',
@@ -1162,12 +1167,12 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
 
     await renderApp();
     await clickButton("设置");
     await openConnectionMenu("连接 1");
     await clickButton("删除连接 连接 1");
+    await answerConfirmation(true);
     await waitFor(
       () => document.activeElement?.getAttribute("aria-label") === "查看连接 连接 2",
     );
@@ -1212,12 +1217,12 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-openai",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
 
     await renderApp();
     await clickButton("设置");
     await openConnectionMenu("OpenAI 主线路");
     await clickButton("删除连接 OpenAI 主线路");
+    await answerConfirmation(true);
     await clickButton("聊天");
     expect(container.textContent).toContain("模型已失效");
     await setDraft("keep this draft");
@@ -1261,7 +1266,6 @@ describe("App navigation", () => {
       }],
       activeModelId: "model-chat",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
 
     await renderApp();
     await clickButton("设置");
@@ -1305,6 +1309,7 @@ describe("App navigation", () => {
       if (protocol) protocol.value = "anthropic-native";
       protocol?.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    await answerConfirmation(true);
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://gemini.example.com/v1/messages",
     );
@@ -1323,6 +1328,7 @@ describe("App navigation", () => {
     );
     await clickButtonWithText("获取模型列表");
     await clickButton("测试模型 model/with space");
+    await answerConfirmation(true);
     expect(runtimeMocks.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
     expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
 

@@ -19,7 +19,7 @@
 .drawing-workspace .drawing-notice { margin: 0.75rem 0 1rem; color: rgb(var(--color-muted)); font-size: var(--font-small); line-height: 1.6; }
 .drawing-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 4px; align-items: start; }
 .drawing-left-column { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.drawing-panel { min-width: 0; border: 1px solid rgb(var(--color-border)); border-radius: 8px; background: rgb(var(--color-panel)); padding: 1rem; }
+.drawing-panel { min-width: 0; border: 1px solid color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); border-radius: 12px; background: rgb(var(--color-panel)); padding: 1rem; }
 .drawing-form { display: flex; flex-direction: column; gap: 0.75rem; container-type: inline-size; }
 .drawing-presets { min-width: 0; }
 .drawing-presets .drawing-actions { gap: 0.35rem; }
@@ -30,8 +30,28 @@
 .drawing-preset-dialog p { margin: 0; line-height: 1.6; }
 .drawing-preset-dialog textarea { min-height: 180px; }
 .drawing-preset-dialog > * { flex-shrink: 0; }
+.drawing-preset-dialog { padding: 24px; gap: 20px; border-radius: 16px; border-color: color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); }
+.drawing-preset-dialog h2 { font-size: 1.25rem; }
+.drawing-preset-dialog .drawing-field { gap: 8px; min-width: 0; }
+.drawing-preset-dialog .drawing-label { font-weight: 500; }
+.drawing-preset-dialog input { height: 36px; padding: 0 10px; border-radius: 6px; }
+.drawing-preset-dialog textarea { min-height: 180px; padding: 12px; border-radius: 8px; line-height: 1.6; resize: vertical; }
+.drawing-preset-dialog .drawing-muted { color: rgb(var(--color-muted)); font-size: var(--font-small); }
+.drawing-preset-dialog > .drawing-actions { justify-content: flex-end; padding-top: 16px; border-top: 1px solid rgb(var(--color-border) / 0.6); gap: 8px; }
+.drawing-preset-dialog .drawing-button { min-height: 36px; border-radius: 6px; transition: background-color 120ms, transform 140ms cubic-bezier(0.16, 1, 0.3, 1); }
+.drawing-preset-dialog .drawing-preset-close { flex-shrink: 0; width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; background: rgb(var(--color-text) / 0.035); }
+.drawing-preset-dialog .drawing-preset-submit { border-color: rgb(var(--color-accent)); background: rgb(var(--color-accent)); color: rgb(var(--color-on-accent)); }
+.drawing-preset-dialog .drawing-preset-submit:hover:not(:disabled) { background: color-mix(in srgb, rgb(var(--color-accent)) 90%, black); }
+.drawing-preset-dialog .drawing-preset-delete { border-color: rgb(var(--color-error-text) / 0.3); background: rgb(var(--color-error-text) / 0.08); color: rgb(var(--color-error-text)); }
+.drawing-preset-dialog .drawing-preset-delete:hover:not(:disabled) { background: rgb(var(--color-error-text) / 0.15); }
+.drawing-preset-dialog .drawing-button:active:not(:disabled) { transform: translateY(1px); }
+@media (max-width: 620px) { .drawing-preset-dialog { padding: 16px; } }
+@media (prefers-reduced-motion: reduce) {
+  .drawing-preset-dialog .drawing-button { transition: none; }
+  .drawing-preset-dialog .drawing-button:active:not(:disabled) { transform: none; }
+}
 .drawing-field { display: flex; min-width: 0; flex-direction: column; gap: 0.5rem; }
-.drawing-label { font-size: var(--font-small); font-weight: 600; }
+.drawing-label { font-size: var(--font-small); font-weight: 500; color: rgb(var(--color-text-soft)); }
 .drawing-muted { color: rgb(var(--color-muted)); font-size: var(--font-small); font-weight: 400; line-height: 1.6; }
 .drawing-model, .drawing-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .drawing-model { align-items: stretch; }
@@ -41,6 +61,24 @@
 .drawing-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; gap: 0.4rem; border: 1px solid rgb(var(--color-border)); border-radius: 8px; padding: 0.45rem 0.7rem; color: rgb(var(--color-text-soft)); font-size: var(--font-small); cursor: pointer; }
 .drawing-button:hover:not(:disabled) { border-color: rgb(var(--color-border-strong)); background: rgb(var(--color-hover)); }
 .drawing-button:disabled, .drawing-field input:disabled, .drawing-field select:disabled { color: rgb(var(--color-disabled-text)); cursor: default; }
+.drawing-button, .drawing-task-subviews button { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 140ms cubic-bezier(0.16, 1, 0.3, 1); }
+.drawing-button:active:not(:disabled), .drawing-task-subviews button:active:not(:disabled) { transform: translateY(1px); }
+.drawing-queue-summary, .drawing-pagination, .drawing-preview-heading-actions,
+.drawing-field input[type="number"], .drawing-field select,
+.drawing-task-row > td:nth-child(4), .drawing-workspace time,
+.drawing-history .drawing-button { font-variant-numeric: tabular-nums; }
+.drawing-task-row > td:nth-child(4) { white-space: nowrap; }
+.drawing-field textarea, .drawing-field select, .drawing-field input { background: color-mix(in srgb, rgb(var(--color-input)) 85%, rgb(var(--color-canvas))); }
+:root:not([data-theme="light"]) :is(.drawing-result-more-content, .drawing-preset-dialog, .drawing-reference-dialog, .drawing-task-confirm-dialog) {
+  background: color-mix(in srgb, rgb(var(--color-panel)) 96%, rgb(var(--color-text)));
+}
+.drawing-workspace :is(button, summary, select, input, textarea):focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+.drawing-presets .drawing-button, .drawing-model .drawing-button,
+.drawing-preview-tools .drawing-button:not(.drawing-folder-action),
+.drawing-task-toolbar .drawing-button { border-color: transparent; background: rgb(var(--color-canvas)); }
+.drawing-presets .drawing-button:hover:not(:disabled), .drawing-model .drawing-button:hover:not(:disabled),
+.drawing-preview-tools .drawing-button:not(.drawing-folder-action):hover:not(:disabled),
+.drawing-task-toolbar .drawing-button:hover:not(:disabled) { background: rgb(var(--color-hover)); border-color: rgb(var(--color-border)); }
 .drawing-reference { border-style: dashed; }
 .drawing-reference-input { display: none; }
 .drawing-reference-list { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
@@ -52,11 +90,19 @@
 .drawing-reference-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawing-reference-card .drawing-button { min-height: 1.75rem; padding: 0.2rem 0.35rem; }
 .drawing-reference-backdrop { position: fixed; z-index: 70; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(0 0 0 / 0.5); }
-.drawing-reference-dialog { display: flex; width: min(100%, 1100px); max-height: calc(100vh - 2rem); min-height: 0; flex-direction: column; gap: 0.75rem; border: 1px solid rgb(var(--color-border)); border-radius: 8px; padding: 1rem; background: rgb(var(--color-panel)); }
-.drawing-reference-dialog .drawing-section-heading { flex-shrink: 0; }
-.drawing-reference-dialog img { display: block; min-height: 0; width: 100%; flex: 1; object-fit: contain; }
+.drawing-reference-dialog { display: flex; width: fit-content; min-width: min(20rem, 100%); max-width: 100%; max-height: calc(100dvh - 2rem); min-height: 0; overflow: auto; flex-direction: column; gap: 16px; border: 1px solid rgb(var(--color-border)); border-radius: 16px; padding: 24px; background: rgb(var(--color-panel)); }
+.drawing-reference-dialog .drawing-section-heading { flex-shrink: 0; contain: inline-size; gap: 16px; }
+.drawing-reference-dialog .drawing-section-heading h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; font-weight: 600; }
+.drawing-reference-dialog .drawing-section-heading .drawing-button { flex-shrink: 0; width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 8px; background: rgb(var(--color-text) / 0.035); }
+.drawing-reference-dialog .drawing-section-heading .drawing-button:hover { background: rgb(var(--color-text) / 0.075); }
+.drawing-reference-dialog img { display: block; align-self: center; flex-shrink: 0; width: auto; height: auto; max-width: min(1050px, calc(100vw - 5rem - 2px)); max-height: 72dvh; object-fit: contain; }
+@media (max-width: 620px) {
+  .drawing-reference-dialog { padding: 16px; }
+  .drawing-reference-dialog img { max-width: calc(100vw - 4rem - 2px); }
+}
 .drawing-generate { width: 100%; border-color: rgb(var(--color-accent)); background: rgb(var(--color-accent)); color: rgb(var(--color-on-accent)); }
 .drawing-generate:hover:not(:disabled) { border-color: rgb(var(--color-accent-hover)); background: rgb(var(--color-accent-hover)); }
+.drawing-generate:active:not(:disabled) { transform: none; background: color-mix(in srgb, rgb(var(--color-accent-hover)) 90%, rgb(var(--color-text))); }
 .drawing-generate:disabled { border-color: rgb(var(--color-disabled)); background: rgb(var(--color-disabled)); }
 .drawing-submit { display: flex; flex-direction: column; gap: 0.5rem; }
 .drawing-sound { display: flex; align-items: center; gap: 0.35rem; }
@@ -72,14 +118,38 @@
 .drawing-preset-controls > .drawing-actions { min-width: 0; align-self: stretch; align-items: stretch; }
 .drawing-reference-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .drawing-reference-heading > .drawing-label { margin-right: auto; }
-.drawing-references { min-height: 11rem; padding: 0.65rem; border: 1px dashed rgb(var(--color-border)); border-radius: 8px; }
+.drawing-references { min-height: 11rem; padding: 0.65rem; border: 1px dashed color-mix(in srgb, rgb(var(--color-border)) 75%, rgb(var(--color-panel))); border-radius: 8px; }
 .drawing-reference-hint { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
 .drawing-input-layout .drawing-reference-thumbnail { width: 4.5rem; height: 4.5rem; }
 .drawing-reference-thumbnail > .drawing-result-thumbnail { width: 100%; height: 100%; }
 .drawing-reference-heading .drawing-button { min-height: 1.9rem; padding: 0.25rem 0.5rem; }
 .drawing-reference-heading .drawing-reference { border-style: solid; }
 .drawing-references .drawing-reference-list { max-height: 14rem; overflow-y: auto; overscroll-behavior: contain; }
-.drawing-preview-footer { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; border-top: 1px solid rgb(var(--color-border)); padding-top: 0.75rem; }
+.drawing-preview-heading { flex-wrap: wrap; }
+.drawing-preview-heading-actions, .drawing-preview-view-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem; margin-left: auto; }
+.drawing-preview-heading { position: sticky; top: -4px; z-index: 3; background: rgb(var(--color-panel)); padding-block: 0.25rem; }
+.drawing-parameter-help-label { display: inline-flex; align-items: center; gap: 0.3rem; color: rgb(var(--color-muted)); font-size: var(--font-small); }
+.drawing-parameter-tools .drawing-parameter-help-label,
+.drawing-parameter-tools .drawing-sound { min-height: 1.5rem; font-size: var(--font-small); font-weight: 400; line-height: 1.25rem; color: rgb(var(--color-muted)); }
+.drawing-parameter-tools .drawing-sound input { margin: 0; flex-shrink: 0; }
+.drawing-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.drawing-result-disclosure { margin-top: 0.75rem; border-bottom: 1px solid rgb(var(--color-border)); padding-bottom: 0.75rem; }
+.drawing-result-disclosure > summary { display: flex; align-items: center; gap: 0.75rem; cursor: pointer; }
+.drawing-result-disclosure > summary::before { content: "▸"; color: rgb(var(--color-muted)); }
+.drawing-result-disclosure[open] > summary::before { content: "▾"; }
+.drawing-result-disclosure > summary > .drawing-muted { flex-shrink: 0; }
+.drawing-result-summary { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.drawing-result-disclosure .drawing-result-details { margin-top: 0.75rem; }
+.drawing-result-more { position: relative; align-self: flex-start; }
+.drawing-result-more > summary { list-style: none; }
+.drawing-result-more > summary::-webkit-details-marker { display: none; }
+.drawing-result-more > summary svg { flex-shrink: 0; }
+.drawing-result-more-content { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: min(280px, 70vw); display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; border: 1px solid rgb(var(--color-border)); border-radius: 8px; background: rgb(var(--color-panel)); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }
+@media (max-width: 760px) {
+  .drawing-preview-tools > .drawing-actions { width: 100%; }
+  .drawing-result-more[open] { flex-basis: 100%; min-width: 0; }
+  .drawing-result-more-content { position: static; width: 100%; margin-top: 0.5rem; box-shadow: none; }
+}
 #drawing-gemini-advanced { display: grid; gap: 0.5rem; }
 .drawing-advanced-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 .drawing-temperature-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
@@ -102,8 +172,12 @@
 .drawing-preview-stage img { user-select: none; cursor: grab; }
 .drawing-preview-stage:active img { cursor: grabbing; }
 .drawing-preview-stage:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
-.drawing-preview-tools { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.5rem; }
+.drawing-preview-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.75rem; }
 .drawing-preview-tools .drawing-button { flex-shrink: 0; }
+.drawing-preview-tools > .drawing-actions { align-items: center; }
+.drawing-preview-tools .drawing-button { height: 2.25rem; line-height: 1.25rem; padding-block: 0; }
+.drawing-folder-action { border-color: rgb(var(--color-accent) / 0.35); background: rgb(var(--color-accent) / 0.12); color: rgb(var(--color-accent-text)); font-weight: 600; }
+.drawing-folder-action:hover:not(:disabled) { border-color: rgb(var(--color-accent)); background: rgb(var(--color-accent) / 0.2); }
 .drawing-result-thumbnail { display: flex; width: 100%; min-width: 0; height: 100px; align-items: center; justify-content: center; overflow: hidden; background: rgb(var(--color-canvas)); border-radius: 8px; color: rgb(var(--color-muted)); font-size: var(--font-caption); }
 .drawing-result-thumbnail img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .drawing-history .drawing-button { width: 108px; flex-direction: column; }
@@ -114,7 +188,8 @@
 .drawing-workspace .drawing-history-heading { margin-top: 1.25rem; }
 .drawing-history { display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.75rem 0; }
 .drawing-history .drawing-button { flex-shrink: 0; }
-.drawing-history [aria-pressed="true"] { border-color: rgb(var(--color-accent)); color: rgb(var(--color-accent-text)); }
+.drawing-history .drawing-button { border-color: transparent; padding: 0.45rem; }
+.drawing-history [aria-pressed="true"] { border-color: rgb(var(--color-accent)); color: rgb(var(--color-accent-text)); background: color-mix(in srgb, rgb(var(--color-accent)) 8%, rgb(var(--color-panel))); }
 .drawing-view-empty { min-height: 320px; justify-content: center; }
 .drawing-model select { flex: 1; width: 0; }
 .drawing-model .drawing-button { flex-shrink: 0; }
@@ -132,16 +207,17 @@
 .drawing-task-panel { padding: 0; container-type: inline-size; }
 .drawing-task-header { display: flex; flex-wrap: wrap; align-items: start; gap: 0.5rem; padding: 0.6rem 0.65rem 0; }
 .drawing-task-subviews { display: flex; flex-shrink: 0; gap: 0.25rem; align-self: start; }
-.drawing-task-subviews button { min-height: 2rem; padding: 0.35rem 0.55rem; border: 1px solid rgb(var(--color-border)); border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; color: rgb(var(--color-muted)); font-size: var(--font-small); cursor: pointer; }
+.drawing-task-subviews button { min-height: 2rem; padding: 0.35rem 0.55rem; border: 1px solid transparent; border-bottom: 2px solid transparent; border-radius: 4px 4px 0 0; color: rgb(var(--color-muted)); font-size: var(--font-small); cursor: pointer; }
 .drawing-task-subviews button:hover { background: rgb(var(--color-hover)); }
-.drawing-task-subviews [aria-selected="true"] { border-bottom-color: rgb(var(--color-accent)); background: rgb(var(--color-canvas)); color: rgb(var(--color-accent-text)); }
+.drawing-task-subviews [aria-selected="true"] { border-bottom-color: rgb(var(--color-accent)); color: rgb(var(--color-accent-text)); font-weight: 600; }
 .drawing-task-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.65rem; }
 .drawing-task-toolbar .drawing-pagination { margin: 0; gap: 0.4rem; }
 .drawing-task-panel .drawing-button { min-height: 1.75rem; padding: 0.2rem 0.35rem; font-size: var(--font-caption); }
 .drawing-task-content { min-width: 0; min-height: 8rem; max-height: clamp(12rem, 36dvh, 26rem); overflow: auto; border-top: 1px solid rgb(var(--color-border)); border-radius: 0 0 8px 8px; }
 .drawing-task-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: var(--font-caption); }
-.drawing-task-table th, .drawing-task-table td { padding: 0.45rem 0.35rem; border-bottom: 1px solid rgb(var(--color-border)); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-.drawing-task-table thead th { position: sticky; top: 0; z-index: 1; background: rgb(var(--color-panel)); color: rgb(var(--color-muted)); font-weight: 600; }
+.drawing-task-table th, .drawing-task-table td { padding: 0.45rem 0.35rem; border-bottom: 1px solid color-mix(in srgb, rgb(var(--color-border)) 55%, rgb(var(--color-panel))); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.drawing-task-table thead th { position: sticky; top: 0; z-index: 1; background: rgb(var(--color-canvas)); color: rgb(var(--color-muted)); font-weight: 500; }
+.drawing-task-row:hover > :is(th, td), .drawing-task-row:focus-within > :is(th, td) { background: rgb(var(--color-hover)); }
 .drawing-task-table tbody th { font-weight: 400; }
 .drawing-task-id-column { width: 5rem; }
 .drawing-task-id { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
@@ -184,4 +260,8 @@
 
 @media (max-width: 760px) {
   .drawing-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawing-button, .drawing-task-subviews button { transition: none; }
+  .drawing-button:active:not(:disabled), .drawing-task-subviews button:active:not(:disabled) { transform: none; }
 }

@@ -39,9 +39,8 @@ it("offers one name-based automatic candidate and applies it only after explicit
   expect(host.querySelector(".assistant-avatar-default-choice .assistant-avatar-initial")?.textContent).toBe("晴");
   expect(host.textContent).not.toContain("晴蓝"); expect(host.textContent).not.toContain("当前草稿");
   await click("选择自动头像"); expect(apply).not.toHaveBeenCalled();
-  await click("清除选择");
-  expect([...host.querySelectorAll("button")].find((button) => button.textContent === "使用此头像")?.disabled).toBe(true);
-  await click("选择自动头像"); await click("使用此头像");
+  expect([...host.querySelectorAll("button")].some((button) => button.textContent === "清除选择")).toBe(false);
+  await click("使用此头像");
   expect(apply).toHaveBeenCalledWith(undefined, undefined);
   expect(avatarLibrary.select).not.toHaveBeenCalled(); expect(avatarLibrary.removeMany).not.toHaveBeenCalled();
 });
@@ -146,7 +145,7 @@ it("uses a fallback label for a filename without a usable stem", async () => {
 
 it("restores a user default without removing library resources and recrops with source metadata", async () => {
   const current = { ...entry.avatar, source: { resourceId: entry.id, version: entry.version } };
-  await act(async () => root.render(<AvatarSettings avatar={{ value: current, url: "blob:current", busy: false, error: undefined, save }} onImport={() => {}} />));
+  await act(async () => root.render(<AvatarSettings avatar={{ value: current, url: "blob:current", busy: false, error: undefined, save }} />));
   expect(host.querySelector('input[type="file"]')).toBeNull();
   await click("重新裁切"); await click("应用头像"); expect(save).toHaveBeenCalledWith(expect.objectContaining({ source: current.source, original: current.original }));
   await click("恢复默认"); expect(save).toHaveBeenLastCalledWith(); expect(avatarLibrary.remove).not.toHaveBeenCalled();
@@ -156,7 +155,7 @@ it("keeps user image and crop containers transparent while retaining the crop ov
   const stylesheet = document.createElement("style"); stylesheet.textContent = readFileSync("src/ui/settings/AvatarSettings.css", "utf8"); document.head.append(stylesheet);
   const state = { value: entry.avatar, url: "blob:alpha", busy: false, error: undefined, save };
   try {
-    await act(async () => root.render(<><AvatarSettings avatar={state} onImport={() => {}} /><AvatarPreview avatar={state} /></>));
+    await act(async () => root.render(<><AvatarSettings avatar={state} /><AvatarPreview avatar={state} /></>));
     expect(getComputedStyle(host.querySelector(".avatar-large")!).background).toBe("transparent");
     expect(getComputedStyle(host.querySelector(".avatar-preview-user img")!).background).toBe("transparent");
     await click("重新裁切");
@@ -165,10 +164,10 @@ it("keeps user image and crop containers transparent while retaining the crop ov
     expect(stage.querySelector("path")?.getAttribute("stroke")).toBe("#ffffff80");
     await click("取消");
     const pending = { ...state, url: undefined };
-    await act(async () => root.render(<><AvatarSettings avatar={pending} onImport={() => {}} /><AvatarPreview avatar={pending} /></>));
+    await act(async () => root.render(<><AvatarSettings avatar={pending} /><AvatarPreview avatar={pending} /></>));
     expect(getComputedStyle(host.querySelector(".avatar-large")!).background).toBe("transparent");
     expect(getComputedStyle(host.querySelector(".message-user-avatar")!).background).toBe("transparent");
-    await act(async () => root.render(<AvatarSettings avatar={{ ...pending, value: undefined }} onImport={() => {}} />));
+    await act(async () => root.render(<AvatarSettings avatar={{ ...pending, value: undefined }} />));
     expect(host.querySelector(".avatar-large-image")).toBeNull();
   } finally { stylesheet.remove(); }
 });

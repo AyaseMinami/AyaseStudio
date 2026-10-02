@@ -4,6 +4,7 @@ import type { SessionConfig } from "../../chat/sessionConfig";
 import { resolveSearchMode, withSearchMode, type SearchMode } from "../../search/mode";
 import { loadSearchConfiguration, SEARCH_SETTINGS_CHANGED, SEARCH_SETTINGS_KEY } from "../../search/settings";
 import "./WebSearchControl.css";
+import { SelectField } from "../SelectField";
 
 const baseChoices: Array<{ mode: SearchMode; label: string }> = [
   { mode: "off", label: "关闭" }, { mode: "native", label: "模型原生" }, { mode: "exa-api", label: "Exa API" }, { mode: "exa-mcp", label: "Exa MCP" },
@@ -33,19 +34,24 @@ function useSearchChoices() {
     ...(available.zhipu ? [{ mode: "zhipu" as const, label: "智谱" }] : [])] };
 }
 
-export function WebSearchControl({ config, disabled, onChange }: {
-  config: SessionConfig; disabled: boolean; onChange(config: SessionConfig): void;
+export function WebSearchControl({ config, disabled, onChange, customSelect = false }: {
+  config: SessionConfig; disabled: boolean; customSelect?: boolean; onChange(config: SessionConfig): void;
 }) {
   const { choices, error } = useSearchChoices();
   const mode = resolveSearchMode(config);
   const unavailable = !choices.some(choice => choice.mode === mode);
   return <label className="session-config-web-search web-search-inline">
     <Globe size={16} aria-hidden="true" /><span>联网搜索</span>
-    <select aria-label="联网搜索" disabled={disabled} value={mode} title={error ? "网络搜索设置无法读取，请到设置中检查。" : undefined}
+    {customSelect ? <SelectField label="联网搜索" disabled={disabled} value={mode}
+      title={error ? "网络搜索设置无法读取，请到设置中检查。" : undefined}
+      options={[...choices.map(choice => ({ value: choice.mode, label: choice.label })),
+        ...(unavailable ? [{ value: mode, label: `${labelFor(mode)}（已关闭或不可用）`, disabled: true }] : [])]}
+      onChange={value => { if (choices.some(choice => choice.mode === value)) onChange(withSearchMode(config, value as SearchMode)); }} />
+    : <select aria-label="联网搜索" disabled={disabled} value={mode} title={error ? "网络搜索设置无法读取，请到设置中检查。" : undefined}
       onChange={(event) => onChange(withSearchMode(config, event.target.value as SearchMode))}>
       {choices.map(({ mode, label }) => <option key={mode} value={mode}>{label}</option>)}
       {unavailable && <option value={mode} disabled hidden>{labelFor(mode)}（已关闭或不可用）</option>}
-    </select>
+    </select>}
   </label>;
 }
 

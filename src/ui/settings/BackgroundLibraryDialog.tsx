@@ -142,7 +142,7 @@ export function BackgroundLibraryDialog({ entries, currentReference, busy, onPre
     else if (managing) { setManaging(false); setMarked([]); }
     else onClose();
   }
-  return <dialog ref={dialog} className={`background-library-dialog${editingFocus ? " background-library-focus-view" : ""}`} aria-labelledby={editingFocus ? "background-focus-title" : "background-library-title"}
+  return <dialog ref={dialog} className={`background-library-dialog${editingFocus ? " background-library-focus-view" : ""}${view?.type === "delete" ? " background-library-delete-view" : ""}`} aria-labelledby={editingFocus ? "background-focus-title" : "background-library-title"}
     style={editingFocus && selectedEdit ? { "--appearance-background-mask": String(selectedEdit.mask / 100), "--appearance-background-blur": `${selectedEdit.blur}px` } as CSSProperties : undefined}
     onCancel={(event) => { event.preventDefault(); escape(); }} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape") { event.preventDefault(); escape(); } }}>
     {editingFocus && selectedEdit && previewResource ? <BackgroundFocusEditor key={selectedEdit.reference}
