@@ -1,5 +1,17 @@
 # Ayase Studio Development Guide
 
+## Adaptive navigation docking (#97, 2026-10-02)
+
+User acceptance (2026-10-02): the user confirmed the desktop reading experience and accepted the current 560/576px rule, then authorized committing/pushing this scope and closing #97. The screenshot feedback confirmed that further narrowing already affects reading, so insufficient-space navigation should overlay. This confirms the user's current experience without extending the synthetic checks to all native interactions or arbitrary content.
+
+Navigation now uses the actual workspace width minus the current CSS navigation target occupancy. It docks when at least 560 CSS px remain; returning from overlay requires 576px. A zero-height, inaccessible width probe shares the pane width variables without inheriting their animation. ResizeObserver watches only the full workspace and probe, so chat resizing cannot feed back into the decision. Window resize is also observed; cleanup disconnects observers and ignores late callbacks. No persistence or native capability changes. The 860px initial visibility and pane sizing rules remain independent.
+
+Focused verification: `npm.cmd test -- src/ui/chat/useNavigationDocking.test.tsx src/ui/chat/ConversationNavigation.test.tsx`. Browser acceptance uses the existing isolated [navigation fixture](../scripts/navigation81/README.md) with synthetic data and no provider requests. Native interaction and subjective comfort at the 560px threshold remain user acceptance. The current user decision supersedes the Issue's pending design discussion; the remote Issue is unchanged.
+
+Verification passed: 22 focused tests, full `npm.cmd run check` (137 files / 2172 tests, data contracts, TypeScript and production build), `cargo check --locked --manifest-path src-tauri/Cargo.toml`, and diff checks. Independent read-only review found stale boundary text in two architecture sections; these and the UI history wording were corrected, with no remaining findings on re-review.
+
+In-app browser on isolated port 1517 verified actual CSS geometry: at a 1000px viewport the workspace is 932px, compact two-pane occupancy is 316px and chat docks at 616px; full two-pane occupancy is 508px and overlays. A genuine browser mouse click in the input restores compact docking. Resizing the workspace to 872px overlays, 880px remains overlay, and 892px returns to docking with 576px chat width. A 600px viewport overlays and respects the existing constrained pane width; a 760px viewport with only the avatar column docks at 624px chat width. A 1200px viewport docks full navigation at 624px. Both themes were exercised without page horizontal overflow. No provider requests or production database access, and no native interaction acceptance is claimed.
+
 ## Chat generation statistics verification (#107, 2026-10-02)
 
 See [#107 evidence](ISSUE-107-IMPLEMENTATION.md) and the [isolated browser/native startup fixture](../scripts/usage107/README.md). Focused deterministic tests cover four-protocol stream usage, final provenance, timing, per-conversation generation, continuation/history, strict storage and backup compatibility. The fixture uses synthetic data and an independent database without provider settings or requests. Live short relay responses do not establish positive cache hits or long-conversation behavior; the user will test those separately.

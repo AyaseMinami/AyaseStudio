@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, GripVertical, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { AssistantAvatarEditor } from "./AssistantAvatarEditor";
+import { useNavigationDocking } from "./useNavigationDocking";
 import { useConversationNavigation, useConversationNavigationSnapshot, type ConversationNavigationController } from "./useConversationNavigation";
 import { ActionMenu, isContextMenuKey, isEditableContextTarget, useActionMenu, type ActionMenuItem } from "../ActionMenu";
 import { ConversationSettings } from "./ConversationSettings";
@@ -52,6 +53,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const localNavigation = useConversationNavigation();
   const navigation = controlledNavigation ?? localNavigation;
   const { open: navigationOpen, conversationsOpen: conversationPanelOpen, assistantExpanded } = useConversationNavigationSnapshot(navigation);
+  const { bodyRef, docked } = useNavigationDocking({ open: navigationOpen, conversationsOpen: conversationPanelOpen, assistantExpanded });
   const [dialog, setDialog] = useState<Dialog>();
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string>();
@@ -234,7 +236,8 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       {backgroundRuns.length} 个其他对话正在生成。
       {backgroundRuns.map((running) => <button key={running.id} className="settings-button" type="button" disabled={busy} onClick={() => void execute({ type: "select", assistantId: running.assistantId, conversationId: running.id })}>查看 {running.title}</button>)}
     </div>}
-    <div className="conversation-workspace-body" data-navigation-open={navigationOpen} data-conversations-open={navigationOpen && conversationPanelOpen} data-assistant-expanded={assistantExpanded}>
+    <div ref={bodyRef} className="conversation-workspace-body" data-navigation-docked={docked} data-navigation-open={navigationOpen} data-conversations-open={navigationOpen && conversationPanelOpen} data-assistant-expanded={assistantExpanded}>
+      <span className="navigation-space-probe" aria-hidden="true" />
       <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表" data-open={navigationOpen} inert={!navigationOpen} aria-hidden={!navigationOpen}>
         <div className="assistant-pane-tools">
         <div className="chat-navigation-heading assistant-pane-heading" inert={!assistantExpanded} aria-hidden={!assistantExpanded}><h2>助手</h2></div>
