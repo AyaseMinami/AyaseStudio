@@ -26,8 +26,15 @@ export interface ChatRequest {
 }
 
 export interface TokenUsage {
+  /** Entire prompt, including cache reads/writes, when the total is known. */
   inputTokens?: number;
+  /** Entire generated output, including reasoning when reported. */
   outputTokens?: number;
+  totalTokens?: number;
+  uncachedInputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
 }
 
 export type ChatFailureKind =
@@ -50,6 +57,7 @@ export type ChatEvent =
   | { type: "thinking-delta"; text: string }
   | { type: "search-update"; search: import("./nativeSearch").SearchRecord }
   | { type: "provider-replay"; replay: import("./nativeSearch").ProviderReplay }
+  | { type: "usage-update"; usage: TokenUsage }
   | { type: "completed"; finishReason?: string; usage?: TokenUsage }
   | { type: "failed"; error: ChatFailure }
   | { type: "aborted" };

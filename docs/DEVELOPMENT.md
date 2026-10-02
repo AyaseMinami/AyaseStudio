@@ -1,5 +1,9 @@
 # Ayase Studio Development Guide
 
+## Chat generation statistics verification (#107, 2026-10-02)
+
+See [#107 evidence](ISSUE-107-IMPLEMENTATION.md) and the [isolated browser/native startup fixture](../scripts/usage107/README.md). Focused deterministic tests cover four-protocol stream usage, final provenance, timing, per-conversation generation, continuation/history, strict storage and backup compatibility. The fixture uses synthetic data and an independent database without provider settings or requests. Live short relay responses do not establish positive cache hits or long-conversation behavior; the user will test those separately.
+
 ## Global scrollbar verification (#104, 2026-10-02)
 
 `src/scrollbars.css`, imported by `App.css`, owns all scrollbar visuals. New scroll containers require only ordinary overflow styles. Keep `scrollbar-gutter` decisions local and do not add component-level width/color or pseudo-element overrides; Chromium standard width/color must remain `auto` so the detailed pseudo-element styling applies. Dimensions, fallback and forced-colors rules are recorded in [UI-DESIGN.md](UI-DESIGN.md).

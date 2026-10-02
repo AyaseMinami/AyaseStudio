@@ -21,6 +21,7 @@ export interface ComposerProps {
   thinkingControl?: ReactNode;
   searchControl?: ReactNode;
   modelControl?: ReactNode;
+  generationStats?: ReactNode;
   draft: string;
   draftSelection?: { start: number; end: number };
   onDraftSelectionChange?(selection: { start: number; end: number }): void;
@@ -45,6 +46,7 @@ export function Composer({
   thinkingControl,
   searchControl,
   modelControl,
+  generationStats,
   draft,
   draftSelection,
   onDraftSelectionChange,
@@ -291,6 +293,7 @@ export function Composer({
           </div>
         </div>
       </div>
+      {generationStats && <div className="composer-width composer-stats-width">{generationStats}</div>}
       {preview && previewItem && <DraftImagePreview key={previewItem.id} item={previewItem} opener={preview.opener}
         onClose={() => setPreview(undefined)} />}
     </footer>

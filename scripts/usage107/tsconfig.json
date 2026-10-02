@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["main.tsx", "vite.config.ts", "../../src/vite-env.d.ts"],
+  "references": []
+}

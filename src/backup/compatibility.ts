@@ -4,6 +4,32 @@ import { dataPolicies } from "../storage/dataPolicies";
 import { readSessionConfigData } from "../chat/sessionConfig";
 import type { BackupCompatibility } from "./types";
 import { readDrawingSettingsData } from "../drawing/settingsData";
+import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
+
+/** Check the original stamps before normalization replaces them with current versions. */
+export function validateGenerationMetricsCompatibility(raw: unknown): void {
+  dataRecord(raw);
+  dataRecord(raw.rows);
+  dataCheck(Array.isArray(raw.rows.chats));
+  const modern = raw.version === 4 || raw.version === 5;
+  let permitted = false;
+  if (modern) {
+    dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.chat);
+    permitted = (raw.compatibility.modules.chat.version as number) >= 2;
+  }
+  function visit(message: unknown): void {
+    dataRecord(message);
+    if ("generationMetrics" in message) dataCheck(permitted, "生成统计与聊天模块版本不匹配，请升级应用。");
+    readMessageGenerationMetrics(message);
+    if (message.roundVersions !== undefined) {
+      dataRecord(message.roundVersions); dataCheck(Array.isArray(message.roundVersions.pairs));
+      for (const pair of message.roundVersions.pairs) { dataCheck(Array.isArray(pair)); pair.forEach(visit); }
+    }
+  }
+  for (const chat of raw.rows.chats) {
+    dataRecord(chat); dataCheck(Array.isArray(chat.messages)); chat.messages.forEach(visit);
+  }
+}
 
 export function validateFilteredParameters(raw: unknown): asserts raw is string[] {
   dataCheck(Array.isArray(raw) && raw.length <= 1000 && raw.every(path => typeof path === "string" && path.length <= 512
@@ -33,6 +59,7 @@ export function validateBackupCompatibility(raw: unknown, version = 4, drawing?:
 /** Budget checking precedes this conversion. The raw input is never changed or written back to its file. */
 export function normalizeCompatibleParameters(raw: unknown): void {
   dataRecord(raw);
+  validateGenerationMetricsCompatibility(raw);
   if (raw.version !== 4 && raw.version !== 5) return;
   if (raw.drawing !== undefined) dataRecord(raw.drawing);
   validateBackupCompatibility(raw.compatibility, raw.version as number, raw.drawing as { settings?: unknown; presets?: unknown } | undefined);

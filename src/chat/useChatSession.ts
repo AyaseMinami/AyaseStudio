@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { GenerationTasks } from "./generationTasks";
+import { GenerationMeasurement } from "./generationMetrics";
 import { appendRoundVersion, withoutVersions } from "./roundVersions";
 import { summarizeConversationTitle } from "./conversationTitle";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -951,6 +952,14 @@ export function useChatSession({
 
       let persistChain = Promise.resolve();
       let persistenceFailed = false;
+      let measurement: GenerationMeasurement | undefined;
+      const earlierMetrics = resume?.generationMetrics ?? [];
+      function updateGenerationMetrics(status: StoredMessageStatus): void {
+        if (!measurement) return;
+        const metrics = measurement.snapshot(status);
+        workingMessages = workingMessages.map(message => message.id === assistantId
+          ? { ...message, generationMetrics: [...earlierMetrics, metrics] } : message);
+      }
       function queuePersist(snapshotMessages: StoredChatMessage[]) {
         persistChain = persistChain
           .then(() =>
@@ -1008,6 +1017,9 @@ export function useChatSession({
           requestConnection.protocol,
         );
         if (controller.signal.aborted) throw new Error("生成已停止。");
+        measurement = new GenerationMeasurement(requestConnection.protocol, frozenConfig.stream);
+        updateGenerationMetrics("streaming");
+        setMessages(workingMessages); queuePersist(workingMessages);
         for await (const event of transport.stream({
           baseUrl: requestConnection.baseUrl,
           apiKey: requestConnection.apiKey,
@@ -1017,6 +1029,12 @@ export function useChatSession({
           signal: controller.signal,
           replayScope,
         })) {
+          if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
+          measurement.observe(event);
+          if (event.type === "usage-update") {
+            updateGenerationMetrics("streaming");
+            setMessages(workingMessages); queuePersist(workingMessages); continue;
+          }
           if (event.type === "search-update") {
             if (externalSearch) continue;
             workingMessages = workingMessages.map((message) => message.id === assistantId
@@ -1031,7 +1049,6 @@ export function useChatSession({
             continue;
           }
           if (event.type === "text-delta" || event.type === "thinking-delta") {
-            if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
             if (event.type === "text-delta") assistantText += event.text;
             else workingMessages = workingMessages.map((message) => message.id === assistantId
               ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
@@ -1043,6 +1060,7 @@ export function useChatSession({
             );
             if (externalSearch && event.type === "text-delta") workingMessages = workingMessages.map(message => message.id === assistantId
               ? { ...message, search: { ...message.search!, citations: externalCitations(assistantText, message.search!.sources) } } : message);
+            updateGenerationMetrics("streaming");
             const now = performance.now();
             if (now - lastPaint >= 32) {
               setMessages(workingMessages);
@@ -1082,6 +1100,7 @@ export function useChatSession({
             const status = event.error.status ? ` (${event.error.status})` : "";
             setError(`${event.error.message}${status}`);
           }
+          updateGenerationMetrics(workingMessages.find(message => message.id === assistantId)!.status);
           setMessages(workingMessages);
           queuePersist(workingMessages);
         }
@@ -1090,6 +1109,7 @@ export function useChatSession({
             workingMessages, assistantId, assistantText,
             controller.signal.aborted ? "aborted" : "failed",
           );
+          updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
           setMessages(workingMessages);
           queuePersist(workingMessages);
           if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
@@ -1101,6 +1121,7 @@ export function useChatSession({
           assistantText,
           controller.signal.aborted ? "aborted" : "failed",
         );
+        updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
         setMessages(workingMessages);
         queuePersist(workingMessages);
         if (!controller.signal.aborted) {

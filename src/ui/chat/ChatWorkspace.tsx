@@ -6,6 +6,7 @@ import type { ChatProtocol } from "../../chat/types";
 import type { StoredChatMessage } from "../../chat/repository";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
+import { GenerationStats } from "./GenerationStats";
 import type { DraftSelection } from "../../chat/inputHistory";
 import { ModelSelector } from "./ModelSelector";
 import type { ModelPickerProps } from "./ModelPicker";
@@ -139,6 +140,7 @@ export function ChatWorkspace({
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
           attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
       <Composer
+        generationStats={<GenerationStats messages={messages} />}
         layout={layout}
         onToggleLayout={onToggleLayout}
         protocol={protocol}

@@ -4,6 +4,7 @@ import { retainedRoundMessages, selectRoundVersion, withoutVersions } from "./ro
 import { titleFromText } from "./conversationTitle";
 import { copyAssistantConfig, resolveConversationConfig, assertLegacyOverrides, readConversationConfigData } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
+import { readMessagesGenerationMetrics } from "./generationMetricsData";
 
 import type { ChatMessage } from "./types";
 import { defaultSessionConfig, restoreSessionConfig, readSessionConfigData, type SessionConfig } from "./sessionConfig";
@@ -24,6 +25,7 @@ export interface StoredChatMessage extends ChatMessage {
   replyToId?: string | null;
   editedAt?: number;
   thinkingSummary?: string;
+  generationMetrics?: import("./generationMetrics").GenerationMetrics[];
   continuation?: import("./nativeSearch").SearchContinuation;
   status: StoredMessageStatus;
   attachments?: import("./attachments").SentAttachment[];
@@ -51,8 +53,9 @@ export interface WorkspaceRepository extends ChatRepository {
 class DexieChatRepository implements WorkspaceRepository {
   constructor(private readonly database: AyaseDatabase) {}
 
-  load(id: string): Promise<ChatSnapshot | undefined> {
-    return this.database.chats.get(id);
+  async load(id: string): Promise<ChatSnapshot | undefined> {
+    const snapshot = await this.database.chats.get(id);
+    return snapshot && { ...snapshot, messages: readMessagesGenerationMetrics(snapshot.messages) };
   }
 
   async attachmentReferences(): Promise<string[]> {
@@ -62,6 +65,7 @@ class DexieChatRepository implements WorkspaceRepository {
   }
 
   async save(snapshot: ChatSnapshot): Promise<void> {
+    snapshot = { ...snapshot, messages: readMessagesGenerationMetrics(snapshot.messages) };
     const db = this.database;
     await db.transaction("rw", [db.chats, db.conversations, db.workspace], async () => {
       const conversation = await db.conversations.get(snapshot.id);
@@ -125,6 +129,7 @@ class DexieChatRepository implements WorkspaceRepository {
       const previous = await db.workspace.get("selection");
       // Reject unsupported data before initialization can publish defaults or repair any rows.
       // The enclosing transaction also rolls back any later migration/selection failure.
+      for (const chat of await db.chats.toArray()) readMessagesGenerationMetrics(chat.messages);
       for (const assistant of await db.assistants.toArray()) readSessionConfigData(assistant.defaultConfig);
       for (const conversation of await db.conversations.toArray()) {
         if (conversation.settings !== undefined) readConversationConfigData(conversation.settings);
@@ -293,7 +298,7 @@ class DexieChatRepository implements WorkspaceRepository {
         }
         case "start-conversation-title": {
           const conversation = await db.conversations.get(action.id);
-          const chat = await db.chats.get(action.id);
+          const chat = await this.load(action.id);
           const firstUser = chat?.messages.find((message) => message.role === "user");
           if (!conversation || conversation.titleNaming || conversation.title !== "新对话" || firstUser?.id !== action.messageId) break;
           const source = firstUser.content.trim() || firstUser.attachments?.map((item) => item.name).join("、") || "";
@@ -307,7 +312,7 @@ class DexieChatRepository implements WorkspaceRepository {
           const conversation = await db.conversations.get(action.id);
           const naming = conversation?.titleNaming;
           if (!naming || naming === "manual" || naming.status !== "pending" || naming.sourceMessageId !== action.messageId) break;
-          const chat = await db.chats.get(action.id);
+          const chat = await this.load(action.id);
           const firstUser = chat?.messages.find((message) => message.role === "user");
           const source = firstUser && (firstUser.content.trim() || firstUser.attachments?.map((item) => item.name).join("、") || "");
           const title = action.title && titleFromText(action.title);
@@ -319,7 +324,7 @@ class DexieChatRepository implements WorkspaceRepository {
         }
         case "select-round-version": {
           const source = await requireConversation(action.conversationId);
-          const chat = await db.chats.get(source.id);
+          const chat = await this.load(source.id);
           const messages = selectRoundVersion(withReplyLinks(chat?.messages ?? []), action.index);
           const now = Date.now();
           await db.chats.put({ id: source.id, updatedAt: now, messages });
@@ -330,7 +335,7 @@ class DexieChatRepository implements WorkspaceRepository {
         case "delete-message":
         case "fork-conversation": {
           const source = await requireConversation(action.conversationId);
-          const chat = await db.chats.get(source.id);
+          const chat = await this.load(source.id);
           const messages = action.type === "edit-message" ? chat?.messages ?? [] : withReplyLinks(chat?.messages ?? []);
           const index = messages.findIndex((message) => message.id === action.messageId);
           if (index < 0) throw new Error("消息不存在。");

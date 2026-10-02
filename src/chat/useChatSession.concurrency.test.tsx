@@ -141,6 +141,84 @@ describe("parallel conversation generation", () => {
     vi.restoreAllMocks();
   });
 
+  it("persists each conversation's observed and final metrics through navigation and reload", async () => {
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.setDraft("A"));
+    let sendingA!: Promise<void>;
+    await act(async () => { sendingA = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    await select("other");
+    await act(async () => session.setDraft("B"));
+    let sendingB!: Promise<void>;
+    await act(async () => { sendingB = session.sendMessage(); });
+    await wait(() => requests.length === 2);
+    await act(async () => {
+      requests[0].push({ type: "thinking-delta", text: "Reasoning A" });
+      requests[0].push({ type: "text-delta", text: "Answer A" });
+      requests[0].push({ type: "completed", usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 80 } });
+      requests[0].finish(); await sendingA;
+      requests[1].push({ type: "usage-update", usage: { inputTokens: 200, outputTokens: 3, cacheReadTokens: 0 } });
+      requests[1].push({ type: "aborted" }); requests[1].finish(); await sendingB;
+    });
+    const a = (await repo.load("current"))!.messages.slice(-1)[0];
+    const b = (await repo.load("other"))!.messages.slice(-1)[0];
+    expect(a.generationMetrics).toHaveLength(1);
+    expect(a.generationMetrics![0]).toMatchObject({ status: "complete", usageComplete: true,
+      usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 80 }, firstTextMs: expect.any(Number) });
+    expect(b.generationMetrics![0]).toMatchObject({ status: "aborted", usageComplete: false,
+      usage: { inputTokens: 200, outputTokens: 3, cacheReadTokens: 0 } });
+    expect(b.generationMetrics![0].firstTextMs).toBeUndefined();
+    const reloaded = await new SessionStore(repo, "current").hydrate();
+    expect(reloaded.messages.slice(-1)[0].generationMetrics).toEqual(a.generationMetrics);
+    await select("current");
+    let retry!: Promise<void>;
+    await act(async () => { retry = session.retryMessage(a.id); });
+    await wait(() => requests.length === 3);
+    await act(async () => {
+      requests[2].push({ type: "text-delta", text: "New A" });
+      requests[2].push({ type: "completed", usage: { inputTokens: 50, outputTokens: 5 } });
+      requests[2].finish(); await retry;
+    });
+    const regenerated = (await repo.load("current"))!.messages.slice(-1)[0];
+    expect(regenerated.generationMetrics).toHaveLength(1);
+    expect(regenerated.generationMetrics![0].usage?.outputTokens).toBe(5);
+    expect((await repo.load("current"))!.messages.slice(-2)[0].roundVersions?.pairs[0][1].generationMetrics).toEqual(a.generationMetrics);
+  });
+
+  it("appends a separate request measurement when continuing a paused reply", async () => {
+    const requests: ControlledRequest[] = [];
+    runtime.createRuntimeChatTransport.mockResolvedValue(controlledTransport(requests));
+    await act(async () => session.updateConnection("connection", "protocol", "anthropic-native"));
+    await act(async () => session.setDraft("Continue this"));
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await wait(() => requests.length === 1);
+    await act(async () => {
+      requests[0].push({ type: "text-delta", text: "First part" });
+      requests[0].push({ type: "provider-replay", replay: { protocol: "anthropic-native",
+        scope: "connection|https://test.example", content: [{ type: "text", text: "First part" }] } });
+      requests[0].push({ type: "completed", finishReason: "pause_turn", usage: { inputTokens: 20, outputTokens: 4 } });
+      requests[0].finish(); await sending;
+    });
+    const paused = session.messages.slice(-1)[0];
+    const first = paused.generationMetrics![0];
+    expect(first.status).toBe("paused");
+    let continuing!: Promise<void>;
+    await act(async () => { continuing = session.continueMessage(paused.id); });
+    await wait(() => requests.length === 2);
+    await act(async () => {
+      requests[1].push({ type: "text-delta", text: " second part" });
+      requests[1].push({ type: "completed", usage: { inputTokens: 30, outputTokens: 6 } });
+      requests[1].finish(); await continuing;
+    });
+    const saved = (await repo.load("current"))!.messages.slice(-1)[0];
+    expect(saved.content).toBe("First part second part");
+    expect(saved.generationMetrics).toHaveLength(2);
+    expect(saved.generationMetrics![0]).toEqual(first);
+    expect(saved.generationMetrics![1]).toMatchObject({ status: "complete", usage: { inputTokens: 30, outputTokens: 6 } });
+  });
+
   it("persists connection moves without changing selection and blocks them while drawing is busy", async () => {
     let secondId = "";
     await act(async () => { secondId = session.addConnection("provider", "Second", "openai-chat"); });

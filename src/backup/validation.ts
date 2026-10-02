@@ -8,7 +8,8 @@ import { readAppearancePreferences } from "../appearance/appearance";
 import { validateSearchConfiguration, validateSearchSettings } from "../search/settings";
 import { dataPolicies } from "../storage/dataPolicies";
 import { backupFields } from "../storage/dataContract";
-import { validateBackupCompatibility } from "./compatibility";
+import { validateBackupCompatibility, validateGenerationMetricsCompatibility } from "./compatibility";
+import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
 import { readDrawingPromptPresetData, readDrawingSettingsData } from "../drawing/settingsData";
 
 export const managedReference = /^(attachments\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp|pdf|txt|md|docx|xlsx|pptx)|backgrounds\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp))$/;
@@ -90,6 +91,7 @@ export async function validateDocument(raw: unknown): Promise<void> {
   object(raw);
   check(raw.format === "ayase-studio-backup" && [1, 2, 3, 4, 5].includes(raw.version), "不支持此备份版本，请升级应用。");
   const version = raw.version as 1 | 2 | 3 | 4 | 5;
+  validateGenerationMetricsCompatibility(raw);
   const required = ["format", "version", "createdAt", "options", "rows", "preferences", "connections", "assets"];
   fields(raw, [...required, ...(version >= 2 ? ["searchSettings"] : []), ...(version >= 4 ? ["compatibility"] : []), ...(version === 5 ? ["drawing"] : [])], [...required, ...(version >= 4 ? ["compatibility"] : [])]);
   if (raw.drawing !== undefined) {
@@ -156,6 +158,7 @@ export async function validateDocument(raw: unknown): Promise<void> {
   let messageCount = 0;
   function message(v: unknown, pair = false) {
     fields(v, backupFields(dataPolicies.messages).filter(key => !pair || key !== "roundVersions"), ["id", "role", "content", "status"]);
+    readMessageGenerationMetrics(v);
     id(v.id); check(++messageCount <= 100000 && ["system", "user", "assistant"].includes(v.role)); text(v.content);
     check(["complete", "incomplete", "aborted", "failed"].includes(v.status)); optional(v, "replyToId", model); optional(v, "editedAt", time); optional(v, "thinkingSummary", text);
     if (v.source) { fields(v.source, backupFields(dataPolicies.messageSource), ["source", "id", "createdAt"]); check(v.source.source === "cherry"); id(v.source.id); time(v.source.createdAt);

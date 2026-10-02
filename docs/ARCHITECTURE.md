@@ -1,5 +1,9 @@
 # Ayase Studio Architecture
 
+## Chat generation statistics (#107)
+
+Protocol adapters own usage normalization; the neutral `ChatEvent` exposes cumulative `usage-update` and completed usage. `GenerationMeasurement` uses a monotonic clock starting immediately before the chat transport invocation, records nonempty visible text and observable thinking separately, and freezes at terminal processing. The captured conversation store owns each invocation; switching views cannot move its measurements. Replies store a versioned `generationMetrics` array, continuation appends a request and regeneration retains the old measurement in round history. The shared pure reader validates local and backup records before writes; recursive restart recovery marks streaming measurements aborted without inventing offline duration. `GenerationStats` renders the current conversation's latest invocation below the composer and exposes reply/request details. See [#107](ISSUE-107-IMPLEMENTATION.md).
+
 ## Global scrollbar styling (#104)
 
 `App.css` imports `src/scrollbars.css` once for all document scroll containers, including portals and newly mounted content. Scrollbar colors reference the shared semantic theme variables; no component wrapper, per-page class, JavaScript scroll listener, preference or native host option is required. Chromium/WebView2 uses scrollbar pseudo-elements with standard width/color reset to `auto` to prevent overriding the detailed styling; other browsers use standard width/color fallback. Forced-colors mode retains browser defaults. Existing `scrollbar-gutter` rules remain local layout decisions. See [UI rules](UI-DESIGN.md) for dimensions and maintenance.

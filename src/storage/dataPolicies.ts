@@ -18,6 +18,8 @@ import type { ConversationConfig } from "../chat/conversationConfig";
 import type { RoundVersions } from "../chat/roundVersions";
 import type { BackgroundFocus } from "../appearance/backgroundFocus";
 import type { Table } from "dexie";
+import type { GenerationMetrics } from "../chat/generationMetrics";
+import type { TokenUsage } from "../chat/types";
 
 // Infer the real row parameter, not toArray's final generic callback overload (which returns unknown).
 type TableRow<T> = T extends Table<infer Row, infer _Key, infer _Insert> ? Row : never;
@@ -36,7 +38,9 @@ export const dataPolicies = {
   assistants: { id: "backup", name: "backup", icon: "backup", avatar: "resource", defaultAvatar: "backup", sortOrder: "backup", defaultModelId: "backup", defaultConfig: "backup" } satisfies FieldPolicy<AssistantPreset>,
   conversations: { id: "backup", assistantId: "backup", title: "backup", titleNaming: "backup", createdAt: "backup", updatedAt: "backup", sortOrder: "backup", settings: "backup", creationConfig: "backup", overrides: "legacy" } satisfies FieldPolicy<Conversation>,
   chats: { id: "backup", updatedAt: "backup", messages: "backup", generationConfig: "legacy" } satisfies FieldPolicy<ChatSnapshot>,
-  messages: { id: "backup", role: "backup", content: "backup", status: "backup", replyToId: "backup", editedAt: "backup", thinkingSummary: "backup", attachments: "resource", search: "backup", source: "backup", providerReplay: "backup", roundVersions: "backup", continuation: "exclude" } satisfies FieldPolicy<StoredChatMessage>,
+  messages: { id: "backup", role: "backup", content: "backup", status: "backup", replyToId: "backup", editedAt: "backup", thinkingSummary: "backup", generationMetrics: "backup", attachments: "resource", search: "backup", source: "backup", providerReplay: "backup", roundVersions: "backup", continuation: "exclude" } satisfies FieldPolicy<StoredChatMessage>,
+  generationMetrics: { version: "backup", protocol: "backup", streaming: "backup", status: "backup", elapsedMs: "backup", firstTextMs: "backup", firstThinkingMs: "backup", usage: "backup", usageComplete: "backup" } satisfies FieldPolicy<GenerationMetrics>,
+  tokenUsage: { inputTokens: "backup", outputTokens: "backup", totalTokens: "backup", uncachedInputTokens: "backup", cacheReadTokens: "backup", cacheWriteTokens: "backup", reasoningTokens: "backup" } satisfies FieldPolicy<TokenUsage>,
   workspace: { id: "backup", activeAssistantId: "backup", lastSelected: "backup" } satisfies FieldPolicy<WorkspaceSelection>,
   avatarLibrary: { id: "backup", name: "backup", version: "backup", avatar: "resource" } satisfies FieldPolicy<AvatarLibraryEntry>,
   avatar: { original: "resource", thumbnail: "resource", crop: "backup", source: "backup" } satisfies FieldPolicy<UserAvatar>,

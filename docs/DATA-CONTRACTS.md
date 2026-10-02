@@ -1,5 +1,11 @@
 # 持久数据契约
 
+## #107 回复生成统计（2026-10-02）
+
+`StoredChatMessage.generationMetrics` 为可选的逐请求数组，嵌套指标版本 1／最低读者 1，缺失表示旧消息无统计；不补零，不按正文估算。共享 `generationMetricsData.ts` 通过纯克隆迁移入口校验本机及备份读取，没有语义转换步骤。未知版本、字段、协议和非法数值拒绝并保留原记录；初始化、保存及恢复均先校验后写入。流式遗留记录递归恢复为 aborted／部分用量，保留最后已保存耗时。
+
+消息及轮次历史真实备份投影使用穷尽消息／指标／用量字段策略；chat 模块升为 v2／最低读者 2，Dexie v8、备份文档 v5／信封 v1 保持。旧模块 v1 的无指标消息仍兼容；携带指标的备份必须原始声明支持它，不能在 restamp 后掩盖旧格式。指标不保存凭据、地址、正文或资源引用，不增加表／偏好键／受管资源，回滚保留原始消息字段。版本、缺失默认、零写入拒绝、轮次恢复及导出再读取的证据见 [#107](ISSUE-107-IMPLEMENTATION.md)。
+
 本文件是 #105 建立的持续开发规则。新增或修改持久数据时，开发者必须在同一功能内完成注册、字段策略、版本／迁移、备份及确定性验证，不依赖用户另行提醒。产品范围仍以已批准 Issue 和当前用户指令为准；注册数据不等于批准将它加入备份。
 
 ## 实现入口与版本
@@ -14,7 +20,7 @@
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。#93 当前新导出是文档 v5／信封 v1，不新增 Dexie schema；连接模块 v3、搜索模块 v2、绘图设置模块 v2（最低读者 2），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。#93 当前新导出是文档 v5／信封 v1，不新增 Dexie schema；连接模块 v3、搜索模块 v2、chat 模块 v2（最低读者 2）、绘图设置模块 v2（最低读者 2），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 

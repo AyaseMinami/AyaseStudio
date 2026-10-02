@@ -14,6 +14,7 @@ import { validateFilteredParameters } from "./compatibility";
 import type { DrawingDraft } from "../drawing/types";
 import type { DrawingPromptPreset } from "../drawing/presets";
 import { projectDrawingSettings, readDrawingPromptPresetData } from "../drawing/settingsData";
+import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
 
 export const allPreferenceKeys = Object.keys(persistentPreferences);
 /** drawing is private rollback state; it must never be copied into portable rows. */
@@ -34,7 +35,12 @@ function session(v: Record<string, any>) {
 function settings(v: Record<string, any>) { readConversationConfigData(v); return { ...pick(v, backupFields(dataPolicies.conversationConfig)), config: session(v.config) }; }
 function avatar(v: Record<string, any>) { return { ...pick(v, backupFields(dataPolicies.avatar)), crop: pick(v.crop, backupFields(dataPolicies.crop)), ...(v.source ? { source: pick(v.source, backupFields(dataPolicies.avatarSource)) } : {}) }; }
 function message(v: Record<string, any>, pair = false): Record<string, any> {
-  const result = pick(v, backupFields(dataPolicies.messages).filter(key => !["source", "attachments", "search", "providerReplay", "roundVersions"].includes(key)));
+  v = readMessageGenerationMetrics(v);
+  const result = pick(v, backupFields(dataPolicies.messages).filter(key => !["source", "attachments", "search", "providerReplay", "roundVersions", "generationMetrics"].includes(key)));
+  if (v.generationMetrics !== undefined) result.generationMetrics = v.generationMetrics.map((metric: Record<string, any>) => ({
+    ...pick(metric, backupFields(dataPolicies.generationMetrics)),
+    ...(metric.usage !== undefined ? { usage: pick(metric.usage, backupFields(dataPolicies.tokenUsage)) } : {}),
+  }));
   if (["streaming", "paused"].includes(result.status)) result.status = "incomplete";
   if (v.source) result.source = pick(v.source, backupFields(dataPolicies.messageSource));
   if (v.attachments) result.attachments = v.attachments.map((a: Record<string, any>) => pick(a, backupFields(dataPolicies.attachment)));

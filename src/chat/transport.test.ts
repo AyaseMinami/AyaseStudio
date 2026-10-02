@@ -441,9 +441,10 @@ describe("ChatTransport", () => {
     await expect(collectEvents("openai-responses", fetch)).resolves.toEqual([
       { type: "text-delta", text: "Hi" },
       { type: "text-delta", text: "!" },
+      { type: "usage-update", usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 } },
       {
         type: "completed",
-        usage: { inputTokens: 3, outputTokens: 2 },
+        usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
       },
     ]);
   });
@@ -551,12 +552,14 @@ describe("ChatTransport", () => {
         ],
       }),
     ).resolves.toEqual([
+      { type: "usage-update", usage: { uncachedInputTokens: 7, outputTokens: 0 } },
       { type: "text-delta", text: "Anth" },
       { type: "text-delta", text: "ropic" },
+      { type: "usage-update", usage: { uncachedInputTokens: 7, outputTokens: 4 } },
       {
         type: "completed",
         finishReason: "end_turn",
-        usage: { inputTokens: 7, outputTokens: 4 },
+        usage: { uncachedInputTokens: 7, outputTokens: 4 },
       },
     ]);
   });
@@ -637,10 +640,11 @@ describe("ChatTransport", () => {
 
     expect(events).toEqual([
       { type: "text-delta", text: "partial" },
+      { type: "usage-update", usage: { inputTokens: 5, outputTokens: 8, totalTokens: 13 } },
       {
         type: "completed",
         finishReason: "incomplete:max_output_tokens",
-        usage: { inputTokens: 5, outputTokens: 8 },
+        usage: { inputTokens: 5, outputTokens: 8, totalTokens: 13 },
       },
     ]);
   });

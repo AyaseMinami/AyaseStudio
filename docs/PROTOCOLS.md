@@ -1,5 +1,9 @@
 # Protocol Compatibility Contract
 
+## Chat generation statistics (#107)
+
+Adapters normalize provider usage into cumulative `TokenUsage` snapshots and emit `usage-update`, including metadata arriving after text. OpenAI Chat requests streaming usage explicitly; Responses uses terminal response usage, Gemini includes thinking in output where the response permits that derivation, and Anthropic counts ordinary input plus cache read/write as total input. Missing fields remain unknown, explicit zero remains zero. Terminal output must be confirmed before average speed is available; cancellation/failure retains partial observations without automatic retries. See [field mappings, sources and acceptance boundaries](ISSUE-107-IMPLEMENTATION.md).
+
 ## Drawing PNG parameter export (#89)
 
 Export leaves adapter requests unchanged. Explicit PNG `parameters` JSON contains prompt, actual model ID, protocol, GNBP-compatible `api_type` (gemini/gpt) and explicitly submitted protocol option fields; automatic values are omitted. Frontend mapping and native typed allowlist reject credentials, addresses, connection identifiers, paths, reference bytes and unknown fields. Ordinary PNG re-encoding remains metadata-free. No provider defaults, reference originals or deterministic reproduction are asserted; legacy import stays in #92. See [allowlist and pinned GNBP verification](ISSUE-89-IMPLEMENTATION.md).

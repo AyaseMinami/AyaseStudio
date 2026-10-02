@@ -240,6 +240,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
         ],
       })),
       stream,
+      ...(stream ? { stream_options: { include_usage: true } } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(topP !== undefined ? { top_p: topP } : {}),
       ...(maxOutput !== undefined ? { max_completion_tokens: maxOutput } : {}),

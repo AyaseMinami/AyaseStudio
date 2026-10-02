@@ -96,7 +96,13 @@ describe("workspace failure recovery", () => {
     ] });
     await mount(repo);
     await act(async () => current.setDraft("unsent"));
-    vi.spyOn(repo, "load").mockRejectedValueOnce(new Error("read failed"));
+    const execute = repo.execute.bind(repo);
+    vi.spyOn(repo, "execute").mockImplementationOnce(async command => {
+      const committed = await execute(command);
+      // Fail the post-commit reload, after the command's validated read succeeds.
+      vi.spyOn(repo, "load").mockRejectedValueOnce(new Error("read failed"));
+      return committed;
+    });
     await act(async () => { expect(await current.execute({ type: "edit-message", conversationId: "current", messageId: "u", content: "edited" })).toBe(true); });
     expect(current.canSend()).toBe(false);
     expect(current.loadError).toContain("操作已保存");
