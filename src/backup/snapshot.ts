@@ -1,4 +1,4 @@
-import { loadAppearancePreferences } from "../appearance/appearance";
+import { readAppearancePreferences } from "../appearance/appearance";
 import { loadConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
 import { bytesToBase64 } from "../chat/attachments";
 import { check, decode64, sha256 } from "./codec";
@@ -69,7 +69,7 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
   const storage = { getItem: (key: string) => snapshot.preferences[key] ?? null, setItem: () => {} };
   const preferences = Object.fromEntries(preferenceKeys.map(k => [k, snapshot.preferences[k]])) as BackupPreferences;
   // Normalize legacy appearance through its documented migration, never copy raw storage.
-  preferences[preferenceKeys[0]] = JSON.stringify(loadAppearancePreferences(storage));
+  preferences[preferenceKeys[0]] = JSON.stringify(readAppearancePreferences(storage));
   const assets: BackupAsset[] = [], blobIds = new Map<string, string>(), native = new Map<string, { size?: number; mime?: string }>();
   let total = 0;
   async function addAsset(id: string, mime: string, data: string) {

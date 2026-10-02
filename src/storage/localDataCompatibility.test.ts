@@ -7,7 +7,10 @@ import {
   connectionSettingsStorageKey, previousConnectionSettingsStorageKey, legacyProviderProfilesStorageKey,
   loadConnectionSettings, readConnectionSettingsData,
 } from "../chat/settings";
-import { defaultSearchConfiguration, loadSearchConfiguration, SEARCH_SETTINGS_KEY } from "../search/settings";
+import {
+  defaultSearchConfiguration, defaultSearchSettings, loadSearchConfiguration,
+  saveSearchConfiguration, saveSearchSettings, SEARCH_SETTINGS_KEY,
+} from "../search/settings";
 import { AyaseDatabase } from "./database";
 import { DataContractError } from "./dataContract";
 
@@ -53,6 +56,43 @@ describe("shared local preference compatibility", () => {
     expect(loadSearchConfiguration(storage)).toEqual(defaultSearchConfiguration());
     expect(storage.entries.size).toBe(0);
     expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it.each(["futureOption", "authHeaders", "protocol", "__proto__", "constructor", "prototype"].flatMap(field =>
+    (["legacy", "exaMcp", "exaApi"] as const).map(profile => ({ field, profile })),
+  ))("rejects unknown $field in $profile before reads or saves can replace the original search data", ({ field, profile }) => {
+    const unsupported = { ...defaultSearchSettings(), apiKey: "synthetic-retained-key", [field]: "synthetic-unknown-value" };
+    const configuration = { ...defaultSearchConfiguration(), ...(profile === "legacy" ? {} : { [profile]: unsupported }) };
+    const encoded = JSON.stringify(profile === "legacy" ? unsupported : configuration);
+    const storage = memoryStorage({ [SEARCH_SETTINGS_KEY]: encoded });
+    const operations = [
+      () => loadSearchConfiguration(storage),
+      () => profile === "legacy" ? saveSearchSettings(unsupported, storage) : saveSearchConfiguration(configuration, storage),
+      () => saveSearchSettings(defaultSearchSettings(), storage),
+    ];
+    for (const operation of operations) {
+      let message = "";
+      try { operation(); } catch (error) { message = (error as Error).message; }
+      expect(message).not.toBe("");
+      expect(message).not.toContain("synthetic-retained-key");
+      expect(message).not.toContain("synthetic-unknown-value");
+      expect(storage.entries.get(SEARCH_SETTINGS_KEY)).toBe(encoded);
+      expect(storage.setItem).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps supported current search profiles and their known save normalizations", () => {
+    const configuration = defaultSearchConfiguration();
+    configuration.exaMcp = { ...configuration.exaMcp, baseUrl: "  https://mcp.example.invalid  ", apiKey: "  synthetic-mcp  ", numResults: 10 };
+    configuration.exaApi = { ...configuration.exaApi, baseUrl: "https://api.example.invalid/search", apiKey: "  synthetic-api  ", numResults: 1 };
+    const storage = memoryStorage();
+    const saved = saveSearchConfiguration(configuration, storage);
+    expect(saved.exaMcp).toEqual({ version: 1, baseUrl: "https://mcp.example.invalid/", apiKey: "synthetic-mcp", numResults: 10 });
+    expect(saved.exaApi).toEqual({ version: 1, baseUrl: "https://api.example.invalid/search", apiKey: "synthetic-api", numResults: 1 });
+    expect(loadSearchConfiguration(storage)).toEqual(saved);
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+    expect(configuration.exaMcp.apiKey).toBe("  synthetic-mcp  ");
+    expect(configuration.exaApi.apiKey).toBe("  synthetic-api  ");
   });
 
   it.each(["{broken", "null", JSON.stringify({ version: 3 }), JSON.stringify({ version: 2, exaMcp: {}, exaApi: {} })])(

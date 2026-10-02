@@ -45,6 +45,61 @@
 
 本轮确定性实例已补齐旧文件缺失绘图类别保留、未来可读参数过滤、不兼容结构／预算拒绝、预览和再次导出提示，以及旧日志和各恢复策略回滚。独立 Sol/high 审查完成，当前门禁及证据见 [#93 实施记录](ISSUE-93-IMPLEMENTATION.md)。上方测试数和 v4 格式是 #105 基础历史快照。
 
-## 仍需交付接受
+## #93 接入时的剩余接受（历史，2026-10-01）
 
 #105 的绘图接入和确定性跨版本实例已补齐，原生文件窗口、实际重启／中断及真实用户恢复尚未接受，不记录为全部交付完成或关闭。#94 独立负责压力、资源／生命周期和桌面接受项；它不由本次兼容回归代替。用户已授权随 #93 交付必要基础代码，未要求关闭 #105。
+
+## 收尾审计与修正（2026-10-02）
+
+用户授权完成 #105 本地收尾，有必须人工执行的项再告知。远端 #105 正文及零评论已核对，仍为 OPEN；本轮未授权提交、推送或关闭。工作分支 `dev`，起点 `06db59b`；已有列表拖动和设置界面改动保留，不属于本项修正。
+
+独立 Sol/high 只读审计用实际模块和合成内存存储复现两项 P2：搜索 profile 未知字段在读取时被丢弃，后续保存覆盖原文；外观容错显示把未知／损坏结构转换成默认视图，普通 setter 和备份导出随后抹去原始结构。两项均已修复：
+
+- 搜索 v1 和 v2 MCP／API profile 用实际字段策略拒绝未知键，包括安全、协议及原型字段；保留已知规范化和历史迁移。显式默认草稿修复沿用已有用户操作合同。
+- 外观 `readAppearancePreferences` 共享严格读取入口用于本机保存、真实备份投影／校验和恢复计划；已知旧缺省／crop／资源库迁移保持纯读取。显示回退仍可用，未知／损坏原文不能被普通设置覆盖或授权文件清理。合并／副本拒绝不可读外观；明确替换以日志保护原文，失败恢复精确原始字符串。
+- 恢复日志／过滤报告重启回归改为关闭旧数据库连接、建立新的 `AyaseDatabase` 后恢复；不再只重新创建 repository。
+- 数据注册及版本保持：13 张表、8 个偏好、8 张直接备份表，另有两张绘图投影表；Dexie v8、备份文档 v5／信封 v1、appearance v1、search v2。没有新增持久字段或推断语义迁移。
+
+### 验收标准逐项对应
+
+| #105 标准 | 实现与确定性证据 | 接受边界 |
+| --- | --- | --- |
+| 版本职责、迁移和共享关键入口 | `dataRegistry.ts`／`dataContract.ts`／`DATA-CONTRACTS.md`；连接、搜索、会话、绘图及外观本机／备份读入口 | 不为未变化模块虚构升级步骤；其余显示用容错不授权持久覆盖 |
+| 历史 v1/v2/v3、本机旧记录、跨／重复迁移及默认 | `dataContract.test.ts`、`localDataCompatibility.test.ts`、`dataSafety.test.ts`、`chat/workspace.test.ts`、`backup/compatibility.test.ts`、`appearanceData.test.ts` | 字段重命名／单位换算是纯迁移 seam 的合成例，不代表产品新增转换；旧客户端未追溯改变 |
+| 未来可读过滤、报告、严格拒绝及再次导出 | `backup/compatibility.test.ts`、`drawingIntegration.test.ts`；路径报告、预算先验、私有偏好及真实导出链路 | 只过滤已声明参数区，未知协议／资源／凭据／外观／预设结构拒绝；源文件不改写 |
+| 新表／偏好／字段覆盖与秘密排除 | `scripts/check-data-contracts.test.mjs`、`check-data-policy-types.test.mjs`、`dataPolicies.ts` 实际投影；快照 allowlist 与未知／秘密字段回归 | 动态键仍需人工登记；静态检查不代替语义验证 |
+| 各阶段失败、重开回滚与资源安全 | `backup/restore.test.ts`、`compatibility.test.ts`、`drawingIntegration.test.ts`；日志创建、文件写入、数据库事务、偏好、提交点和清理失败 | 假 IndexedDB 重开不能单独证明进程、OS 对话框或断电行为 |
+| #93 模块接入、绘图设置／预设往返 | `drawingIntegration.test.ts`、`drawingPresets.test.ts` 和 #93／#101 实施记录 | 自动提示词草稿、历史、参考／成果图片仍排除，恢复零供应商派发 |
+| 文档、门禁及独立审查 | 本记录、数据契约、架构、开发同步；本轮独立审查及最终检查记录如下 | 本地通过不代表远端交付或 Issue 关闭 |
+
+### 本轮检查
+
+- 全量 `npm.cmd run check` 通过：16 项 Node 门禁、119 个 Vitest 文件／1938 项测试、TypeScript 和 Vite 构建；证据 `.data105-check-final.local.log`。首次基线为 118 文件／1900 项通过，本轮新增 38 项，构建仍有既有大 chunk 提示。
+- `cargo check --locked --manifest-path src-tauri/Cargo.toml` 通过；`cargo test --locked --manifest-path src-tauri/Cargo.toml ayase_backup` 通过 14 项原生备份文件测试，证据 `.data105-cargo-check.local.log`／`.data105-rust-backup.local.log`。
+- 12 个定向文件／347 项通过，独立复核另执行 8 文件／228 项通过；修正后的生产代码无剩余 P1／P2。合成测试不读取真实配置或 API Key，不请求供应商。
+- 最终合成入口 TypeScript、`git diff --check` 通过；七份相关文档的 119 个相对文件链接目标存在。换行转换提示不属于 diff 错误。
+
+可复现的浏览器／原生／人工入口见 [scripts/data105](../scripts/data105/README.md)。跨进程探针使用独立 identifier，实际恢复生产日志入口、原生文件与 IndexedDB；它是备份专用合成入口，不能称为完整 App 退出／绘图请求生命周期、断电或真实用户数据接受。
+
+### 实际运行结果与人工交接
+
+四次原生运行使用 `io.github.ayaseminami.ayasestudio.data105finish`，先检查实际 identifier 才打开数据库；与正式数据目录隔离。两个种子入口分别留下 `staging`／`applying` 日志和真实合成附件，然后程序关闭。两个恢复入口在新的进程中调用生产 `recoverBackupAtStartup()`，均正常退出，报告 `passed`：
+
+- BEFORE 与恢复后的完整私有快照 SHA-256 相等；applying 种子的修改确实被回滚。
+- 日志拥有的 UUID 附件移除，日志不存在；重复恢复返回 false。
+- 历史搜索／外观缺省迁移保持，实际 v5 导出往返通过；v1／v3 解码及未来可读参数警告再次导出通过。
+- 原生报告 `providerCalls: 0`；合成入口不挂载聊天／绘图控制器，外部 fetch 被阻止。
+
+证据为 `.data105.local/seed-staging-report.json`、`recover-staging-report.json`、`seed-applying-report.json`、`recover-applying-report.json` 及对应 `*-native.log`。首个种子试跑因测试页面拦截 Tauri 内部 IPC，在检查 identifier 前失败、未打开数据库；修正仅允许内部 IPC 后重新执行上述完整四次运行。该试跑不计成功证据。
+
+内置浏览器使用独立 `Data105-browser` 数据库及模拟文件选择／保存，实际 `BackupWorkspace`、API、codec 和 Dexie：未来可读样例合并、v1 另存副本、v3 替换均显示成功；刷新后保留恢复结果，再次导出仍显示过滤路径与可能丢失参数警告。加密导出成功，错误密码拒绝，正确密码显示已校验 v5 预览及原兼容警告。界面截图已检查，测试页背景对比已修正。一次停服时的报告请求失败被丢弃，重新执行连续在线验收；不把这次中断观察作为产品失败或成功证据。`browser-report.json` 只保留最后一次报告，不代表完整动作历史。
+
+原生人工窗口 `#105 隔离验收（合成数据）` 已启动，`manual-report.json` 为 `ready-for-manual`，`manualAcceptance: pending`。此状态只证明初始化、原生围栏、生产启动恢复、合成样例及编解码已就绪，不能证明系统文件对话框已操作。已向用户交接：
+
+1. 导出先取消，再保存并重新打开；打开文件选择也取消一次，确认页面可继续操作。
+2. 加密合成备份保存后分别输入错误／正确密码，确认拒绝及成功预览。
+3. 从 `.data105.local/` 选择 `fixture-v1.ayasebackup`、`fixture-v3.ayasebackup`、`fixture-future-readable.ayasebackup`，确认旧版预览、未来参数警告及导入确认；合并／副本／替换只作用于此合成窗口。
+
+用户随后明确回复“我已验收通过”，本轮交接的系统文件对话框／合成备份人工检查据此记录通过。这是用户提供的验收结果；初始化报告中的 `manualAcceptance: pending` 是操作前快照，不冒充机器自动证明交互通过。#105 本地实现、修正、独立审查、自动门禁、跨进程恢复及人工验收收尾完成，当前没有本项剩余本地阻塞。
+
+真实用户备份、完整应用生命周期／压力和断电仍属独立接受边界，不因本次确认扩大。用户已有未提交 UI 工作保留；收尾验收时未执行 Git 提交、推送或远端操作，核对远端 #105 为 OPEN。用户随后明确授权提交／推送本项、把既有 #95 提交 `069f3a5` 一起推送并关闭 #105；实际交付状态及提交号以远端 Issue 验收评论和 Git 历史为准。

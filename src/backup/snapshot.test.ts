@@ -47,6 +47,16 @@ function snapshot(): LocalSnapshot {
 }
 
 describe("backup snapshot", () => {
+  it.each(["{broken", JSON.stringify({ themeMode: "dark", futureOption: true }), JSON.stringify({ backgroundLibrary: {} })])(
+    "rejects unsupported appearance before export resources and preserves the source: case %#", async encoded => {
+      const before = snapshot(), resources = files();
+      before.preferences[preferenceKeys[0]] = encoded;
+      const original = structuredClone(before);
+      await expect(createBackupDocument(before, { connections: false, credentials: false }, resources)).rejects.toThrow();
+      expect(before).toEqual(original);
+      expect(resources.read).not.toHaveBeenCalled();
+    },
+  );
   it("round-trips optional manual chat ranks and keeps legacy unranked backups valid", async () => {
     const input = snapshot();
     input.rows.conversations[0].sortOrder = 2;

@@ -229,6 +229,25 @@ describe("restore conflict strategies", () => {
   });
 });
 describe("multi-store restore journal", () => {
+  it.each(["{broken", JSON.stringify({ themeMode: "dark", securityPolicy: { value: "synthetic" } }), JSON.stringify({ backgroundLibrary: {} })])(
+    "preserves unsupported appearance and permits only journal-protected explicit replacement: case %#", async encoded => {
+      const test = await setup();
+      test.store.setItem(preferenceKeys[0], encoded);
+      const before = await test.repository.snapshot();
+      const validated = (await decodeBackup(await encodeBackup(document()))).document;
+      for (const mode of ["merge", "copy"] as const) expect(() => createRestorePlan(validated, before, mode)).toThrow();
+      expect(await test.repository.snapshot()).toEqual(before);
+      expect(test.files.write).not.toHaveBeenCalled();
+      const plan = createRestorePlan(validated, before, "replace");
+      expect(plan.warnings.join(" ")).toContain("原始配置由恢复日志保护");
+      vi.spyOn(test.db.backupJournal, "delete").mockRejectedValueOnce(Error("injected commit failure"));
+      await expect(test.repository.restore(plan, before, test.files)).rejects.toThrow("已回滚");
+      expect(test.store.getItem(preferenceKeys[0])).toBe(encoded);
+      expect(await test.repository.snapshot()).toEqual(before);
+      await test.repository.restore(plan, before, test.files);
+      expect(test.store.getItem(preferenceKeys[0])).toBe(null);
+    },
+  );
   it("repairs corrupt local profiles with a complete v3 replacement and rolls back raw data on failure", async () => {
     const test = await setup();
     const corrupt = "corrupt-local-search-json";
@@ -325,7 +344,10 @@ describe("multi-store restore journal", () => {
     await test.db.backupJournal.put({ id: "restore", before: test.before, references: plan.writes.map(w => w.reference), phase });
     test.saved.set(plan.writes[0]!.reference, "partial");
     if (phase === "applying") { for (const t of backupTables) { await test.db.table(t).clear(); if (plan.after.rows[t].length) await test.db.table(t).bulkPut(plan.after.rows[t]); } test.store.setItem(connectionSettingsStorageKey, "partial settings"); }
-    const restarted = new BackupRepository(test.db, test.store);
+    const name = test.db.name;
+    test.db.close();
+    const reopened = new AyaseDatabase(name); databases.push(reopened);
+    const restarted = new BackupRepository(reopened, test.store);
     expect(await restarted.recover(test.files)).toBe(true); expect(await restarted.snapshot()).toEqual(test.before);
     expect(test.saved.size).toBe(0); expect(await restarted.recover(test.files)).toBe(false);
   });

@@ -1,5 +1,5 @@
 import { loadConnectionSettings, connectionSettingsStorageKey, emptyConnectionSettings, type ConnectionSettingsState } from "../chat/settings";
-import { loadAppearancePreferences } from "../appearance/appearance";
+import { readAppearancePreferences } from "../appearance/appearance";
 import { decode64 } from "./codec";
 import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
 import { backupTables, preferenceKeys, type BackupDocument, type BackupRows, type RestoreMode } from "./types";
@@ -24,6 +24,12 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
   validateFilteredParameters(filtered);
   if (filtered.length) preferences[DATA_COMPATIBILITY_KEY] = JSON.stringify(filtered);
   const currentStorage = { getItem: (k: string) => before.preferences[k] ?? null, setItem: () => {} };
+  let currentAppearance;
+  try { currentAppearance = readAppearancePreferences(currentStorage); }
+  catch (error) {
+    if (mode !== "replace") throw error;
+    warnings.push("当前外观配置无法安全读取：按已确认的替换策略应用备份外观，原始配置由恢复日志保护。");
+  }
   let currentConnections: ConnectionSettingsState;
   try { currentConnections = loadConnectionSettings(currentStorage); }
   catch (error) {
@@ -118,7 +124,7 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
   } else {
     incoming.workspace = [];
     incoming.userAvatar = [];
-    const saved = loadAppearancePreferences(currentStorage);
+    const saved = structuredClone(currentAppearance!);
     const imported = JSON.parse(document.preferences[preferenceKeys[0]] ?? "null");
     for (const b of imported?.backgroundLibrary ?? []) {
       if (mode === "merge" && saved.backgroundLibrary.some(r => r.id === b.id)) { conflicts++; continue; }
@@ -195,7 +201,7 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
   const ap = JSON.parse(preferences[preferenceKeys[0]] ?? "null");
   if (ap) {
     if (mode === "replace" && ap.backgroundReference) ap.backgroundReference = reference(ap.backgroundReference);
-    const oldIds = new Set(loadAppearancePreferences(currentStorage).backgroundLibrary.map(b => b.id));
+    const oldIds = new Set(currentAppearance?.backgroundLibrary.map(b => b.id) ?? []);
     for (const b of ap.backgroundLibrary) if (mode === "replace" || !oldIds.has(b.id)) b.reference = reference(b.reference);
     preferences[preferenceKeys[0]] = JSON.stringify(ap);
   }

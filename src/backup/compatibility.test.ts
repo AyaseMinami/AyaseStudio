@@ -150,7 +150,10 @@ describe("compatibility loss reports follow restore transactions", () => {
     await t.db.backupJournal.put({ id: "restore", before, references: [], phase });
     await t.db.assistants.update("a", { name: "Interrupted write" });
     t.values.set(DATA_COMPATIBILITY_KEY, JSON.stringify(["rows.assistants[0].defaultConfig.futureParameter"]));
-    const reboot = new BackupRepository(t.db, t.storage);
+    const name = t.db.name;
+    t.db.close();
+    const reopened = new AyaseDatabase(name); databases.push(reopened);
+    const reboot = new BackupRepository(reopened, t.storage);
     expect(await reboot.recover(files)).toBe(true);
     expect(await reboot.snapshot()).toEqual(before);
     expect(await reboot.recover(files)).toBe(false);

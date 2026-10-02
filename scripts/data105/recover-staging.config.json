@@ -1,0 +1,24 @@
+{
+  "identifier": "io.github.ayaseminami.ayasestudio.data105finish",
+  "build": {
+    "beforeDevCommand": "",
+    "devUrl": "http://127.0.0.1:1505/scripts/data105/index.html?phase=recover&journal=staging&autoclose=1"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "#105 隔离验收（合成数据）",
+        "width": 1040,
+        "height": 760,
+        "minWidth": 720,
+        "minHeight": 520,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1505; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+    }
+  }
+}

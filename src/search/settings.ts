@@ -48,6 +48,9 @@ export function validateSearchSettings(raw: unknown): SearchSettings {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("网络搜索配置格式无效。");
   const value = raw as Record<string, unknown>;
   if (value.version !== 1) throw new Error("网络搜索配置版本不受支持。");
+  if (Object.keys(value).some(key => !backupFields(dataPolicies.searchProfile, true).includes(key))) {
+    throw new Error("网络搜索配置字段不受支持。");
+  }
   if (typeof value.baseUrl !== "string" || value.baseUrl.length > 2048) throw new Error("搜索服务地址无效。");
   if (typeof value.apiKey !== "string" || value.apiKey.length > 4096 || /[\u0000-\u001f\u007f]/u.test(value.apiKey)) {
     throw new Error("搜索 API Key 格式无效。");
@@ -108,4 +111,5 @@ export function validateSearchQuery(text: string): string {
   if (Array.from(query).length > 2000) throw new Error("搜索问题不能超过 2000 个字符，请缩短后重试。");
   return query;
 }
-import { migrateData, type DataMigration } from "../storage/dataContract";
+import { backupFields, migrateData, type DataMigration } from "../storage/dataContract";
+import { dataPolicies } from "../storage/dataPolicies";

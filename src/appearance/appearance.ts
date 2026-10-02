@@ -1,5 +1,7 @@
 import { focusFromLegacyCrop, normalizeBackgroundFocus, type BackgroundFocus } from "./backgroundFocus";
 import { getColorPresetPalette, isColorPreset, type ColorPreset } from "./colorPresets";
+import { backupFields, dataCheck, dataRecord, DataContractError } from "../storage/dataContract";
+import { dataPolicies } from "../storage/dataPolicies";
 export type { ColorPreset } from "./colorPresets";
 
 export type ThemeMode = "light" | "dark" | "system";
@@ -277,10 +279,67 @@ function normalizeBackgroundLibrary(stored: Partial<AppearancePreferences> & { b
   });
 }
 
+/** Durable reads accept known legacy omissions/crop, but never authorize a display fallback write. */
+export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getItem">): AppearancePreferences {
+  const encoded = storage.getItem(APPEARANCE_STORAGE_KEY);
+  if (encoded === null) return structuredClone(defaultAppearancePreferences);
+  let stored: unknown;
+  try { stored = JSON.parse(encoded); }
+  catch { throw new DataContractError("外观配置已损坏，原数据已保留；请通过数据管理恢复。"); }
+  dataRecord(stored);
+  const supported = (value: Record<string, unknown>, fields: readonly string[]) =>
+    dataCheck(Object.keys(value).every(key => fields.includes(key)), "外观配置包含不支持字段，原数据已保留；请升级应用或通过数据管理恢复。");
+  supported(stored, [...backupFields(dataPolicies.appearance), "backgroundCrop"]);
+  const optional = (value: Record<string, unknown>, key: string, valid: (value: unknown) => boolean) => {
+    if (value[key] !== undefined) dataCheck(valid(value[key]), "外观配置结构无效，原数据已保留；请通过数据管理恢复。");
+  };
+  const focus = (value: unknown) => {
+    if (value === null) return true;
+    dataRecord(value); supported(value, backupFields(dataPolicies.backgroundFocus));
+    return normalizeBackgroundFocus(value) !== null;
+  };
+  const range = (minimum: number, maximum: number, integer = false) => (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum && (!integer || Number.isInteger(value));
+  optional(stored, "colorPreset", isColorPreset);
+  optional(stored, "themeMode", value => ["light", "dark", "system"].includes(value as string));
+  for (const key of ["accentColor", "userBubbleColor", "unifiedThemeColor", "canvasColor", "assistantBubbleColor"])
+    optional(stored, key, value => value === null || normalizeHexColor(value) !== null);
+  for (const key of ["unifiedTransparency", "sidebarTransparency", "composerTransparency", "assistantBubbleTransparency"])
+    optional(stored, key, range(0, 100, true));
+  optional(stored, "backgroundReference", value => value === null || isBackgroundReference(value));
+  optional(stored, "backgroundFocus", focus);
+  optional(stored, "backgroundFit", value => value === "cover" || value === "contain");
+  optional(stored, "backgroundMask", range(35, 90));
+  optional(stored, "backgroundBlur", range(0, 32));
+  optional(stored, "backgroundEnabled", value => typeof value === "boolean");
+  optional(stored, "backgroundName", value => value === null || typeof value === "string" && value.length <= 100);
+  if (stored.backgroundCrop !== undefined && stored.backgroundCrop !== null) {
+    dataRecord(stored.backgroundCrop); supported(stored.backgroundCrop, ["x", "y", "width", "height"]);
+    dataCheck(["x", "y", "width", "height"].every(key => typeof (stored.backgroundCrop as Record<string, unknown>)[key] === "number"
+      && Number.isFinite((stored.backgroundCrop as Record<string, unknown>)[key])));
+  }
+  if (stored.backgroundLibrary !== undefined) {
+    dataCheck(Array.isArray(stored.backgroundLibrary));
+    const ids = new Set<string>();
+    for (const entry of stored.backgroundLibrary) {
+      dataRecord(entry); supported(entry, backupFields(dataPolicies.background));
+      dataCheck(typeof entry.id === "string" && entry.id.length > 0 && !ids.has(entry.id) && isBackgroundReference(entry.reference));
+      ids.add(entry.id);
+      optional(entry, "name", value => typeof value === "string" && value.length <= 100);
+      optional(entry, "focus", focus);
+      optional(entry, "fit", value => value === "cover" || value === "contain");
+      optional(entry, "mask", range(35, 90)); optional(entry, "blur", range(0, 32));
+    }
+  }
+  return loadAppearancePreferences({ getItem: () => encoded, setItem: () => {} });
+}
+
 export function saveAppearancePreferences(
   storage: AppearanceStorage,
   preferences: AppearancePreferences,
 ): void {
+  readAppearancePreferences(storage);
+  readAppearancePreferences({ getItem: () => JSON.stringify(preferences) });
   storage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(preferences));
 }
 
@@ -708,6 +767,7 @@ export function createAppearanceController({
   // A malformed/unreadable metadata record must never authorize deletion of its files.
   let cleanupSafe = true;
   try {
+    readAppearancePreferences(storage);
     const raw = storage.getItem(APPEARANCE_STORAGE_KEY);
     const stored = raw === null ? null : JSON.parse(raw);
     cleanupSafe = raw === null || (!!stored && typeof stored === "object" && !Array.isArray(stored));
@@ -750,8 +810,9 @@ export function createAppearanceController({
     try {
       saveAppearancePreferences(storage, next);
       persistedReferences = retainedReferences(next);
-    } catch {
+    } catch (error) {
       if (requireSave) throw new BackgroundResourceError("无法保存背景设置，原图片和配置保持不变，请重试。");
+      if (error instanceof DataContractError) backgroundRuntime = { ...backgroundRuntime, backgroundError: error.message };
       persisted = false;
     }
     preferences = next;
