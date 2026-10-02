@@ -1,5 +1,22 @@
 # Ayase Studio Development Guide
 
+## Navigation list performance verification (2026-10-03)
+
+`ConversationNavigation.performance.test.tsx` first reproduced repeated row-icon rendering through the real navigation component (2 initial renders became 12 after visibility operations), then passed with the memoized list. Five navigation/controller/docking/drag suites pass 63 tests, including fresh committed command callbacks, generation/selection updates, busy/dialog guards, hidden deletion reset, focus restoration and conversation reorder. Independent Sol/high review found no confirmed P1/P2 defects. Full `npm.cmd run check` passes 155 files / 2672 tests, data-contract checks, TypeScript and build; `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks pass. Build retains its bundle-size advisory.
+
+The ignored `.nav-perf.local` fixture compares committed navigation `23d6987` with current sources, using real `ConversationNavigation` and `ChatWorkspace`, 80 synthetic messages / 98,431 content characters (paragraphs, tables and code), a 1280×720 in-app browser and 200/1000 conversation metadata rows. No production credentials/data or provider requests are used. The measurement is elapsed time from the existing button's programmatic click to the second requestAnimationFrame, averaged over five repetitions after excluding the first warmup. It includes early render/layout work, not input-device latency or completion of the 200ms animation; timings are local observations, not a native-performance guarantee.
+
+| Conversations | Build | Close before → after | Open before → after |
+| --- | --- | --- | --- |
+| 200 | Development | 145 → 71 ms | 164 → 68 ms |
+| 1000 | Development | 557 → 200 ms | 492 → 187 ms |
+| 200 | Production | 76 → 75 ms | 71 → 62 ms |
+| 1000 | Production | 240 → 199 ms | 224 → 191 ms |
+
+Final production runs were sequential with no concurrent test/build tasks. For 1000 rows, development React profiler duration fell from 132–175ms to about 2ms; production builds disable this profiler, so zero profiler output is not interpreted as zero rendering cost. Remaining DOM/layout cost is visible in the measurements. Navigation and body-width animations, full mounted list, scrolling and interaction semantics remain unchanged; virtualization and discrete body-width transitions were not introduced.
+
+Browser interaction checks confirmed all 1000 rows and 80 messages remain mounted, a bounded 513px message scroll viewport, no page horizontal overflow, identical list scrollTop after close/reopen, focus return to the selected assistant on close, pending deletion cleared while hidden, and Shift+F10 menu / Escape focus restoration without closing the pane. Native desktop feel and private real-history acceptance remain with the user.
+
 ## Confirmation dialog verification (2026-10-03)
 
 Connection settings and App integration tests pass with explicit asynchronous decisions (90 tests); drawing close and SDK permission tests pass (16 tests). Existing chat, avatar, background and drawing confirmation suites pass (141 tests after updating the message-delete test to target the destructive action instead of the first styled button). Independent review reran 105 tests from these overlapping suites with no confirmed P1/P2 findings. TypeScript and diff checks pass. The isolated `close-probe` native startup compiled, reported `guard-settled` with zero tasks/results at `2026-10-02T17:53:14.037Z`, and exited with code 0. This proves idle native startup/close, not real title-bar interaction during active generation or native modal focus behavior; those remain manual acceptance. No production credentials/data or provider requests were used.

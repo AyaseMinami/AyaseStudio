@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronRight, GripVertical, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, ChevronRight, GripVertical, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { AssistantAvatarEditor } from "./AssistantAvatarEditor";
 import { useNavigationDocking } from "./useNavigationDocking";
@@ -17,6 +17,7 @@ import { ThinkingControl } from "./ThinkingControl";
 import { WebSearchControl } from "./WebSearchControl";
 import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 import { useNavigationListDrag } from "./useNavigationListDrag";
+import { ConversationNavigationList, type ConversationListActions } from "./ConversationNavigationList";
 import "./AssistantConfig.css";
 
 function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
@@ -123,7 +124,13 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     };
   }, [pendingDelete]);
   const selectedAssistant = snapshot?.assistants.find((item) => item.id === snapshot.selection.activeAssistantId);
-  const conversations = snapshot?.conversations.filter((item) => item.assistantId === selectedAssistant?.id) ?? [];
+  const conversations = useMemo(() => snapshot?.conversations.filter((item) => item.assistantId === selectedAssistant?.id) ?? [],
+    [snapshot?.conversations, selectedAssistant?.id]);
+  const conversationCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of snapshot?.conversations ?? []) counts.set(item.assistantId, (counts.get(item.assistantId) ?? 0) + 1);
+    return counts;
+  }, [snapshot?.conversations]);
   const close = () => { if (!busy && !avatarBusy) setDialog(undefined); };
   async function perform(command: WorkspaceCommand) {
     if (commandPending.current) return;
@@ -165,6 +172,36 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     setPendingDelete(undefined);
     menu.open(target, opener, "clientX" in event ? { x: event.clientX, y: event.clientY } : undefined);
   }
+  const latestListActions: ConversationListActions = {
+    openContextMenu: (id, event) => openContextMenu({ kind: "conversation", id }, event),
+    beginDrag: (event, item) => navigationDrag.begin(event, { kind: "conversation", id: item.id, assistantId: item.assistantId }, item.title),
+    select: (item) => {
+      setPendingDelete(undefined);
+      void openConversation({ type: "select", assistantId: item.assistantId, conversationId: item.id });
+    },
+    edit: (id) => setDialog({ type: "conversation", id }),
+    delete: (id) => {
+      if (pendingDelete !== id) setPendingDelete(id);
+      else { setPendingDelete(undefined); void execute({ type: "delete-conversation", id }); }
+    },
+    cancelDelete: () => {
+      pendingDeleteRef.current?.querySelector<HTMLButtonElement>(".conversation-delete-button")?.focus();
+      setPendingDelete(undefined);
+    },
+    clearPendingDelete: () => setPendingDelete(undefined),
+  };
+  const committedListActions = useRef(latestListActions);
+  useLayoutEffect(() => { committedListActions.current = latestListActions; });
+  // Stable event entry points forward to closures from the latest committed render.
+  const [listActions] = useState<ConversationListActions>(() => ({
+    openContextMenu: (id, event) => committedListActions.current.openContextMenu(id, event),
+    beginDrag: (event, item) => committedListActions.current.beginDrag(event, item),
+    select: (item) => committedListActions.current.select(item),
+    edit: (id) => committedListActions.current.edit(id),
+    delete: (id) => committedListActions.current.delete(id),
+    cancelDelete: () => committedListActions.current.cancelDelete(),
+    clearPendingDelete: () => committedListActions.current.clearPendingDelete(),
+  }));
   const menuTarget = menu.state?.target;
   const menuAssistant = menuTarget?.kind === "assistant" ? snapshot?.assistants.find((item) => item.id === menuTarget.id) : undefined;
   const menuConversation = menuTarget?.kind === "conversation" ? snapshot?.conversations.find((item) => item.id === menuTarget.id) : undefined;
@@ -254,7 +291,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
         <ul className="chat-navigation-list">{snapshot?.assistants.map((assistant) => {
           const selected = assistant.id === selectedAssistant?.id;
           const expanded = selected && conversationPanelOpen && assistantExpanded;
-          const count = snapshot.conversations.filter((item) => item.assistantId === assistant.id).length;
+          const count = conversationCounts.get(assistant.id) ?? 0;
           return <li className="chat-navigation-item assistant-branch" key={assistant.id} {...sortAttributes("assistant", assistant.id)}
             onContextMenu={(event) => openContextMenu({ kind: "assistant", id: assistant.id }, event)}
             onKeyDown={(event) => { if (isContextMenuKey(event)) openContextMenu({ kind: "assistant", id: assistant.id }, event); }}>
@@ -289,31 +326,9 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
             </div>
             <button className="settings-button new-conversation-button" type="button" disabled={busy} data-busy-only={busy} onClick={() => void openConversation({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}><Plus size={14} />新建对话</button>
             {conversations.length === 0 && <p className="muted-text assistant-conversations-empty">还没有对话</p>}
-            <ul className="chat-navigation-list">{conversations.map((item) => <li key={item.id} className="chat-navigation-item conversation-leaf" data-conversation-id={item.id} {...sortAttributes("conversation", item.id)} data-navigation-sort-scope={item.assistantId}
-              onContextMenu={(event) => openContextMenu({ kind: "conversation", id: item.id }, event)}
-              onKeyDown={(event) => { if (isContextMenuKey(event)) openContextMenu({ kind: "conversation", id: item.id }, event); }}
-              ref={pendingDelete === item.id ? pendingDeleteRef : undefined}
-              onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPendingDelete(undefined); }}>
-          <button type="button" className="navigation-drag-handle" disabled={busy || !!dialog} data-busy-only={busy && !dialog} aria-label={`拖动对话 ${item.title}`}
-            title="拖动排序；Shift+F10 或右键打开菜单上移／下移" onPointerDown={(event) => navigationDrag.begin(event, { kind: "conversation", id: item.id, assistantId: item.assistantId }, item.title)}><GripVertical size={14} aria-hidden="true" /></button>
-          <button className="chat-navigation-select conversation-leaf-select" type="button" aria-pressed={item.id === conversation?.id} disabled={busy} title={`${item.title}${generatingIds.has(item.id) ? " · 生成中" : ""}`}
-            onPointerDown={(event) => navigationDrag.begin(event, { kind: "conversation", id: item.id, assistantId: item.assistantId }, item.title)}
-            onClick={() => { setPendingDelete(undefined); void openConversation({ type: "select", assistantId: item.assistantId, conversationId: item.id }); }}><MessageSquare size={14} /><span>{item.title}{generatingIds.has(item.id) ? " · 生成中" : ""}</span></button>
-          <div className="chat-navigation-actions conversation-row-actions">
-            {pendingDelete === item.id
-              ? <button className="conversation-delete-cancel" type="button" aria-label={`取消删除对话 ${item.title}`} onClick={() => {
-                pendingDeleteRef.current?.querySelector<HTMLButtonElement>(".conversation-delete-button")?.focus();
-                setPendingDelete(undefined);
-              }}>取消</button>
-              : <button type="button" disabled={busy} data-busy-only={busy} title="编辑对话" aria-label={`编辑对话 ${item.title}`} onClick={() => setDialog({ type: "conversation", id: item.id })}><Pencil size={15} aria-hidden="true" /></button>}
-            <button className="conversation-delete-button" data-pending={pendingDelete === item.id} type="button" disabled={busy || generatingIds.has(item.id)} data-busy-only={busy && !generatingIds.has(item.id)}
-              title={pendingDelete === item.id ? "永久删除对话及全部消息，无法撤销" : "删除"}
-              aria-label={`${pendingDelete === item.id ? "确认删除对话" : "删除对话"} ${item.title}`} onClick={() => {
-                if (pendingDelete !== item.id) setPendingDelete(item.id);
-                else { setPendingDelete(undefined); void execute({ type: "delete-conversation", id: item.id }); }
-              }}>{pendingDelete === item.id ? "确认删除" : <Trash2 size={15} aria-hidden="true" />}</button>
-          </div>
-            </li>)}</ul>
+            <ConversationNavigationList conversations={conversations} selectedId={conversation?.id} generatingIds={generatingIds}
+              busy={busy} dialogOpen={!!dialog} pendingDelete={pendingDelete} pendingDeleteRef={pendingDeleteRef}
+              drag={navigationDrag.drag} actions={listActions} />
       </aside>}
       {navigationOpen && !conversationPanelOpen && selectedAssistant && <button type="button" className="conversation-expand-handle"
         aria-label="展开对话列表" title="展开对话列表"

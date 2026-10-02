@@ -2788,7 +2788,7 @@ textarea:disabled {
 }
 
 .conversation-workspace { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
-.conversation-navigation-toolbar { position: relative; display: flex; align-items: center; gap: 0.5rem; min-width: 0; height: 2.5rem; min-height: 2.5rem; flex-shrink: 0; padding-left: 0.75rem; border-bottom: 1px solid rgb(var(--color-border) / 0.55); background: rgb(var(--color-panel)); font-size: var(--font-ui); }
+.conversation-navigation-toolbar { position: relative; display: flex; align-items: center; gap: 0.5rem; min-width: 0; height: 2.5rem; min-height: 2.5rem; flex-shrink: 0; padding-left: 0.75rem; border-bottom: 1px solid rgb(var(--color-border) / 0.55); background: transparent; font-size: var(--font-ui); }
 .conversation-navigation-toolbar > .chat-header { align-self: stretch; margin-left: auto; }
 .conversation-navigation-toolbar .chat-header-actions { align-self: stretch; }
 .conversation-navigation-toolbar .window-controls > button { min-height: 0; }
