@@ -1,5 +1,133 @@
 # Ayase Studio Development Guide
 
+## Beta 2 packaging (2026-10-03)
+
+`0.1.0-beta.2` packages the current `dev` baseline as a Windows x64 NSIS prerelease. npm, Cargo and Tauri versions are aligned; the locked dependency inventory is regenerated after the root version change. This release includes the post-Beta-1 chat/workbench appearance, navigation performance, general preferences and tray menu, shared controls, and documented cache/backup fixes.
+
+At the user's request, packaging does not rerun additional tests or independent review. `npm.cmd run build:windows` executes the production TypeScript/Vite build, Rust release compilation and NSIS packaging. Artifact version, size, signature status, SHA-256, remote tag and uploaded asset digest are checked separately. Existing implementation verification remains historical evidence; fresh installation, upgrade/data retention, native tray interactions and real provider compatibility are not established by packaging.
+
+Packaging succeeded after two rustc process crashes (`0xc0000005`, then `0xc0000374`) and a package-scoped Release cache clean; no source or optimization settings changed for recovery. Final TypeScript/Vite build, optimized Rust compilation and NSIS packaging passed. Both application and installer report `0.1.0-beta.2`; installer size is 7758146 bytes, Authenticode status is `NotSigned`, SHA-256 is `87174d11a37a0e7a0b010e946088cb406c30ece9bed0d02a3ed31b6e2dc878d0`. Build logs are kept under the ignored `release-beta2.local/` directory.
+
+## Switch and checkbox unification (2026-10-03)
+
+Explicit shared classes in `src/ui/ToggleControls.css` style boolean settings as switches and retain checkboxes for selection/confirmation. Callbacks, disabled boundaries, save timing and persisted formats are unchanged. The workbench fixture now supplies in-memory general preferences for safe interaction checks.
+
+Validation: `npm.cmd run check` passed 166 suites / 2811 tests, data-contract checks, TypeScript and production build. A subsequently added stream-control regression and related tests passed 5 suites / 55 tests; the final CSS alignment adjustment was followed by another successful production build. Cargo check, fixture TypeScript and Git diff checks passed. Existing large-chunk build advice remains.
+
+In-app browser checks used the workbench and select116 fixtures: light/dark settings, 640px narrow general/appearance layouts, 36×20 switch geometry, aligned general controls, Space-key toggling, conversation disabled fieldset feedback, and search/drawing controls. Browser inspection caught and corrected a specificity conflict that removed the general switches' automatic left margin. Import partial selection, backup confirmations and resource management remain covered by component regressions; those flows and forced-colors rendering were not separately exercised in the browser this round. No provider requests or native window behavior were tested. Local screenshot: `.chat108.local/toggle-general.png`; full check log: `.chat108.local/toggle-check.log`.
+
+## Background mask tuning verification (2026-10-03)
+
+Range 0–90 and default/reset 50: `npm.cmd run check` passed (166 files / 2811 tests, data-contract checks and production build), as did `cargo check --manifest-path src-tauri/Cargo.toml` and `git diff --check`. Deterministic tests cover zero-mask persistence, restart, library switching, backup encode/decode, missing defaults and preservation of saved 65. In-app browser inspection of the isolated workbench fixture confirmed the rendered control has min 0, max 90 and value 50; that fixture disables the background control, so slider interaction/reset is covered by component tests, not browser interaction acceptance. No live provider or native interaction was exercised.
+
+## Nonvisual release audit (#57 / #106, 2026-10-03)
+
+[Audit record](ISSUE-57-106-AUDIT.md) distinguishes the reviewed baseline and scoped fixes from concurrent UI/tray edits, records cache boundaries, and keeps native pressure/installation acceptance separate. Focused regression commands:
+
+```powershell
+npm.cmd test -- src/chat/contextBudget.test.ts src/ui/chat/SentAttachmentPreview.test.tsx src/backup/restore.test.ts src/ui/settings/BackupWorkspace.test.tsx
+node scripts/inventory-third-party.mjs
+```
+
+The second command regenerates the [locked dependency inventory](THIRD-PARTY-DEPENDENCIES.md) using installed npm metadata and offline Cargo metadata; it does not validate an installer or install dependencies. See [license and asset attribution](THIRD-PARTY-LICENSES.md) for missing texts, compound licenses and pending brand permissions.
+
+## Rounded tray menu verification (2026-10-03)
+
+Compact follow-up: the menu is now 224×131 inside a 240×147 host; the earlier 150/166 heights below describe the initial version. Removed the permanent bottom error row; errors appear as a first-item subtitle within the existing row. Browser measurement confirmed approximately 7px at both top and bottom with no overflow. All 8 tray tests passed; production build, locked Cargo check and diff check passed. This sizing change still needs the updated native executable for desktop confirmation.
+
+`tray.html` is a separate Vite build entry. Preview it on an isolated localhost origin without loading the main app; browser mode does not invoke native commands. The fixed 240×166 logical-pixel host includes an 8px transparent shadow gutter. Browser acceptance checked the actual renderer in light/dark themes, its 224×150 menu without overflow, ArrowDown and End navigation; deterministic tests also cover action dispatch, Escape/Tab cycling, repeated-click suppression, errors and read-only appearance updates. Native geometry tests cover work-area edges, negative monitor origins and scale-adjusted menu sizes.
+
+Validation: `npm.cmd run check` passed 166 suites / 2792 tests, data-contract checks, TypeScript and the two-entry production build (existing large-chunk advisory). Targeted tray/general/App tests passed 58 tests; Rust tray tests passed 2 tests, locked Cargo check and scoped diff checks passed. Independent Sol/high review found no confirmed P1/P2 defect.
+
+Native startup is **unverified**: `npm.cmd run tauri dev -- --no-watch --config .tray-smoke.local/native.config.json` could not replace the already-running development executable (Windows access denied). An ignored separate harness executable failed before startup with `0xc0000139`; it supplies no native acceptance evidence. The running user application was preserved. Actual tray right-click, focus/blur dismissal, multi-monitor mixed-DPI placement, fallback while the main window is hidden, and accepted exit terminating both WebViews remain manual acceptance after restarting with the updated build. Local browser captures and diagnostic harness files are under ignored `.tray-smoke.local/`.
+
+## Shared selector browser fixture (#116)
+
+Use [scripts/select116/README.md](../scripts/select116/README.md) for isolated selector acceptance with actual production components and synthetic long-label data. From the repository root:
+
+```powershell
+npx.cmd tsc -p scripts/select116/tsconfig.json
+npx.cmd vite build --config scripts/select116/vite.config.ts
+npx.cmd vite --config scripts/select116/vite.config.ts
+```
+
+Open `http://127.0.0.1:1557/scripts/select116/index.html`. Port 1557 is strict and HMR/watching are disabled; restart the server after source edits. Toolbar buttons switch between connection settings, network search, background display, all four drawing protocols, generation statistics, assistant/conversation configuration and selectors inside a native HTML dialog. The statistics page also hosts the actual thinking toolbar in a glass composer to check fixed-popup placement.
+
+The fixture uses in-memory drafts/search configuration, synthetic search results and a separate `Select116Synthetic` avatar database. It does not import the application entrypoint or read real preferences/credentials; runtime fetch and external-link opening are blocked, and its callbacks do not invoke native capabilities or send provider requests. Check light/dark themes, responsive sizes, long labels, search/grouping, keyboard/IME behavior, disabled choices, nested menus and dialog focus. Per-control acceptance and screenshots are tracked in [#116 implementation and coverage](ISSUE-116-IMPLEMENTATION.md); fixture compilation alone is not browser visual or native Tauri interaction acceptance.
+
+## General settings / residency verification (#114)
+
+Implementation, executed evidence and subsequent user acceptance are recorded in [#114](ISSUE-114-IMPLEMENTATION.md); Git delivery, automated checks and detailed desktop interaction evidence remain separate.
+
+The subsequent tray Settings entry uses `ayase-open-settings` to open General in the existing app. Its deterministic regressions cover repeated navigation, draft preservation, protected startup/backup pages and StrictMode listener disposal. The `settings.config.json` fixture checks the production native event path with synthetic data; actual right-click selection remains manual acceptance.
+
+Run `npm.cmd test -- src/general src/drawing/useDrawingWorkspace.test.tsx src/ui/settings/SettingsWorkspace.test.tsx src/App.test.tsx`, the data-contract checker and normal full code gate. The isolated actual-app origin and native SDK probe are documented in [scripts/general114/README.md](../scripts/general114/README.md). Use its dedicated identifier and never real credentials or user data. Check generic cancellation/opt-out, separate risk cancellation, storage rejection, repeated close, unmounted continuations and maintenance protection. Compilation and startup are separate from real hide/restore/process-exit evidence. Tray mouse clicks, titlebar X, OS Alt+F4 and subjective appearance remain user manual acceptance even when SDK probes pass.
+
+## UI closeout evidence (#98 / #108, 2026-10-03)
+
+The [closeout record](ISSUE-98-108-CLOSEOUT.md) supersedes the old prototype-only status for optional glass and the chat-first visual work. It records the final independent switches (sidebar off / composer on), confirmed settings/drawing opaque workbench, existing gates, new production-browser frame/long-task measurements and user acceptance boundaries. The user subsequently reported no material issue in actual use and authorized closing both Issues; their final scope and evidence were synchronized and both were closed as completed on 2026-10-03. This general acceptance does not establish unperformed per-operation native tests or quantitative GPU results. Historical trial measurements below remain historical. The new harness lives only in [chat108](../scripts/chat108/README.md); no production behavior, provider request, migration or native capability changes. The user subsequently authorized committing and pushing this round's docs, samples and harness to dev.
+
+## Settings and drawing workbench material trial (2026-10-03)
+
+The [isolated fixture](../scripts/workbench-material/README.md) compares the real settings/drawing workspaces against the previous illustrated wallpaper. See the [comparison record](WORKBENCH-MATERIAL-COMPARISON.md). Production panels use one opaque theme-derived surface (panel98/text2), 8% text-color edges, 12px corners and a small 1px/2px shadow at 3.5%. Settings lose the redundant page frame; drawing and connection panel gaps are 8px, reference grouping uses a subtle inset fill, and the drawing canvas remains opaque. No persistent settings, provider contracts or native capabilities change. The 7%/15% translucent variants remain fixture-only candidates.
+
+Verification: five scoped UI/stylesheet suites pass 132 tests; production TypeScript/build, fixture TypeScript and diff checks pass. In-app browser checks cover light/dark illustrated backgrounds at 1600×1000, light responsive layout at 1280×900 and 640×820, dark 640×820 with mask45, and both no-image themes. No document horizontal overflow was observed. Actual panels share the opaque fill and .08 edges, the drawing gap measures 8px, no panel backdrop filter is applied, and the image stage keeps its original opaque theme canvas. All six settings sections were inspected with isolated data, including a mock user avatar. Native window/file/provider acceptance was not performed; Rust and full regression gates were not repeated for this CSS-only production change. Local captures and measurements are under ignored `.chat108.local/workbench-material/`.
+
+## Shared titlebar and icon rail (2026-10-03)
+
+The icon rail now uses 48px with 6px horizontal insets after the user's follow-up to the initial 52px trial. Its 36px buttons and 28px logo retain their sizes. It and the 40px titlebar use one background with a 12px inner corner. The scoped browser recheck confirms 48px actual/preview rails, 36px buttons, 6px insets, both chat/settings headers at x=48/y=0 and no horizontal overflow at 680px. Appearance exposes a shared background transparency slider (default 40%; sidebar default 50%; message bubbles default 12%); the unified slider also updates this fourth region. Local/backup missing-field defaults, strict validation and module v3 compatibility are documented in [DATA-CONTRACTS.md](DATA-CONTRACTS.md). Use the isolated [chat108 fixture](../scripts/chat108/README.md) for theme/background/width, actual appearance controls, preview and page switching. It never opens production configuration or calls providers. Native startup and browser checks do not verify OS dragging, minimize/maximize or Snap Layout; those remain manual acceptance.
+
+Earlier four visual rounds compared chrome 85/75/65%, sidebar 0/15/20/25/40% and glass on/off with isolated synthetic backgrounds. That round's selected 75% chrome / 20% sidebar pair was checked in light and dark themes with gradient, dense alternating stripes and no image. Saved explicit values are retained; per-region resets use the new defaults. Comparison captures are local artifacts under the ignored `.chat108.local/opacity-comparison/` directory. This is browser evidence with synthetic data, not acceptance of the user's actual wallpaper or native interactions.
+
+Current illustrated-wallpaper tuning: see [comparison record](APPEARANCE-TRANSPARENCY-COMPARISON.md). Defaults are chrome40/sidebar50/bubbles12, preserving explicit existing values. Browser evidence covers six rounds in light/dark at 1440×900, short and long text, mask65/mask45, no-image themes, per-region reset and reload, matching actual/preview alpha .6/.5/.88, and 640×820 navigation overlays. Non-glass overlays render a .94 opacity floor to reduce underlying chat-text interference; docked sidebars retain .5 and glass toggles retain their existing filter without rewriting saved transparency. The help text explains the overlay behavior.
+
+Verification: `npm.cmd run check` passes data-contract checks, 155 suites / 2713 tests, TypeScript and production build. Initial targeted appearance/backup/UI checks pass 11 suites / 233 tests. After adding the overlay CSS guard and help text, targeted stylesheet/settings checks pass 2 suites / 24 tests and production build passes again. Fixture TypeScript, Git diff check and independent Sol/high default/data review pass. Earlier locked Cargo check remains applicable to unchanged Rust. The isolated native executable starts successfully after final tuning with `npm.cmd run tauri dev -- --no-watch --config scripts/chat108/native.config.json`; OS dragging, minimize/maximize and Snap Layout remain manual acceptance. Generated wallpaper, prompt and comparison screenshots are ignored local assets in `.chat108.local/anime-opacity/`.
+
+## Composer material trial (#98, 2026-10-03)
+
+The final default configuration is sidebar glass off and composer glass on. Fresh settings, omitted legacy fields and reset share these defaults; explicit saved false remains false. The reset help text and backup omission comparison use the same contract. Five targeted suites pass 176 tests; full `npm.cmd run check` passes data-contract checks, 155 files / 2692 tests, TypeScript and build. Locked Cargo check and independent Sol/high review pass. A fresh isolated in-app browser origin confirms initial sidebar filter none / composer blur8px, explicit composer disable surviving reload, and reset restoring false/true. Earlier default-off verification below is historical and superseded by this decision.
+
+The subsequent outline adjustment strengthens only the sidebar's theme-specific white edge and 1px top highlight. Fill, gradient and `blur(8px) saturate(1.1)` remain unchanged. Production build passes; isolated in-app browser checks confirm matching light/dark preview rims, the actual light docked border and the dark overlay border/highlight at 680×780. This CSS-only adjustment did not repeat the earlier full regression or Rust checks; native appearance remains user acceptance.
+
+The subsequent implementation replaces the always-on trial with two independent persisted controls in Appearance. Browser checks on an isolated localhost origin verified default-off controls, enabled preview filters, saved transparency surviving toggles and reload, independent disable restoring the saved alpha, and actual chat navigation/composer filters. Light and dark themes were checked; at 680×780 the settings notices wrap without document overflow, and overlay navigation has an outer shadow while docked navigation has only its inner highlight. Message preview bubbles have no backdrop filter. Full `npm.cmd run check` passes data-contract checks, 155 files / 2690 tests, TypeScript and build (existing bundle-size advisory); `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks pass. Independent Sol/high review reports no remaining actionable P1/P2 finding. Historical backup test fixtures were corrected to omit new glass fields when constructing v1–v3 documents; production version rejection remains intact. Native WebView2 appearance, complex personal wallpapers and quantitative GPU/scrolling performance remain pending; the browser's native-image cleanup warning reflects its unavailable Tauri file boundary, not a glass failure.
+
+The initial blur-only trial passed 27 Composer/AppearanceSettings tests. Following user feedback, the CSS-only second trial uses 8px blur, 1.15 saturation, theme-specific translucent fill, a subtle gradient, inset highlight and shadow; it overrides displayed composer alpha without changing saved preferences. TypeScript and production build pass (existing bundle-size advisory). An isolated in-app browser fixture with real App.css and a synthetic striped background was visually checked in light theme at 760px and dark theme at 320px, including text entry and focus. This is not full-application/menu acceptance or a performance measurement. Native WebView2 appearance and scrolling remain user acceptance; Rust and full regression checks were not repeated for this CSS-only iteration.
+
+## Navigation list performance verification (2026-10-03)
+
+`ConversationNavigation.performance.test.tsx` first reproduced repeated row-icon rendering through the real navigation component (2 initial renders became 12 after visibility operations), then passed with the memoized list. Five navigation/controller/docking/drag suites pass 63 tests, including fresh committed command callbacks, generation/selection updates, busy/dialog guards, hidden deletion reset, focus restoration and conversation reorder. Independent Sol/high review found no confirmed P1/P2 defects. Full `npm.cmd run check` passes 155 files / 2672 tests, data-contract checks, TypeScript and build; `cargo check --locked --manifest-path src-tauri/Cargo.toml` and diff checks pass. Build retains its bundle-size advisory.
+
+The ignored `.nav-perf.local` fixture compares committed navigation `23d6987` with current sources, using real `ConversationNavigation` and `ChatWorkspace`, 80 synthetic messages / 98,431 content characters (paragraphs, tables and code), a 1280×720 in-app browser and 200/1000 conversation metadata rows. No production credentials/data or provider requests are used. The measurement is elapsed time from the existing button's programmatic click to the second requestAnimationFrame, averaged over five repetitions after excluding the first warmup. It includes early render/layout work, not input-device latency or completion of the 200ms animation; timings are local observations, not a native-performance guarantee.
+
+| Conversations | Build | Close before → after | Open before → after |
+| --- | --- | --- | --- |
+| 200 | Development | 145 → 71 ms | 164 → 68 ms |
+| 1000 | Development | 557 → 200 ms | 492 → 187 ms |
+| 200 | Production | 76 → 75 ms | 71 → 62 ms |
+| 1000 | Production | 240 → 199 ms | 224 → 191 ms |
+
+Final production runs were sequential with no concurrent test/build tasks. For 1000 rows, development React profiler duration fell from 132–175ms to about 2ms; production builds disable this profiler, so zero profiler output is not interpreted as zero rendering cost. Remaining DOM/layout cost is visible in the measurements. Navigation and body-width animations, full mounted list, scrolling and interaction semantics remain unchanged; virtualization and discrete body-width transitions were not introduced.
+
+Browser interaction checks confirmed all 1000 rows and 80 messages remain mounted, a bounded 513px message scroll viewport, no page horizontal overflow, identical list scrollTop after close/reopen, focus return to the selected assistant on close, pending deletion cleared while hidden, and Shift+F10 menu / Escape focus restoration without closing the pane. Native desktop feel and private real-history acceptance remain with the user.
+
+## Confirmation dialog verification (2026-10-03)
+
+Connection settings and App integration tests pass with explicit asynchronous decisions (90 tests); drawing close and SDK permission tests pass (16 tests). Existing chat, avatar, background and drawing confirmation suites pass (141 tests after updating the message-delete test to target the destructive action instead of the first styled button). Independent review reran 105 tests from these overlapping suites with no confirmed P1/P2 findings. TypeScript and diff checks pass. The isolated `close-probe` native startup compiled, reported `guard-settled` with zero tasks/results at `2026-10-02T17:53:14.037Z`, and exited with code 0. This proves idle native startup/close, not real title-bar interaction during active generation or native modal focus behavior; those remain manual acceptance. No production credentials/data or provider requests were used.
+
+## Chat visual prototype verification (#108, 2026-10-02)
+
+The later centering adjustment removes narrow-workspace anchoring and centers within the area remaining after docked navigation; the historical x630 measurements below are superseded. Per user request, these visual iterations are handed over for user acceptance without repeating full builds or regression suites.
+
+Alignment/motion trial: wide mode aligns both bubbles left with user avatars on the left; narrow mode aligns user bubbles/avatars right. Browser measurements confirmed both endpoints, intermediate CSS transition positions and no page overflow during a rapid reversal sequence. At 390px, user surfaces and page had matching scroll/client widths. Reduced-motion emulation reduced surface/avatar transition duration to the global near-zero value; emulation was cleared afterward. Subjective animation feel remains for user review.
+
+Subsequent user correction removes the second iteration's fixed 54rem/44rem bubble caps. Width follows the existing wide/narrow control again. The 864px cap observation below records the superseded iteration, not the current contract.
+
+Second iteration: contained 32px avatar column, aligned content/actions, no user-name header, bounded bubble widths and subdued persistent controls. Targeted MessageList / AppearanceChatPreview / AppearanceSettings tests passed (45 tests) and the production TypeScript/build passed. Browser checks covered 390px long Markdown/code/table content, image-bearing messages and editing without surface/page horizontal overflow after navigation settled; 1920px wide mode capped the long assistant bubble at 864px and kept names/body aligned. Light/dark, synthetic backgrounds and the actual appearance preview were inspected. Native visual feel remains pending; the initial full-suite evidence below is from the first iteration.
+
+[scripts/chat108](../scripts/chat108/README.md) mounts real chat/navigation/appearance-preview components at a separate localhost origin using `Chat108Synthetic`. The fixture never imports production App startup or provider credentials; message actions operate on synthetic data, sending inserts a fixed local reply, and the fixture's CSP restricts connections to same origin. Theme, background, transparency and palette controls allow repeatable visual checks. HMR is disabled; restart the fixture and reload after source edits.
+
+The initial full `npm.cmd run check` passed 151 files / 2609 tests, data-contract checks, TypeScript and production build; `cargo check --locked --manifest-path src-tauri/Cargo.toml` also passed. Browser checks covered light/dark, synthetic complex backgrounds, custom bubbles, contained identity/actions, message editing, navigation expansion/docking/overlay, composer expansion, and 390/720/1280/1920px widths without horizontal page overflow. At 1920px, real narrow message content and the scaled appearance preview both start at x630; the new outer bubble alone supplies alpha. Reduced-motion navigation/backing transitions were checked in browser. Independent review identified preview positioning and user-action state-contrast defects; both were corrected and re-reviewed with no remaining findings. Browser custom dark user bubbles retain white icons during hover, keyboard focus and active state; version switching reaches 2/2. Native window operations, actual WebView2 interaction feel and subjective acceptance remain user checks; no real provider requests or production data were used.
+
 ## Supplier verification (#100)
 
 The isolated supplier fixture includes a transparency acceptance mode: it materializes all 11 bundled marks through the actual PNG encoder, checks transparent and opaque pixels, crops a synthetic Alpha PNG and renders the real supplier/assistant/user avatar components. Check both themes, image and crop container backgrounds, and 24px tree versus library sizing. The fixture owns only temporary image URLs and memory state; it does not rewrite existing user snapshots.

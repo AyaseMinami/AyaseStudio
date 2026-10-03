@@ -9,23 +9,45 @@ import { defaultSearchConfiguration, saveSearchConfiguration, SEARCH_SETTINGS_KE
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => localStorage.clear());
 
+async function choose(host: HTMLElement, label: string) {
+  await act(async () => host.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
+  await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === label)!.click());
+}
+
+it("maps the shared selector to the same search configuration without changing on open", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); const change = vi.fn(); const config = defaultSessionConfig();
+  try {
+    await act(async () => root.render(<WebSearchControl config={config} disabled={false} onChange={change} />));
+    await act(async () => host.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
+    expect(change).not.toHaveBeenCalled();
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === "Exa API")!;
+    await act(async () => option.click());
+    expect(change).toHaveBeenCalledExactlyOnceWith({ ...config, webSearch: true, webSearchProvider: "exa-api" });
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("keeps old enabled configs native and changes the provider explicitly", async () => {
-  const host = document.createElement("div"); const root = createRoot(host); const change = vi.fn();
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host); const change = vi.fn();
   const config = { ...defaultSessionConfig(), webSearch: true };
   try {
     await act(async () => root.render(<WebSearchControl config={config} disabled={false} onChange={change} />));
-    const select = host.querySelector("select")!;
-    expect(select.value).toBe("native");
-    expect([...select.options].map((option) => option.text)).toEqual(["关闭", "模型原生", "Exa API", "Exa MCP"]);
-    await act(async () => { select.value = "exa-mcp"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    const select = host.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    expect(select.textContent).toBe("模型原生");
+    await act(async () => select.click());
+    expect([...document.querySelectorAll('[role="option"]')].map(option => option.textContent)).toEqual(["关闭", "模型原生", "Exa API", "Exa MCP"]);
+    await act(async () => select.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(change).not.toHaveBeenCalled();
+    await choose(host, "Exa MCP");
     expect(change).toHaveBeenLastCalledWith({ ...config, webSearchProvider: "exa-mcp" });
-    await act(async () => { select.value = "exa-api"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await choose(host, "Exa API");
     expect(change).toHaveBeenLastCalledWith({ ...config, webSearchProvider: "exa-api" });
-    await act(async () => { select.value = "off"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await choose(host, "关闭");
     expect(change).toHaveBeenLastCalledWith({ ...config, webSearch: false, webSearchProvider: "native" });
     await act(async () => root.render(<WebSearchControl config={config} disabled onChange={change} />));
     expect(select.disabled).toBe(true);
-  } finally { await act(async () => root.unmount()); }
+    await act(async () => select.click()); expect(document.querySelector('[role="listbox"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
 it("opens the globe menu at its current option, navigates with arrows, and restores focus", async () => {
@@ -78,13 +100,19 @@ it("refreshes both menus only after enabled settings are saved, and preserves a 
     const trigger = host.querySelector("button")!;
     await act(async () => trigger.click());
     expect([...host.querySelectorAll('[role="menuitemradio"]')].map(item => item.textContent)).toEqual(["关闭", "模型原生", "Exa API", "Exa MCP"]);
-    expect(trigger.getAttribute("aria-label")).toContain("已关闭"); expect(host.querySelector("select")!.value).toBe("tavily");
-    expect(host.querySelector<HTMLOptionElement>('option[value="tavily"]')!.hidden).toBe(true);
+    expect(trigger.getAttribute("aria-label")).toContain("已关闭");
+    const select = host.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    expect(select.textContent).toBe("Tavily（已关闭或不可用）");
     expect(document.activeElement).toBe(host.querySelector('[role="menuitemradio"]'));
+    await act(async () => select.click());
+    const unavailable = document.querySelector<HTMLElement>('[role="option"][aria-disabled="true"]')!;
+    expect(unavailable.textContent).toBe("Tavily（已关闭或不可用）");
+    await act(async () => unavailable.click()); expect(change).not.toHaveBeenCalled();
     const saved = defaultSearchConfiguration();
     await act(async () => saveSearchConfiguration({ ...saved, tavily: { ...saved.tavily, enabled: true, apiKey: "synthetic" }, zhipu: { ...saved.zhipu, enabled: true, apiKey: "synthetic-z" } }));
     expect([...host.querySelectorAll('[role="menuitemradio"]')].map(item => item.textContent)).toEqual(["关闭", "模型原生", "Exa API", "Exa MCP", "Tavily", "智谱"]);
-    expect(host.querySelector<HTMLOptionElement>('option[value="tavily"]')!.hidden).toBe(false);
+    expect(document.querySelector('[role="option"][aria-disabled="true"]')).toBeNull();
+    expect(select.textContent).toBe("Tavily");
     await act(async () => saveSearchConfiguration(saved));
     expect(host.querySelector('[role="menuitemradio"]')?.textContent).toBe("关闭");
     expect(host.querySelector('[role="menuitemradio"][aria-checked="true"]')).toBeNull();
@@ -96,10 +124,12 @@ it("does not expose new services from corrupt settings and preserves original da
   const raw = '{"version":99,"apiKey":"synthetic"}'; localStorage.setItem(SEARCH_SETTINGS_KEY, raw);
   const host = document.createElement("div"); const root = createRoot(host);
   try {
-    await act(async () => root.render(<WebSearchToolbarControl mode="off" disabled={false} onChange={() => {}} />));
+    await act(async () => root.render(<><WebSearchToolbarControl mode="off" disabled={false} onChange={() => {}} />
+      <WebSearchControl config={defaultSessionConfig()} disabled={false} onChange={() => {}} /></>));
     await act(async () => host.querySelector("button")!.click());
     expect(host.querySelector('[role="status"]')?.textContent).toContain("无法读取");
     expect(host.querySelectorAll('[role="menuitemradio"]')).toHaveLength(4);
+    expect(host.querySelector('[role="combobox"]')?.getAttribute("title")).toContain("无法读取");
     expect(localStorage.getItem(SEARCH_SETTINGS_KEY)).toBe(raw);
   } finally { await act(async () => root.unmount()); }
 });

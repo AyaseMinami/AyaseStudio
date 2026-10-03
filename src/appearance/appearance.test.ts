@@ -26,13 +26,16 @@ const expectedDefaultPreferences = {
   canvasColor: null,
   assistantBubbleColor: null,
   unifiedTransparency: 0,
-  sidebarTransparency: 0,
+  chromeTransparency: 40,
+  sidebarTransparency: 50,
   composerTransparency: 0,
-  assistantBubbleTransparency: 6,
+  sidebarGlassEnabled: false,
+  composerGlassEnabled: true,
+  assistantBubbleTransparency: 12,
   backgroundReference: null,
   backgroundFocus: null,
   backgroundFit: "cover" as const,
-  backgroundMask: 65,
+  backgroundMask: 50,
   backgroundBlur: 0,
 };
 
@@ -225,6 +228,7 @@ describe("appearance preferences", () => {
     expect(controller.getSnapshot()).toMatchObject({ unifiedTransparency: 48, sidebarTransparency: 22, composerTransparency: 48, assistantBubbleTransparency: 48 });
     controller.setComposerTransparency(22);
     controller.setAssistantBubbleTransparency(22);
+    controller.setChromeTransparency(22);
     expect(controller.getSnapshot()).toMatchObject({ unifiedTransparency: 22, sidebarTransparency: 22, composerTransparency: 22, assistantBubbleTransparency: 22 });
     const restarted = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
     await restarted.ready;
@@ -233,19 +237,19 @@ describe("appearance preferences", () => {
     expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("0");
     expect(harness.styleProperties.get("--composer-background-opacity")).toBe("0");
     await controller.resetCustomAppearance();
-    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 6 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
   });
 
   it("uses per-field defaults for old, missing, and invalid transparency values", () => {
     let saved: string | null = JSON.stringify({ assistantBubbleTransparency: 37 });
     const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
-    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 37 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 37 });
     saved = JSON.stringify({ unifiedTransparency: -1, sidebarTransparency: 101, composerTransparency: 9.5, assistantBubbleTransparency: "42" });
-    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 6 });
-    saved = JSON.stringify({ unifiedTransparency: -1, sidebarTransparency: 40, composerTransparency: 40, assistantBubbleTransparency: 40 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
+    saved = JSON.stringify({ unifiedTransparency: -1, chromeTransparency: 40, sidebarTransparency: 40, composerTransparency: 40, assistantBubbleTransparency: 40 });
     expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 40, sidebarTransparency: 40, composerTransparency: 40, assistantBubbleTransparency: 40 });
     saved = "{";
-    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0, assistantBubbleTransparency: 6 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
   });
 
   it("persists independent bubble color and transparency including both endpoints, and resets them", async () => {
@@ -260,11 +264,11 @@ describe("appearance preferences", () => {
     expect(harness.styleProperties.has("--color-user-message")).toBe(false);
     controller.setThemeMode("dark");
     const restored = applyInitialAppearance({ storage, systemPrefersDark: false, target: harness.target });
-    expect(restored).toMatchObject({ assistantBubbleColor: "#123456", assistantBubbleTransparency: 100, backgroundMask: 65 });
+    expect(restored).toMatchObject({ assistantBubbleColor: "#123456", assistantBubbleTransparency: 100, backgroundMask: 50 });
     controller.setAssistantBubbleTransparency(0);
     expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("1");
     await controller.resetCustomAppearance();
-    expect(loadAppearancePreferences(storage)).toMatchObject({ assistantBubbleColor: null, assistantBubbleTransparency: 6, themeMode: "dark" });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ assistantBubbleColor: null, assistantBubbleTransparency: 12, themeMode: "dark" });
     expect(harness.styleProperties.has("--color-assistant-bubble")).toBe(false);
   });
 
@@ -320,7 +324,7 @@ describe("appearance preferences", () => {
       canvasColor: null,
       backgroundReference: null,
       backgroundFit: "cover",
-      backgroundMask: 65,
+      backgroundMask: 50,
       backgroundBlur: 0,
     });
   });
@@ -390,7 +394,7 @@ describe("appearance preferences", () => {
           canvasColor: "#12345g",
           backgroundReference: "C:\\Users\\someone\\wallpaper.png",
           backgroundFit: "stretch",
-          backgroundMask: 10,
+          backgroundMask: -1,
           backgroundBlur: 99,
         }),
       setItem: () => undefined,
@@ -698,19 +702,19 @@ describe("appearance controller", () => {
     });
 
     controller.setBackgroundFit("contain");
-    controller.setBackgroundMask(10);
+    controller.setBackgroundMask(-1);
     controller.setBackgroundBlur(99);
 
     expect(controller.getSnapshot()).toMatchObject({
       backgroundFit: "contain",
-      backgroundMask: 35,
+      backgroundMask: 0,
       backgroundBlur: 32,
     });
     expect(harness.styleProperties.get("--appearance-background-fit")).toBe(
       "contain",
     );
     expect(harness.styleProperties.get("--appearance-background-mask")).toBe(
-      "0.35",
+      "0",
     );
     expect(harness.styleProperties.get("--appearance-background-blur")).toBe(
       "32px",
@@ -718,7 +722,7 @@ describe("appearance controller", () => {
     expect(harness.styleProperties.get("--appearance-background-scale")).toBeUndefined();
     expect(JSON.parse(saved)).toMatchObject({
       backgroundFit: "contain",
-      backgroundMask: 35,
+      backgroundMask: 0,
       backgroundBlur: 32,
     });
   });

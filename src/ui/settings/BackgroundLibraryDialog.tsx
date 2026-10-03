@@ -142,7 +142,7 @@ export function BackgroundLibraryDialog({ entries, currentReference, busy, onPre
     else if (managing) { setManaging(false); setMarked([]); }
     else onClose();
   }
-  return <dialog ref={dialog} className={`background-library-dialog${editingFocus ? " background-library-focus-view" : ""}`} aria-labelledby={editingFocus ? "background-focus-title" : "background-library-title"}
+  return <dialog ref={dialog} className={`background-library-dialog${editingFocus ? " background-library-focus-view" : ""}${view?.type === "delete" ? " background-library-delete-view" : ""}`} aria-labelledby={editingFocus ? "background-focus-title" : "background-library-title"}
     style={editingFocus && selectedEdit ? { "--appearance-background-mask": String(selectedEdit.mask / 100), "--appearance-background-blur": `${selectedEdit.blur}px` } as CSSProperties : undefined}
     onCancel={(event) => { event.preventDefault(); escape(); }} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape") { event.preventDefault(); escape(); } }}>
     {editingFocus && selectedEdit && previewResource ? <BackgroundFocusEditor key={selectedEdit.reference}
@@ -164,7 +164,7 @@ export function BackgroundLibraryDialog({ entries, currentReference, busy, onPre
               <BackgroundThumbnail reference={entry.reference} resolve={onResolve} attempt={readAttempt}
                 onUnavailable={() => { setUnavailable((current) => ({ ...current, [`thumbnail:${entry.reference}`]: true })); setError("背景缩略图无法显示，请重试读取。"); }}
                 onReady={() => setUnavailable((current) => current[`thumbnail:${entry.reference}`] ? { ...current, [`thumbnail:${entry.reference}`]: false } : current)} />
-              {(chosen || managing) && <span className="background-library-check" aria-hidden="true">{chosen && <Check size={12} />}</span>}
+              {(chosen || managing) && <span className={`background-library-check${managing ? " ui-selection-marker" : ""}`} data-selected={chosen} aria-hidden="true">{chosen && <Check size={12} />}</span>}
               {current && <span className="background-library-current" role="img" aria-label="当前背景" />}
             </button>;
           })}</div>

@@ -16,6 +16,7 @@ import { createChatRepository } from "../chat/repository";
 import { SEARCH_SETTINGS_KEY, validateSearchConfiguration } from "../search/settings";
 import { currentModuleVersions } from "../storage/dataRegistry";
 import { object } from "./validation";
+import { generalPreferencesKey } from "../general/preferences";
 
 const databases: AyaseDatabase[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const db of databases.splice(0)) await db.delete(); });
@@ -71,6 +72,74 @@ async function assetDocument() {
   return doc;
 }
 describe("restore conflict strategies", () => {
+  it.each(["replace", "merge", "copy"] as const)("keeps device preferences outside snapshot and %s writes", async mode => {
+    const test = await setup();
+    const raw = '{"version":99,"futureDeviceSetting":"preserve"}';
+    test.store.values.set(generalPreferencesKey, raw);
+    const read = vi.spyOn(test.store, "getItem");
+    const write = vi.spyOn(test.store, "setItem"), remove = vi.spyOn(test.store, "removeItem");
+    const before = await test.repository.snapshot();
+    expect(before.preferences).not.toHaveProperty(generalPreferencesKey);
+    expect(read).not.toHaveBeenCalledWith(generalPreferencesKey);
+    const plan = createRestorePlan(document(), before, mode);
+    expect(plan.after.preferences).not.toHaveProperty(generalPreferencesKey);
+    await test.repository.restore(plan, before, test.files);
+    expect(write.mock.calls.some(([key]) => key === generalPreferencesKey)).toBe(false);
+    expect(remove).not.toHaveBeenCalledWith(generalPreferencesKey);
+    expect(test.store.values.get(generalPreferencesKey)).toBe(raw);
+  });
+
+  it.each(["staging", "applying"] as const)("ignores previously captured device preferences when repeating %s recovery", async phase => {
+    const test = await setup();
+    // Journals created before #106 erroneously captured this now-excluded key.
+    const legacy = structuredClone(test.before);
+    legacy.preferences[generalPreferencesKey] = '{"version":1,"backgroundResident":true,"confirmBeforeExit":true}';
+    await test.db.backupJournal.put({ id: "restore", before: legacy, references: [], phase });
+    vi.mocked(test.files.remove).mockRejectedValueOnce(Error("locked file"));
+    await expect(test.repository.recover(test.files)).rejects.toThrow("locked file");
+    const latest = '{"version":1,"backgroundResident":true,"confirmBeforeExit":false}';
+    test.store.values.set(generalPreferencesKey, latest);
+    const write = vi.spyOn(test.store, "setItem"), remove = vi.spyOn(test.store, "removeItem");
+    const name = test.db.name; test.db.close();
+    const reopened = new AyaseDatabase(name); databases.push(reopened);
+    const restarted = new BackupRepository(reopened, test.store);
+    expect(await restarted.recover(test.files)).toBe(true);
+    expect(test.store.values.get(generalPreferencesKey)).toBe(latest);
+    expect(write.mock.calls.some(([key]) => key === generalPreferencesKey)).toBe(false);
+    expect(remove).not.toHaveBeenCalledWith(generalPreferencesKey);
+    expect(await restarted.recover(test.files)).toBe(false);
+  });
+
+  it("restores both glass flags and transparency together through replacement and reexport", async () => {
+    const test = await setup();
+    const incoming = structuredClone(test.before);
+    incoming.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences,
+      chromeTransparency: 53, sidebarGlassEnabled: true, composerGlassEnabled: true, sidebarTransparency: 37, composerTransparency: 62 });
+    const exported = await createBackupDocument(incoming, { connections: false, credentials: false }, test.files);
+    const decoded = (await decodeBackup(await encodeBackup(exported))).document;
+    await test.repository.restore(createRestorePlan(decoded, test.before, "replace"), test.before, test.files);
+    const restored = await test.repository.snapshot();
+    expect(JSON.parse(restored.preferences[preferenceKeys[0]]!)).toMatchObject({
+      chromeTransparency: 53, sidebarGlassEnabled: true, composerGlassEnabled: true, sidebarTransparency: 37, composerTransparency: 62,
+    });
+    const reexported = await createBackupDocument(restored, { connections: false, credentials: false }, test.files);
+    expect(reexported.preferences[preferenceKeys[0]]).toBe(exported.preferences[preferenceKeys[0]]);
+  });
+  it.each([
+    { sidebarGlassEnabled: "true" }, { composerGlassEnabled: 1 }, { futureGlassEnabled: true },
+    { chromeTransparency: -1 }, { chromeTransparency: 101 }, { chromeTransparency: 0.5 }, { chromeTransparency: "85" },
+  ])("rejects invalid incoming glass data before any restore writes: case %#", async patch => {
+    const test = await setup();
+    const exported = await createBackupDocument(test.before, { connections: false, credentials: false }, test.files);
+    exported.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, ...patch });
+    const storeWrite = vi.spyOn(test.store, "setItem"), journalWrite = vi.spyOn(test.db.backupJournal, "add");
+    const text = JSON.stringify(exported);
+    const envelope = JSON.stringify({ format: "ayase-studio-envelope", version: 1, encrypted: false,
+      payload: JSON.stringify({ document: text, sha256: await sha256(new TextEncoder().encode(text)) }) });
+    await expect(decodeBackup(envelope)).rejects.toThrow();
+    expect(storeWrite).not.toHaveBeenCalled(); expect(journalWrite).not.toHaveBeenCalled();
+    expect(test.files.write).not.toHaveBeenCalled(); expect(await test.repository.snapshot()).toEqual(test.before);
+  });
   it.each(["replace", "copy"] as const)("preserves manual conversation ranks during %s", mode => {
     const doc = document(), before = state();
     object(doc.rows.conversations[0]);

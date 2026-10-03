@@ -45,6 +45,16 @@ describe("local context budget", () => {
     expect((await planContextBudget([], "Hi", defaultSessionConfig(), "anthropic-native", "x")).estimated).toBe(true);
   });
 
+  it("shares one tokenizer across simultaneous cold requests for the same encoding", async () => {
+    const counters = await Promise.all(Array.from({ length: 4 }, () => selectTokenCounter("openai-chat", "gpt-4o")));
+    expect(counters.every(counter => counter.count === counters[0].count)).toBe(true);
+    const warm = await selectTokenCounter("openai-responses", "gpt-4.1");
+    expect(warm.count).toBe(counters[0].count);
+    const other = await selectTokenCounter("openai-chat", "gpt-3.5-turbo");
+    expect(other.count).not.toBe(warm.count);
+    expect(other.count("Hello")).toBe(1);
+  }, 60_000);
+
   it("counts a known OpenAI model with its local encoding", async () => {
     const selected = await selectTokenCounter("openai-chat", "gpt-4o");
     expect(selected.count("Hello")).toBe(1);

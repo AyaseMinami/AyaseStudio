@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
+import { SettingsHelp } from "../settings/SettingsHelp";
 import { avatarLibrary, type AvatarLibraryEntry, type AvatarUsage } from "../../avatar/library";
 import { brandAvatars, materializeBrandAvatar } from "../../avatar/brandCatalog";
 import type { BrandId } from "../../avatar/brandIds";
@@ -19,24 +20,25 @@ export function AvatarModal({ title, children, busy = false, onClose }: { title:
     return () => { node.close(); previous?.focus(); };
   }, []);
   return <dialog ref={dialog} className="avatar-crop-dialog avatar-library-dialog" aria-label={title}
-    onKeyDown={(event) => { event.stopPropagation(); }} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
-    <h2>{title}</h2>{children}
+    onKeyDown={(event) => { event.stopPropagation(); }} onCancel={(event) => { event.preventDefault(); event.stopPropagation(); if (!busy) onClose(); }}>
+    <div className="avatar-library-modal-heading"><h2>{title}</h2><button type="button" className="settings-button" aria-label="关闭头像弹窗" disabled={busy} onClick={onClose}><X size={18} /></button></div>{children}
   </dialog>;
 }
 
 type View = { type: "crop"; draft: Draft; entry?: AvatarLibraryEntry } | { type: "delete"; entries: AvatarLibraryEntry[] };
 type Choice = { type: "library"; id: string } | { type: "builtin"; id: BrandId } | { type: "automatic" };
 
-export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvatar, legacyIcon, assistantName, assistantId, automaticChoice, onApply, onBuiltinApply, onClose, onBusyChange }: {
+export function AvatarLibraryPanel({ avatar, inline = false, initialManaging = false, value, defaultAvatar, legacyIcon, assistantName, assistantId, automaticChoice, onApply, onBuiltinApply, onClose, onBusyChange }: {
   avatar?: UserAvatarState; inline?: boolean; value?: UserAvatar; defaultAvatar?: string; legacyIcon?: string; assistantName?: string; assistantId?: string;
   automaticChoice?: { label: string; preview: ReactNode; isCurrent: boolean };
+  initialManaging?: boolean;
   onApply?(avatar: UserAvatar | undefined, defaultAvatar?: string): void; onBuiltinApply?(id: BrandId): void; onClose?(): void; onBusyChange?(busy: boolean): void;
 }) {
   const [entries, setEntries] = useState<AvatarLibraryEntry[]>([]);
   const [usages, setUsages] = useState<Record<string, AvatarUsage[]>>({});
   const [choice, setChoice] = useState<Choice>();
   const [view, setView] = useState<View>();
-  const [managing, setManaging] = useState(false);
+  const [managing, setManaging] = useState(initialManaging);
   const [marked, setMarked] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -121,11 +123,11 @@ export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvata
       });
     }}>
     {view.entry && <p className="muted-text">替换“{view.entry.name}”。正在使用它的用户和助手保留原头像；重新选择后才使用新图片。</p>}
-  </AvatarCropContent> : view?.type === "delete" ? <>
+  </AvatarCropContent> : view?.type === "delete" ? <div className="avatar-delete-confirm">
     <p>从头像库删除选中的 {view.entries.length} 张图片？</p>
     <p>已使用此图片的头像不受影响，仍可重新裁切。</p>
     {error && <p role="alert" className="avatar-error">{error}</p>}
-    <footer><button type="button" className="settings-button" disabled={blocked} onClick={cancelView}>取消</button><button type="button" className="settings-button" disabled={blocked} onClick={() => void run(async () => {
+    <footer><button type="button" className="settings-button" disabled={blocked} onClick={cancelView}>取消</button><button type="button" className="settings-button confirm-danger" disabled={blocked} onClick={() => void run(async () => {
       const ids = view.entries.map((entry) => entry.id);
       await avatarLibrary.removeMany(ids);
       if (active.current) {
@@ -134,27 +136,19 @@ export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvata
       }
       await reloadAfterSave();
     })}>确认删除</button></footer>
-  </> : undefined;
+  </div> : undefined;
 
   function startImport() { replaceTarget.current = undefined; picker.current?.click(); }
   return <section ref={surface} className={inline ? "avatar-library-content" : "settings-page avatar-page"} aria-label={avatar && !inline ? "用户头像" : "头像库"} onKeyDown={(event) => { if (inline && view && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancelView(); } }}>
     <input ref={picker} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="导入头像图片" disabled={blocked} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file && !blocked) void openFile(file); }} />
     {inline && view ? viewContent : <div className={inline ? undefined : "avatar-card"}>
-      {!inline && avatar && <AvatarSettings avatar={avatar} onImport={startImport} importBusy={busy || managing} />}
-      <div className={`avatar-card-heading${!inline && avatar ? " avatar-library-subheading" : ""}`}><h3 id={inline ? undefined : "avatar-library-heading"} tabIndex={-1}>头像库</h3><div className="avatar-library-heading-actions">{(inline || !avatar) && <button data-import-avatar type="button" className="settings-button" disabled={blocked || managing} onClick={startImport}>导入图片</button>}{!inline && <button type="button" className="settings-button" aria-pressed={managing} disabled={blocked} onClick={(event) => { returnTarget.current = event.currentTarget; setManaging(!managing); setMarked([]); }}>{managing ? "完成管理" : "管理"}</button>}</div></div>
-      <p className="avatar-library-note">{managing ? `已选择 ${markedEntries.length} 张，点击头像可多选。` : inline ? "选择候选头像后点击使用。导入只保存到本机头像库，不会自动应用。" : "选择图片后，点击用作用户头像。"}</p>
+      {!inline && avatar && <AvatarSettings avatar={avatar} importBusy={busy || managing} />}
+      {inline && !automaticChoice && <div className="avatar-selector-current"><AssistantAvatar avatar={value} defaultAvatar={defaultAvatar} legacyIcon={legacyIcon} assistantName={assistantName} assistantId={assistantId} /><div><strong>{assistantName?.trim() || "新助手"}</strong><span>当前头像 · 选择后点击使用</span></div></div>}
+      <div className={`avatar-card-heading${!inline && avatar ? " avatar-library-subheading" : ""}`}><h3 id={inline ? undefined : "avatar-library-heading"} tabIndex={-1}>{inline ? "我的头像" : "头像库"}</h3><div className="avatar-library-heading-actions">{inline && <SettingsHelp label="导入头像">PNG、JPEG 或 WebP，最大 20 MB，支持正方形裁切。导入只保存到本机头像库，不会自动应用。</SettingsHelp>}{<button data-import-avatar type="button" className={`settings-button${inline ? "" : " settings-button-primary"}`} disabled={blocked || managing} onClick={startImport}>导入图片</button>}{!inline && <button type="button" className="settings-button" aria-pressed={managing} disabled={blocked} onClick={(event) => { returnTarget.current = event.currentTarget; setManaging(!managing); setMarked([]); }}>{managing ? "完成管理" : "管理"}</button>}</div></div>
+      {!inline && <p className="avatar-library-note">{managing ? `已选择 ${markedEntries.length} 张，点击头像可多选。` : "选择图片后，点击用作用户头像。"}</p>}
       {inline && <div className="assistant-avatar-defaults avatar-library-builtins" aria-label={automaticChoice?.label ?? "自动助手头像"}><button type="button" className="assistant-avatar-default-choice" disabled={blocked} aria-label={`选择${automaticChoice?.label ?? "自动头像"}`} aria-pressed={choice?.type === "automatic"} onClick={() => setChoice({ type: "automatic" })}>{automaticChoice?.preview ?? <AssistantAvatar assistantName={assistantName} assistantId={assistantId} />}{automaticChoice?.label ?? "自动头像"}{(automaticChoice ? automaticChoice.isCurrent : !value && !defaultAvatar && !legacyIcon) && <small>当前草稿</small>}</button></div>}
-      <h4 className="avatar-library-section-heading">内置头像</h4>
-      <div className="avatar-library-grid" aria-label="内置头像">{brandAvatars.map((brand) => {
-        const selected = choice?.type === "builtin" && choice.id === brand.id;
-        return <button key={brand.id} type="button" className="avatar-library-choice" disabled={blocked || managing}
-          aria-label={`选择 ${brand.label}`} title={brand.label} aria-pressed={selected}
-          onClick={() => setChoice({ type: "builtin", id: brand.id })}>
-          <BrandAvatar id={brand.id} />
-          {selected && <span className="avatar-library-check" aria-hidden="true"><Check size={12} /></span>}
-        </button>;
-      })}</div>
-      <h4 className="avatar-library-section-heading">我的头像</h4>
+      {!inline && <><p className="avatar-library-note">PNG、JPEG 或 WebP · 最大 20 MB · 支持正方形裁切</p>
+      <h4 className="avatar-library-section-heading">我的头像</h4></>}
       <div className="avatar-library-grid">{entries.map((entry) => {
         const selected = managing ? marked.includes(entry.id) : choice?.type === "library" && choice.id === entry.id;
         const usage = usages[entry.id]?.length ? `使用中 · ${usages[entry.id].map((item) => item.name).join("、")}` : "";
@@ -167,17 +161,27 @@ export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvata
             else setChoice({ type: "library", id: entry.id });
           }}>
           <AssistantAvatar avatar={entry.avatar} />
-          {(selected || managing) && <span className="avatar-library-check" aria-hidden="true">{selected && <Check size={12} />}</span>}
+          {(selected || managing) && <span className={`avatar-library-check${managing ? " ui-selection-marker" : ""}`} data-selected={selected} aria-hidden="true">{selected && <Check size={12} />}</span>}
           {(usage || currentDraft) && <span className="avatar-library-in-use" role="img" aria-label={usage || currentDraft} />}
         </button>;
       })}</div>
       {!entries.length && !busy && <p className="avatar-library-note">还没有头像，导入一张图片开始。</p>}
       {(error || avatar?.error) && <div className="avatar-library-note"><p role="alert" className="avatar-error">{error || avatar?.error}</p><button type="button" className="settings-button" disabled={blocked} onClick={() => void run(refresh)}>刷新头像库</button></div>}
+      <h4 className="avatar-library-section-heading">内置头像</h4>
+      <div className="avatar-library-grid" aria-label="内置头像">{brandAvatars.map((brand) => {
+        const selected = choice?.type === "builtin" && choice.id === brand.id;
+        return <button key={brand.id} type="button" className="avatar-library-choice" disabled={blocked || managing}
+          aria-label={`选择 ${brand.label}`} title={brand.label} aria-pressed={selected}
+          onClick={() => setChoice({ type: "builtin", id: brand.id })}>
+          <BrandAvatar id={brand.id} />
+          {selected && <span className="avatar-library-check" aria-hidden="true"><Check size={12} /></span>}
+        </button>;
+      })}</div>
       {managing ? <footer className="avatar-library-actions">
         <button type="button" className="settings-button" disabled={blocked || !entries.length} onClick={() => setMarked(markedEntries.length === entries.length ? [] : entries.map((entry) => entry.id))}>{entries.length > 0 && markedEntries.length === entries.length ? "取消全选" : "全选"}</button>
         <button type="button" className="settings-button" disabled={blocked || !singleMarked} onClick={() => { replaceTarget.current = singleMarked; picker.current?.click(); }}>替换图片</button>
         <button type="button" className="settings-button" disabled={blocked || !markedEntries.length} onClick={() => setView({ type: "delete", entries: markedEntries })}>删除所选{markedEntries.length ? `（${markedEntries.length}）` : ""}</button>
-      </footer> : <footer className="avatar-library-actions"><button type="button" className="settings-button" disabled={blocked || !choice} onClick={() => setChoice(undefined)}>清除选择</button>
+      </footer> : <footer className="avatar-library-actions">{!inline && <button type="button" className="settings-button" disabled={blocked || !choice} onClick={() => setChoice(undefined)}>清除选择</button>}
         {inline && <button type="button" className="settings-button" disabled={blocked} onClick={onClose}>取消</button>}
         <button type="button" className="settings-button settings-button-primary" disabled={blocked || !choice} onClick={() => void apply()}>{inline ? "使用此头像" : "用作用户头像"}</button>
       </footer>}

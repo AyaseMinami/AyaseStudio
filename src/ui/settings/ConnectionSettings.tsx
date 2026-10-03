@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { groupDiscoveredModels } from "../../chat/modelGrouping";
+import { useConfirmation } from "../useConfirmation";
 import { getProtocolOption, isDrawingProtocol, protocolOptions } from "../../chat/protocolOptions";
 import {
   getActiveTarget,
@@ -56,6 +57,8 @@ import type { UserAvatar } from "../../avatar/repository";
 import { ProviderAvatar } from "../avatar/ProviderAvatar";
 import { BrandAvatar } from "../avatar/BrandAvatar";
 import { AvatarModal, AvatarLibraryPanel } from "../avatar/AvatarLibrary";
+import { SelectField } from "../SelectField";
+import { SearchSelectField } from "../SearchSelectField";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -122,6 +125,23 @@ type PendingFocus =
   | { kind: "provider"; id: string }
   | { kind: "connection"; id: string }
   | { kind: "model"; id: string };
+
+function ConnectionCreateOptions({ provider, disabled }: { provider: ProviderGroup; disabled: boolean }) {
+  const [protocol, setProtocol] = useState<string>(protocolOptions[0].value);
+  const [copyFromConnectionId, setCopyFromConnectionId] = useState("");
+  return <>
+    <label className="field-label" htmlFor="new-connection-protocol">协议类型</label>
+    <SelectField id="new-connection-protocol" label="协议类型" disabled={disabled}
+      value={protocol} options={protocolOptions.map(({ value, label }) => ({ value, label }))} onChange={setProtocol} />
+    <input type="hidden" name="protocol" value={protocol} disabled={disabled} />
+    <label className="field-label" htmlFor="copy-connection">复制地址和密钥（可选）</label>
+    <SearchSelectField id="copy-connection" label="复制地址和密钥（可选）" title="选择要复制的连接" disabled={disabled}
+      value={copyFromConnectionId} options={[{ value: "", label: "不复制" }, ...provider.connections.map(connection => ({
+        value: connection.id, label: connection.name, description: getProtocolOption(connection.protocol).label,
+      }))]} onChange={setCopyFromConnectionId} />
+    <input type="hidden" name="copyFromConnectionId" value={copyFromConnectionId} disabled={disabled} />
+  </>;
+}
 
 type SettingsMenuTarget = (
   | { kind: "provider"; id: string }
@@ -250,9 +270,18 @@ function AddModelDialog({ disabled, error, onSubmit, onClose }: {
   return <dialog ref={dialog} className="model-create-dialog" aria-labelledby="add-model-title"
     onCancel={(event) => { event.preventDefault(); onClose(); }}>
     <form onSubmit={onSubmit}>
-      <h3 id="add-model-title">添加模型</h3>
-      <label>实际模型 ID<input className="compact-field" name="modelId" placeholder="例如：gpt-4.1" disabled={disabled} required autoFocus /></label>
-      <label>显示名称（可选）<input className="compact-field" name="displayName" disabled={disabled} /></label>
+      <header className="model-create-dialog-heading">
+        <h3 id="add-model-title">添加模型</h3>
+        <p className="muted-text">将模型添加到当前连接。</p>
+      </header>
+      <div className="model-create-dialog-field">
+        <label>实际模型 ID<input className="compact-field" name="modelId" placeholder="例如：gpt-4.1" aria-describedby="add-model-id-hint" disabled={disabled} required autoFocus /></label>
+        <p id="add-model-id-hint" className="muted-text">用于接口请求，请填写服务商提供的完整 ID。</p>
+      </div>
+      <div className="model-create-dialog-field">
+        <label>显示名称（可选）<input className="compact-field" name="displayName" placeholder="留空则显示模型 ID" aria-describedby="add-model-name-hint" disabled={disabled} /></label>
+        <p id="add-model-name-hint" className="muted-text">仅用于界面显示，不影响实际请求。</p>
+      </div>
       {error && <p className="inline-error" role="alert">{error}</p>}
       <div className="model-create-dialog-actions">
         <button type="button" className="settings-button" onClick={onClose}>取消</button>
@@ -308,10 +337,14 @@ export function ConnectionSettings({
   const [avatarError, setAvatarError] = useState<string>();
   const avatarLock = useRef(false);
   const mounted = useRef(false);
-  const currentScope = useRef({ connectionSettings, selectedProviderId, selectedConnectionId, isStreaming });
-  currentScope.current = { connectionSettings, selectedProviderId, selectedConnectionId, isStreaming };
+  const currentScope = useRef({ connectionSettings, selectedProviderId, selectedConnectionId, isStreaming, modelTests });
+  currentScope.current = { connectionSettings, selectedProviderId, selectedConnectionId, isStreaming, modelTests };
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
+  const { confirm, dialog: confirmationDialog } = useConfirmation();
+  const editScope = useRef({ editingModelId, isAddingModel });
+  editScope.current = { editingModelId, isAddingModel };
+  const modelTestLock = useRef(new Set<string>());
   const [modelSearch, setModelSearch] = useState("");
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -460,9 +493,20 @@ export function ConnectionSettings({
     queueMicrotask(() => catalogTriggerRef.current?.focus());
   }
 
-  function confirmDiscardModelEdit(): boolean {
+  function scopeIsCurrent(scope: typeof currentScope.current, edit?: typeof editScope.current): boolean {
+    const current = currentScope.current;
+    return mounted.current && current.selectedProviderId === scope.selectedProviderId
+      && current.selectedConnectionId === scope.selectedConnectionId
+      && (!edit || editScope.current.editingModelId === edit.editingModelId
+        && editScope.current.isAddingModel === edit.isAddingModel);
+  }
+
+  async function confirmDiscardModelEdit(): Promise<boolean> {
     if (!editingModelId) return true;
-    return window.confirm("当前模型编辑尚未保存。切换后将放弃这些修改，是否继续？");
+    const scope = currentScope.current;
+    const edit = editScope.current;
+    return await confirm({ title: "放弃模型修改", message: "当前模型编辑尚未保存。切换后将放弃这些修改，是否继续？", confirmLabel: "放弃修改", danger: true })
+      && scopeIsCurrent(scope, edit);
   }
 
   const visibleModels = useMemo(() => {
@@ -498,8 +542,9 @@ export function ConnectionSettings({
     [selectedConnection?.models],
   );
 
-  function selectProvider(providerId: string): boolean {
-    if (!confirmDiscardModelEdit()) return false;
+  async function selectProvider(providerId: string): Promise<boolean> {
+    if (!await confirmDiscardModelEdit()
+      || !currentScope.current.connectionSettings.providers.some(provider => provider.id === providerId)) return false;
     entityMenu.close();
     setSelectedProviderId(providerId);
     setSelectedConnectionId(null);
@@ -507,9 +552,9 @@ export function ConnectionSettings({
     return true;
   }
 
-  function handleCreateProvider(templateId: ProviderTemplateId, name?: string): void {
-    if (isStreaming || !confirmDiscardModelEdit()) return;
-    if (templateId !== "custom" && connectionSettings.providers.some(provider => provider.presetId === templateId)) return;
+  async function handleCreateProvider(templateId: ProviderTemplateId, name?: string): Promise<void> {
+    if (currentScope.current.isStreaming || !await confirmDiscardModelEdit() || currentScope.current.isStreaming) return;
+    if (templateId !== "custom" && currentScope.current.connectionSettings.providers.some(provider => provider.presetId === templateId)) return;
     const providerId = onAddProvider(templateId, name);
     setSelectedProviderId(providerId);
     setSelectedConnectionId(null);
@@ -545,27 +590,38 @@ export function ConnectionSettings({
     }
   }
 
-  function resetConnection(connection: ConnectionProfile) {
+  async function resetConnection(connection: ConnectionProfile) {
     const defaults = getConnectionTemplate(selectedProvider?.presetId, connection.presetProtocol);
     if (isStreaming || !defaults || !onResetConnection) return;
-    if (window.confirm(`将连接“${connection.name}”恢复为内置默认值？\n名称：${defaults.name}\n协议：${getProtocolOption(defaults.protocol).label}\nBase URL：${defaults.baseUrl}\n保留 API Key 和已添加模型。`)) onResetConnection(connection.id);
+    const scope = currentScope.current;
+    if (await confirm({ title: "恢复内置默认值", message: `将连接“${connection.name}”恢复为内置默认值？\n名称：${defaults.name}\n协议：${getProtocolOption(defaults.protocol).label}\nBase URL：${defaults.baseUrl}\n保留 API Key 和已添加模型。`, confirmLabel: "恢复默认值" })
+      && scopeIsCurrent(scope) && !currentScope.current.isStreaming
+      && currentConnection(connection.id) === connection) onResetConnection(connection.id);
   }
 
-  function handleDeleteProvider(provider: ProviderGroup): void {
+  function currentConnection(connectionId: string): ConnectionProfile | undefined {
+    return currentScope.current.connectionSettings.providers.flatMap(provider => provider.connections).find(connection => connection.id === connectionId);
+  }
+
+  async function handleDeleteProvider(provider: ProviderGroup): Promise<void> {
     if (isStreaming) return;
+    const scope = currentScope.current;
     const modelCount = provider.connections.reduce((total, connection) => total + connection.models.length, 0);
-    if (!window.confirm(`删除供应商“${provider.name}”以及其中 ${provider.connections.length} 条连接、${modelCount} 个模型？`)) return;
+    if (!await confirm({ title: "删除供应商", message: `删除供应商“${provider.name}”以及其中 ${provider.connections.length} 条连接、${modelCount} 个模型？`, confirmLabel: "删除", danger: true })
+      || !scopeIsCurrent(scope) || currentScope.current.isStreaming
+      || !currentScope.current.connectionSettings.providers.includes(provider)) return;
     onDeleteProvider(provider.id);
     if (provider.id !== selectedProviderId) return;
-    const index = connectionSettings.providers.findIndex((candidate) => candidate.id === provider.id);
-    const adjacent = connectionSettings.providers[index + 1] ?? connectionSettings.providers[index - 1];
+    const providers = currentScope.current.connectionSettings.providers;
+    const index = providers.findIndex((candidate) => candidate.id === provider.id);
+    const adjacent = providers[index + 1] ?? providers[index - 1];
     setSelectedProviderId(adjacent?.id ?? null);
     setSelectedConnectionId(adjacent?.connections[0]?.id ?? null);
     setIsAddingConnection(false);
     if (adjacent) setPendingFocus({ kind: "provider", id: adjacent.id });
   }
 
-  function handleAddConnection(event: FormEvent<HTMLFormElement>): void {
+  async function handleAddConnection(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!selectedProvider) return;
     const form = event.currentTarget;
@@ -577,7 +633,8 @@ export function ConnectionSettings({
       setFormError("请填写连接名称并选择协议。");
       return;
     }
-    if (!confirmDiscardModelEdit()) return;
+    if (!await confirmDiscardModelEdit() || currentScope.current.isStreaming
+      || !currentScope.current.connectionSettings.providers.includes(selectedProvider) || !form.isConnected) return;
     const connectionId = onAddConnection(
       selectedProvider.id,
       name,
@@ -590,22 +647,25 @@ export function ConnectionSettings({
     form.reset();
   }
 
-  function handleProtocolChange(protocol: ServiceProtocol): void {
-    if (!selectedConnection || protocol === selectedConnection.protocol) return;
+  async function handleProtocolChange(protocol: ServiceProtocol): Promise<void> {
+    if (!selectedConnection || isStreaming || protocol === selectedConnection.protocol) return;
+    const scope = currentScope.current;
     if (
       selectedConnection.models.length > 0 &&
-      !window.confirm(
-        `这会让“${selectedConnection.name}”下的 ${selectedConnection.models.length} 个模型改用 ${getProtocolOption(protocol).label}，是否继续？`,
-      )
+      !await confirm({ title: "更换连接协议", message: `这会让“${selectedConnection.name}”下的 ${selectedConnection.models.length} 个模型改用 ${getProtocolOption(protocol).label}，是否继续？`, confirmLabel: "更换协议" })
     ) {
       return;
     }
-    onConnectionChange(selectedConnection.id, "protocol", protocol);
+    if (scopeIsCurrent(scope) && !currentScope.current.isStreaming
+      && currentConnection(selectedConnection.id) === selectedConnection) onConnectionChange(selectedConnection.id, "protocol", protocol);
   }
 
-  function handleDeleteConnection(provider: ProviderGroup, connection: ConnectionProfile): void {
+  async function handleDeleteConnection(provider: ProviderGroup, connection: ConnectionProfile): Promise<void> {
     if (isStreaming) return;
-    if (!window.confirm(`删除连接“${connection.name}”以及其中 ${connection.models.length} 个模型？\n${getProtocolOption(connection.protocol).label} · ${connection.baseUrl || "未设置 Base URL"}`)) return;
+    const scope = currentScope.current;
+    if (!await confirm({ title: "删除连接", message: `删除连接“${connection.name}”以及其中 ${connection.models.length} 个模型？\n${getProtocolOption(connection.protocol).label} · ${connection.baseUrl || "未设置 Base URL"}`, confirmLabel: "删除", danger: true })
+      || !scopeIsCurrent(scope) || currentScope.current.isStreaming
+      || currentConnection(connection.id) !== connection) return;
     onDeleteConnection(connection.id);
     if (connection.id !== selectedConnectionId) {
       if (provider.id === selectedProviderId && !selectedConnectionId) {
@@ -619,8 +679,10 @@ export function ConnectionSettings({
     setPendingFocus(adjacent ? { kind: "connection", id: adjacent.id } : { kind: "provider", id: provider.id });
   }
 
-  function selectConnection(providerId: string, connectionId: string): void {
-    if (connectionId !== selectedConnectionId && !confirmDiscardModelEdit()) return;
+  async function selectConnection(providerId: string, connectionId: string): Promise<void> {
+    if (connectionId !== selectedConnectionId && !await confirmDiscardModelEdit()) return;
+    if (!currentScope.current.connectionSettings.providers.some(provider => provider.id === providerId
+      && provider.connections.some(connection => connection.id === connectionId))) return;
     entityMenu.close();
     setSelectedProviderId(providerId);
     setSelectedConnectionId(connectionId);
@@ -687,7 +749,7 @@ export function ConnectionSettings({
     }
     entityItems.push({ id: "delete", label: "删除", icon: <Trash2 size={14} />,
       accessibleLabel: `删除${kind} ${menuEntity.name}`, disabled: isStreaming, danger: true, separatorBefore: true,
-      onSelect: () => menuConnection ? handleDeleteConnection(menuProvider, menuConnection) : handleDeleteProvider(menuProvider) });
+      onSelect: () => { void (menuConnection ? handleDeleteConnection(menuProvider, menuConnection) : handleDeleteProvider(menuProvider)); } });
   }
 
   function handleAddModel(event: FormEvent<HTMLFormElement>): void {
@@ -738,12 +800,13 @@ export function ConnectionSettings({
     setFormError(undefined);
   }
 
-  function handleDeleteModel(model: ConfiguredModel): void {
-    if (
-      window.confirm(
-        `${model.id === connectionSettings.activeModelId ? "这是助手默认模型。" : ""}确定从“${selectedConnection?.name ?? "当前连接"}”删除 ${model.modelId}？`,
-      )
-    ) {
+  async function handleDeleteModel(model: ConfiguredModel): Promise<void> {
+    if (!selectedConnection || isStreaming) return;
+    const scope = currentScope.current;
+    if (await confirm({ title: "删除模型", message: `${model.id === connectionSettings.activeModelId ? "这是助手默认模型。" : ""}确定从“${selectedConnection.name}”删除 ${model.modelId}？`, confirmLabel: "删除", danger: true })
+      && scopeIsCurrent(scope) && !currentScope.current.isStreaming
+      && currentScope.current.connectionSettings.activeModelId === connectionSettings.activeModelId
+      && currentConnection(selectedConnection.id)?.models.includes(model)) {
       const displayedModels = groupedModels.flatMap((group) => group.models);
       const modelIndex = displayedModels.findIndex(
         (candidate) => candidate.id === model.id,
@@ -761,27 +824,34 @@ export function ConnectionSettings({
     }
   }
 
-  function beginModelEdit(modelId: string): void {
-    if (modelId !== editingModelId && !confirmDiscardModelEdit()) return;
+  async function beginModelEdit(modelId: string): Promise<void> {
+    if (isStreaming || modelId !== editingModelId && !await confirmDiscardModelEdit()
+      || currentScope.current.isStreaming || !selectedConnection
+      || !currentConnection(selectedConnection.id)?.models.some(model => model.id === modelId)) return;
     setEditingModelId(modelId);
   }
 
-  function toggleModelCreation(): void {
-    if (!isAddingModel && !confirmDiscardModelEdit()) return;
+  async function toggleModelCreation(): Promise<void> {
+    if (isStreaming || !isAddingModel && !await confirmDiscardModelEdit() || currentScope.current.isStreaming) return;
     if (!isAddingModel) setEditingModelId(null);
     setIsAddingModel((current) => !current);
   }
 
   async function handleRunModelTest(model: ConfiguredModel): Promise<void> {
-    if (!selectedConnection || isDrawingProtocol(selectedConnection.protocol)) return;
-    if (
-      !window.confirm(
-        `测试 ${model.modelId} 会发送一条极短请求，可能产生少量 Token 和中转站费用。是否继续？`,
-      )
-    ) {
-      return;
+    if (!selectedConnection || isStreaming || isDrawingProtocol(selectedConnection.protocol)
+      || modelTests[model.id]?.status === "running" || modelTestLock.current.has(model.id)) return;
+    const scope = currentScope.current;
+    modelTestLock.current.add(model.id);
+    try {
+      if (!await confirm({ title: "测试模型", message: `测试 ${model.modelId} 会发送一条极短请求，可能产生少量 Token 和中转站费用。是否继续？`, confirmLabel: "发送测试请求" })
+        || !scopeIsCurrent(scope) || currentScope.current.isStreaming
+        || currentScope.current.modelTests[model.id]?.status === "running"
+        || currentConnection(selectedConnection.id) !== selectedConnection
+        || !selectedConnection.models.includes(model)) return;
+      await onRunModelTest(selectedConnection.id, model.id);
+    } finally {
+      modelTestLock.current.delete(model.id);
     }
-    await onRunModelTest(selectedConnection.id, model.id);
   }
 
   async function openAndRefreshCatalog(): Promise<void> {
@@ -836,7 +906,7 @@ export function ConnectionSettings({
     >
       <div className="settings-page-heading connection-settings-heading">
           <h2 id="connection-title">连接配置</h2>
-          <p className="muted-text">管理连接与模型，设置助手的新对话默认模型。</p>
+          <p className="muted-text">配置模型服务，管理可用的连接与模型。</p>
       </div>
         <div className="connection-settings-workbench">
           <nav className="connection-tree" aria-label="供应商列表" onClickCapture={treeDrag.suppressClick}
@@ -946,8 +1016,8 @@ export function ConnectionSettings({
                     </div>;
                   })}
                   <button className="connection-tree-add" type="button" disabled={isStreaming}
-                    aria-label={`为 ${provider.name} 添加连接`} onClick={() => {
-                      if (selectProvider(provider.id)) setIsAddingConnection(true);
+                    aria-label={`为 ${provider.name} 添加连接`} onClick={async () => {
+                      if (await selectProvider(provider.id) && !currentScope.current.isStreaming) setIsAddingConnection(true);
                     }}><Plus size={14} />添加连接</button>
                 </div>
               </section>;
@@ -970,37 +1040,7 @@ export function ConnectionSettings({
                     required
                     autoFocus
                   />
-                  <label className="field-label" htmlFor="new-connection-protocol">
-                    协议类型
-                  </label>
-                  <select
-                    id="new-connection-protocol"
-                    name="protocol"
-                    className="field"
-                    disabled={isStreaming}
-                  >
-                    {protocolOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <label className="field-label" htmlFor="copy-connection">
-                    复制地址和密钥（可选）
-                  </label>
-                  <select
-                    id="copy-connection"
-                    name="copyFromConnectionId"
-                    className="field"
-                    disabled={isStreaming}
-                  >
-                    <option value="">不复制</option>
-                    {selectedProvider.connections.map((connection) => (
-                      <option key={connection.id} value={connection.id}>
-                        {connection.name}
-                      </option>
-                    ))}
-                  </select>
+                  <ConnectionCreateOptions key={selectedProvider.id} provider={selectedProvider} disabled={isStreaming} />
                   <div className="inline-actions">
                     <button
                       type="submit"
@@ -1049,14 +1089,11 @@ export function ConnectionSettings({
                           }} />
                       </label>
                       <label className="field-label">协议类型
-                        <select id="connection-protocol" className="field" value={connection.protocol} disabled={isStreaming}
-                          onChange={(event) => handleProtocolChange(event.target.value as ServiceProtocol)}>
-                          {protocolOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
+                        <SelectField id="connection-protocol" label="协议类型" value={connection.protocol} disabled={isStreaming}
+                          options={protocolOptions.map(({ value, label }) => ({ value, label }))}
+                          onChange={(value) => void handleProtocolChange(value as ServiceProtocol)} />
                       </label>
                     </div>
-                    {onResetConnection && getConnectionTemplate(selectedProvider.presetId, connection.presetProtocol) && <button type="button"
-                      className="settings-button connection-reset-default" disabled={isStreaming} onClick={() => resetConnection(connection)}>恢复内置默认值</button>}
                     <div className="connection-field-group">
                     <div className="settings-label-help"><label className="field-label" htmlFor="base-url">Base URL</label><SettingsHelp label="Base URL">{protocol.hint}</SettingsHelp></div>
                     <input id="base-url" className="field" value={connection.baseUrl} disabled={isStreaming}
@@ -1079,24 +1116,23 @@ export function ConnectionSettings({
                     <ApiKeyInput value={connection.apiKey} disabled={isStreaming}
                       onChange={(value) => onConnectionChange(connection.id, "apiKey", value)} />
                     </div>
+                    {onResetConnection && getConnectionTemplate(selectedProvider.presetId, connection.presetProtocol) && <button type="button"
+                      className="settings-button connection-reset-default" disabled={isStreaming} onClick={() => resetConnection(connection)}>恢复内置默认值</button>}
                   </div>
                 </details>
                 <section className="connection-models" aria-label="模型管理">
                   <header className="connection-model-heading"><h3>模型管理</h3><span className="count-badge">{connection.models.length}</span><SettingsHelp label="模型管理">{isDrawingProtocol(connection.protocol) ? "绘图模型仅用于绘图页，请生成图片验证；不会设为助手默认模型。" : canSelectModel
                     ? "选择模型用于助手的新对话。已有对话可在聊天顶部或对话设置中更换。"
-                    : "请先加载或选择助手，再设置默认模型。"}</SettingsHelp></header>
-                  {isDrawingProtocol(connection.protocol) && <p className="muted-text">绘图模型仅用于绘图页，请生成图片验证。</p>}
-
+                    : "请先加载或选择助手，再设置默认模型。"}</SettingsHelp>
+                </header>
+                {isDrawingProtocol(connection.protocol) && <p className="muted-text">绘图模型仅用于绘图页，请生成图片验证。</p>}
                 <div className="model-toolbar">
                   <label className="search-field">
                     <Search size={15} />
                     <span className="sr-only">搜索已添加模型</span>
-                    <input
-                      value={modelSearch}
-                      onChange={(event) => setModelSearch(event.target.value)}
-                      placeholder="搜索模型 ID 或名称"
-                    />
+                    <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型 ID 或名称" />
                   </label>
+                <div className="connection-model-actions">
                   <button
                     ref={catalogTriggerRef}
                     type="button"
@@ -1110,13 +1146,14 @@ export function ConnectionSettings({
                   </button>
                   <button
                     type="button"
-                    className="icon-button"
+                    className="settings-button connection-add-model"
                     aria-label="手动添加模型"
                     disabled={isStreaming}
                     onClick={toggleModelCreation}
                   >
-                    <Plus size={16} />
+                    <Plus size={16} />手动添加
                   </button>
+                </div>
                 </div>
                 {connection.protocol === "seedream-images" && <p id="seedream-catalog-hint" className="muted-text">Seedream 绘图未提供模型目录，请手动添加模型 ID。</p>}
                 {connection.protocol !== "seedream-images" && catalogOptions?.catalogHint && <p id="preset-catalog-hint" className="muted-text">{catalogOptions.catalogHint}</p>}
@@ -1142,14 +1179,15 @@ export function ConnectionSettings({
               </div>;
             })() : selectedProvider && !isAddingConnection ? (
               <div className="connection-provider-detail">
-                <p className="muted-text">供应商</p>
+                <header className="provider-overview-heading">
                 <div className="provider-overview-identity"><ProviderAvatar provider={selectedProvider} /><h3>{selectedProvider.name}</h3>
                   <EntityActions kind="供应商" name={selectedProvider.name} disabled={isStreaming}
                     open={menuTarget?.kind === "provider" && menuTarget.id === selectedProvider.id}
                     onOpen={(opener) => toggleEntityMenu({ kind: "provider", id: selectedProvider.id }, opener)} /></div>
-                <p className="muted-text">管理此供应商下的连接渠道。连接独立拥有协议、地址、密钥和模型。</p>
                 <button ref={providerAddConnectionRef} className="settings-button settings-button-primary" type="button" disabled={isStreaming}
                   onClick={() => setIsAddingConnection(true)}><Plus size={15} />添加连接</button>
+                </header>
+                <p className="muted-text">管理此供应商下的连接渠道。连接独立拥有协议、地址、密钥和模型。</p>
                 {selectedProvider.connections.length > 0 ? (
                   <div className="provider-connection-list">
                     <div className="provider-connection-header" aria-hidden="true">
@@ -1197,6 +1235,7 @@ export function ConnectionSettings({
             )}
           </section>
         </div>
+      {confirmationDialog}
       {avatarError && !avatarProvider && <p className="inline-error" role="alert">{avatarError}</p>}
       {avatarProvider && <AvatarModal title={`为 ${avatarProvider.name} 选择头像`} busy={avatarSaving || avatarPanelBusy || isStreaming}
         onClose={() => { if (!avatarLock.current && !avatarPanelBusy) { setAvatarProviderId(undefined); setAvatarError(undefined); } }}>
@@ -1320,14 +1359,14 @@ export function ConnectionSettings({
                     {group.models.map((model) => {
                       const added = addedActualIds.has(model.id);
                       return (
-                        <div key={model.id} className="catalog-model-row">
-                          <div>
+                        <div key={model.id} className="catalog-model-row" data-added={added}>
+                          <div className="catalog-model-copy">
                             <strong>{model.displayName || model.id}</strong>
                             {model.displayName ? <small>{model.id}</small> : null}
                           </div>
                           <button
                             type="button"
-                            className="icon-button"
+                            className="settings-button catalog-model-add"
                             aria-label={
                               added ? `已添加 ${model.id}` : `添加模型 ${model.id}`
                             }
@@ -1341,6 +1380,7 @@ export function ConnectionSettings({
                             }
                           >
                             {added ? <Check size={15} /> : <Plus size={16} />}
+                            <span>{added ? "已添加" : "添加"}</span>
                           </button>
                         </div>
                       );

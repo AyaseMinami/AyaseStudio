@@ -1,0 +1,28 @@
+.chat108-toolbar {
+  position: fixed;
+  z-index: 45;
+  right: 16px;
+  top: 54px;
+  max-width: min(290px, calc(100vw - 32px));
+  color: rgb(var(--color-text));
+  background: rgb(var(--color-panel));
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 10px;
+  box-shadow: 0 4px 18px #0002;
+  font-size: 12px;
+}
+.chat108-toolbar summary { padding: 8px 12px; cursor: pointer; }
+.chat108-controls { padding: 0 12px 12px; display: grid; gap: 10px; }
+.chat108-controls label { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.chat108-controls select { max-width: 160px; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); }
+.chat108-controls input[type="range"] { width: 130px; }
+.chat108-controls p { margin: 0; color: rgb(var(--color-muted)); line-height: 1.5; }
+.chat108-comparisons { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.chat108-comparisons .settings-button { min-width: 0; font-size: 11px; padding-inline: 4px; }
+.chat108-preview-page { overflow: auto; padding: 48px 28px; }
+.chat108-preview-page h2 { margin: 0 0 18px; }
+.chat108-preview-page > p { color: rgb(var(--color-muted)); margin-bottom: 18px; }
+.chat108-preview-page .appearance-background-preview { max-width: 1440px; }
+.glass98-performance { position: fixed; z-index: 50; right: 16px; bottom: 12px; max-width: 360px; padding: 8px; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); font-size: 12px; border: 1px solid rgb(var(--color-border)); border-radius: 8px; }
+.glass98-performance p { margin: 0 0 4px; }
+.glass98-performance textarea { display: block; width: 330px; height: 60px; }

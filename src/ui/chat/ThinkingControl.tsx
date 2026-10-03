@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, Lightbulb } from "lucide-react";
+import { containsSelectFieldTarget, SelectField } from "../SelectField";
 import type { ChatProtocol } from "../../chat/types";
 import { defaultThinking, isThinkingSettings, thinkingOptions, thinkingLabels,
   validateThinkingSelection, type ThinkingSettings, type ThinkingChoice } from "../../chat/thinking";
@@ -24,7 +25,7 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
     if (!open) return;
     container.current?.querySelector<HTMLElement>('[role="dialog"] input:checked, [role="dialog"] input:not(:disabled), [role="dialog"] button:not(:disabled)')?.focus();
     const outside = (event: PointerEvent) => {
-      if (!container.current?.contains(event.target as Node)) setOpen(false);
+      if (!containsSelectFieldTarget(container.current, event.target)) setOpen(false);
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
@@ -50,6 +51,7 @@ export function ThinkingToolbarControl(props: ThinkingControlProps) {
 export function ThinkingControl({ protocol = "gemini-native", value, disabled, hint = "当前助手 · 自动保存", optionList, onChange, scope = "当前助手" }: ThinkingControlProps) {
   const settings = isThinkingSettings(value) ? value : defaultThinking;
   const capability = thinkingOptions(protocol);
+  const choiceLabel = protocol === "anthropic-native" ? "思考模式" : "思考强度";
   const [budget, setBudget] = useState(settings.budget);
   const [budgetError, setBudgetError] = useState("");
   const invalid = value !== undefined && !isThinkingSettings(value);
@@ -61,29 +63,27 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
   return <div className={`thinking-control${optionList ? "" : " thinking-control-inline"}`}>
     <div className="thinking-field">
     {optionList ? <fieldset className="thinking-options" disabled={disabled}>
-      <legend>思考强度</legend>
+      <legend>{choiceLabel}</legend>
       {capability.choices.map((choice) => <label className="thinking-option" key={choice}>
         <input type="radio" name={groupName} value={choice} checked={settings.choice === choice}
           onChange={() => choose(choice)} />
         <span>{thinkingLabels[choice]}</span><Check size={15} aria-hidden="true" />
       </label>)}
-    </fieldset> : <label className="thinking-select"><Lightbulb size={16} />
-      <span>思考</span>
-      <select aria-label={`思考强度（${scope}）`} disabled={disabled}
+    </fieldset> : <label className="thinking-select"><Lightbulb size={16} aria-hidden="true" />
+      <span>{choiceLabel}</span>
+      <SelectField label={`${choiceLabel}（${scope}）`} disabled={disabled}
         value={settings.choice}
-        onChange={(event) => choose(event.target.value as ThinkingChoice)}>
-        {capability.choices.map((choice) => <option key={choice} value={choice}>{thinkingLabels[choice]}</option>)}
-      </select>
+        options={[...capability.choices.map(choice => ({ value: choice, label: thinkingLabels[choice] })),
+          ...(!capability.choices.includes(settings.choice) ? [{ value: settings.choice, label: `${thinkingLabels[settings.choice]}（当前协议不可用）`, disabled: true }] : [])]}
+        onChange={value => choose(value as ThinkingChoice)} />
     </label>}
 
     </div>
-    <div className="thinking-field"><label className="thinking-summary-toggle"><input type="checkbox" checked={capability.summary && settings.includeSummary}
-      disabled={disabled || !capability.summary} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考内容</label>
-    </div>
-    {capability.efforts && <div className="thinking-field"><label className="thinking-select"><span>思考力度</span><select aria-label={`思考力度（${scope}）`}
-      disabled={disabled} value={settings.effort ?? "default"} onChange={(event) => onChange({ ...settings, effort: event.target.value as ThinkingSettings["effort"] })}>
-      {capability.efforts.map((effort) => <option key={effort} value={effort}>{thinkingLabels[effort]}</option>)}
-    </select></label>
+    {capability.efforts && <div className="thinking-field"><label className="thinking-select"><span>思考力度</span><SelectField label={`思考力度（${scope}）`}
+      disabled={disabled} value={settings.effort ?? "default"}
+      options={[...capability.efforts.map(effort => ({ value: effort, label: thinkingLabels[effort] })),
+        ...(settings.effort && !capability.efforts.includes(settings.effort) ? [{ value: settings.effort, label: `${thinkingLabels[settings.effort]}（当前协议不可用）`, disabled: true }] : [])]}
+      onChange={value => onChange({ ...settings, effort: value as ThinkingSettings["effort"] })} /></label>
     </div>}
     {settings.choice === "budget" && <div className="thinking-field"><label className="thinking-budget">
       Token 预算<input type="number" aria-label="思考 Token 预算" step="1"
@@ -96,6 +96,9 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
         }}>应用预算</button><span>已应用：{settings.budget}</span>
     </label>
     </div>}
+    <div className="thinking-field"><label className="thinking-summary-toggle"><input className="ui-switch" type="checkbox" role="switch" checked={capability.summary && settings.includeSummary}
+      disabled={disabled || !capability.summary} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考内容</label>
+    </div>
     <span className="thinking-hint">{disabled ? "暂不可修改" : capability.summaryHint ?? hint}</span>
     {invalid && <button type="button" disabled={disabled} onClick={() => onChange(defaultThinking)}>恢复思考默认配置</button>}
     {budgetError && <span className="thinking-notice" role="status">{budgetError}</span>}

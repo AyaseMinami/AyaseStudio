@@ -74,6 +74,9 @@ async function loadTokenCounter(protocol: ChatProtocol, model: string): Promise<
       ? import("js-tiktoken/ranks/o200k_base")
       : import("js-tiktoken/ranks/cl100k_base"),
   ]);
+  // Another cold caller may have populated this encoding while imports awaited.
+  const loaded = tokenizerCache.get(encoding);
+  if (loaded) return loaded;
   const tokenizer = new Tiktoken(ranks.default);
   const counter = (text: string) => tokenizer.encode(text).length;
   tokenizerCache.set(encoding, counter);

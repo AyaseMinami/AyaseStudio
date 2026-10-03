@@ -31,7 +31,7 @@ async function mount() {
   const card = (provider: ExternalSearchProvider = "exa-mcp") => host.querySelector<HTMLElement>('[aria-labelledby="' + provider + '-title"]')!;
   const button = (text: string, provider?: ExternalSearchProvider) => {
     const area = provider ? card(provider) : host;
-    return [...area.querySelectorAll("button")].find((element) => element.textContent === text)!;
+    return [...area.querySelectorAll("button")].find((element) => element.textContent === text || element.getAttribute("aria-label") === text)!;
   };
   const click = async (text: string, provider: ExternalSearchProvider = "exa-mcp") => {
     await act(async () => button(text, provider).click());
@@ -45,8 +45,12 @@ async function mount() {
     });
   };
   const choose = async (name: string, value: string, provider: ExternalSearchProvider) => {
-    const select = host.querySelector<HTMLSelectElement>("#" + provider + "-" + name)!;
-    await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    const select = host.querySelector<HTMLButtonElement>("#" + provider + "-" + name)!;
+    await act(async () => select.click());
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find(element => element.textContent?.toLowerCase().startsWith(value));
+    expect(option).toBeDefined();
+    await act(async () => option!.click());
   };
   const toggle = async (provider: ExternalSearchProvider) => { await act(async () => field("enabled", provider).click()); };
   const help = async (label: string) => {
@@ -290,8 +294,8 @@ it("persists independent provider choices and enable toggles without other draft
     try {
       expect(restored.field("enabled", "tavily").checked).toBe(false);
       expect(restored.field("enabled", "zhipu").checked).toBe(true);
-      expect(restored.card("tavily").querySelector<HTMLSelectElement>("select")!.value).toBe("advanced");
-      expect(restored.card("zhipu").querySelector<HTMLSelectElement>("select")!.value).toBe("search_pro_quark");
+      expect(restored.card("tavily").querySelector('[role="combobox"]')!.textContent).toBe("Advanced（2 credits/次）");
+      expect(restored.card("zhipu").querySelector('[role="combobox"]')!.textContent).toBe("search_pro_quark（¥0.05/次）");
     } finally { await restored.cleanup(); }
   } finally { if (ui.host.isConnected) await ui.cleanup(); }
 });
@@ -316,7 +320,10 @@ it("shows provider prices and opens only clicked official links safely", async (
     const zhipuPricing = await ui.help("智谱计费与限制");
     for (const text of ["$0.008/credit", "$8/1,000", "$16/1,000", "不会自动升级"]) expect(tavilyPricing).toContain(text);
     for (const text of ["¥0.01/次", "¥0.03/次", "¥0.05/次", "Coding Plan", "不代表包含本接口额度", "70 个字符"]) expect(zhipuPricing).toContain(text);
-    expect([...tavily.querySelectorAll("option")].map(option => option.textContent)).toEqual(["Basic（1 credit/次）", "Advanced（2 credits/次）"]);
+    await act(async () => tavily.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
+    const depthOptions = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+    expect(depthOptions.map(option => option.textContent)).toEqual(["Basic（1 credit/次）", "Advanced（2 credits/次）"]);
+    await act(async () => depthOptions[0].click());
     const links = [...tavily.querySelectorAll("a"), ...zhipu.querySelectorAll("a")];
     expect(links.map(link => link.getAttribute("href"))).toEqual(["https://app.tavily.com", "https://docs.tavily.com/documentation/api-credits", "https://bigmodel.cn", "https://docs.bigmodel.cn/cn/guide/tools/web-search"]);
     expect(openExternal).not.toHaveBeenCalled();

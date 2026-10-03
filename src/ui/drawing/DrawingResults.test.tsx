@@ -45,6 +45,21 @@ async function key(element: Element, value: string, shiftKey = false) {
   await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key: value, shiftKey, bubbles: true, cancelable: true })));
 }
 
+it("keeps folder access first in the preview toolbar and resets result disclosures when switching images", async () => {
+  const options = { ...props(), onOpenOutputDirectory: vi.fn() };
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  expect(host.querySelector(".drawing-preview-tools button")).toBe(button("打开输出文件夹"));
+  expect(button("导出图片").closest(".drawing-preview-tools")).not.toBeNull();
+  expect(button("导出带参数 PNG").closest("details")?.open).toBe(false);
+  const disclosure = host.querySelector<HTMLDetailsElement>(".drawing-result-disclosure")!;
+  expect(disclosure.open).toBe(false);
+  disclosure.open = true;
+  host.querySelector<HTMLDetailsElement>(".drawing-result-more")!.open = true;
+  await act(async () => root.render(<DrawingWorkspace {...options} selectedResultId={second.id} />));
+  expect(host.querySelector<HTMLDetailsElement>(".drawing-result-disclosure")!.open).toBe(false);
+  expect(host.querySelector<HTMLDetailsElement>(".drawing-result-more")!.open).toBe(false);
+});
+
 it("loads thumbnails once when first visible, retains them across scrolling and releases them on unmount", async () => {
   const observed: Array<{ element: Element; callback: IntersectionObserverCallback; disconnect: ReturnType<typeof vi.fn> }> = [];
   vi.stubGlobal("IntersectionObserver", class {
@@ -225,10 +240,11 @@ it("preserves unavailable reused OpenAI controls until an explicit model selecti
   expect(host.textContent).toContain("画质");
   expect(host.querySelector(".drawing-form")?.textContent).not.toContain("宽高比");
   expect(host.querySelector(".drawing-form")?.textContent).not.toContain("分辨率");
-  expect([...host.querySelectorAll("select")].map(select => select.value)).toEqual(["", "1536x1024", "high"]);
+  expect([...host.querySelectorAll(".select-field > span")].map(span => span.textContent)).toEqual(["选择绘图模型（已复用 OpenAI Images 参数）", "1536 × 1024", "high"]);
   expect(button("生成图片").disabled).toBe(true);
-  const model = host.querySelector<HTMLSelectElement>("#drawing-model")!;
-  await act(async () => { model.value = "gemini"; model.dispatchEvent(new Event("change", { bubbles: true })); });
+  await act(async () => host.querySelector<HTMLButtonElement>("#drawing-model")!.click());
+  const model = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")].find(option => option.querySelector("strong")?.textContent === "Gemini 可用模型")!;
+  await act(async () => model.click());
   expect(options.onDraftChange).toHaveBeenCalledWith({ ...initialDrawingDraft, prompt: "复用画面", modelId: "gemini",
     openai: { size: "1536x1024", quality: "high" } });
 });

@@ -21,6 +21,16 @@ it("opens one combined feedback draft only on click and copies only explicit pub
     expect(host.querySelector('.about-alpha')?.textContent).toBe("Beta");
     const links = [...host.querySelectorAll<HTMLAnchorElement>(".about-feedback-link")];
     expect(links).toHaveLength(1);
+    const help = host.querySelector<HTMLButtonElement>('[aria-label="反馈与建议说明"]')!;
+    expect(help.closest("a")).toBeNull();
+    await act(async () => {
+      help.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      help.click();
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("反馈不会自动附带聊天记录、日志或附件。");
+    expect(openExternal).not.toHaveBeenCalled();
+    await act(async () => help.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
     const bug = new URL(links[0].href);
     expect(bug.pathname).toBe("/AyaseMinami/AyaseStudio/issues/new");
     expect(bug.searchParams.get("body")).toContain(version);

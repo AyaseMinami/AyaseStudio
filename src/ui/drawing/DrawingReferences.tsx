@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { ActionMenu, isContextMenuKey, useActionMenu } from "../ActionMenu";
 import { DrawingResultThumbnail } from "./DrawingResultThumbnail";
 import type { DrawingImageInput, DrawingReferenceSelection } from "../../drawing/types";
@@ -85,8 +85,8 @@ function ReferencePreview({ item, read, number, opener, onClose }: {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
         if (event.key === "Tab") { event.preventDefault(); close.current?.focus(); }
       }}>
-      <div className="drawing-section-heading"><h2>参考图 {number}</h2>
-        <button ref={close} type="button" className="drawing-button" onClick={onClose}>关闭参考图预览</button></div>
+      <div className="drawing-section-heading"><h2 title={`参考图 ${number} · ${item.name}`}>参考图 {number} · {item.name}</h2>
+        <button ref={close} type="button" className="drawing-button" aria-label="关闭参考图预览" onClick={onClose}><X size={18} /></button></div>
       {error ? <p role="alert">原图读取失败，请关闭后重试。</p> : url
         ? <img src={url} alt={`参考图 ${number}`} onError={() => setError(true)} />
         : <p role="status">正在加载原图…</p>}

@@ -29,8 +29,11 @@ export interface AppearancePreferences {
   canvasColor: string | null;
   assistantBubbleColor: string | null;
   unifiedTransparency: number;
+  chromeTransparency: number;
   sidebarTransparency: number;
   composerTransparency: number;
+  sidebarGlassEnabled: boolean;
+  composerGlassEnabled: boolean;
   // Shared by user and assistant message backgrounds; assistant color remains separate.
   assistantBubbleTransparency: number;
   backgroundReference: string | null;
@@ -113,8 +116,11 @@ export interface AppearanceController {
   setCanvasColor(color: string | null): void;
   setAssistantBubbleColor(color: string | null): void;
   setUnifiedTransparency(transparency: number | null): void;
+  setChromeTransparency(transparency: number): void;
   setSidebarTransparency(transparency: number): void;
   setComposerTransparency(transparency: number): void;
+  setSidebarGlassEnabled(enabled: boolean): void;
+  setComposerGlassEnabled(enabled: boolean): void;
   setAssistantBubbleTransparency(transparency: number): void;
   setBackgroundFit(fit: BackgroundFit): void;
   setBackgroundMask(mask: number): void;
@@ -146,13 +152,16 @@ export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   canvasColor: null,
   assistantBubbleColor: null,
   unifiedTransparency: 0,
-  sidebarTransparency: 0,
+  chromeTransparency: 40,
+  sidebarTransparency: 50,
   composerTransparency: 0,
-  assistantBubbleTransparency: 6,
+  sidebarGlassEnabled: false,
+  composerGlassEnabled: true,
+  assistantBubbleTransparency: 12,
   backgroundReference: null,
   backgroundFocus: null,
   backgroundFit: "cover",
-  backgroundMask: 65,
+  backgroundMask: 50,
   backgroundBlur: 0,
   backgroundLibrary: [],
   backgroundEnabled: true,
@@ -205,10 +214,11 @@ export function loadAppearancePreferences(
       return { ...defaultAppearancePreferences };
     }
 
+    const chromeTransparency = transparencyInRange(stored.chromeTransparency, defaultAppearancePreferences.chromeTransparency);
     const sidebarTransparency = transparencyInRange(stored.sidebarTransparency, defaultAppearancePreferences.sidebarTransparency);
     const composerTransparency = transparencyInRange(stored.composerTransparency, defaultAppearancePreferences.composerTransparency);
     const assistantBubbleTransparency = transparencyInRange(stored.assistantBubbleTransparency, defaultAppearancePreferences.assistantBubbleTransparency);
-    const unifiedTransparency = sidebarTransparency === composerTransparency && sidebarTransparency === assistantBubbleTransparency
+    const unifiedTransparency = chromeTransparency === sidebarTransparency && sidebarTransparency === composerTransparency && sidebarTransparency === assistantBubbleTransparency
       ? sidebarTransparency
       : transparencyInRange(stored.unifiedTransparency, defaultAppearancePreferences.unifiedTransparency);
 
@@ -226,8 +236,11 @@ export function loadAppearancePreferences(
       canvasColor: normalizeHexColor(stored.canvasColor),
       assistantBubbleColor: normalizeHexColor(stored.assistantBubbleColor),
       unifiedTransparency,
+      chromeTransparency,
       sidebarTransparency,
       composerTransparency,
+      sidebarGlassEnabled: typeof stored.sidebarGlassEnabled === "boolean" ? stored.sidebarGlassEnabled : defaultAppearancePreferences.sidebarGlassEnabled,
+      composerGlassEnabled: typeof stored.composerGlassEnabled === "boolean" ? stored.composerGlassEnabled : defaultAppearancePreferences.composerGlassEnabled,
       assistantBubbleTransparency,
       backgroundReference: isBackgroundReference(stored.backgroundReference)
         ? stored.backgroundReference
@@ -240,7 +253,7 @@ export function loadAppearancePreferences(
           : defaultAppearancePreferences.backgroundFit,
       backgroundMask: numberInRange(
         stored.backgroundMask,
-        35,
+        0,
         90,
         defaultAppearancePreferences.backgroundMask,
       ),
@@ -265,7 +278,7 @@ function normalizeBackgroundLibrary(stored: Partial<AppearancePreferences> & { b
     return [{ id: stored.backgroundReference, name: "原有背景", reference: stored.backgroundReference,
       focus: normalizeBackgroundFocus(stored.backgroundFocus) ?? focusFromLegacyCrop(stored.backgroundCrop),
       fit: stored.backgroundFit === "contain" ? "contain" : "cover",
-      mask: numberInRange(stored.backgroundMask, 35, 90, 65), blur: numberInRange(stored.backgroundBlur, 0, 32, 0) }];
+      mask: numberInRange(stored.backgroundMask, 0, 90, defaultAppearancePreferences.backgroundMask), blur: numberInRange(stored.backgroundBlur, 0, 32, 0) }];
   }
   if (!Array.isArray(stored.backgroundLibrary)) return [];
   const ids = new Set<string>();
@@ -275,7 +288,7 @@ function normalizeBackgroundLibrary(stored: Partial<AppearancePreferences> & { b
     return [{ id: entry.id, reference: entry.reference,
       name: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim().slice(0, 100) : "背景",
       focus: normalizeBackgroundFocus(entry.focus), fit: entry.fit === "contain" ? "contain" as const : "cover" as const,
-      mask: numberInRange(entry.mask, 35, 90, 65), blur: numberInRange(entry.blur, 0, 32, 0) }];
+      mask: numberInRange(entry.mask, 0, 90, defaultAppearancePreferences.backgroundMask), blur: numberInRange(entry.blur, 0, 32, 0) }];
   });
 }
 
@@ -304,14 +317,16 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
   optional(stored, "themeMode", value => ["light", "dark", "system"].includes(value as string));
   for (const key of ["accentColor", "userBubbleColor", "unifiedThemeColor", "canvasColor", "assistantBubbleColor"])
     optional(stored, key, value => value === null || normalizeHexColor(value) !== null);
-  for (const key of ["unifiedTransparency", "sidebarTransparency", "composerTransparency", "assistantBubbleTransparency"])
+  for (const key of ["unifiedTransparency", "chromeTransparency", "sidebarTransparency", "composerTransparency", "assistantBubbleTransparency"])
     optional(stored, key, range(0, 100, true));
   optional(stored, "backgroundReference", value => value === null || isBackgroundReference(value));
   optional(stored, "backgroundFocus", focus);
   optional(stored, "backgroundFit", value => value === "cover" || value === "contain");
-  optional(stored, "backgroundMask", range(35, 90));
+  optional(stored, "backgroundMask", range(0, 90));
   optional(stored, "backgroundBlur", range(0, 32));
   optional(stored, "backgroundEnabled", value => typeof value === "boolean");
+  for (const key of ["sidebarGlassEnabled", "composerGlassEnabled"])
+    optional(stored, key, value => typeof value === "boolean");
   optional(stored, "backgroundName", value => value === null || typeof value === "string" && value.length <= 100);
   if (stored.backgroundCrop !== undefined && stored.backgroundCrop !== null) {
     dataRecord(stored.backgroundCrop); supported(stored.backgroundCrop, ["x", "y", "width", "height"]);
@@ -328,7 +343,7 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
       optional(entry, "name", value => typeof value === "string" && value.length <= 100);
       optional(entry, "focus", focus);
       optional(entry, "fit", value => value === "cover" || value === "contain");
-      optional(entry, "mask", range(35, 90)); optional(entry, "blur", range(0, 32));
+      optional(entry, "mask", range(0, 90)); optional(entry, "blur", range(0, 32));
     }
   }
   return loadAppearancePreferences({ getItem: () => encoded, setItem: () => {} });
@@ -597,9 +612,12 @@ function applyAppearanceVariables(
       target.style.setProperty(property, value);
     }
   });
+  target.style.setProperty("--chrome-background-opacity", String(1 - preferences.chromeTransparency / 100));
   target.style.setProperty("--sidebar-background-opacity", String(1 - preferences.sidebarTransparency / 100));
   target.style.setProperty("--composer-background-opacity", String(1 - preferences.composerTransparency / 100));
   target.style.setProperty("--message-bubble-opacity", String(1 - preferences.assistantBubbleTransparency / 100));
+  target.setAttribute("data-sidebar-glass", String(preferences.sidebarGlassEnabled));
+  target.setAttribute("data-composer-glass", String(preferences.composerGlassEnabled));
   return {
     readabilityWarnings,
     effectiveAccentColor,
@@ -734,8 +752,11 @@ export function createAppearanceController({
     canvasColor: snapshot.canvasColor,
     assistantBubbleColor: snapshot.assistantBubbleColor,
     unifiedTransparency: snapshot.unifiedTransparency,
+    chromeTransparency: snapshot.chromeTransparency,
     sidebarTransparency: snapshot.sidebarTransparency,
     composerTransparency: snapshot.composerTransparency,
+    sidebarGlassEnabled: snapshot.sidebarGlassEnabled,
+    composerGlassEnabled: snapshot.composerGlassEnabled,
     assistantBubbleTransparency: snapshot.assistantBubbleTransparency,
     backgroundReference: snapshot.backgroundReference,
     backgroundFocus: snapshot.backgroundFocus,
@@ -986,34 +1007,47 @@ export function createAppearanceController({
     },
     setUnifiedTransparency(transparency) {
       if (transparency === null) {
-        const { unifiedTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency } = defaultAppearancePreferences;
-        updatePreferences({ ...preferences, unifiedTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency });
+        const { unifiedTransparency, chromeTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency } = defaultAppearancePreferences;
+        updatePreferences({ ...preferences, unifiedTransparency, chromeTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency });
         return;
       }
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
-        updatePreferences({ ...preferences, unifiedTransparency: value, sidebarTransparency: value, composerTransparency: value, assistantBubbleTransparency: value });
+        updatePreferences({ ...preferences, unifiedTransparency: value, chromeTransparency: value, sidebarTransparency: value, composerTransparency: value, assistantBubbleTransparency: value });
       }
+    },
+    setChromeTransparency(transparency) {
+      if (Number.isFinite(transparency)) {
+        const value = Math.round(Math.min(100, Math.max(0, transparency)));
+        const next = { ...preferences, chromeTransparency: value };
+        updatePreferences(next.sidebarTransparency === value && next.composerTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
+      }
+    },
+    setSidebarGlassEnabled(enabled) {
+      updatePreferences({ ...preferences, sidebarGlassEnabled: enabled });
+    },
+    setComposerGlassEnabled(enabled) {
+      updatePreferences({ ...preferences, composerGlassEnabled: enabled });
     },
     setSidebarTransparency(transparency) {
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
         const next = { ...preferences, sidebarTransparency: value };
-        updatePreferences(next.composerTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
+        updatePreferences(next.chromeTransparency === value && next.composerTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setComposerTransparency(transparency) {
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
         const next = { ...preferences, composerTransparency: value };
-        updatePreferences(next.sidebarTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
+        updatePreferences(next.chromeTransparency === value && next.sidebarTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setAssistantBubbleTransparency(transparency) {
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
         const next = { ...preferences, assistantBubbleTransparency: value };
-        updatePreferences(next.sidebarTransparency === value && next.composerTransparency === value ? { ...next, unifiedTransparency: value } : next);
+        updatePreferences(next.chromeTransparency === value && next.sidebarTransparency === value && next.composerTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setBackgroundFit(fit) {
@@ -1024,7 +1058,7 @@ export function createAppearanceController({
     setBackgroundMask(mask) {
       if (Number.isFinite(mask)) {
         updateBackgroundPreferences({
-          backgroundMask: Math.round(Math.min(90, Math.max(35, mask))),
+          backgroundMask: Math.round(Math.min(90, Math.max(0, mask))),
         });
       }
     },
@@ -1142,7 +1176,7 @@ export function createAppearanceController({
         if (replaceId && !previous) throw new BackgroundResourceError("这张背景已不在库中，请重新选择。");
         const entry: BackgroundLibraryEntry = { id: previous?.id ?? resource.reference,
           name: previous?.name ?? (pending.name?.trim().slice(0, 100) || "背景"),
-          reference: pending.reference, focus: null, fit: previous?.fit ?? "cover", mask: previous?.mask ?? 65, blur: previous?.blur ?? 0 };
+          reference: pending.reference, focus: null, fit: previous?.fit ?? "cover", mask: previous?.mask ?? defaultAppearancePreferences.backgroundMask, blur: previous?.blur ?? 0 };
         const backgroundLibrary = previous ? preferences.backgroundLibrary.map((item) => item.id === previous.id ? entry : item)
           : [...preferences.backgroundLibrary, entry];
         updatePreferences({ ...preferences, backgroundLibrary }, true);
@@ -1164,7 +1198,7 @@ export function createAppearanceController({
         if (edit && edit.reference !== entry.reference) throw new BackgroundResourceError("这张背景已被替换，请重新选择后调整。");
         const focus = edit?.focus === null ? null : normalizeBackgroundFocus(edit?.focus);
         if (edit && ((edit.focus !== null && !focus) || !["cover", "contain"].includes(edit.fit)
-          || !Number.isFinite(edit.mask) || edit.mask < 35 || edit.mask > 90
+          || !Number.isFinite(edit.mask) || edit.mask < 0 || edit.mask > 90
           || !Number.isFinite(edit.blur) || edit.blur < 0 || edit.blur > 32)) {
           throw new BackgroundResourceError("背景参数无效，请重新调整。");
         }

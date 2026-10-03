@@ -40,12 +40,16 @@ export function readGenerationMetricsData(raw: unknown): GenerationMetrics {
   return value as unknown as GenerationMetrics;
 }
 
-/** Validate only the statistics boundary, preserving unrelated local message fields. */
+/** Validate generation metadata, preserving unrelated local message fields. */
 export function readMessageGenerationMetrics<T>(raw: T): T {
   const value = structuredClone(raw);
   function visit(message: unknown): void {
     if (message === null || typeof message !== "object" || Array.isArray(message)) return;
     const record = message as Record<string, unknown>;
+    if (record.generationModel !== undefined) {
+      dataCheck(record.role === "assistant" && typeof record.generationModel === "string"
+        && record.generationModel.trim().length > 0);
+    }
     if ("generationMetrics" in record && record.generationMetrics !== undefined) {
       dataCheck(Array.isArray(record.generationMetrics));
       record.generationMetrics = record.generationMetrics.map(readGenerationMetricsData);

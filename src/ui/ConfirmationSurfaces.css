@@ -1,0 +1,55 @@
+/* Visual contract shared by existing confirmation flows; each owner retains its lifecycle. */
+:root :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog) {
+  padding: 24px;
+  gap: 16px;
+  border-radius: 16px;
+  border-color: color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel)));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+:root :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog) h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+:root :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog) p {
+  margin: 0;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+:root :is(.message-confirm-actions, .drawing-task-confirm-dialog > .drawing-actions, .avatar-delete-confirm > footer) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid rgb(var(--color-border) / 0.6);
+}
+:is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog, .avatar-delete-confirm) .settings-button,
+.drawing-task-confirm-dialog .drawing-button {
+  min-height: 36px;
+  border-radius: 6px;
+  white-space: normal;
+  transition: background-color 120ms, transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+button.confirm-danger {
+  color: rgb(var(--color-error-text));
+  background: rgb(var(--color-error-text) / 0.08);
+  border-color: rgb(var(--color-error-text) / 0.3);
+}
+button.confirm-danger:hover:not(:disabled) { background: rgb(var(--color-error-text) / 0.15); }
+button.confirm-primary { background: rgb(var(--color-accent)); color: rgb(var(--color-on-accent)); border-color: transparent; }
+button.confirm-primary:hover:not(:disabled) { background: color-mix(in srgb, rgb(var(--color-accent)) 90%, black); }
+.management-dialog > .settings-button:last-child { justify-self: end; min-width: 72px; margin-top: 4px; }
+.avatar-delete-confirm { display: grid; gap: 12px; }
+.avatar-delete-confirm p { margin: 0; line-height: 1.65; }
+.avatar-library-dialog:has(.avatar-delete-confirm) { width: min(28rem, calc(100vw - 32px)); }
+.avatar-library-dialog:has(.avatar-delete-confirm) .avatar-delete-confirm { margin-top: 16px; }
+:is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog, .avatar-delete-confirm) button:active:not(:disabled) { transform: translateY(1px); }
+@media (max-width: 620px) {
+  :root :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog) { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog, .avatar-delete-confirm) button { transition: none; }
+  :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog, .avatar-delete-confirm) button:active:not(:disabled) { transform: none; }
+}

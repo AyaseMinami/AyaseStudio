@@ -15,6 +15,7 @@ import {
 } from "vitest";
 
 import App from "./App";
+import { GeneralSettings } from "./ui/settings/GeneralSettings";
 import * as contextBudget from "./chat/contextBudget";
 import { createChatRepository, type ChatSnapshot } from "./chat/repository";
 import { defaultSessionConfig } from "./chat/sessionConfig";
@@ -98,6 +99,28 @@ describe("App navigation", () => {
     return button as HTMLButtonElement;
   }
 
+  async function chooseModel(selector: string, label: string): Promise<void> {
+    const trigger = container.querySelector<HTMLButtonElement>(selector)!;
+    expect(trigger).toBeInstanceOf(HTMLButtonElement);
+    await act(async () => trigger.click());
+    const option = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")].find(item => {
+      const parts = item.querySelector("strong")?.textContent?.split(" / ");
+      return parts?.[parts.length - 1] === label;
+    });
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+    await waitFor(() => !document.querySelector(".model-picker"));
+  }
+
+  async function chooseShortOption(selector: string, label: string): Promise<void> {
+    const trigger = container.querySelector<HTMLButtonElement>(selector)!;
+    expect(trigger.getAttribute("role")).toBe("combobox");
+    await act(async () => trigger.click());
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === label);
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+  }
+
   async function setDraft(value: string): Promise<void> {
     const draft = container.querySelector<HTMLTextAreaElement>("textarea");
     expect(draft).toBeInstanceOf(HTMLTextAreaElement);
@@ -131,18 +154,39 @@ describe("App navigation", () => {
     });
   }
 
+  async function answerConfirmation(accept: boolean): Promise<void> {
+    const dialog = document.querySelector<HTMLDialogElement>(".confirmation-dialog")!;
+    expect(dialog?.open).toBe(true);
+    await act(async () => dialog.querySelectorAll<HTMLButtonElement>("button")[accept ? 1 : 0].click());
+  }
+
   async function openConnectionMenu(name: string): Promise<void> {
     await act(async () => {
       container.querySelector<HTMLElement>(`button[aria-label="管理连接 ${name}"]`)!.click();
     });
   }
 
+  it("opens General for each tray request without remounting or losing the chat draft", async () => {
+    await renderApp();
+    await setDraft("tray navigation draft");
+    await clickButton("设置");
+    await clickButton("连接配置");
+    await act(async () => root.render(<App settingsRequest={1} />));
+    expect(container.querySelector("#general-background-resident")).not.toBeNull();
+    await clickButton("聊天");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("tray navigation draft");
+    await act(async () => root.render(<App settingsRequest={1} />));
+    expect(container.querySelector("textarea")).not.toBeNull();
+    await act(async () => root.render(<App settingsRequest={2} />));
+    expect(container.querySelector("#general-background-resident")).not.toBeNull();
+  });
+
   it("keeps drawing drafts separate from chat and disables generation without a selected model", async () => {
     await renderApp();
     await setDraft("聊天草稿");
     const before = loadConnectionSettings();
     await clickButton("绘图");
-    await waitFor(() => container.querySelector<HTMLSelectElement>("#drawing-model")?.disabled === false);
+    await waitFor(() => container.querySelector<HTMLButtonElement>("#drawing-model")?.disabled === false);
     const prompt = container.querySelector<HTMLTextAreaElement>("#drawing-prompt");
     expect(prompt).toBeInstanceOf(HTMLTextAreaElement);
     await act(async () => {
@@ -193,13 +237,9 @@ describe("App navigation", () => {
     await setDraft("保留的聊天草稿");
     expect(getButton("切换模型").textContent).toContain("聊天测试模型");
     await clickButton("绘图");
-    await waitFor(() => container.querySelector<HTMLSelectElement>("#drawing-model")?.disabled === false);
+    await waitFor(() => container.querySelector<HTMLButtonElement>("#drawing-model")?.disabled === false);
     expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(true);
-    await act(async () => {
-      const select = container.querySelector<HTMLSelectElement>("#drawing-model")!;
-      select.value = "image-model";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#drawing-model", "绘图测试模型");
     await setPanelText("#drawing-prompt", "合成湖泊图像");
     expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(false);
     await act(async () => container.querySelector<HTMLButtonElement>("#drawing-generate")!.click());
@@ -214,7 +254,7 @@ describe("App navigation", () => {
     expect(loadConnectionSettings()).toEqual(settings);
     await clickButton("绘图");
     expect(container.querySelector<HTMLTextAreaElement>("#drawing-prompt")?.value).toBe("合成湖泊图像");
-    expect(container.querySelector<HTMLSelectElement>("#drawing-model")?.value).toBe("image-model");
+    expect(container.querySelector<HTMLButtonElement>("#drawing-model")?.textContent).toContain("绘图测试模型");
     expect(container.querySelector("#drawing-generate")?.textContent).toContain("加入队列");
     expect(generate).toHaveBeenCalledOnce();
     expect(drawingRuntimeMocks.createRuntimeImageTransport).toHaveBeenCalledOnce();
@@ -266,6 +306,7 @@ describe("App navigation", () => {
     });
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     const handle = getButton("拖动排序 C");
     const target = getButton("A");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
@@ -299,6 +340,7 @@ describe("App navigation", () => {
     });
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     const target = getButton("查看连接 合成线路 a").closest<HTMLElement>("[data-sort-connection]")!;
     vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
     vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 40));
@@ -435,11 +477,7 @@ describe("App navigation", () => {
     await renderApp();
     await setDraft("Keep draft");
     await clickButtonWithText("编辑对话");
-    await act(async () => {
-      const select = container.querySelector<HTMLSelectElement>("#config-temperature");
-      if (select) select.value = "custom";
-      select?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseShortOption("#config-temperature", "自定义");
     await setPanelText('input[aria-label="Temperature 自定义值"]', "bad");
     const save = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "保存对话");
     expect(save?.disabled).toBe(false);
@@ -577,6 +615,7 @@ describe("App navigation", () => {
     await clickButtonWithText("保存助手");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     await clickButton("设置");
+    await clickButton("连接配置");
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://relay.example.com/v1beta/models/test-model:generateContent",
     );
@@ -589,6 +628,13 @@ describe("App navigation", () => {
 
     await clickButton("设置");
     expect(container.querySelector("textarea")).toBeNull();
+    expect(getButton("常规").getAttribute("aria-current")).toBe("page");
+    expect(container.querySelector(".general-profile")).not.toBeNull();
+    expect(container.querySelector(".general-avatar-preview")).not.toBeNull();
+    expect(container.querySelector('[aria-label="头像聊天效果预览"]')).toBeNull();
+    expect(container.querySelector('.settings-navigation button[aria-label="头像"]')).toBeNull();
+    expect(container.querySelector('.settings-navigation button')?.getAttribute("aria-label")).toBe("常规");
+    await clickButton("连接配置");
     expect(container.textContent).toContain("连接配置");
     expect(container.querySelector('button[aria-label="添加供应商"]')).not.toBeNull();
 
@@ -600,6 +646,22 @@ describe("App navigation", () => {
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       "状态保留检查",
     );
+  });
+
+  it("shows general preference save failure when the controller returns false without an error", async () => {
+    const setPreference = vi.fn().mockResolvedValue(false);
+    await act(async () => root.render(<GeneralSettings general={{
+      preferences: { version: 1, backgroundResident: true, confirmBeforeExit: true },
+      error: null, setPreference,
+    }} />));
+    const background = container.querySelector<HTMLInputElement>("#general-background-resident")!;
+    await act(async () => background.click());
+    expect(setPreference).toHaveBeenCalledWith("backgroundResident", false);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("常规设置保存失败，请重试。");
+    expect(background.checked).toBe(true);
+    expect(background.disabled).toBe(false);
+    await act(async () => getButton("关闭窗口后在后台运行说明").focus());
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("打开 Ayase Studio");
   });
 
   it("redirects missing configuration to connections and retains the error", async () => {
@@ -742,6 +804,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("查看连接 Gemini 专线");
     await clickButton("设为助手默认模型 gemini-model");
     await clickButton("聊天");
@@ -816,6 +879,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     expect(container.textContent).toContain("model-a");
     expect(container.textContent).not.toContain("model-d");
 
@@ -848,10 +912,9 @@ describe("App navigation", () => {
     await clickButton("编辑模型 model-d");
     const draft = container.querySelector<HTMLInputElement>('.model-edit-form input[name="modelId"]')!;
     draft.value = "unsaved-model";
-    const confirmSwitch = vi.fn(() => false);
-    Object.assign(window, { confirm: confirmSwitch });
     await clickButton("查看连接 备用线路");
-    expect(confirmSwitch).toHaveBeenCalled();
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain("当前模型编辑尚未保存");
+    await answerConfirmation(false);
     expect(container.querySelector<HTMLInputElement>('.model-edit-form input[name="modelId"]')?.value).toBe("unsaved-model");
     expect(getButton("查看连接 连接 2").getAttribute("aria-current")).toBe("true");
 
@@ -890,6 +953,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButtonWithText("获取模型列表");
     await waitFor(() => container.textContent?.includes("gpt-new") === true);
 
@@ -957,6 +1021,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButtonWithText("获取模型列表");
     await waitFor(() => list.mock.calls.length === 1);
     await clickButton("关闭模型目录");
@@ -990,7 +1055,6 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
     let observedRequest: ChatRequest | undefined;
     const transport: ChatTransport = {
       async *stream(request) {
@@ -1007,7 +1071,9 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("测试模型 test-model");
+    await answerConfirmation(true);
     await waitFor(() => observedRequest !== undefined);
 
     const baseUrl = container.querySelector<HTMLInputElement>("#base-url");
@@ -1051,7 +1117,6 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
     const observedRequests: ChatRequest[] = [];
     const transport: ChatTransport = {
       async *stream(request) {
@@ -1068,9 +1133,12 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("测试模型 model-one");
+    await answerConfirmation(true);
     await waitFor(() => observedRequests.length === 1);
     await clickButton("测试模型 model-two");
+    await answerConfirmation(true);
     await waitFor(() => observedRequests.length === 2);
 
     expect(observedRequests[0]?.signal?.aborted).toBe(true);
@@ -1103,11 +1171,10 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    const confirm = vi.fn(() => false);
-    Object.assign(window, { confirm });
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("编辑模型 model-one");
     const editedId = container.querySelector<HTMLInputElement>(
       '.model-edit-form input[name="modelId"]',
@@ -1123,9 +1190,10 @@ describe("App navigation", () => {
     });
     await clickButton("编辑模型 model-two");
 
-    expect(confirm).toHaveBeenCalledWith(
+    expect(document.querySelector(".confirmation-dialog")?.textContent).toContain(
       "当前模型编辑尚未保存。切换后将放弃这些修改，是否继续？",
     );
+    await answerConfirmation(false);
     expect(
       container.querySelector<HTMLInputElement>(
         '.model-edit-form input[name="modelId"]',
@@ -1162,12 +1230,13 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-one",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await openConnectionMenu("连接 1");
     await clickButton("删除连接 连接 1");
+    await answerConfirmation(true);
     await waitFor(
       () => document.activeElement?.getAttribute("aria-label") === "查看连接 连接 2",
     );
@@ -1212,12 +1281,13 @@ describe("App navigation", () => {
       ],
       activeModelId: "model-openai",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await openConnectionMenu("OpenAI 主线路");
     await clickButton("删除连接 OpenAI 主线路");
+    await answerConfirmation(true);
     await clickButton("聊天");
     expect(container.textContent).toContain("模型已失效");
     await setDraft("keep this draft");
@@ -1230,7 +1300,9 @@ describe("App navigation", () => {
       "当前会话的模型未选择或已失效",
     );
     await clickButtonWithText("编辑对话");
-    expect(container.querySelector<HTMLSelectElement>("#conversation-model")?.value).toBe("model-openai");
+    expect(container.querySelector<HTMLButtonElement>("#conversation-model")?.textContent).toContain("失效");
+    const persisted = await createChatRepository().initializeWorkspace(null, ["model-gemini"]);
+    expect(persisted.conversations.find(conversation => conversation.id === "current")?.settings?.modelId).toBe("model-openai");
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain("原模型已失效，请重新选择");
   });
 
@@ -1261,10 +1333,10 @@ describe("App navigation", () => {
       }],
       activeModelId: "model-chat",
     });
-    Object.assign(window, { confirm: vi.fn(() => true) });
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://relay.example.com/v1/chat/completions",
     );
@@ -1297,14 +1369,8 @@ describe("App navigation", () => {
       "https://gemini.example.com/v1beta/models/model%2Fwith%20space:streamGenerateContent?alt=sse",
     );
 
-    const protocol = container.querySelector<HTMLSelectElement>(
-      "#connection-protocol",
-    );
-    expect(protocol).toBeInstanceOf(HTMLSelectElement);
-    await act(async () => {
-      if (protocol) protocol.value = "anthropic-native";
-      protocol?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseShortOption("#connection-protocol", "Anthropic Native");
+    await answerConfirmation(true);
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://gemini.example.com/v1/messages",
     );
@@ -1323,6 +1389,7 @@ describe("App navigation", () => {
     );
     await clickButtonWithText("获取模型列表");
     await clickButton("测试模型 model/with space");
+    await answerConfirmation(true);
     expect(runtimeMocks.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
     expect(runtimeMocks.createRuntimeChatTransport).not.toHaveBeenCalled();
 
@@ -1330,11 +1397,7 @@ describe("App navigation", () => {
     // Assistant defaults no longer retarget an existing conversation.
     // Select the invalid-URL connection in the conversation before testing send.
     await clickButtonWithText("编辑对话");
-    await act(async () => {
-      const model = container.querySelector<HTMLSelectElement>("#conversation-model")!;
-      model.value = "model-gemini";
-      model.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#conversation-model", "model/with space");
     await clickButtonWithText("保存对话");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     await setDraft("must not send");

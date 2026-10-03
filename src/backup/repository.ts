@@ -3,6 +3,7 @@ import { backupTables, type BackupFiles, type BackupRows } from "./types";
 import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
 import type { RestorePlan } from "./restorePlan";
 import { BackupRecoveryError } from "./errors";
+import { persistentPreferences } from "../storage/dataRegistry";
 
 export interface BackupJournal { id: "restore"; before: LocalSnapshot; references: string[]; phase: "staging" | "applying" }
 export interface BackupStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
@@ -12,7 +13,11 @@ export class BackupRepository {
     const db = this.database;
     return db.transaction("r", [...backupTables.map(t => db.table(t)), db.drawingDrafts, db.drawingPromptPresets, db.drawingTasks, db.drawingResults, db.backupJournal], async () => {
       if (await db.backupJournal.get("restore")) throw new BackupRecoveryError();
-      const preferences = Object.fromEntries(allPreferenceKeys.map(k => [k, this.storage.getItem(k)]));
+      const preferences: LocalSnapshot["preferences"] = {};
+      // Walk registry keys explicitly so the static storage audit can trace reads.
+      for (const key of Object.keys(persistentPreferences)) {
+        if (allPreferenceKeys.includes(key)) preferences[key] = this.storage.getItem(key);
+      }
       const rows = Object.fromEntries(await Promise.all(backupTables.map(async t => [t, await db.table(t).toArray()])));
       const targets: NonNullable<LocalSnapshot["drawing"]>["targets"] = [];
       const seen = new Set<string>();

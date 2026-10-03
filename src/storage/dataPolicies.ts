@@ -22,6 +22,7 @@ import type { BackgroundFocus } from "../appearance/backgroundFocus";
 import type { Table } from "dexie";
 import type { GenerationMetrics } from "../chat/generationMetrics";
 import type { TokenUsage } from "../chat/types";
+import type { GeneralPreferences } from "../general/preferences";
 
 // Infer the real row parameter, not toArray's final generic callback overload (which returns unknown).
 type TableRow<T> = T extends Table<infer Row, infer _Key, infer _Insert> ? Row : never;
@@ -29,6 +30,7 @@ type TableRow<T> = T extends Table<infer Row, infer _Key, infer _Insert> ? Row :
 // Exhaustive policies: a new declared field cannot compile until its disposition is chosen.
 // Nested persisted records have their own policies; resources still use their existing validators.
 export const dataPolicies = {
+  general: { version: "exclude", backgroundResident: "exclude", confirmBeforeExit: "exclude" } satisfies FieldPolicy<GeneralPreferences>,
   session: {
     version: "backup", systemInstruction: "backup", temperature: "backup", topP: "backup", topK: "backup",
     contextBudget: "backup", maxOutput: "backup", stream: "backup", dualSamplingConfirmed: "backup", customJson: "backup",
@@ -40,7 +42,7 @@ export const dataPolicies = {
   assistants: { id: "backup", name: "backup", icon: "backup", avatar: "resource", defaultAvatar: "backup", sortOrder: "backup", defaultModelId: "backup", defaultConfig: "backup" } satisfies FieldPolicy<AssistantPreset>,
   conversations: { id: "backup", assistantId: "backup", title: "backup", titleNaming: "backup", createdAt: "backup", updatedAt: "backup", sortOrder: "backup", settings: "backup", creationConfig: "backup", overrides: "legacy" } satisfies FieldPolicy<Conversation>,
   chats: { id: "backup", updatedAt: "backup", messages: "backup", generationConfig: "legacy" } satisfies FieldPolicy<ChatSnapshot>,
-  messages: { id: "backup", role: "backup", content: "backup", status: "backup", replyToId: "backup", editedAt: "backup", thinkingSummary: "backup", generationMetrics: "backup", attachments: "resource", search: "backup", source: "backup", providerReplay: "backup", roundVersions: "backup", continuation: "exclude" } satisfies FieldPolicy<StoredChatMessage>,
+  messages: { id: "backup", role: "backup", content: "backup", status: "backup", replyToId: "backup", editedAt: "backup", thinkingSummary: "backup", generationModel: "backup", generationMetrics: "backup", attachments: "resource", search: "backup", source: "backup", providerReplay: "backup", roundVersions: "backup", continuation: "exclude" } satisfies FieldPolicy<StoredChatMessage>,
   generationMetrics: { version: "backup", protocol: "backup", streaming: "backup", status: "backup", elapsedMs: "backup", firstTextMs: "backup", firstThinkingMs: "backup", usage: "backup", usageComplete: "backup" } satisfies FieldPolicy<GenerationMetrics>,
   tokenUsage: { inputTokens: "backup", outputTokens: "backup", totalTokens: "backup", uncachedInputTokens: "backup", cacheReadTokens: "backup", cacheWriteTokens: "backup", reasoningTokens: "backup" } satisfies FieldPolicy<TokenUsage>,
   workspace: { id: "backup", activeAssistantId: "backup", lastSelected: "backup" } satisfies FieldPolicy<WorkspaceSelection>,
@@ -73,8 +75,9 @@ export const dataPolicies = {
   attachment: { reference: "resource", name: "backup", size: "backup", mimeType: "backup" } satisfies FieldPolicy<SentAttachment>,
   appearance: {
     colorPreset: "backup", themeMode: "backup", accentColor: "backup", userBubbleColor: "backup", unifiedThemeColor: "backup",
-    canvasColor: "backup", assistantBubbleColor: "backup", unifiedTransparency: "backup", sidebarTransparency: "backup",
+    canvasColor: "backup", assistantBubbleColor: "backup", unifiedTransparency: "backup", chromeTransparency: "backup", sidebarTransparency: "backup",
     composerTransparency: "backup", assistantBubbleTransparency: "backup", backgroundReference: "resource", backgroundFocus: "backup",
+    sidebarGlassEnabled: "backup", composerGlassEnabled: "backup",
     backgroundFit: "backup", backgroundMask: "backup", backgroundBlur: "backup", backgroundLibrary: "resource", backgroundEnabled: "backup", backgroundName: "backup",
   } satisfies FieldPolicy<AppearancePreferences>,
   background: { id: "backup", name: "backup", reference: "resource", focus: "backup", fit: "backup", mask: "backup", blur: "backup" } satisfies FieldPolicy<BackgroundLibraryEntry>,

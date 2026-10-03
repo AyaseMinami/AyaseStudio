@@ -1,0 +1,22 @@
+.select-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid rgb(var(--color-border)); border-radius: 6px; background: color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas))); color: rgb(var(--color-text)); font: inherit; text-align: left; cursor: pointer; transition: border-color 120ms, background-color 120ms; }
+.select-field > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-field > svg { flex: none; color: rgb(var(--color-muted)); transition: transform 140ms; }
+.select-field[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.select-field:hover:not(:disabled) { border-color: rgb(var(--color-accent) / .45); }
+.select-field[aria-expanded="true"] { border-color: rgb(var(--color-accent) / .6); }
+.select-field:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+.select-field:disabled { opacity: .5; cursor: default; }
+.select-field-popup { position: fixed; z-index: 100; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 5px; border: 1px solid color-mix(in srgb, rgb(var(--color-border)) 75%, rgb(var(--color-panel))); border-radius: 12px; background: color-mix(in srgb, rgb(var(--color-panel)) 98%, rgb(var(--color-text))); color: rgb(var(--color-text)); box-shadow: 0 2px 4px rgb(var(--color-shadow) / .05), 0 8px 24px rgb(var(--color-shadow) / .11); font-size: var(--font-ui); }
+.select-field-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; padding: 7px 10px; border-radius: 6px; cursor: pointer; line-height: 1.5; }
+.select-field-option > span { min-width: 0; overflow-wrap: anywhere; }
+.select-field-option > svg { flex: none; }
+.select-field-option[data-active="true"] { background: rgb(var(--color-accent) / .07); }
+.select-field-option[aria-selected="true"] { color: rgb(var(--color-accent-text)); background: rgb(var(--color-accent) / .14); font-weight: 600; }
+.select-field-option[aria-selected="true"][data-active="true"] { background: rgb(var(--color-accent) / .18); }
+.select-field-option[aria-disabled="true"] { opacity: .5; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .select-field, .select-field > svg { transition: none; } }
+@media (forced-colors: active) {
+  .select-field, .select-field-popup { border-color: ButtonText; background: Canvas; color: CanvasText; box-shadow: none; }
+  .select-field-option[aria-selected="true"] { color: Highlight; }
+  .select-field-option[data-active="true"] { outline: 1px solid Highlight; outline-offset: -1px; }
+}

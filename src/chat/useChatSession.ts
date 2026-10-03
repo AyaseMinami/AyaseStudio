@@ -929,6 +929,7 @@ export function useChatSession({
         id: assistantId,
         role: "assistant",
         replyToId: userMessage.id,
+        ...(!resume ? { generationModel: requestModelId } : {}),
         content: resume?.content ?? "",
         status: "streaming",
         search: resume?.search ?? (externalSearch ? { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "searching", queries: [searchQuery!] }
@@ -1081,7 +1082,7 @@ export function useChatSession({
         for await (const event of transport.stream({
           baseUrl: requestConnection.baseUrl,
           apiKey: requestConnection.apiKey,
-          model: activeTarget.model.modelId,
+          model: requestModelId,
           messages: requestMessages,
           config: frozenConfig,
           signal: controller.signal,

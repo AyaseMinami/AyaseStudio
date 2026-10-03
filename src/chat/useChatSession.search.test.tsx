@@ -155,7 +155,10 @@ describe("external search in session generation", () => {
     expect(mocks.searchExa).toHaveBeenCalledTimes(1); expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
     expect(session.messages[1].search?.status).toBe("completed"); expect(session.messages[1].status).toBe("failed");
   });
-  it.each<ExternalSearchProvider>(["exa-mcp", "exa-api"])("continues paused Anthropic via %s with the exact prepared context and source snapshot", async provider => {
+  it.each<{ provider: ExternalSearchProvider; legacy: boolean }>([
+    { provider: "exa-mcp", legacy: false }, { provider: "exa-api", legacy: false },
+    { provider: "exa-mcp", legacy: true }, { provider: "exa-api", legacy: true },
+  ])("continues paused Anthropic via $provider with preserved snapshots (legacy=$legacy)", async ({ provider, legacy }) => {
     await act(async () => { await session.setSearchMode(provider); });
     await act(async () => { await session.updateConnection("c", "protocol", "anthropic-native");
       await session.workspace.execute({ type: "rename-conversation", id: "current", title: "manual" }); });
@@ -167,6 +170,14 @@ describe("external search in session generation", () => {
       yield { type: "completed", finishReason: requests.length === 1 ? "pause_turn" : "end_turn" };
     } } satisfies ChatTransport);
     await draft(); await act(async () => { await session.sendMessage(); });
+    expect(session.messages[1].generationModel).toBe(requests[0].model);
+    if (legacy) {
+      const messages = JSON.parse(JSON.stringify(session.messages, (key, value) => key === "generationModel" ? undefined : value));
+      await act(async () => {
+        await session.workspace.store!.updateMessages(messages);
+        session.workspace.setMessages(messages);
+      });
+    }
     const paused = session.messages[1];
     expect(paused.status).toBe("paused"); expect(paused.continuation?.messages[0].content).toContain("Retrieved material");
     saveSearchSettings({ ...defaultSearchSettings(), apiKey: "changed" });
@@ -175,6 +186,12 @@ describe("external search in session generation", () => {
     expect(session.error).toBeUndefined();
     expect(mocks.searchExa).toHaveBeenCalledTimes(1);
     expect(session.messages[1].search?.provider).toBe(provider);
+    expect(session.messages[1].generationModel).toBe(paused.generationModel);
+    expect((await repo.load("current"))?.messages[1].generationModel).toBe(paused.generationModel);
+    if (legacy) {
+      expect(session.messages[1]).not.toHaveProperty("generationModel");
+      expect((await repo.load("current"))?.messages[1]).not.toHaveProperty("generationModel");
+    }
     expect(requests[1].messages[0]).toEqual(requests[0].messages[0]);
     expect(requests[1].messages[1].providerReplay).toBeDefined();
     expect(session.messages[1].search?.citations).toHaveLength(2);

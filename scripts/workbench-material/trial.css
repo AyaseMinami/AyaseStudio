@@ -1,0 +1,30 @@
+.workbench-trial-controls { position: fixed; z-index: 80; top: 48px; right: 12px; max-width: min(360px, calc(100vw - 24px)); border: 1px solid rgb(var(--color-border)); border-radius: 10px; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); font-size: 12px; box-shadow: 0 4px 16px #0002; }
+.workbench-trial-controls summary { padding: 8px 12px; cursor: pointer; }
+.workbench-trial-controls > div { display: grid; gap: 12px; padding: 12px; }
+.workbench-trial-controls label { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.workbench-trial-controls select { max-width: 180px; padding: 4px 28px 4px 8px; border: 1px solid rgb(var(--color-border)); border-radius: 6px; }
+.workbench-trial-controls p { margin: 0; line-height: 1.6; }
+
+/* Retain the committed starting layout for an interactive comparison. */
+:root[data-workbench-trial="baseline"] .settings-page-scroll { border: 1px solid rgb(var(--color-border)); border-radius: 8px; }
+:root[data-workbench-trial="baseline"] :is(.settings-workspace .appearance-group-card, .settings-workspace .connection-tree, .settings-workspace .connection-detail, .settings-workspace .avatar-card, .settings-workspace .about-card, .settings-workspace .network-search-card, .settings-workspace .data-management-page .settings-card, .drawing-panel) { background: rgb(var(--color-panel)); border-color: color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); box-shadow: none; }
+:root[data-workbench-trial="baseline"] .about-card { border-radius: 16px; }
+:root[data-workbench-trial="baseline"] .drawing-body { padding: 4px; }
+:root[data-workbench-trial="baseline"] :is(.drawing-layout, .drawing-left-column, .connection-settings-page .connection-settings-workbench) { gap: 4px; }
+:root[data-workbench-trial="baseline"] .drawing-references { border: 1px dashed color-mix(in srgb, rgb(var(--color-border)) 75%, rgb(var(--color-panel))); background: transparent; }
+:root[data-workbench-trial="baseline"] .drawing-preview-heading { background: rgb(var(--color-panel)); top: -4px; }
+
+:root[data-workbench-trial="solid"], :root[data-workbench-trial="subtle"], :root[data-workbench-trial="airy"] {
+  --trial-fill: color-mix(in srgb, rgb(var(--color-panel)) 98%, rgb(var(--color-text)));
+  --trial-edge: rgb(var(--color-text) / 0.08);
+  --trial-shadow: 0 1px 2px rgb(var(--color-shadow) / 0.035);
+}
+:root[data-workbench-trial="subtle"] { --trial-fill: rgb(var(--color-panel) / 0.93); }
+:root[data-workbench-trial="airy"] { --trial-fill: rgb(var(--color-panel) / 0.85); }
+:root:is([data-workbench-trial="solid"], [data-workbench-trial="subtle"], [data-workbench-trial="airy"]) .settings-workspace .settings-page-scroll { border: 0; border-radius: 0; }
+:root:is([data-workbench-trial="solid"], [data-workbench-trial="subtle"], [data-workbench-trial="airy"]) :is(.settings-workspace .settings-card, .settings-workspace .appearance-group-card, .settings-workspace .connection-tree, .settings-workspace .connection-detail, .settings-workspace .avatar-card, .settings-workspace .about-card, .drawing-workspace .drawing-panel) {
+  background: var(--trial-fill); border-color: var(--trial-edge); border-radius: 12px; box-shadow: var(--trial-shadow);
+}
+:root:is([data-workbench-trial="solid"], [data-workbench-trial="subtle"], [data-workbench-trial="airy"]) .drawing-body { padding: 8px; }
+:root:is([data-workbench-trial="solid"], [data-workbench-trial="subtle"], [data-workbench-trial="airy"]) :is(.drawing-layout, .drawing-left-column, .connection-settings-page .connection-settings-workbench) { gap: 8px; }
+:root:is([data-workbench-trial="solid"], [data-workbench-trial="subtle"], [data-workbench-trial="airy"]) .drawing-references { border: 0; background: rgb(var(--color-text) / 0.025); }

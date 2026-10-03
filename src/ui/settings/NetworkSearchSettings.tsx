@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, RotateCcw, X } from "lucide-react";
 import { defaultSearchConfiguration, loadSearchConfiguration, saveSearchConfiguration, searchProfileKeys, searchProviderNames, validateSearchSettings, validateTavilySettings, validateZhipuSettings, type SearchProfile, type SearchConfiguration, type ExternalSearchProvider } from "../../search/settings";
 import { searchExa } from "../../search/runtime";
 import { validateExaApiSettings } from "../../search/exaApi";
@@ -9,6 +9,7 @@ import { openExternal } from "../../chat/externalLinks";
 import type { SearchRecord } from "../../chat/nativeSearch";
 import { SearchResults } from "../chat/SearchResults";
 import { SettingsHelp } from "./SettingsHelp";
+import { SelectField } from "../SelectField";
 import "./NetworkSearchSettings.css";
 
 const TEST_QUERY = "What is the Exa search API?";
@@ -101,32 +102,25 @@ function SearchProfileCard({ provider, initial, onSave }: {
   }
   return <section className="settings-card network-search-card" aria-labelledby={id + "-title"}>
     <header className="network-search-card-heading">
-      <div className="settings-label-help"><h3 id={id + "-title"}>{name}</h3>
+      <div className="network-search-service-title"><div className="settings-label-help"><h3 id={id + "-title"}>{name}</h3>
         <SettingsHelp label={name}>{`${additional ? `调用 ${name} 官方搜索 API，需要官方 API Key，费用按量计费。` : api ? "直接调用 Exa 搜索 API，需要 API Key。" : "通过 Exa MCP 搜索，Key 选填；匿名额度和限流由 Exa 决定。"}查询会发送给所配置的搜索服务。`}</SettingsHelp>
-      </div>
+      </div><p className="network-search-service-description">{additional ? "启用并保存后，可在聊天中选择" : api ? "使用 API Key 连接 Exa 搜索" : "支持匿名搜索，也可填写独立 Key"}</p></div>
       {"enabled" in draft && <div className="settings-label-help">
-        <label className="network-search-enable" htmlFor={id + "-enabled"}><input id={id + "-enabled"} type="checkbox" checked={draft.enabled} disabled={busy}
+        <label className="network-search-enable" htmlFor={id + "-enabled"}><input id={id + "-enabled"} className="ui-switch" type="checkbox" role="switch" checked={draft.enabled} disabled={busy}
           onChange={(event) => { setDraft({ ...draft, enabled: event.target.checked }); setFeedback(""); }} />启用{name === "Tavily" ? " Tavily " : name}搜索</label>
         <SettingsHelp label={name + "启用"}>启用并保存后出现在聊天搜索菜单；关闭后保存即可隐藏。测试搜索也需要 API Key。</SettingsHelp>
       </div>}
     </header>
-    {provider === "tavily" && <div className="network-search-provider-info">
-      <span className="settings-label-help">每月免费 1,000 credits<SettingsHelp label="Tavily 计费">按量付费 $0.008/credit。Basic 每次 1 credit（$8/1,000 次），Advanced 每次 2 credits（$16/1,000 次）。搜索深度由你选择，不会自动升级。</SettingsHelp></span>
-      {officialLink("https://app.tavily.com", "获取 Tavily API Key")}{officialLink("https://docs.tavily.com/documentation/api-credits", "Tavily 官方计费说明")}
-    </div>}
-    {provider === "zhipu" && <div className="network-search-provider-info">
-      <span className="settings-label-help">按量计费 · ¥0.01–0.05/次<SettingsHelp label="智谱计费与限制">search_std ¥0.01/次；search_pro ¥0.03/次；search_pro_sogou 与 search_pro_quark ¥0.05/次。Coding Plan 的 MCP 搜索与此处按量计费的搜索 API 分开，不代表包含本接口额度。搜索问题最多 70 个字符；Sogou 请求 10 条后按设置数量显示。</SettingsHelp></span>
-      {officialLink("https://bigmodel.cn", "获取智谱 API Key")}{officialLink("https://docs.bigmodel.cn/cn/guide/tools/web-search", "智谱官方搜索文档")}
-    </div>}
-    <fieldset disabled={busy} className={`network-search-fields${additional ? "" : " network-search-fields-compact"}`}>
+    <fieldset disabled={busy} className="network-search-fields">
+      <legend className="network-search-section-label">连接信息</legend>
       <div className="network-search-row">
       <label className="field-label" htmlFor={id + "-base-url"}>服务地址</label>
       <div className="network-search-address">
       <input id={id + "-base-url"} className="field" type="url" value={draft.baseUrl} spellCheck={false}
         onChange={(event) => { setDraft({ ...draft, baseUrl: event.target.value }); setFeedback(""); }} />
-      <button type="button" className="settings-button" onClick={() => {
+      <button type="button" className="icon-button network-search-field-action" aria-label="恢复官方地址" title="恢复官方地址" onClick={() => {
         setDraft({ ...draft, baseUrl: defaultSearchConfiguration()[searchProfileKeys[provider]].baseUrl }); setFeedback("");
-      }}>恢复官方地址</button></div></div>
+      }}><RotateCcw size={16} aria-hidden="true" /></button></div></div>
       <div className="network-search-row">
       <div className="settings-label-help"><label className="field-label" htmlFor={id + "-api-key"}>API Key</label>
         <SettingsHelp label={name + " API Key"}>{`${additional ? "启用或测试时必填。" : api ? "必填。" : "选填。"}此 Key 与聊天连接及其他搜索配置独立；${additional ? "关闭时可留空保存草稿。" : api ? "Exa API 不支持匿名方式。" : "留空使用匿名方式。"}当前在本机以明文保存，尚未加密。`}</SettingsHelp>
@@ -136,10 +130,11 @@ function SearchProfileCard({ provider, initial, onSave }: {
           onChange={(event) => { setDraft({ ...draft, apiKey: event.target.value }); setFeedback(""); }} />
         <button type="button" className="icon-button" aria-label={showKey ? "隐藏 " + name + " Key" : "显示 " + name + " Key"} aria-pressed={showKey}
           onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}</button>
-        <button type="button" className="settings-button" disabled={!draft.apiKey} onClick={() => { setDraft({ ...draft, apiKey: "" }); setFeedback(""); }}>清空 Key</button>
+        <button type="button" className="icon-button network-search-field-action" aria-label="清空 Key" title="清空 Key" disabled={!draft.apiKey} onClick={() => { setDraft({ ...draft, apiKey: "" }); setFeedback(""); }}><X size={16} aria-hidden="true" /></button>
       </div>
       </div>
-      <div className="network-search-options">
+      <div className="network-search-options" role="group" aria-labelledby={id + "-options-title"}>
+      <h4 className="network-search-section-label" id={id + "-options-title"}>搜索选项</h4>
       <div className="network-search-option network-search-result-option">
         <label className="field-label" htmlFor={id + "-num-results"}>结果数量</label>
         <input id={id + "-num-results"} className="field network-search-count" type="number" min="1" max="10" step="1" value={numResults}
@@ -148,19 +143,18 @@ function SearchProfileCard({ provider, initial, onSave }: {
       </div>
       {"searchDepth" in draft && <div className="network-search-option">
         <label className="field-label" htmlFor={id + "-search-depth"}>搜索深度</label>
-        <select id={id + "-search-depth"} className="field" value={draft.searchDepth} onChange={(event) => {
-          if (event.target.value === "basic" || event.target.value === "advanced") setDraft({ ...draft, searchDepth: event.target.value });
+        <SelectField id={id + "-search-depth"} label="搜索深度" value={draft.searchDepth} onChange={(value) => {
+          if (value === "basic" || value === "advanced") setDraft({ ...draft, searchDepth: value });
           setFeedback("");
-        }}><option value="basic">Basic（1 credit/次）</option><option value="advanced">Advanced（2 credits/次）</option></select>
+        }} options={[{ value: "basic", label: "Basic（1 credit/次）" }, { value: "advanced", label: "Advanced（2 credits/次）" }]} />
       </div>}
       {"searchEngine" in draft && <div className="network-search-option">
         <label className="field-label" htmlFor={id + "-search-engine"}>搜索引擎</label>
-        <select id={id + "-search-engine"} className="field" value={draft.searchEngine} onChange={(event) => {
-          const searchEngine = event.target.value;
+        <SelectField id={id + "-search-engine"} label="搜索引擎" value={draft.searchEngine} onChange={(searchEngine) => {
           if (searchEngine === "search_std" || searchEngine === "search_pro" || searchEngine === "search_pro_sogou" || searchEngine === "search_pro_quark") setDraft({ ...draft, searchEngine });
           setFeedback("");
-        }}><option value="search_std">search_std（¥0.01/次）</option><option value="search_pro">search_pro（¥0.03/次）</option>
-          <option value="search_pro_sogou">search_pro_sogou（¥0.05/次）</option><option value="search_pro_quark">search_pro_quark（¥0.05/次）</option></select>
+        }} options={[{ value: "search_std", label: "search_std（¥0.01/次）" }, { value: "search_pro", label: "search_pro（¥0.03/次）" },
+          { value: "search_pro_sogou", label: "search_pro_sogou（¥0.05/次）" }, { value: "search_pro_quark", label: "search_pro_quark（¥0.05/次）" }]} />
       </div>}
       </div>
       <div className="network-search-actions">
@@ -171,6 +165,14 @@ function SearchProfileCard({ provider, initial, onSave }: {
       </div>
     </fieldset>
     {testing && <button type="button" className="settings-button" onClick={stopTest}>停止测试</button>}
+    {provider === "tavily" && <div className="network-search-provider-info">
+      <span className="settings-label-help">每月免费 1,000 credits<SettingsHelp label="Tavily 计费">按量付费 $0.008/credit。Basic 每次 1 credit（$8/1,000 次），Advanced 每次 2 credits（$16/1,000 次）。搜索深度由你选择，不会自动升级。</SettingsHelp></span>
+      {officialLink("https://app.tavily.com", "获取 Tavily API Key")}{officialLink("https://docs.tavily.com/documentation/api-credits", "Tavily 官方计费说明")}
+    </div>}
+    {provider === "zhipu" && <div className="network-search-provider-info">
+      <span className="settings-label-help">按量计费 · ¥0.01–0.05/次<SettingsHelp label="智谱计费与限制">search_std ¥0.01/次；search_pro ¥0.03/次；search_pro_sogou 与 search_pro_quark ¥0.05/次。Coding Plan 的 MCP 搜索与此处按量计费的搜索 API 分开，不代表包含本接口额度。搜索问题最多 70 个字符；Sogou 请求 10 条后按设置数量显示。</SettingsHelp></span>
+      {officialLink("https://bigmodel.cn", "获取智谱 API Key")}{officialLink("https://docs.bigmodel.cn/cn/guide/tools/web-search", "智谱官方搜索文档")}
+    </div>}
     {error && <p className="error-banner" role="alert">{error}</p>}
     {feedback && <p className="muted-text" role="status">{feedback}</p>}
     {test && <div aria-label={name + " 测试搜索结果"}><SearchResults search={test} showCitationNotice={false} /></div>}
@@ -201,7 +203,7 @@ export function NetworkSearchSettings() {
     return result[key];
   }
   return <section className="settings-page network-search-page" aria-labelledby="network-search-title">
-    <header className="settings-page-heading"><h2 id="network-search-title">网络搜索</h2><p className="muted-text">独立配置 Exa API、Exa MCP、Tavily 与智谱；聊天中选择所需搜索方式。</p></header>
+    <header className="settings-page-heading"><h2 id="network-search-title">网络搜索</h2><p className="muted-text">配置搜索服务，为对话补充网络信息。</p></header>
     {!initial && !loadFailed && <p role="status">正在读取搜索设置…</p>}
     {loadFailed && <section className="settings-card network-search-card">
       <p className="error-banner" role="alert">无法读取搜索设置，请重试。</p>

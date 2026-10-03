@@ -27,6 +27,8 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     onThemeModeChange: vi.fn(), onAccentColorChange: vi.fn(), onCanvasColorChange: vi.fn(),
     onAssistantBubbleColorChange: vi.fn(), onAssistantBubbleTransparencyChange: vi.fn(), onEditBackgroundFocus: vi.fn(),
     onUnifiedTransparencyChange: vi.fn(), onSidebarTransparencyChange: vi.fn(), onComposerTransparencyChange: vi.fn(),
+    onChromeTransparencyChange: vi.fn(),
+    onSidebarGlassEnabledChange: vi.fn(), onComposerGlassEnabledChange: vi.fn(),
     onBackgroundFitChange: vi.fn(), onBackgroundMaskChange: vi.fn(), onBackgroundBlurChange: vi.fn(),
     onPrepareLibraryBackground: vi.fn().mockResolvedValue(null), onSaveLibraryBackground: vi.fn(),
     onDiscardLibraryBackground: vi.fn().mockResolvedValue(undefined), onResolveLibraryBackground: vi.fn().mockResolvedValue({ reference: "backgrounds/example.webp", url: "asset://localhost/example.webp" }),
@@ -38,6 +40,8 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     colorPreset: "default",
     themeMode: "system", resolvedTheme: "light", accentColor: null, canvasColor: null,
     assistantBubbleColor: "#123456", unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0,
+    chromeTransparency: 40,
+    sidebarGlassEnabled: false, composerGlassEnabled: false,
     assistantBubbleTransparency: 6, effectiveAccentColor: "#6d28d9", effectiveCanvasColor: "#fafaf9",
     backgroundReference: "backgrounds/example.webp", backgroundUrl: "asset://localhost/example.webp", backgroundFocus: null, backgroundFit: "cover",
     backgroundLibrary: [], backgroundEnabled: true, backgroundName: "example.webp",
@@ -54,6 +58,61 @@ function changeRange(input: HTMLInputElement, value: string) {
 }
 
 describe("AppearanceSettings", () => {
+  it("adjusts and resets the shared titlebar/rail background independently", async () => {
+    const { handlers } = await render({ chromeTransparency: 53, sidebarTransparency: 53, composerTransparency: 53,
+      assistantBubbleTransparency: 53, unifiedTransparency: 53 });
+    expect(host!.querySelector('.appearance-transparency-group')!.textContent).not.toContain("已分别调整");
+    const slider = host!.querySelector<HTMLInputElement>('input[aria-label="顶栏与功能栏背景透明度"]')!;
+    await act(async () => changeRange(slider, "77"));
+    expect(handlers.onChromeTransparencyChange).toHaveBeenCalledWith(77);
+    const reset = host!.querySelector<HTMLButtonElement>('button[aria-label="恢复顶栏与功能栏背景透明度默认值"]')!;
+    await act(async () => reset.click());
+    expect(handlers.onChromeTransparencyChange).toHaveBeenLastCalledWith(40);
+    expect(handlers.onSidebarTransparencyChange).not.toHaveBeenCalled();
+    expect(handlers.onUnifiedTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it("resets sidebar transparency to the tuned default independently", async () => {
+    const { handlers } = await render({ sidebarTransparency: 40 });
+    const reset = host!.querySelector<HTMLButtonElement>('button[aria-label="恢复侧栏透明度默认值"]')!;
+    await act(async () => reset.click());
+    expect(handlers.onSidebarTransparencyChange).toHaveBeenLastCalledWith(50);
+    expect(handlers.onChromeTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it("resets message bubble transparency to the tuned default independently", async () => {
+    const { handlers } = await render({ assistantBubbleTransparency: 30 });
+    const reset = host!.querySelector<HTMLButtonElement>('button[aria-label="恢复消息气泡透明度默认值"]')!;
+    await act(async () => reset.click());
+    expect(handlers.onAssistantBubbleTransparencyChange).toHaveBeenLastCalledWith(12);
+    expect(handlers.onSidebarTransparencyChange).not.toHaveBeenCalled();
+    expect(handlers.onChromeTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("toggles each glass region independently from %s without changing stored transparency", async enabled => {
+    const { handlers } = await render({ sidebarGlassEnabled: enabled, composerGlassEnabled: enabled,
+      sidebarTransparency: 37, composerTransparency: 62 });
+    const sidebar = host!.querySelector<HTMLInputElement>('[aria-label="侧栏玻璃效果"]')!;
+    const composer = host!.querySelector<HTMLInputElement>('[aria-label="输入区域玻璃效果"]')!;
+    expect(sidebar.getAttribute("role")).toBe("switch");
+    expect(sidebar.checked).toBe(enabled);
+    expect(composer.getAttribute("role")).toBe("switch");
+    expect(composer.checked).toBe(enabled);
+    const sidebarRange = host!.querySelector<HTMLInputElement>('[aria-label="侧栏透明度"]')!;
+    const composerRange = host!.querySelector<HTMLInputElement>('[aria-label="输入区域透明度"]')!;
+    expect(sidebarRange.value).toBe("37"); expect(composerRange.value).toBe("62");
+    expect(sidebarRange.disabled).toBe(false); expect(composerRange.disabled).toBe(false);
+    expect(host!.textContent).toContain("仅作用于聊天助手栏和对话栏，不影响设置分类导航");
+    expect(host!.textContent!.includes("关闭效果后使用")).toBe(enabled);
+    await act(async () => sidebar.click());
+    expect(handlers.onSidebarGlassEnabledChange).toHaveBeenCalledWith(!enabled);
+    expect(handlers.onComposerGlassEnabledChange).not.toHaveBeenCalled();
+    await act(async () => composer.click());
+    expect(handlers.onComposerGlassEnabledChange).toHaveBeenCalledWith(!enabled);
+    expect(handlers.onSidebarTransparencyChange).not.toHaveBeenCalled();
+    expect(handlers.onComposerTransparencyChange).not.toHaveBeenCalled();
+    expect(handlers.onUnifiedTransparencyChange).not.toHaveBeenCalled();
+  });
   it.each([0, 16, 32])("changes blur to %ipx without adding a preview zoom", async (blur) => {
     await render({ backgroundBlur: blur, backgroundFit: "contain", backgroundFocus: { x: .3, y: .7, zoom: 1.5 } });
     const preview = host!.querySelector<HTMLElement>(".appearance-background-preview")!;
@@ -192,7 +251,7 @@ describe("AppearanceSettings", () => {
     await act(async () => help.focus());
     const tooltipId = help.getAttribute("aria-describedby");
     expect(tooltipId).toBeTruthy();
-    expect(document.getElementById(tooltipId!)?.textContent).toBe("各区域透明度不同，调整统一滑块将覆盖三个区域的设置。");
+    expect(document.getElementById(tooltipId!)?.textContent).toBe("各区域透明度不同，调整统一滑块将覆盖四个区域的设置。");
     expect(host!.querySelector('[role="tooltip"]')).toBeNull();
     await act(async () => help.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(help.hasAttribute("aria-describedby")).toBe(false);

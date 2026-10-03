@@ -29,7 +29,12 @@ function button(label: string) {
 }
 function dialog() { return document.querySelector<HTMLFormElement>('[role="dialog"]'); }
 async function choose(id = preset.id) {
-  await act(async () => { const select = host.querySelector("select")!; select.value = id; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  await act(async () => button("提示词预设").click());
+  const options = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")];
+  const item = options.find(option => id === "preset-two" ? option.querySelector("small")?.textContent === "另一条提示词"
+    : id === "" ? option.querySelector("strong")?.textContent === "选择预设，直接载入提示词" : option.querySelector("small")?.textContent === preset.content);
+  if (!item) throw new Error(`Missing preset: ${id}`);
+  await act(async () => item.click());
 }
 async function fill(selector: "input" | "textarea", value: string) {
   const input = dialog()!.querySelector(selector)!;
@@ -43,15 +48,44 @@ async function click(label: string) {
   await act(async () => button(label).click());
 }
 
+it("filters presets without applying them and uses the latest callback for one explicit choice", async () => {
+  const options = props(), onApply = vi.fn();
+  const second = { ...preset, id: "preset-two", name: "海边", content: "另一条提示词" };
+  await act(async () => root.render(<DrawingPresets {...options} presets={[preset, second]} />));
+  const trigger = button("提示词预设");
+  await act(async () => { trigger.focus(); trigger.click(); });
+  const search = document.querySelector<HTMLInputElement>('[aria-label="搜索提示词预设"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "海边");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  expect(document.querySelectorAll(".model-picker-option")).toHaveLength(1);
+  expect(document.querySelector(".model-picker-option strong")?.textContent).toBe(second.name);
+  expect(options.onApply).not.toHaveBeenCalled();
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="关闭提示词预设"]')!.click());
+  expect(document.activeElement).toBe(trigger);
+  await act(async () => trigger.click());
+  await act(async () => root.render(<DrawingPresets {...options} presets={[preset, second]} onApply={onApply} />));
+  const item = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")].find(option => option.querySelector("strong")?.textContent === second.name)!;
+  await act(async () => item.click());
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(second.id);
+  expect(options.onApply).not.toHaveBeenCalled();
+  expect(options.onCreate).not.toHaveBeenCalled();
+  expect(options.onUpdate).not.toHaveBeenCalled();
+  expect(options.onDelete).not.toHaveBeenCalled();
+  expect(dialog()).toBeNull();
+});
+
 it("shows four persistent actions and enables selection-dependent actions only after choosing a preset", async () => {
   await act(async () => root.render(<DrawingPresets {...props()} />));
   const actions = ["更新预设", "另存预设", "编辑预设", "删除预设"];
-  expect([...host.querySelectorAll("button")].map(item => item.textContent)).toEqual(actions);
+  expect([...host.querySelectorAll(".drawing-actions button")].map(item => item.textContent)).toEqual(["更新", "另存", "编辑", "删除"]);
   for (const action of actions) {
     expect(button(action).closest("[hidden]")).toBeNull();
     expect(button(action).disabled).toBe(action !== "另存预设");
   }
-  const select = host.querySelector("select")!;
+  const select = button("提示词预设");
   expect(host.querySelector("label")?.htmlFor).toBe(select.id);
   expect(host.querySelector("label")?.textContent).toBe("提示词预设");
   await choose();
@@ -67,11 +101,11 @@ it("loads the exact ID immediately even when names repeat and never auto binds d
   expect(options.onApply).toHaveBeenCalledExactlyOnceWith(duplicate.id);
   expect(dialog()).toBeNull();
   await act(async () => root.render(<DrawingPresets {...options} presets={[duplicate, preset]} prompt="修改后的草稿" />));
-  expect(host.querySelector("select")!.value).toBe(duplicate.id);
+  expect(button("提示词预设").querySelector("span")?.textContent).toBe(duplicate.name);
   expect(options.onApply).toHaveBeenCalledTimes(1);
   expect(options.onUpdate).not.toHaveBeenCalled();
   await act(async () => root.render(<DrawingPresets {...options} presets={[preset]} />));
-  expect(host.querySelector("select")!.value).toBe("");
+  expect(button("提示词预设").querySelector("span")?.textContent).toBe("选择预设，直接载入提示词");
   expect(button("更新预设").disabled).toBe(true);
   expect(options.onApply).toHaveBeenCalledTimes(1);
 });
@@ -231,5 +265,5 @@ it("blocks writes when disabled or the selected preset is deleted, and traps key
   await click("取消");
   await act(async () => root.render(<DrawingPresets {...options} disabled />));
   expect([...host.querySelectorAll<HTMLButtonElement>("button")].every(button => button.disabled)).toBe(true);
-  expect(host.querySelector("select")!.disabled).toBe(true);
+  expect(button("提示词预设").disabled).toBe(true);
 });

@@ -1,5 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { X } from "lucide-react";
+import { SearchSelectField } from "../SearchSelectField";
 import type { DrawingPresetInput, DrawingPromptPreset } from "../../drawing/presets";
 
 type PresetDialog = {
@@ -66,7 +68,7 @@ function PresetEditor({ initial, disabled, targetExists, onClose, onSave }: {
         else if (!event.shiftKey && (index < 0 || index === fields.length - 1)) { event.preventDefault(); fields[0]?.focus(); }
       }}>
       <div className="drawing-section-heading"><h2 id={titleId}>{title}</h2>
-        <button type="button" className="drawing-button" aria-label="关闭预设弹窗" disabled={saving} onClick={close}>关闭</button>
+        <button type="button" className="drawing-button drawing-preset-close" aria-label="关闭预设弹窗" disabled={saving} onClick={close}><X size={18} /></button>
       </div>
       {deleting ? <p>删除“{initial.name}”？当前提示词草稿和历史任务会保留。</p> : <>
         <label className="drawing-field"><span className="drawing-label">预设名称</span>
@@ -81,7 +83,7 @@ function PresetEditor({ initial, disabled, targetExists, onClose, onSave }: {
       {error && <p className="drawing-error" role="alert">{error}</p>}
       <div className="drawing-actions">
         <button type="button" className="drawing-button drawing-preset-cancel" disabled={saving} onClick={close}>取消</button>
-        <button type="submit" className="drawing-button" disabled={disabled || saving || !targetExists || (!deleting && (!name.trim() || !content.trim()))}>
+        <button type="submit" className={`drawing-button drawing-preset-submit${deleting ? " drawing-preset-delete" : ""}`} disabled={disabled || saving || !targetExists || (!deleting && (!name.trim() || !content.trim()))}>
           {saving ? "正在处理…" : deleting ? "确认删除预设" : "保存预设"}
         </button>
       </div>
@@ -121,18 +123,17 @@ export function DrawingPresets({ presets, prompt, disabled = false, onApply, onC
   return <section className="drawing-presets" aria-label="提示词预设">
     <div className="drawing-field drawing-preset-controls" inert={dialogOpen}>
       <label className="drawing-label" htmlFor={selectId}>提示词预设</label>
-      <select id={selectId} value={selected?.id ?? ""} disabled={disabled} onChange={event => {
-        const id = event.target.value;
-        setSelectedId(id);
-        if (presets.some(preset => preset.id === id)) onApply(id);
-      }}>
-        <option value="">选择预设，直接载入提示词</option>
-        {presets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-      </select>
+      <SearchSelectField id={selectId} label="提示词预设" value={selected?.id ?? ""} disabled={disabled}
+        options={[{ value: "", label: "选择预设，直接载入提示词" }, ...presets.map(preset => ({ value: preset.id, label: preset.name, description: preset.content.length > 160 ? `${preset.content.slice(0, 160)}…` : preset.content }))]}
+        onChange={id => {
+          setSelectedId(id);
+          if (presets.some(preset => preset.id === id)) onApply(id);
+        }} />
       <div className="drawing-actions">
         {([
-          ["update", "更新预设"], ["save-as", "另存预设"], ["edit", "编辑预设"], ["delete", "删除预设"],
+          ["update", "更新"], ["save-as", "另存"], ["edit", "编辑"], ["delete", "删除"],
         ] as const).map(([kind, label]) => <button key={kind} type="button" className="drawing-button"
+          aria-label={`${label}预设`} title={`${label}预设`}
           disabled={disabled || (kind !== "save-as" && !selected)} onClick={event => open(kind, event.currentTarget)}>{label}</button>)}
       </div>
     </div>

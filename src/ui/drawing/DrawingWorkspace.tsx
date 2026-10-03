@@ -1,6 +1,8 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { ChevronDown, FolderOpen, RotateCcw } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
+import { SelectField } from "../SelectField";
+import { SearchSelectField } from "../SearchSelectField";
 import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingParameters, DrawingProtocol, DrawingReferenceSelection, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
 import { DrawingReferences } from "./DrawingReferences";
 import { DrawingPresets } from "./DrawingPresets";
@@ -13,7 +15,7 @@ import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImag
 import { geminiSafetyThresholds } from "../../drawing/geminiOptions";
 import { grokAspectRatios, grokResolutions, grokQualities, initialGrokDrawingOptions } from "../../drawing/grokImages";
 import { initialSeedreamDrawingOptions, seedreamModelVersions, seedreamSizesByVersion } from "../../drawing/seedreamImages";
-import type { GeminiDrawingOptions, GeminiSafetyThreshold } from "../../drawing/types";
+import type { GeminiDrawingOptions } from "../../drawing/types";
 import "./DrawingWorkspace.css";
 
 export { initialDrawingDraft } from "../../drawing/types";
@@ -81,7 +83,7 @@ function TaskConfirmationDialog({ confirmation, valid, onClose, onConfirm }: {
     {!valid && <p className="drawing-error" role="alert">{confirmation.kind === "delete-results" ? "成果状态已变化或正在处理，请取消后重新确认。" : "任务状态已变化或正在处理，请取消后重新确认。"}</p>}
     <div className="drawing-actions">
       <button type="button" className="drawing-button" onClick={onClose}>取消</button>
-      <button type="button" className="drawing-button" disabled={!valid} onClick={event => {
+      <button type="button" className={`drawing-button ${confirmation.kind === "regenerate" ? "confirm-primary" : "confirm-danger"}`} disabled={!valid} onClick={event => {
         if (event.detail > 1 || accepted.current || !valid) return;
         accepted.current = true;
         onConfirm();
@@ -351,19 +353,25 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
   }
 
   function resultActions(result: DrawingResult) {
-    return <div className="drawing-actions">
+    return <>
       <button type="button" className="drawing-button" disabled={!canManage} onClick={() => onExport(result.id)}>导出图片</button>
-      {onExportResults && <button type="button" className="drawing-button" disabled={!canManage}
-        onClick={() => onExportResults([result.id], true)}>导出带参数 PNG</button>}
-      {onCopyPrompt && <button type="button" className="drawing-button" disabled={!canManage}
-        onClick={() => onCopyPrompt(result.id)}>复制提示词</button>}
       <button type="button" className="drawing-button" disabled={!canManage || referencesBusy}
         onClick={() => reuseResult(result.id)}>复用参数</button>
       <button type="button" className="drawing-button" disabled={!canEditReferences}
         onClick={() => onUseAsReference(result.id)}>作为参考图</button>
-      {onDeleteResults && <button type="button" className="drawing-button" disabled={!canManage}
+      {(onExportResults || onCopyPrompt || onDeleteResults) && <details key={result.id} className="drawing-result-more">
+        <summary className="drawing-button">更多<ChevronDown size={14} aria-hidden="true" /></summary>
+        <div className="drawing-result-more-content">
+      {onExportResults && <button type="button" className="drawing-button" disabled={!canManage}
+        onClick={() => onExportResults([result.id], true)}>导出带参数 PNG</button>}
+      {onExportResults && <p className="drawing-muted">带参数 PNG 含提示词等生成参数，不含参考图原件，不保证可确定复现；分享前请确认内容。</p>}
+      {onCopyPrompt && <button type="button" className="drawing-button" disabled={!canManage}
+        onClick={() => onCopyPrompt(result.id)}>复制提示词</button>}
+      {onDeleteResults && <button type="button" className="drawing-button drawing-menu-danger" disabled={!canManage}
         aria-label={`删除成果 ${resultNumber(result.id)}`} onClick={event => deleteResults([result.id], event.currentTarget)}>删除成果</button>}
-    </div>;
+        </div>
+      </details>}
+    </>;
   }
 
   function reuseResult(id: string) {
@@ -403,15 +411,16 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               <div className="drawing-field">
                 <label className="drawing-label" htmlFor="drawing-model">绘图模型</label>
                 <div className="drawing-model">
-                  <select id="drawing-model" value={draft.modelId ?? ""} disabled={!ready}
-                    onChange={(event) => {
-                      const next = { ...draft, modelId: event.target.value || null };
+                  <SearchSelectField id="drawing-model" label="绘图模型" value={draft.modelId ?? ""} disabled={!ready}
+                    options={[
+                      { value: "", label: reusedProtocol ? `选择绘图模型（已复用 ${protocolNames[reusedProtocol]} 参数）` : "选择绘图模型" },
+                      ...models.map(model => ({ value: model.id, label: model.label, group: protocolNames[model.protocol] })),
+                    ]}
+                    onChange={value => {
+                      const next = { ...draft, modelId: value || null };
                       delete next.reusedProtocol;
                       onDraftChange(next);
-                    }}>
-                    <option value="">{reusedProtocol ? `选择绘图模型（已复用 ${protocolNames[reusedProtocol]} 参数）` : "选择绘图模型"}</option>
-                    {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-                  </select>
+                    }} />
                   <button type="button" className="drawing-button" onClick={onConfigure}>前往设置</button>
                 </div>
                 {reusedProtocol && <p className="drawing-muted" role="status">原模型不可用，请重新选择绘图模型。已保留 {protocolNames[reusedProtocol]} 协议参数。</p>}
@@ -432,81 +441,77 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 <div className="drawing-parameters">
                   <label className="drawing-field">
                     <span className="drawing-label">尺寸</span>
-                    <select value={presetSize ? size : "custom"} onChange={event => setOpenAI({ size: event.target.value === "custom" ? "1536x864" : event.target.value })}>
-                      {openAIImageSizes.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value.replace("x", " × ")}</option>)}
-                      <option value="custom">自定义尺寸</option>
-                    </select>
+                    <SelectField label="尺寸" value={presetSize ? size : "custom"}
+                      options={[...openAIImageSizes.map(value => ({ value, label: value === "auto" ? "自动" : value.replace("x", " × ") })), { value: "custom", label: "自定义尺寸" }]}
+                      onChange={value => setOpenAI({ size: value === "custom" ? "1536x864" : value })} />
                   </label>
                   <label className="drawing-field">
                     <span className="drawing-label">画质</span>
-                    <select value={quality} onChange={event => setOpenAI({ quality: event.target.value })}>
-                      {openAIImageQualities.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                    </select>
+                    <SelectField label="画质" value={quality}
+                      options={openAIImageQualities.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
+                      onChange={value => setOpenAI({ quality: value })} />
                   </label>
                 </div>
               </> : grok ? <>
                 <label className="drawing-field"><span className="drawing-label">Grok 版本契约</span>
-                  <select aria-label="Grok 版本契约" value={grokOptions.modelVersion} onChange={event => setGrok({ modelVersion: event.target.value as "legacy" | "2.0" })}>
-                    <option value="legacy">legacy</option><option value="2.0">2.0</option>
-                  </select>
+                  <SelectField label="Grok 版本契约" value={grokOptions.modelVersion}
+                    options={[{ value: "legacy", label: "legacy" }, { value: "2.0", label: "2.0" }]}
+                    onChange={value => { if (value === "legacy" || value === "2.0") setGrok({ modelVersion: value }); }} />
                 </label>
                 <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">宽高比</span>
-                    <select aria-label="Grok 宽高比" value={grokOptions.aspectRatio} onChange={event => setGrok({ aspectRatio: event.target.value })}>
-                      {grokAspectRatios.map(value => <option key={value} value={value} disabled={grokOptions.modelVersion === "legacy" && ["21:9", "5:2"].includes(value)}>{value === "auto" ? "自动" : value}</option>)}
-                    </select>
+                    <SelectField label="Grok 宽高比" value={grokOptions.aspectRatio}
+                      options={grokAspectRatios.map(value => ({ value, label: value === "auto" ? "自动" : value, disabled: grokOptions.modelVersion === "legacy" && ["21:9", "5:2"].includes(value) }))}
+                      onChange={value => setGrok({ aspectRatio: value })} />
                   </label>
                   <label className="drawing-field"><span className="drawing-label">分辨率</span>
-                    <select aria-label="Grok 分辨率" value={grokOptions.resolution} onChange={event => setGrok({ resolution: event.target.value })}>
-                      {grokResolutions.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                    </select>
+                    <SelectField label="Grok 分辨率" value={grokOptions.resolution}
+                      options={grokResolutions.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
+                      onChange={value => setGrok({ resolution: value })} />
                   </label>
                 </div>
                 <label className="drawing-field"><span className="drawing-label">画质</span>
-                  <select aria-label="Grok 画质" value={grokOptions.quality} onChange={event => setGrok({ quality: event.target.value })}>
-                    {grokQualities.map(value => <option key={value} value={value} disabled={value !== "auto" && grokOptions.modelVersion !== "2.0"}>{value === "auto" ? "自动" : value}</option>)}
-                  </select>
+                  <SelectField label="Grok 画质" value={grokOptions.quality}
+                    options={grokQualities.map(value => ({ value, label: value === "auto" ? "自动" : value, disabled: value !== "auto" && grokOptions.modelVersion !== "2.0" }))}
+                    onChange={value => setGrok({ quality: value })} />
                 </label>
               </> : seedream ? <>
                 <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">Seedream 版本契约</span>
-                    <select aria-label="Seedream 版本契约" value={seedreamOptions.modelVersion} onChange={event => setSeedream({ modelVersion: event.target.value as NonNullable<DrawingDraft["seedream"]>["modelVersion"] })}>
-                      {seedreamModelVersions.map(value => <option key={value} value={value}>{value}</option>)}
-                    </select>
+                    <SelectField label="Seedream 版本契约" value={seedreamOptions.modelVersion}
+                      options={seedreamModelVersions.map(value => ({ value, label: value }))}
+                      onChange={value => { const modelVersion = seedreamModelVersions.find(version => version === value); if (modelVersion) setSeedream({ modelVersion }); }} />
                   </label>
                   <label className="drawing-field"><span className="drawing-label">尺寸</span>
-                    <select aria-label="Seedream 尺寸" value={seedreamPreset ? seedreamOptions.size : "custom"} onChange={event => setSeedream({ size: event.target.value === "custom" ? "" : event.target.value })}>
-                      {seedreamSizes.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                      <option value="custom">自定义尺寸</option>
-                    </select>
+                    <SelectField label="Seedream 尺寸" value={seedreamPreset ? seedreamOptions.size : "custom"}
+                      options={[...seedreamSizes.map(value => ({ value, label: value === "auto" ? "自动" : value })), { value: "custom", label: "自定义尺寸" }]}
+                      onChange={value => setSeedream({ size: value === "custom" ? "" : value })} />
                   </label>
                 </div>
                 <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">输出格式</span>
-                    <select aria-label="Seedream 输出格式" value={seedreamOptions.outputFormat} onChange={event => setSeedream({ outputFormat: event.target.value as NonNullable<DrawingDraft["seedream"]>["outputFormat"] })}>
-                      <option value="auto">自动</option><option value="png" disabled={!seedreamOptions.modelVersion.startsWith("5.0")}>PNG</option><option value="jpeg" disabled={!seedreamOptions.modelVersion.startsWith("5.0")}>JPEG</option>
-                    </select>
+                    <SelectField label="Seedream 输出格式" value={seedreamOptions.outputFormat}
+                      options={[{ value: "auto", label: "自动" }, { value: "png", label: "PNG", disabled: !seedreamOptions.modelVersion.startsWith("5.0") }, { value: "jpeg", label: "JPEG", disabled: !seedreamOptions.modelVersion.startsWith("5.0") }]}
+                      onChange={value => { if (value === "auto" || value === "png" || value === "jpeg") setSeedream({ outputFormat: value }); }} />
                   </label>
                   <label className="drawing-field"><span className="drawing-label">水印</span>
-                    <select aria-label="Seedream 水印" value={seedreamOptions.watermark} onChange={event => setSeedream({ watermark: event.target.value as NonNullable<DrawingDraft["seedream"]>["watermark"] })}>
-                      <option value="auto">自动</option><option value="on">开启</option><option value="off">关闭</option>
-                    </select>
+                    <SelectField label="Seedream 水印" value={seedreamOptions.watermark}
+                      options={[{ value: "auto", label: "自动" }, { value: "on", label: "开启" }, { value: "off", label: "关闭" }]}
+                      onChange={value => { if (value === "auto" || value === "on" || value === "off") setSeedream({ watermark: value }); }} />
                   </label>
                 </div>
               </> : <><div className="drawing-parameters">
                 <label className="drawing-field">
                   <span className="drawing-label">宽高比</span>
-                  <select value={draft.aspectRatio}
-                    onChange={(event) => onDraftChange({ ...draft, aspectRatio: event.target.value })}>
-                    {drawingAspectRatios.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                  </select>
+                  <SelectField label="宽高比" value={draft.aspectRatio}
+                    options={drawingAspectRatios.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
+                    onChange={value => onDraftChange({ ...draft, aspectRatio: value })} />
                 </label>
                 <label className="drawing-field">
                   <span className="drawing-label">分辨率</span>
-                  <select value={draft.resolution}
-                    onChange={(event) => onDraftChange({ ...draft, resolution: event.target.value })}>
-                    {drawingResolutions.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value === "512" ? "512（0.5K）" : value}</option>)}
-                  </select>
+                  <SelectField label="分辨率" value={draft.resolution}
+                    options={drawingResolutions.map(value => ({ value, label: value === "auto" ? "自动" : value === "512" ? "512（0.5K）" : value }))}
+                    onChange={value => onDraftChange({ ...draft, resolution: value })} />
                 </label>
               </div>
               </>}
@@ -525,13 +530,13 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               <div className="drawing-parameter-extra drawing-parameter-tools">
                 {protocol === "gemini-image" && <button type="button" className="drawing-button" aria-expanded={advancedOpen}
                   aria-controls="drawing-gemini-advanced" onClick={() => setAdvancedOpen(!advancedOpen)}>Gemini 高级参数</button>}
-                <SettingsHelp label="参数">{openai
+                <span className="drawing-parameter-help-label">参数说明<SettingsHelp label="参数">{openai
                   ? "xhigh／max 需 GPT Image 2.5 或服务支持。自定义尺寸需 GPT Image 2／2.5：边长为 16 的倍数且不超过 3840，比例在 1:3 至 3:1，总像素 655360–8294400；高于 2560 × 1440 为实验性尺寸。旧模型和中转支持范围以服务为准。"
                   : grok ? "版本契约需手动选择，不根据模型 ID 推断。画质 low／medium 和 21:9／5:2 宽高比仅支持 2.0；自动选项跟随服务默认。"
                   : seedream ? "版本契约需手动选择，不根据模型 ID 推断。尺寸选项随版本变化，也可输入宽x高；输出格式仅支持 5.0 系列。自动选项跟随服务默认。"
-                  : "512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。"}</SettingsHelp>
+                  : "512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。"}</SettingsHelp></span>
               <label className="drawing-label drawing-sound">
-                <input type="checkbox" checked={draft.completionSound ?? true} disabled={!ready || submitting}
+                <input className="ui-switch" type="checkbox" role="switch" checked={draft.completionSound ?? true} disabled={!ready || submitting}
                   onChange={event => onDraftChange({ ...draft, completionSound: event.target.checked })} /> 完成提示音
               </label>
               </div>
@@ -578,20 +583,17 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 <div className="drawing-field drawing-advanced-inline">
                   <label className="drawing-label" htmlFor="drawing-gemini-safety">安全阈值</label>
                   <SettingsHelp label="安全阈值">适用于骚扰、仇恨、色情和危险内容四类；服务端仍可能拒绝内容或参数，支持范围以模型和中转为准。</SettingsHelp>
-                  <select id="drawing-gemini-safety" aria-label="Gemini 安全阈值" value={draft.gemini?.safetyThreshold ?? "auto"} disabled={!ready || closing}
-                    onChange={event => setGemini({ safetyThreshold: event.target.value === "auto" ? undefined : event.target.value as GeminiSafetyThreshold })}>
-                    <option value="auto">服务默认</option>
-                    {geminiSafetyThresholds.map(value => <option key={value} value={value}>{value}</option>)}
-                  </select>
+                  <SelectField id="drawing-gemini-safety" label="Gemini 安全阈值" value={draft.gemini?.safetyThreshold ?? "auto"} disabled={!ready || closing}
+                    options={[{ value: "auto", label: "服务默认" }, ...geminiSafetyThresholds.map(value => ({ value, label: value }))]}
+                    onChange={value => { const safetyThreshold = geminiSafetyThresholds.find(threshold => threshold === value); if (value === "auto" || safetyThreshold) setGemini({ safetyThreshold }); }} />
                 </div>
                 </div>
                 </div>
                 </div>
                 <label className="drawing-field"><span className="drawing-label">输出模式</span>
-                  <select aria-label="Gemini 输出模式" value={draft.gemini?.outputMode ?? "text-image"} disabled={!ready || closing}
-                    onChange={event => setGemini({ outputMode: event.target.value as "text-image" | "image" })}>
-                    <option value="text-image">文字＋图片</option><option value="image">仅图片</option>
-                  </select>
+                  <SelectField label="Gemini 输出模式" value={draft.gemini?.outputMode ?? "text-image"} disabled={!ready || closing}
+                    options={[{ value: "text-image", label: "文字＋图片" }, { value: "image", label: "仅图片" }]}
+                    onChange={value => { if (value === "text-image" || value === "image") setGemini({ outputMode: value }); }} />
                 </label>
               </div>}</>}
               <div className="drawing-submit">
@@ -735,27 +737,17 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               </div>
             </section>
             </div>
-            <section className="drawing-panel" aria-labelledby="drawing-preview-title">
-              <div className="drawing-section-heading">
+            <section className="drawing-panel drawing-preview-panel" aria-labelledby="drawing-preview-title">
+              <div className="drawing-section-heading drawing-preview-heading">
                 <h2 id="drawing-preview-title">图像预览</h2>
+                <div className="drawing-preview-heading-actions">
                 <span className="drawing-muted">{selectedResult ? `成果 ${resultNumber(selectedResult.id)}` : "等待生成"}</span>
+                </div>
               </div>
               <DrawingResultPreview id={selectedResult?.id ?? null} url={selectedResult ? previewUrl : null} error={previewError}
-                width={selectedResult?.width} height={selectedResult?.height} />
-              {selectedResult && <div className="drawing-preview-details">
-                <ResultDetails result={selectedResult} />
-                {resultActions(selectedResult)}
-                {onExportResults && <p className="drawing-muted">带参数 PNG 含提示词等生成参数，不含参考图原件，不保证可确定复现；分享前请确认内容。</p>}
-              </div>}
-              <h2 className="drawing-history-heading">生成历史</h2>
-              <RecordPagination page={activeHistoryPage} count={results.length} onPage={setHistoryPage} label="生成历史" />
-              <div className="drawing-history" aria-label="生成历史">
-                {results.length ? results.slice(activeHistoryPage * recordsPerPage, (activeHistoryPage + 1) * recordsPerPage).map((result) => <HistoryItem key={result.id} result={result} number={resultNumber(result.id)}
-                  selected={result.id === selectedResultId} onSelect={onSelectResult} read={readThumbnail} />)
-                  : <p className="drawing-muted">暂无生成历史</p>}
-              </div>
-              <div className="drawing-preview-footer">
-                {onOpenOutputDirectory && <button type="button" className="drawing-button" disabled={!ready || closing || openingDirectory}
+                width={selectedResult?.width} height={selectedResult?.height}>
+                <div className="drawing-actions">
+                {onOpenOutputDirectory && <button type="button" className="drawing-button drawing-folder-action" disabled={!ready || closing || openingDirectory}
                   onClick={async event => {
                     if (event.detail > 1 || !ready || closing || openingDirectoryRef.current) return;
                     openingDirectoryRef.current = true;
@@ -764,8 +756,22 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     try { await onOpenOutputDirectory(); }
                     catch { setDirectoryError("无法打开输出文件夹，请稍后重试。"); }
                     finally { openingDirectoryRef.current = false; setOpeningDirectory(false); }
-                  }}>打开输出文件夹</button>}
-                {directoryError && <p className="drawing-error" role="alert">{directoryError}</p>}
+                  }}><FolderOpen size={16} aria-hidden="true" />打开输出文件夹</button>}
+                {selectedResult && resultActions(selectedResult)}
+                </div>
+              </DrawingResultPreview>
+              {directoryError && <p className="drawing-error" role="alert">{directoryError}</p>}
+              {selectedResult && <details key={selectedResult.id} className="drawing-result-disclosure">
+                <summary><span className="drawing-result-summary" title={selectedResult.parameters.prompt}>{selectedResult.parameters.prompt}</span>
+                  <span className="drawing-muted">详细信息</span></summary>
+                <ResultDetails result={selectedResult} />
+              </details>}
+              <h2 className="drawing-history-heading">生成历史</h2>
+              <RecordPagination page={activeHistoryPage} count={results.length} onPage={setHistoryPage} label="生成历史" />
+              <div className="drawing-history" aria-label="生成历史">
+                {results.length ? results.slice(activeHistoryPage * recordsPerPage, (activeHistoryPage + 1) * recordsPerPage).map((result) => <HistoryItem key={result.id} result={result} number={resultNumber(result.id)}
+                  selected={result.id === selectedResultId} onSelect={onSelectResult} read={readThumbnail} />)
+                  : <p className="drawing-muted">暂无生成历史</p>}
               </div>
             </section>
           </div>

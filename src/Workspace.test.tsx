@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { createChatRepository } from "./chat/repository";
 import { defaultSessionConfig } from "./chat/sessionConfig";
-import { saveConnectionSettings } from "./chat/settings";
+import { loadConnectionSettings, saveConnectionSettings } from "./chat/settings";
+import { thinkingLabels } from "./chat/thinking";
 import type { ChatRequest, ChatTransport } from "./chat/types";
 import { selectedConversation } from "./chat/workspace";
 
@@ -59,12 +60,23 @@ describe("assistant workspace public behavior", () => {
     await act(async () => button!.click());
   }
   async function fill(selector: string, value: string) {
-    const field = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
+    const field = (container.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector) ?? document.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector))!;
     expect(field).toBeTruthy();
     await act(async () => {
       Object.getOwnPropertyDescriptor(field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(field, value);
       field.dispatchEvent(new Event("input", { bubbles: true }));
     });
+  }
+  async function chooseModel(selector: string, modelId: string) {
+    const model = loadConnectionSettings().providers.flatMap(provider => provider.connections.flatMap(connection => connection.models)).find(item => item.id === modelId);
+    expect(model).toBeTruthy();
+    const trigger = container.querySelector<HTMLButtonElement>(selector)!;
+    expect(trigger).toBeInstanceOf(HTMLButtonElement);
+    await act(async () => trigger.click());
+    const option = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")].find(item => item.querySelector("strong")?.textContent === (model!.displayName || model!.modelId));
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+    await wait(() => !document.querySelector(".model-picker"));
   }
   async function chooseAssistant(name: string, title: string) {
     if (!container.querySelector('[aria-label="助手列表"]:not([inert])')) await click("助手与对话");
@@ -103,10 +115,10 @@ describe("assistant workspace public behavior", () => {
     await click("切换模型");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("搜索模型");
     await fill('[aria-label="搜索模型"]', "nothing-matches");
-    expect(container.textContent).toContain("没有匹配的模型");
+    expect(document.querySelector(".model-picker-empty")?.textContent).toContain("没有匹配的选项");
     await fill('[aria-label="搜索模型"]', "upstream-b");
     await click("upstream-b");
-    await wait(() => !container.querySelector(".model-picker"));
+    await wait(() => !document.querySelector(".model-picker"));
     expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-b");
     const saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(saved.conversations.find((item) => item.id === "current")?.settings?.modelId).toBe("model-b");
@@ -116,7 +128,7 @@ describe("assistant workspace public behavior", () => {
     expect(runtime.createRuntimeModelCatalogClient).not.toHaveBeenCalled();
     await click("切换模型");
     await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect(container.querySelector(".model-picker")).toBeNull();
+    expect(document.querySelector(".model-picker")).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
 
@@ -125,10 +137,7 @@ describe("assistant workspace public behavior", () => {
     await click("默认助手");
     await click("编辑对话 对话 A");
     await fill("#session-system", "Conversation only");
-    await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
-      field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#conversation-model", "model-b");
     await click("保存对话");
     await wait(() => !container.querySelector('[role="dialog"]'));
     let saved = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
@@ -256,10 +265,7 @@ describe("assistant workspace public behavior", () => {
       await wait(() => container.querySelector<HTMLFieldSetElement>(".thinking-options")?.disabled === false);
     }
     async function choose(selector: string, value: string) {
-      await act(async () => {
-        const field = container.querySelector<HTMLSelectElement>(selector)!;
-        expect(field).toBeTruthy(); field.value = value; field.dispatchEvent(new Event("change", { bubbles: true }));
-      });
+      await chooseModel(selector, value);
     }
     await thinkingReady();
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="minimal"]')!.click());
@@ -330,12 +336,9 @@ describe("assistant workspace public behavior", () => {
     await click("思考设置");
     expect(container.querySelector<HTMLInputElement>('.thinking-popover input:checked')?.value).toBe("high");
     await click("编辑助手 默认助手");
-    await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
-      field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考强度（当前助手）"]')?.value).toBe("default");
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前助手）"]')?.value).toBe("default");
+    await chooseModel("#assistant-model", "model-b");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="思考模式（当前助手）"]')?.textContent).toBe(thinkingLabels.default);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="思考力度（当前助手）"]')?.textContent).toBe(thinkingLabels.default);
     const restored = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(restored.assistants.find((item) => item.id === "default")?.defaultConfig.thinking).toMatchObject({
       "openai-responses": { choice: "high" }, "anthropic-native": { choice: "adaptive", effort: "max" },
@@ -343,11 +346,9 @@ describe("assistant workspace public behavior", () => {
     await click("取消");
     await click("编辑对话 对话 A");
     for (const modelId of ["model-b", "model-a"]) {
-      await act(async () => {
-        const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
-        field.value = modelId; field.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-      expect(container.querySelector<HTMLSelectElement>('[aria-label="思考强度（当前会话）"]')?.value).toBe("default");
+      await chooseModel("#conversation-model", modelId);
+      const choiceLabel = modelId === "model-b" ? "思考模式" : "思考强度";
+      expect(container.querySelector<HTMLButtonElement>(`[aria-label="${choiceLabel}（当前会话）"]`)?.textContent).toBe(thinkingLabels.default);
     }
     await click("保存对话");
     const changed = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
@@ -368,10 +369,7 @@ describe("assistant workspace public behavior", () => {
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="minimal"]')!.click());
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
     await click("编辑对话 对话 A");
-    await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
-      field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#conversation-model", "model-b");
     expect(container.textContent).not.toContain("原思考选项不适用于此模型");
     await click("保存对话");
     await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
@@ -419,10 +417,7 @@ describe("assistant workspace public behavior", () => {
     await act(async () => container.querySelector<HTMLInputElement>('.thinking-popover input[value="budget"]')!.click());
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
     await click("编辑对话 对话 A");
-    await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>("#conversation-model")!;
-      field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#conversation-model", "model-b");
     expect(container.textContent).not.toContain("原思考选项不适用于此模型");
     await click("保存对话");
     await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
@@ -438,10 +433,9 @@ describe("assistant workspace public behavior", () => {
       if (savedChoice !== "adaptive") await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
     }
     expect(savedChoice).toBe("adaptive");
-    await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前会话）"]')!;
-      field.value = "xhigh"; field.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="思考力度（当前会话）"]')!.click());
+    const effortOption = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === thinkingLabels.xhigh)!;
+    await act(async () => effortOption.click());
     let savedEffort: string | undefined;
     for (let attempt = 0; attempt < 150 && savedEffort !== "xhigh"; attempt++) {
       await act(async () => {
@@ -478,7 +472,7 @@ describe("assistant workspace public behavior", () => {
     await act(async () => root.render(<App />));
     await wait(() => !!container.querySelector(".thinking-summary"));
     await click("思考设置");
-    expect(container.querySelector<HTMLSelectElement>('[aria-label="思考力度（当前会话）"]')?.value).toBe("xhigh");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="思考力度（当前会话）"]')?.textContent).toBe(thinkingLabels.xhigh);
   });
 
   it("preserves a standalone Anthropic effort during an editor model switch", async () => {
@@ -496,10 +490,7 @@ describe("assistant workspace public behavior", () => {
     root = createRoot(container); await act(async () => root.render(<App />));
     await wait(() => container.querySelector<HTMLButtonElement>('[aria-label="管理助手 默认助手"]')?.disabled === false);
     await click("编辑助手 默认助手");
-    await act(async () => {
-      const field = container.querySelector<HTMLSelectElement>("#assistant-model")!;
-      field.value = "model-b"; field.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#assistant-model", "model-b");
     expect(container.textContent).not.toContain("原思考选项不适用于此模型");
     await click("保存助手");
     const restored = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
@@ -949,10 +940,7 @@ describe("assistant workspace public behavior", () => {
     expect(row.querySelectorAll('.conversation-row-actions button svg')).toHaveLength(2);
     await click("编辑助手 默认助手");
     await fill("#session-system", "Shared instruction");
-    await act(async () => {
-      const model = container.querySelector<HTMLSelectElement>('#assistant-model')!;
-      model.value = "model-b"; model.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#assistant-model", "model-b");
     await click("保存助手"); await wait(() => !container.querySelector('[role="dialog"]'));
     for (const title of ["对话 A", "新对话"]) {
       await click(title); await wait(() => container.querySelector<HTMLTextAreaElement>('.composer-input')?.disabled === false);
@@ -993,10 +981,7 @@ describe("assistant workspace public behavior", () => {
     await wait(() => observed.length === 1);
     await click('编辑对话 对话 A');
     await fill('#session-system', 'New shared instruction');
-    await act(async () => {
-      const model = container.querySelector<HTMLSelectElement>('#conversation-model')!;
-      model.value = 'model-b'; model.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await chooseModel("#conversation-model", 'model-b');
     await click('保存对话'); await wait(() => !container.querySelector('[role="dialog"]'));
     expect(observed[0].model).toBe('upstream-a');
     expect(observed[0].config?.systemInstruction).toBe('');

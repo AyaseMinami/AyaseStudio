@@ -27,7 +27,7 @@ function ClearConfirmation({ disabled, onClose, onConfirm }: {
       <p id="clear-chat-description">将删除当前对话中的全部消息，无法撤销。对话设置和其他对话不受影响。</p>
       <div className="message-confirm-actions">
         <button className="settings-button" type="button" onClick={onClose}>取消</button>
-        <button className="settings-button" type="button" disabled={disabled} onClick={onConfirm}>确认清空</button>
+        <button className="settings-button confirm-danger" type="button" disabled={disabled} onClick={onConfirm}>确认清空</button>
       </div>
     </section>
   </div>;

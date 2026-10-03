@@ -15,6 +15,7 @@ function PdfPreview({ data }: { data: string }) {
       try {
         const pdfjs = await import("pdfjs-dist");
         const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        if (cancelled) return;
         pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
         const task = pdfjs.getDocument({ data: base64ToBytes(data), useSystemFonts: false });
         close = () => void task.destroy();
@@ -92,7 +93,7 @@ export function SentAttachmentPreview({ item, read, images = [], onNavigate, ret
         if (event.shiftKey && index <= 0) { event.preventDefault(); fields[fields.length - 1]?.focus(); }
         else if (!event.shiftKey && index === fields.length - 1) { event.preventDefault(); fields[0]?.focus(); }
       }}>
-      <div className="attachment-preview-heading"><h2>{item.name}</h2>
+      <div className="attachment-preview-heading"><h2 title={item.name}>{item.name}</h2>
         <button type="button" aria-label="关闭预览" onClick={onClose}><X size={18} /></button></div>
       {imageIndex >= 0 && images.length > 1 && <div className="attachment-preview-navigation">
         <button type="button" aria-disabled={imageIndex === 0} onClick={() => {

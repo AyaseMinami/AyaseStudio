@@ -3,12 +3,13 @@ import { copyAssistantConfig, readConversationConfig } from "../../chat/conversa
 import type { useConversationWorkspace } from "../../chat/useConversationWorkspace";
 import type { Conversation } from "../../chat/workspace";
 import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settings";
-import { isChatConnection } from "../../chat/settings";
+import { ModelSelectField } from "./ModelSelectField";
 import { validateRequestConfig } from "../../chat/requestMapping";
 import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
 import { WebSearchControl } from "./WebSearchControl";
+import "./AssistantConfig.css";
 
 export function ConversationSettings({ workspace, conversation, settings, onClose }: {
   workspace: ReturnType<typeof useConversationWorkspace>; conversation: Conversation; settings: ConnectionSettingsState; onClose(): void;
@@ -30,21 +31,23 @@ export function ConversationSettings({ workspace, conversation, settings, onClos
     onChange={(config) => setDraft({ ...draft, config })}
     onClose={() => { if (!workspace.busy) onClose(); }} resetLabel="恢复助手默认值" onReset={() => { setDraft(copyAssistantConfig(assistant)); setResetCount((count) => count + 1); }}
     footer={<><button type="button" className="settings-button" disabled={workspace.busy} onClick={onClose}>取消</button>
-      <button type="button" className="settings-button" disabled={workspace.busy || !title.trim()} onClick={() => void save()}>保存对话</button></>}>
-    <section className="session-config-section">
+      <button type="button" className="settings-button settings-button-primary" disabled={workspace.busy || !title.trim()} onClick={() => void save()}>保存对话</button></>}>
+    <section className="session-config-section conversation-config-basics">
+      <h3>对话信息</h3>
       <label htmlFor="conversation-title">对话标题</label>
       <input id="conversation-title" value={title} maxLength={200} onChange={(event) => { setTitle(event.target.value); setTitleEdited(true); }} />
-      <label htmlFor="conversation-model">会话模型 / 连接</label>
-      <select id="conversation-model" value={draft.modelId ?? ""} onChange={(event) => {
-        const modelId = event.target.value || null;
+      <p className="muted-text">恢复助手默认值只更新此处的模型与配置草稿，不改对话标题；点击“保存对话”后生效。</p>
+    </section>
+    <section className="session-config-section conversation-config-model">
+      <h3>模型与能力</h3>
+      <label htmlFor="conversation-model">当前对话模型 / 连接</label>
+      <ModelSelectField id="conversation-model" label="当前对话模型 / 连接" settings={settings} selectedModelId={draft.modelId}
+        disabled={workspace.busy} hint="仅修改配置草稿，点击保存对话后生效。" onSelect={async value => {
+        const modelId = value || null;
         const next = getActiveTarget({ ...settings, activeModelId: modelId });
         setDraft({ modelId, config: next ? switchThinkingProtocol(draft.config, protocol, next.connection.protocol) : draft.config });
-      }}>
-        <option value="">未选择模型</option>
-        {draft.modelId && !target && <option value={draft.modelId}>原模型已失效，请重新选择</option>}
-        {settings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) =>
-          <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
-      </select>
+        return true;
+      }} />
       {!target && <p role="status" className="session-config-error">{draft.modelId ? "模型引用已失效，不会自动切换到其他模型。" : "尚未选择模型。"}请选择模型或恢复助手默认值后再发送。</p>}
       <div className="session-config-capabilities">
       <WebSearchControl config={draft.config} disabled={workspace.busy}

@@ -5,10 +5,12 @@ import { readSessionConfigData } from "../chat/sessionConfig";
 import type { BackupCompatibility } from "./types";
 import { readDrawingSettingsData } from "../drawing/settingsData";
 import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
+import { APPEARANCE_STORAGE_KEY } from "../appearance/appearance";
 
 /** Check the original stamps before normalization replaces them with current versions. */
 export function validateGenerationMetricsCompatibility(raw: unknown): void {
   dataRecord(raw);
+  validateAppearanceCompatibility(raw);
   validateAdditionalSearchCompatibility(raw);
   dataRecord(raw.rows);
   const supplierSupport = (raw.version === 4 || raw.version === 5) && (() => {
@@ -31,9 +33,11 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   dataCheck(Array.isArray(raw.rows.chats));
   const modern = raw.version === 4 || raw.version === 5;
   let permitted = false;
+  let modelPermitted = false;
   if (modern) {
     dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.chat);
     permitted = (raw.compatibility.modules.chat.version as number) >= 2;
+    modelPermitted = (raw.compatibility.modules.chat.version as number) >= 3;
     if (raw.connections !== undefined && raw.connections !== null) {
       dataRecord(raw.connections); dataCheck(Array.isArray(raw.connections.providers));
       for (const provider of raw.connections.providers) {
@@ -51,6 +55,7 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   function visit(message: unknown): void {
     dataRecord(message);
     if ("generationMetrics" in message) dataCheck(permitted, "生成统计与聊天模块版本不匹配，请升级应用。");
+    if (message.generationModel !== undefined) dataCheck(modelPermitted, "回复模型快照与聊天模块版本不匹配，请升级应用。");
     readMessageGenerationMetrics(message);
     if (message.roundVersions !== undefined) {
       dataRecord(message.roundVersions); dataCheck(Array.isArray(message.roundVersions.pairs));
@@ -60,6 +65,23 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   for (const chat of raw.rows.chats) {
     dataRecord(chat); dataCheck(Array.isArray(chat.messages)); chat.messages.forEach(visit);
   }
+}
+
+/** New appearance fields require their original module declaration, before restamping. */
+function validateAppearanceCompatibility(raw: Record<string, unknown>): void {
+  dataRecord(raw.preferences);
+  const encoded = raw.preferences[APPEARANCE_STORAGE_KEY];
+  if (encoded === null || encoded === undefined) return;
+  dataCheck(typeof encoded === "string");
+  const appearance: unknown = JSON.parse(encoded);
+  dataRecord(appearance);
+  const minimumVersion = "chromeTransparency" in appearance ? 3
+    : "sidebarGlassEnabled" in appearance || "composerGlassEnabled" in appearance ? 2 : 1;
+  if (minimumVersion === 1) return;
+  dataCheck(raw.version === 4 || raw.version === 5, "外观字段与外观模块版本不匹配，请升级应用。");
+  dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.appearance);
+  dataCheck(typeof raw.compatibility.modules.appearance.version === "number" && raw.compatibility.modules.appearance.version >= minimumVersion,
+    "外观字段与外观模块版本不匹配，请升级应用。");
 }
 
 /** The search module owns provider identities wherever selections/results are stored. */

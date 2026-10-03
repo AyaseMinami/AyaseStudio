@@ -130,7 +130,10 @@ async function changeInput(label: string, value: string) {
 it("keeps per-image parameter drafts isolated and only submits the applied candidate", async () => {
   await mount();
   await changeInput("背景遮罩强度", "48"); await changeInput("背景模糊程度", "7");
-  await act(async () => { const select = host.querySelector("select")!; select.value = "contain"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  await click("图片适配方式");
+  const fitOption = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === "适应")!;
+  expect(fitOption).toBeTruthy();
+  await act(async () => fitOption.click());
   expect(host.querySelector<HTMLElement>(".appearance-background-preview")!.style.getPropertyValue("--appearance-background-mask")).toBe("0.48");
   expect(props.onApply).not.toHaveBeenCalled(); expect(props.onSave).not.toHaveBeenCalled();
   expect(entries[0]).toEqual(snow);
@@ -145,7 +148,7 @@ it("keeps per-image parameter drafts isolated and only submits the applied candi
 it("resets only draft values and discards all parameter edits on cancel", async () => {
   await mount(); await changeInput("背景遮罩强度", "40"); await changeInput("背景模糊程度", "10");
   await click("恢复背景遮罩强度默认值");
-  expect(host.querySelector<HTMLInputElement>('[aria-label="背景遮罩强度"]')!.value).toBe("65");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="背景遮罩强度"]')!.value).toBe("50");
   expect(host.querySelector<HTMLInputElement>('[aria-label="背景模糊程度"]')!.value).toBe("10");
   await click("取消"); expect(props.onApply).not.toHaveBeenCalled(); expect(props.onSave).not.toHaveBeenCalled();
   await act(async () => root.render(null)); await mount();

@@ -1,0 +1,4 @@
+/* Shared model/preset/connection search panels keep the existing ModelPicker layout. */
+.model-picker-search + .model-picker-results { margin-top: 12px; }
+.model-picker-option:disabled { opacity: .5; cursor: default; }
+.model-picker-error { color: rgb(var(--color-error-text)); }

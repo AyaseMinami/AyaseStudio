@@ -1,6 +1,6 @@
 import "./App.css";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUserAvatar } from "./avatar/useUserAvatar";
 
 import { useAppearance } from "./appearance/useAppearance";
@@ -12,6 +12,9 @@ import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
 import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
+import { useConfirmation } from "./ui/useConfirmation";
+import type { GeneralSettingsState } from "./general/preferences";
+import type { RegisterExitGuard } from "./general/lifecycle";
 import { openDrawingOutputDirectory } from "./drawing/runtime";
 import { getDrawingModels } from "./chat/settings";
 import { ChatHeader } from "./ui/chat/ChatHeader";
@@ -23,15 +26,18 @@ import {
   type SettingsSection,
 } from "./ui/settings/SettingsWorkspace";
 
-function App() {
+function App({ general, registerExitGuard, settingsRequest = 0 }: {
+  general?: GeneralSettingsState; registerExitGuard?: RegisterExitGuard; settingsRequest?: number;
+}) {
   const [activePage, setActivePage] = useState<AppPage>(window.location.hash === "#data" ? "settings" : "chat");
   const [activeSettingsSection, setActiveSettingsSection] =
-    useState<SettingsSection>(window.location.hash === "#data" ? "data" : "connections");
+    useState<SettingsSection>(window.location.hash === "#data" ? "data" : "general");
   const appearance = useAppearance();
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
   const navigation = useConversationNavigation();
-  const drawing = useDrawingWorkspace(activePage === "drawing");
+  const drawingCloseConfirmation = useConfirmation();
+  const drawing = useDrawingWorkspace(activePage === "drawing", drawingCloseConfirmation.confirm, registerExitGuard);
   const [backupError, setBackupError] = useState<string>();
   const chat = useChatSession({
     externalBusy: drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued") || drawing.closing,
@@ -42,6 +48,13 @@ function App() {
     },
   });
   useEffect(() => { drawing.controller.updateSettings(chat.connectionSettings); }, [drawing.controller, chat.connectionSettings]);
+  const handledSettingsRequest = useRef(0);
+  useEffect(() => {
+    if (settingsRequest <= handledSettingsRequest.current || chat.backupPreparing || drawing.closing) return;
+    handledSettingsRequest.current = settingsRequest;
+    setActiveSettingsSection("general");
+    setActivePage("settings");
+  }, [settingsRequest, chat.backupPreparing, drawing.closing]);
   const modelLabel = chat.activeProvider && chat.activeConnection && chat.activeModel
     ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${chat.activeModel.displayName || chat.activeModel.modelId}`
     : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 点击选择模型`;
@@ -49,6 +62,7 @@ function App() {
   return (
     <AppShell activePage={activePage} onPageChange={setActivePage} interactionDisabled={chat.backupPreparing || drawing.closing}
       background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur} /></div>}>
+      {drawingCloseConfirmation.dialog}
       {appearance.backgroundDraft && <BackgroundFocusDialog
         url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur}
         error={appearance.backgroundError}
@@ -134,6 +148,7 @@ function App() {
           onConfigure={() => { setActiveSettingsSection("connections"); setActivePage("settings"); }} />
       ) : (
         <SettingsWorkspace
+          general={general}
           dataImport={chat.dataImport}
           backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.closing}
           backupError={backupError ?? chat.backupPreparationError}
@@ -163,8 +178,11 @@ function App() {
             canvasColor: appearance.canvasColor,
             assistantBubbleColor: appearance.assistantBubbleColor,
             unifiedTransparency: appearance.unifiedTransparency,
+            chromeTransparency: appearance.chromeTransparency,
             sidebarTransparency: appearance.sidebarTransparency,
             composerTransparency: appearance.composerTransparency,
+            sidebarGlassEnabled: appearance.sidebarGlassEnabled,
+            composerGlassEnabled: appearance.composerGlassEnabled,
             assistantBubbleTransparency: appearance.assistantBubbleTransparency,
             effectiveAccentColor: appearance.effectiveAccentColor,
             effectiveCanvasColor: appearance.effectiveCanvasColor,
@@ -187,8 +205,11 @@ function App() {
             onCanvasColorChange: appearance.setCanvasColor,
             onAssistantBubbleColorChange: appearance.setAssistantBubbleColor,
             onUnifiedTransparencyChange: appearance.setUnifiedTransparency,
+            onChromeTransparencyChange: appearance.setChromeTransparency,
             onSidebarTransparencyChange: appearance.setSidebarTransparency,
             onComposerTransparencyChange: appearance.setComposerTransparency,
+            onSidebarGlassEnabledChange: appearance.setSidebarGlassEnabled,
+            onComposerGlassEnabledChange: appearance.setComposerGlassEnabled,
             onAssistantBubbleTransparencyChange: appearance.setAssistantBubbleTransparency,
             onEditBackgroundFocus: appearance.editBackgroundFocus,
             onBackgroundFitChange: appearance.setBackgroundFit,

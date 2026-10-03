@@ -5,14 +5,22 @@ import { DrawingController, UnsavedDrawingImagesError } from "./controller";
 import { DexieDrawingRepository } from "./repository";
 import { DexieDrawingPresetRepository } from "./presets";
 import { createRuntimeImageTransport, runtimeDrawingFiles } from "./runtime";
+import type { RegisterExitGuard } from "../general/lifecycle";
 
-export function useDrawingWorkspace(previewPageActive = true) {
+type ConfirmDrawingClose = (options: {
+  title: string; message: string; confirmLabel?: string; cancelLabel?: string; danger?: boolean;
+}) => Promise<boolean>;
+const refuseUnconfirmedClose: ConfirmDrawingClose = async () => false;
+
+export function useDrawingWorkspace(previewPageActive = true, confirmClose: ConfirmDrawingClose = refuseUnconfirmedClose, registerExitGuard?: RegisterExitGuard) {
   const [controller] = useState(() => new DrawingController({ repository: new DexieDrawingRepository(),
     presetRepository: new DexieDrawingPresetRepository(),
     files: runtimeDrawingFiles, transport: createRuntimeImageTransport }));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const sound = useRef<AudioContext | null>(null);
   const heard = useRef(0);
+  const confirmation = useRef(confirmClose);
+  confirmation.current = confirmClose;
   useEffect(() => {
     const unlock = () => {
       if (controller.getSnapshot().draft.completionSound === false || typeof AudioContext === "undefined") return;
@@ -58,26 +66,51 @@ export function useDrawingWorkspace(previewPageActive = true) {
   useEffect(() => {
     if (!isTauri()) return;
     let alive = true, release: (() => void) | undefined, approved = false, closing = false;
-    void getCurrentWindow().onCloseRequested(event => {
-      if (approved) return;
-      event.preventDefault();
-      if (closing) return;
-      if ((controller.getSnapshot().busy || controller.getSnapshot().submitting || controller.getSnapshot().tasks.some(task => task.status === "queued")) && !window.confirm("绘图队列尚未结束。退出将保留等待项并停止本地请求；可能已发出的请求结果未知，服务端仍可能生成或计费。重启后需手动继续等待项。确定退出？")) return;
+    const prepare = async (): Promise<boolean> => {
+      if (!alive || closing) return false;
       closing = true;
-      void (async () => {
+        let prepared = false;
         try {
+          const snapshot = controller.getSnapshot();
+          if (snapshot.busy || snapshot.submitting || snapshot.tasks.some(task => task.status === "queued")) {
+            const accepted = await confirmation.current({ title: "退出应用", confirmLabel: "退出", danger: true,
+              message: "绘图队列尚未结束。退出将保留等待项并停止本地请求；可能已发出的请求结果未知，服务端仍可能生成或计费。重启后需手动继续等待项。确定退出？" });
+            if (!alive || !accepted) return false;
+          }
+          prepared = true;
           try { await controller.settleForClose(); }
           catch (error) {
+            if (!alive) return false;
             if (!(error instanceof UnsavedDrawingImagesError)) throw error;
-            if (!window.confirm("有已生成但尚未保存的图片。退出可能丢失这些图片，建议先重试本地保存。仍然退出？")) { closing = false; controller.cancelClose(); return; }
+            const accepted = await confirmation.current({ title: "退出并丢弃未保存图片", confirmLabel: "仍然退出", danger: true,
+              message: "有已生成但尚未保存的图片。退出可能丢失这些图片，建议先重试本地保存。仍然退出？" });
+            if (!alive || !accepted) return false;
             await controller.discardUnsavedForClose();
           }
-          approved = true; await getCurrentWindow().close();
-        } catch { approved = false; closing = false; controller.cancelClose(); window.alert("绘图数据尚未完成保存，请检查本地存储后再退出。"); }
-      })();
+          if (!alive) return false;
+          approved = true;
+          if (!registerExitGuard) await getCurrentWindow().close();
+          return true;
+        } catch {
+          approved = false;
+          closing = false;
+          if (prepared) { controller.cancelClose(); prepared = false; }
+          if (alive) window.alert("绘图数据尚未完成保存，请检查本地存储后再退出。");
+          return false;
+        } finally {
+          if (!approved) { closing = false; if (prepared) controller.cancelClose(); }
+        }
+    };
+    if (registerExitGuard) release = registerExitGuard({ prepare, cancel: () => {
+      approved = false; closing = false; controller.cancelClose();
+    } });
+    else void getCurrentWindow().onCloseRequested(event => {
+      if (!alive) { event.preventDefault(); return; }
+      if (approved) return;
+      event.preventDefault(); void prepare();
     }).then(unlisten => { if (alive) release = unlisten; else unlisten(); }).catch(() => { /* Startup smoke does not claim native close-event acceptance. */ });
     return () => { alive = false; release?.(); };
-  }, [controller]);
+  }, [controller, registerExitGuard]);
   return { ...state, controller, setPreviewActive,
     previewUrl: previewPageActive && previewActive && preview?.id === result?.id ? preview?.url ?? null : null,
     previewError: previewPageActive && previewActive && preview?.id === result?.id ? preview?.error ?? null : null };

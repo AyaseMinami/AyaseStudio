@@ -58,10 +58,10 @@ function ConfirmationDialog({ busy, disabled, error, onClose, onConfirm }: {
     if (event.target === event.currentTarget) onClose();
   }}><section ref={dialog} className="message-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="message-confirm-title"
     onKeyDown={containTab}>
-    <h2 id="message-confirm-title">确认操作</h2><p>永久删除这条消息，无法撤销。</p>
+    <h2 id="message-confirm-title">删除消息</h2><p>永久删除这条消息，无法撤销。</p>
     {error && <p role="alert">{error}</p>}
-    <div className="message-confirm-actions"><button type="button" onClick={onClose}>取消</button>
-      <button type="button" className="settings-button" onClick={onConfirm} disabled={busy || disabled}>{busy ? "处理中…" : "确认删除消息"}</button></div>
+    <div className="message-confirm-actions"><button type="button" className="settings-button" onClick={onClose}>取消</button>
+      <button type="button" className="settings-button confirm-danger" onClick={onConfirm} disabled={busy || disabled}>{busy ? "处理中…" : "确认删除消息"}</button></div>
   </section></div>;
 }
 
@@ -156,7 +156,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
     {messages.length === 0 ? <div className="empty-state">
       <AssistantAvatar className="empty-state-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} assistantName={assistant?.name} assistantId={assistant?.id} />
       <p className="empty-state-prompt">发送消息以开始对话。</p>
-    </div> : <div className="space-y-7">{messages.map((message, index) => {
+    </div> : <div className="message-thread">{messages.map((message, index) => {
       const isEditing = editing?.id === message.id;
       const retryTarget = retryUser(messages, message.id);
       const disabled = actionsDisabled || !actions;
@@ -241,17 +241,22 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
           {copyFeedback[message.id] && <p className="message-copy-feedback" role="status">{copyFeedback[message.id]}</p>}
       </>;
       return <article key={message.id} className={message.role === "user" ? "message-row message-row-user" : "message-row"}>
-        {message.role === "assistant" && assistant && <AssistantAvatar className="message-assistant-avatar" avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} assistantName={assistant.name} assistantId={assistant.id} />}
-        {message.role === "user" ? <div className="user-message-group">
-          <div className="user-message markdown">{body}</div>
+        {message.role === "user" ? <div className="user-message-group message-surface">
+          <div className="message-identity message-identity-user">
+            {userAvatarUrl && failedAvatarUrl !== userAvatarUrl ? <img
+              className="message-user-avatar" src={userAvatarUrl} alt="用户头像" onError={() => setFailedAvatarUrl(userAvatarUrl)} />
+              : <span className="message-user-avatar message-avatar-fallback" role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>}
+          </div>
+          <div className="user-message message-body markdown">{body}</div>
           {controls}
-        </div> : <div className="assistant-message-group">
-          <div className="assistant-message markdown">{body}</div>
+        </div> : <div className="assistant-message-group message-surface">
+          <div className="message-identity">
+            <AssistantAvatar className="message-assistant-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} assistantName={assistant?.name} assistantId={assistant?.id} />
+            <span className="message-author" title={[assistant?.name ?? "助手", message.generationModel].filter(Boolean).join(" · ")}>{assistant?.name ?? "助手"}{message.generationModel && <span className="message-model"> · {message.generationModel}</span>}</span>
+          </div>
+          <div className="assistant-message message-body markdown">{body}</div>
           {controls}
         </div>}
-        {message.role === "user" && (userAvatarUrl && failedAvatarUrl !== userAvatarUrl ? <img
-          className="message-user-avatar" src={userAvatarUrl} alt="用户头像" onError={() => setFailedAvatarUrl(userAvatarUrl)} />
-          : <span className="message-user-avatar message-avatar-fallback" role="img" aria-label="默认用户头像"><UserRound size={20} strokeWidth={1.6} aria-hidden="true" /></span>)}
       </article>;
     })}</div>}
   </div>

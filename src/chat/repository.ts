@@ -26,6 +26,8 @@ export interface StoredChatMessage extends ChatMessage {
   replyToId?: string | null;
   editedAt?: number;
   thinkingSummary?: string;
+  /** Exact requested API model ID frozen when this assistant reply is created. */
+  generationModel?: string;
   generationMetrics?: import("./generationMetrics").GenerationMetrics[];
   continuation?: import("./nativeSearch").SearchContinuation;
   status: StoredMessageStatus;

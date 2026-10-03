@@ -3,11 +3,12 @@ import type { DataVersion } from "./dataContract";
 
 /** Module data versions are independent of application, Dexie schema and backup envelope versions. */
 export const dataModules = {
-  chat: { version: 2, capabilities: [], resources: "managed attachments; scoped provider replay; per-invocation generation metrics v1; no runtime continuation" },
+  general: { version: 1, capabilities: [], resources: "device-local residency and exit confirmation; intentionally excluded from portable backup" },
+  chat: { version: 3, capabilities: [], resources: "managed attachments; scoped provider replay; per-invocation generation metrics v1; exact requested API model snapshots; no runtime continuation" },
   session: { version: 1, capabilities: [], resources: "none; parameter compatibility only" },
   workspace: { version: 1, capabilities: [], resources: "model/assistant/conversation IDs remapped by restore plan" },
   avatars: { version: 1, capabilities: [], resources: "encoded Blobs and library ownership" },
-  appearance: { version: 1, capabilities: [], resources: "managed background originals; derived thumbnails excluded" },
+  appearance: { version: 3, capabilities: [], resources: "shared titlebar/rail transparency defaults to 40%, sidebar to 50%, message bubbles to 12%; independent glass flags default sidebar off/composer on; managed background originals; derived thumbnails excluded" },
   connections: { version: 5, capabilities: [], resources: "built-in preset identities and initialization marker; bundled brand IDs; immutable provider avatar snapshots exported only with selected connections; local record remains v3" },
   search: { version: 3, capabilities: [], resources: "independent Exa/Tavily/Zhipu credentials; disabled new providers; v1 MCP and v2 Exa migrate without writes; governs new provider selections and records across modules" },
   drawingSettings: { version: 3, capabilities: [], resources: "allowlisted Gemini/Grok/Seedream controls with explicit version contracts; no prompt or image bindings" },
@@ -36,6 +37,7 @@ export const persistentTables = {
 
 export const DATA_COMPATIBILITY_KEY = "ayase-studio.data-compatibility.v1";
 export const persistentPreferences = {
+  "ayase-studio.general.v1": { module: "general", backup: "excluded" },
   "ayase-studio.appearance.v1": { module: "appearance", backup: "included" },
   "ayase-studio.chat-layout.v1": { module: "workspace", backup: "included" },
   // Historical compatibility only since #81; new assistants no longer consume it.
