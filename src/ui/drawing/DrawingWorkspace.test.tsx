@@ -191,7 +191,7 @@ it("opens the output directory once while pending and reports sanitized failure"
   expect(button("打开输出文件夹").disabled).toBe(true);
   await act(async () => rejectOpen(new Error("C:\\private\\machine https://secret.example sk-private-key")));
   expect(button("打开输出文件夹").disabled).toBe(false);
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe("无法打开输出文件夹，请稍后重试。");
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("绘图输出目录操作失败，请重试。");
   for (const text of ["private", "secret.example", "sk-private-key"]) expect(host.textContent).not.toContain(text);
   onOpenOutputDirectory.mockImplementation(async () => undefined);
   await act(async () => button("打开输出文件夹").click());

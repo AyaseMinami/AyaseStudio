@@ -4,6 +4,7 @@ import type { UserAvatarState } from "../../avatar/useUserAvatar";
 import type { GeneralSettingsState } from "../../general/preferences";
 import { AvatarLibraryPanel, AvatarModal } from "../avatar/AvatarLibrary";
 import { SettingsHelp } from "./SettingsHelp";
+import { DrawingOutputSettings } from "./DrawingOutputSettings";
 import "./GeneralSettings.css";
 
 export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState; general?: GeneralSettingsState }) {
@@ -52,6 +53,7 @@ export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState;
         </div>
         {avatar?.error && <p className="avatar-error" role="alert">{avatar.error}</p>}
       </section>
+      <DrawingOutputSettings />
       <section className="settings-card general-settings-group" aria-labelledby="general-window-title">
         <h3 id="general-window-title">窗口与退出</h3>
         <div className="general-preference-row">

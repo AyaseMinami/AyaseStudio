@@ -1,0 +1,6 @@
+.drawing-output-directory { display: grid; gap: 6px; min-width: 0; font-size: var(--font-small); }
+.drawing-output-directory output { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: rgb(var(--color-text)); font-size: var(--font-ui); line-height: 1.5; user-select: text; }
+.drawing-output-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.drawing-output-actions .settings-button { min-height: 36px; }
+.drawing-output-settings .drawing-output-note { margin: 0; font-size: var(--font-small); line-height: 1.6; }
+.drawing-output-settings .error-banner { margin: 0; }

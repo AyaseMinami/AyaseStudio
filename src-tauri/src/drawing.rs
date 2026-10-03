@@ -1,4 +1,6 @@
 //! Private, bounded drawing originals with a manifest as the publication boundary.
+#[path = "drawing_output.rs"]
+pub mod output;
 use std::{
     collections::HashSet,
     fs::{Metadata, OpenOptions},
@@ -25,6 +27,9 @@ pub(crate) static DRAWING_FILES: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, PartialEq, Eq)]
 enum Error {
+    OutputConfig,
+    OutputUnwritable,
+    OutputUnavailable,
     InvalidReference,
     InvalidParameters,
     TooLarge,
@@ -36,6 +41,9 @@ enum Error {
 impl Error {
     fn code(&self) -> String {
         match self {
+            Self::OutputConfig => "drawing-output-config",
+            Self::OutputUnwritable => "drawing-output-unwritable",
+            Self::OutputUnavailable => "drawing-output-unavailable",
             Self::InvalidReference => "drawing-invalid-reference",
             Self::InvalidParameters => "drawing-invalid-parameters",
             Self::TooLarge => "drawing-too-large",
@@ -498,7 +506,40 @@ fn decode_inputs(images: &[DrawingImageInput]) -> Result<Vec<Vec<u8>>, Error> {
 
 fn task_directory(root: &Path, task: &str) -> Result<PathBuf, Error> {
     uuid(task)?;
-    let path = root.join("drawing").join(task);
+    if let Some(output) = output::location(root, task)? {
+        if !inspect(&output)?.is_some_and(|metadata| metadata.is_dir()) { return Err(Error::OutputUnavailable); }
+        let path = output.join("meta").join(task);
+        if inspect(&path)?.is_some_and(|metadata| !metadata.is_dir()) { return Err(Error::InvalidReference); }
+        return Ok(path);
+    }
+    let legacy = root.join("drawing").join(task);
+    let current = root.join("drawing").join("meta").join(task);
+    let old = inspect(&legacy)?;
+    let new = inspect(&current)?;
+    if old.as_ref().is_some_and(|metadata| !metadata.is_dir())
+        || new.as_ref().is_some_and(|metadata| !metadata.is_dir())
+    {
+        return Err(Error::InvalidReference);
+    }
+    // Never guess which journal owns a task when both layouts exist.
+    if old.is_some() && new.is_some() {
+        return Err(Error::Collision);
+    }
+    Ok(if old.is_some() { legacy } else { current })
+}
+
+// References remain stable opaque IDs in IndexedDB and receipt JSON. Only this
+// native boundary translates them to the layout chosen by the task's journal.
+fn result_path(root: &Path, value: &str) -> Result<PathBuf, Error> {
+    let (task, id, ext) = reference(value)?;
+    let directory = task_directory(root, task)?;
+    let path = if let Some(output) = output::location(root, task)? {
+        output.join(format!("{task}_{id}.{ext}"))
+    } else if directory == root.join("drawing").join(task) {
+        root.join(value)
+    } else {
+        root.join("drawing").join(format!("{task}_{id}.{ext}"))
+    };
     inspect(&path)?;
     Ok(path)
 }
@@ -568,7 +609,7 @@ fn read_manifest(root: &Path, task: &str) -> Result<Option<Vec<DrawingFile>>, Er
     for item in &files {
         verify_bytes(
             item,
-            &bounded_read(&root.join(&item.reference), IMAGE_LIMIT)?,
+            &bounded_read(&result_path(root, &item.reference)?, IMAGE_LIMIT)?,
         )?;
     }
     Ok(Some(files))
@@ -599,7 +640,7 @@ fn read_pending(root: &Path, task: &str) -> Result<Option<Pending>, Error> {
 }
 
 fn verify_pending_file(root: &Path, item: &PendingFile) -> Result<bool, Error> {
-    let path = root.join(&item.file.reference);
+    let path = result_path(root, &item.file.reference)?;
     if inspect(&path)?.is_none() {
         return Ok(false);
     }
@@ -697,7 +738,7 @@ fn resume_recovery(
         verify_pending_file(root, item)?;
     }
     for (file, bytes) in writes {
-        publish(&root.join(&file.reference), &bytes)?;
+        publish(&result_path(root, &file.reference)?, &bytes)?;
     }
     recover(root, task)?.ok_or(Error::Unavailable)
 }
@@ -765,8 +806,8 @@ fn discard_recovery_with_mode(root: &Path, task: &str, completed_only: bool) -> 
     };
     let mut paths = files
         .iter()
-        .map(|file| root.join(&file.reference))
-        .collect::<Vec<_>>();
+        .map(|file| result_path(root, &file.reference))
+        .collect::<Result<Vec<_>, _>>()?;
     paths.push(directory.join("manifest.json"));
     paths.push(directory.join("pending.json"));
     // Validate all paths before removing any bytes; damaged metadata fails closed.
@@ -849,7 +890,7 @@ fn save_with_manifest_publisher(
         }
         for ((item, image), bytes) in files.iter().zip(images).zip(&bytes) {
             if item.mime != image.mime
-                || bounded_read(&root.join(&item.reference), IMAGE_LIMIT)? != *bytes
+                || bounded_read(&result_path(root, &item.reference)?, IMAGE_LIMIT)? != *bytes
             {
                 return Err(Error::Collision);
             }
@@ -886,7 +927,7 @@ fn save_with_manifest_publisher(
         .collect::<Result<Vec<_>, _>>()?;
     for ((item, bytes), exists) in pending.files.iter().zip(&bytes).zip(existing) {
         if !exists {
-            publish(&root.join(&item.file.reference), bytes)?;
+            publish(&result_path(root, &item.file.reference)?, bytes)?;
         }
     }
     let files = pending
@@ -1003,11 +1044,20 @@ fn reference_import_scope(url: &tauri::Url) -> Result<String, Error> {
 
 fn reference_import_directory(root: &Path, scope: &str) -> Result<PathBuf, Error> {
     if !valid_digest(scope) { return Err(Error::InvalidReference); }
-    let directory = root.join("drawing").join("reference-imports").join(scope);
+    let directory = root.join("drawing").join("meta").join("reference-imports").join(scope);
     if inspect(&directory)?.is_some_and(|metadata| !metadata.is_dir()) {
         return Err(Error::InvalidReference);
     }
     Ok(directory)
+}
+
+fn reference_import_directories(root: &Path, scope: &str) -> Result<[PathBuf; 2], Error> {
+    let current = reference_import_directory(root, scope)?;
+    let legacy = root.join("drawing").join("reference-imports").join(scope);
+    if inspect(&legacy)?.is_some_and(|metadata| !metadata.is_dir()) {
+        return Err(Error::InvalidReference);
+    }
+    Ok([current, legacy])
 }
 
 fn read_reference_receipt(path: &Path) -> Result<ReferenceImportReceipt, Error> {
@@ -1024,33 +1074,40 @@ fn read_reference_receipt(path: &Path) -> Result<ReferenceImportReceipt, Error> 
 }
 
 fn list_references(root: &Path, scope: &str) -> Result<Vec<String>, Error> {
-    let directory = reference_import_directory(root, scope)?;
-    match inspect(&directory)? {
-        None => return Ok(Vec::new()),
-        Some(metadata) if metadata.is_dir() => {}
-        Some(_) => return Err(Error::InvalidReference),
-    }
     let mut references = Vec::new();
-    for entry in std::fs::read_dir(&directory).map_err(|_| Error::Storage)? {
-        let entry = entry.map_err(|_| Error::Storage)?;
-        let name = entry.file_name();
-        let name = name.to_str().ok_or(Error::InvalidReference)?;
-        let receipt = read_reference_receipt(&directory.join(name))?;
-        if inspect(&root.join(&receipt.reference))?.is_some_and(|metadata| !metadata.is_file()) {
-            return Err(Error::InvalidReference);
+    for directory in reference_import_directories(root, scope)? {
+        if inspect(&directory)?.is_none() { continue; }
+        for entry in std::fs::read_dir(&directory).map_err(|_| Error::Storage)? {
+            let entry = entry.map_err(|_| Error::Storage)?;
+            let name = entry.file_name();
+            let name = name.to_str().ok_or(Error::InvalidReference)?;
+            let receipt = read_reference_receipt(&directory.join(name))?;
+            if inspect(&root.join(&receipt.reference))?.is_some_and(|metadata| !metadata.is_file()) {
+                return Err(Error::InvalidReference);
+            }
+            references.push(receipt.reference);
         }
-        references.push(receipt.reference);
     }
     references.sort();
+    if references.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(Error::Collision);
+    }
     Ok(references)
 }
 
 fn remove_scoped_references(root: &Path, scope: &str, values: &[String]) -> Result<(), Error> {
-    let directory = reference_import_directory(root, scope)?;
+    let directories = reference_import_directories(root, scope)?;
     let receipts = values.iter().map(|value| {
         let (id, _) = reference_input(value)?;
-        let path = directory.join(format!("{id}.json"));
-        if inspect(&path)?.is_none() { return Ok(None); }
+        let mut found = None;
+        for directory in &directories {
+            let path = directory.join(format!("{id}.json"));
+            if inspect(&path)?.is_some() {
+                if found.is_some() { return Err(Error::Collision); }
+                found = Some(path);
+            }
+        }
+        let Some(path) = found else { return Ok(None); };
         let receipt = read_reference_receipt(&path)?;
         if receipt.reference != *value { return Err(Error::Corrupt); }
         if let Some(metadata) = inspect(&root.join(value))? {
@@ -1128,7 +1185,7 @@ fn read_result_bytes(root: &Path, value: &str) -> Result<(String, Vec<u8>), Erro
         .iter()
         .find(|item| item.reference == value)
         .ok_or(Error::Unavailable)?;
-    let bytes = bounded_read(&root.join(value), IMAGE_LIMIT)?;
+    let bytes = bounded_read(&result_path(root, value)?, IMAGE_LIMIT)?;
     verify_bytes(item, &bytes)?;
     Ok((item.mime.clone(), bytes))
 }
@@ -1225,6 +1282,7 @@ fn export_png_with_parameters(
     if !inspect(parent)?.is_some_and(|metadata| metadata.is_dir()) {
         return Err(Error::InvalidReference);
     }
+    output::protect_export(root, destination)?;
     let root = root.canonicalize().map_err(|_| Error::Storage)?;
     let parent = parent.canonicalize().map_err(|_| Error::Storage)?;
     #[cfg(windows)]
@@ -1254,6 +1312,7 @@ fn app_directory(app: &AppHandle) -> Result<PathBuf, String> {
 
 // Reuse the actual originals directory, including existing task subdirectories.
 // Do not scan, duplicate images, change references or accept a frontend path.
+#[cfg(test)]
 fn output_directory(root: &Path) -> Result<PathBuf, Error> {
     let directory = root.join("drawing");
     if inspect(&directory)?.is_some_and(|metadata| !metadata.is_dir()) {
@@ -1274,10 +1333,11 @@ fn output_directory(root: &Path) -> Result<PathBuf, Error> {
 #[tauri::command]
 pub async fn open_drawing_output_directory(app: AppHandle) -> Result<(), String> {
     let root = app_directory(&app)?;
+    let default = output::default_directory(&app, &root).map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
         let directory = {
             let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
-            output_directory(&root).map_err(|error| error.code())?
+            output::configured_directory(&root, &default).map_err(|error| error.code())?
         };
         let path = directory.to_str().ok_or_else(|| Error::Storage.code())?;
         app.opener().open_path(path, None::<&str>).map_err(|_| "drawing-open-directory".to_owned())
@@ -1355,8 +1415,10 @@ pub async fn save_drawing_result(
     images: Vec<DrawingImageInput>,
 ) -> Result<Vec<DrawingFile>, String> {
     let root = app_directory(&app)?;
+    let default = output::default_directory(&app, &root).map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
+        output::reserve(&root, &default, std::slice::from_ref(&task_id)).map_err(|error| error.code())?;
         save(&root, &task_id, &images).map_err(|error| error.code())
     })
     .await
@@ -1805,7 +1867,7 @@ mod tests {
         let outputs = save(root.path(), &task, &[input(30, ImageFormat::Png)]).unwrap();
         expected.sort();
         assert_eq!(list_references(root.path(), &scope).unwrap(), expected);
-        assert!(root.path().join(&outputs[0].reference).exists());
+        assert!(result_path(root.path(), &outputs[0].reference).unwrap().exists());
         for reference in expected {
             assert!(root.path().join(reference).exists());
         }
@@ -1947,11 +2009,106 @@ mod tests {
             assert_eq!(read.mime, image.mime);
         }
         let manifest =
-            std::fs::read_to_string(root.path().join("drawing").join(task).join("manifest.json"))
+            std::fs::read_to_string(task_directory(root.path(), &task).unwrap().join("manifest.json"))
                 .unwrap();
         assert!(!manifest.contains("prompt"));
         assert!(!manifest.contains("parameters"));
         assert!(!manifest.contains("data"));
+    }
+
+    #[test]
+    fn new_outputs_are_flat_and_metadata_is_separate() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let files = save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap();
+        let output = root.path().join("drawing");
+        let original = output.join(format!("{task}_{}.png", files[0].id));
+        assert_eq!(std::fs::read(&original).unwrap(), STANDARD.decode(input(20, ImageFormat::Png).data).unwrap());
+        assert!(output.join("meta").join(&task).join("manifest.json").is_file());
+        assert!(output.join("meta").join(&task).join("pending.json").is_file());
+        assert!(!output.join(&task).exists());
+        assert_eq!(std::fs::read_dir(&output).unwrap().count(), 2);
+        assert!(thumbnail(root.path(), &files[0].reference).is_ok());
+        let external = tempfile::tempdir().unwrap();
+        export_png(root.path(), &files[0].reference, &external.path().join("export.png")).unwrap();
+        discard_completed(root.path(), &task).unwrap();
+        assert!(!original.exists());
+        assert!(!output.join("meta").join(&task).exists());
+    }
+
+    #[test]
+    fn legacy_task_layout_recovers_retries_reads_and_deletes_without_migration() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let directory = root.path().join("drawing").join(&task);
+        std::fs::create_dir_all(&directory).unwrap();
+        let images = [input(20, ImageFormat::Png), input(30, ImageFormat::Jpeg)];
+        let (pending, bytes) = receipt(root.path(), &task, &images);
+        let original = root.path().join(&pending.files[0].file.reference);
+        publish(&original, &bytes[0]).unwrap();
+        assert_eq!(recover(root.path(), &task).unwrap(), None);
+        let files = save(root.path(), &task, &images).unwrap();
+        assert_eq!(files[0], pending.files[0].file);
+        assert_eq!(std::fs::read(&original).unwrap(), bytes[0]);
+        assert_eq!(save(root.path(), &task, &images).unwrap(), files);
+        assert_eq!(recover(root.path(), &task).unwrap(), Some(files.clone()));
+        assert_eq!(read(root.path(), &files[0].reference).unwrap().data, images[0].data);
+        assert!(thumbnail(root.path(), &files[1].reference).is_ok());
+        assert!(!root.path().join("drawing/meta").exists());
+        discard_completed(root.path(), &task).unwrap();
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn ambiguous_task_layouts_and_metadata_file_collisions_fail_without_writes() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Uuid::new_v4().to_string();
+        let images = [input(20, ImageFormat::Png)];
+        let files = save(root.path(), &task, &images).unwrap();
+        let original = result_path(root.path(), &files[0].reference).unwrap();
+        let before = std::fs::read(&original).unwrap();
+        let legacy = root.path().join("drawing").join(&task);
+        std::fs::create_dir(&legacy).unwrap();
+        assert_eq!(save(root.path(), &task, &images).unwrap_err(), Error::Collision);
+        assert_eq!(recover(root.path(), &task).unwrap_err(), Error::Collision);
+        assert_eq!(discard_completed(root.path(), &task), Err(Error::Collision));
+        assert_eq!(std::fs::read(&original).unwrap(), before);
+        assert_eq!(std::fs::read_dir(&legacy).unwrap().count(), 0);
+
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("drawing")).unwrap();
+        std::fs::write(root.path().join("drawing/meta"), b"preserve").unwrap();
+        assert_eq!(save(root.path(), &task, &images).unwrap_err(), Error::InvalidReference);
+        assert_eq!(std::fs::read(root.path().join("drawing/meta")).unwrap(), b"preserve");
+        assert_eq!(std::fs::read_dir(root.path().join("drawing")).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn legacy_and_new_reference_receipts_are_both_owned_and_duplicates_fail_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let scope = sha256(b"test-scope");
+        let bytes = STANDARD.decode(input(20, ImageFormat::Png).data).unwrap();
+        let first = import_reference_scoped(root.path(), &bytes, &scope).unwrap();
+        let current = reference_import_directory(root.path(), &scope).unwrap();
+        assert!(current.starts_with(root.path().join("drawing/meta")));
+        let legacy = root.path().join("drawing/reference-imports").join(&scope);
+        std::fs::create_dir_all(&legacy).unwrap();
+        let name = format!("{}.json", first.file.id);
+        std::fs::rename(current.join(&name), legacy.join(&name)).unwrap();
+        let second = import_reference_scoped(root.path(), &bytes, &scope).unwrap();
+        let mut expected = vec![first.file.reference.clone(), second.file.reference.clone()];
+        expected.sort();
+        assert_eq!(list_references(root.path(), &scope).unwrap(), expected);
+        std::fs::copy(legacy.join(&name), current.join(&name)).unwrap();
+        assert_eq!(list_references(root.path(), &scope).unwrap_err(), Error::Collision);
+        assert_eq!(remove_scoped_references(root.path(), &scope, &expected), Err(Error::Collision));
+        assert!(root.path().join(&first.file.reference).exists());
+        assert!(root.path().join(&second.file.reference).exists());
+        std::fs::remove_file(current.join(&name)).unwrap();
+        remove_scoped_references(root.path(), &scope, &expected).unwrap();
+        assert!(list_references(root.path(), &scope).unwrap().is_empty());
+        assert!(!root.path().join(&first.file.reference).exists());
+        assert!(!root.path().join(&second.file.reference).exists());
     }
 
     #[test]
@@ -2002,7 +2159,7 @@ mod tests {
         let images = [input(20, ImageFormat::Png), input(30, ImageFormat::Png)];
         let (pending, bytes) = receipt(root.path(), &task, &images);
         publish(
-            &root.path().join(&pending.files[1].file.reference),
+            &result_path(root.path(), &pending.files[1].file.reference).unwrap(),
             &bytes[1],
         )
         .unwrap();
@@ -2010,7 +2167,7 @@ mod tests {
         assert_eq!(partial.total, 2);
         assert_eq!(partial.durable, vec![1]);
         publish(
-            &root.path().join(&pending.files[0].file.reference),
+            &result_path(root.path(), &pending.files[0].file.reference).unwrap(),
             &bytes[0],
         )
         .unwrap();
@@ -2047,7 +2204,7 @@ mod tests {
         let task = Uuid::new_v4().to_string();
         let images = [input(20, ImageFormat::Png), input(30, ImageFormat::Png)];
         let (pending, bytes) = receipt(root.path(), &task, &images);
-        let first = root.path().join(&pending.files[0].file.reference);
+        let first = result_path(root.path(), &pending.files[0].file.reference).unwrap();
         publish(&first, &bytes[0]).unwrap();
         assert!(
             resume_recovery(
@@ -2060,7 +2217,7 @@ mod tests {
             )
             .is_err()
         );
-        assert!(!root.path().join(&pending.files[1].file.reference).exists());
+        assert!(!result_path(root.path(), &pending.files[1].file.reference).unwrap().exists());
         let result = resume_recovery(
             root.path(),
             &task,
@@ -2087,7 +2244,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let task = Uuid::new_v4().to_string();
         let (pending, bytes) = receipt(root.path(), &task, &[input(20, ImageFormat::Png)]);
-        let original = root.path().join(&pending.files[0].file.reference);
+        let original = result_path(root.path(), &pending.files[0].file.reference).unwrap();
         publish(&original, &bytes[0]).unwrap();
         let path = task_directory(root.path(), &task)
             .unwrap()
@@ -2107,7 +2264,7 @@ mod tests {
             let task = Uuid::new_v4().to_string();
             let (pending, bytes) = receipt(root.path(), &task, &images);
             for (item, bytes) in pending.files.iter().zip(bytes) {
-                publish(&root.path().join(&item.file.reference), &bytes).unwrap();
+                publish(&result_path(root.path(), &item.file.reference).unwrap(), &bytes).unwrap();
             }
             assert_eq!(read_manifest(root.path(), &task).unwrap(), None);
             let expected = pending
@@ -2122,7 +2279,7 @@ mod tests {
                 std::fs::read_dir(task_directory(root.path(), &task).unwrap())
                     .unwrap()
                     .count(),
-                images.len() + 2
+                2
             );
         }
     }
@@ -2133,7 +2290,7 @@ mod tests {
         let task = Uuid::new_v4().to_string();
         let images = [input(20, ImageFormat::Png), input(30, ImageFormat::Jpeg)];
         let (pending, bytes) = receipt(root.path(), &task, &images);
-        let first_path = root.path().join(&pending.files[0].file.reference);
+        let first_path = result_path(root.path(), &pending.files[0].file.reference).unwrap();
         publish(&first_path, &bytes[0]).unwrap();
         let modified = std::fs::metadata(&first_path).unwrap().modified().unwrap();
         let pending_path = task_directory(root.path(), &task)
@@ -2162,7 +2319,7 @@ mod tests {
             std::fs::read_dir(task_directory(root.path(), &task).unwrap())
                 .unwrap()
                 .count(),
-            4
+            2
         );
     }
 
@@ -2173,7 +2330,7 @@ mod tests {
         let images = [input(20, ImageFormat::Png), input(30, ImageFormat::Jpeg)];
         let (pending, bytes) = receipt(root.path(), &task, &images);
         publish(
-            &root.path().join(&pending.files[0].file.reference),
+            &result_path(root.path(), &pending.files[0].file.reference).unwrap(),
             &bytes[0],
         )
         .unwrap();
@@ -2191,11 +2348,11 @@ mod tests {
                 std::fs::read_dir(task_directory(root.path(), &task).unwrap())
                     .unwrap()
                     .count(),
-                2
+                1
             );
         }
         assert_eq!(
-            std::fs::read(root.path().join(&pending.files[0].file.reference)).unwrap(),
+            std::fs::read(result_path(root.path(), &pending.files[0].file.reference).unwrap()).unwrap(),
             bytes[0]
         );
     }
@@ -2218,7 +2375,7 @@ mod tests {
             Error::Corrupt
         );
         std::fs::write(&path, &encoded).unwrap();
-        let original = root.path().join(&pending.files[0].file.reference);
+        let original = result_path(root.path(), &pending.files[0].file.reference).unwrap();
         let changed = STANDARD.decode(input(99, ImageFormat::Png).data).unwrap();
         publish(&original, &changed).unwrap();
         assert_eq!(recover(root.path(), &task).unwrap_err(), Error::Corrupt);
@@ -2227,7 +2384,7 @@ mod tests {
             Error::Corrupt
         );
         assert_eq!(std::fs::read(&original).unwrap(), changed);
-        assert!(!root.path().join(&pending.files[1].file.reference).exists());
+        assert!(!result_path(root.path(), &pending.files[1].file.reference).unwrap().exists());
         std::fs::write(&original, &bytes[0]).unwrap();
         for (name, value) in [
             ("version", serde_json::json!(2)),
@@ -2271,7 +2428,7 @@ mod tests {
             std::fs::read_dir(task_directory(root.path(), &task).unwrap())
                 .unwrap()
                 .count(),
-            4
+            2
         );
     }
 
@@ -2425,7 +2582,7 @@ mod tests {
         bytes.splice(33..33, png_chunk(b"tEXt", marker));
         input.data = STANDARD.encode(&bytes);
         let files = save(root.path(), &task, &[input]).unwrap();
-        let original = root.path().join(&files[0].reference);
+        let original = result_path(root.path(), &files[0].reference).unwrap();
         assert_eq!(
             export_png(root.path(), &files[0].reference, &original),
             Err(Error::InvalidReference)
@@ -2493,7 +2650,7 @@ mod tests {
             &[input(20, ImageFormat::Png)],
         )
         .unwrap();
-        let original = std::fs::read(root.path().join(&files[0].reference)).unwrap();
+        let original = std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap();
         for (input, expected) in [
             (
                 serde_json::json!({
@@ -2539,7 +2696,7 @@ mod tests {
             assert!(exported_parameter_chunks(&std::fs::read(destination).unwrap()).is_empty());
         }
         assert_eq!(
-            std::fs::read(root.path().join(&files[0].reference)).unwrap(),
+            std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap(),
             original
         );
     }
@@ -2796,7 +2953,7 @@ mod tests {
             image.to_rgba8()
         );
         assert_eq!(
-            std::fs::read(root.path().join(&files[0].reference)).unwrap(),
+            std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap(),
             bytes
         );
         assert_eq!(
@@ -3022,7 +3179,7 @@ mod tests {
                 "safety_threshold": "BLOCK_ONLY_HIGH", "response_modalities": ["IMAGE"]
             }))
         );
-        let original = std::fs::read(root.path().join(&files[0].reference)).unwrap();
+        let original = std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap();
         assert_eq!(
             decode_image(&bytes, "image/png").unwrap().to_rgba8(),
             decode_image(&original, "image/png").unwrap().to_rgba8()
@@ -3118,7 +3275,7 @@ mod tests {
                 before
             );
             assert_eq!(
-                std::fs::read(root.path().join(&files[0].reference)).unwrap(),
+                std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap(),
                 bytes
             );
         }
@@ -3172,7 +3329,7 @@ mod tests {
             &[input(20, ImageFormat::Png), input(80, ImageFormat::Png)],
         )
         .unwrap();
-        std::fs::remove_file(root.path().join(&files[1].reference)).unwrap();
+        std::fs::remove_file(result_path(root.path(), &files[1].reference).unwrap()).unwrap();
         assert!(read(root.path(), &files[0].reference).is_ok());
         assert!(thumbnail(root.path(), &files[0].reference).is_ok());
         assert!(matches!(
@@ -3183,7 +3340,7 @@ mod tests {
             read_manifest(root.path(), &task).unwrap_err(),
             Error::Unavailable
         );
-        std::fs::write(root.path().join(&files[0].reference), b"corrupt").unwrap();
+        std::fs::write(result_path(root.path(), &files[0].reference).unwrap(), b"corrupt").unwrap();
         assert!(matches!(
             thumbnail(root.path(), &files[0].reference),
             Err(Error::Corrupt)
@@ -3199,7 +3356,7 @@ mod tests {
             Err(Error::Unavailable)
         );
         let (pending, bytes) = receipt(root.path(), &task, &[input(20, ImageFormat::Png)]);
-        let original = root.path().join(&pending.files[0].file.reference);
+        let original = result_path(root.path(), &pending.files[0].file.reference).unwrap();
         std::fs::write(&original, &bytes[0]).unwrap();
         assert_eq!(
             discard_completed(root.path(), &task),
@@ -3236,7 +3393,7 @@ mod tests {
             Err(Error::Unavailable)
         );
         assert!(manifest_path.exists());
-        std::fs::write(root.path().join(&files[0].reference), &bytes[0]).unwrap();
+        std::fs::write(result_path(root.path(), &files[0].reference).unwrap(), &bytes[0]).unwrap();
         discard_completed(root.path(), &task).unwrap();
         assert!(!directory.exists());
     }
@@ -3247,7 +3404,7 @@ mod tests {
         let task = Uuid::new_v4().to_string();
         let files = save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap();
         let directory = task_directory(root.path(), &task).unwrap();
-        let original = root.path().join(&files[0].reference);
+        let original = result_path(root.path(), &files[0].reference).unwrap();
         let original_bytes = std::fs::read(&original).unwrap();
         let manifest_path = directory.join("manifest.json");
         let manifest_bytes = std::fs::read(&manifest_path).unwrap();
@@ -3281,11 +3438,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let task = Uuid::new_v4().to_string();
         let files = save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap();
-        let manifest = root
-            .path()
-            .join("drawing")
-            .join(&task)
-            .join("manifest.json");
+        let manifest = task_directory(root.path(), &task).unwrap().join("manifest.json");
         let mut tampered = files.clone();
         tampered[0].reference = "../outside.png".into();
         std::fs::write(
@@ -3310,7 +3463,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        std::fs::remove_file(root.path().join(&files[0].reference)).unwrap();
+        std::fs::remove_file(result_path(root.path(), &files[0].reference).unwrap()).unwrap();
         assert_eq!(
             read_manifest(root.path(), &task).unwrap_err(),
             Error::Unavailable
@@ -3373,9 +3526,9 @@ mod tests {
         assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
         let task = Uuid::new_v4().to_string();
         let files = save(root.path(), &task, &[input(20, ImageFormat::Png)]).unwrap();
-        let original = std::fs::read(root.path().join(&files[0].reference)).unwrap();
+        let original = std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap();
         assert_eq!(output_directory(root.path()).unwrap(), directory);
-        assert_eq!(std::fs::read(root.path().join(&files[0].reference)).unwrap(), original);
+        assert_eq!(std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap(), original);
     }
 
     #[test]

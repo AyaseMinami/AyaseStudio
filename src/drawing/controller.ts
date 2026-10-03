@@ -7,6 +7,7 @@ import { initialSeedreamDrawingOptions, validSeedreamDrawingOptions, validateSee
 import { isDrawingProtocol } from "../chat/protocolOptions";
 import { captureReference, managedReferences, prepareReferences, readVerifiedReference } from "./referenceSession";
 import { drawingExportParameters } from "./exportParameters";
+import { drawingOutputError } from "./outputDirectory";
 import { validGeminiDrawingOptions } from "./geminiOptions";
 import { dataPolicies } from "../storage/dataPolicies";
 import { readDrawingDraftData } from "./settingsData";
@@ -473,12 +474,13 @@ export class DrawingController {
       const next: DrawingTask = { id: this.dependencies.id?.() ?? crypto.randomUUID(), sourceTaskId: id,
         batchId: crypto.randomUUID(), createdAt: this.now(), updatedAt: this.now(), status: "queued", parameters: structuredClone(source.parameters) };
       try {
+        await this.prepareOutput([next.id]);
         const registered = await this.dependencies.repository.enqueue([next]);
         replacementId = next.id;
         this.publish({ tasks: [...registered, ...this.state.tasks], hasData: true });
         this.cycle.add(next.id);
         this.pump();
-      } catch { this.publish({ error: "重新生成任务登记失败，未发起请求。" }); }
+      } catch (error) { this.publish({ error: error instanceof ImageGenerationError ? error.message : "重新生成任务登记失败，未发起请求。" }); }
     }).then(() => replacementId).finally(() => { this.regenerations.delete(id); });
     this.regenerations.set(id, operation);
     return operation;
@@ -580,6 +582,8 @@ export class DrawingController {
           id: this.dependencies.id?.() ?? crypto.randomUUID(), batchId, createdAt: this.now(), updatedAt: this.now(),
           status: "queued", parameters: structuredClone(parameters),
         }));
+        await this.prepareOutput(tasks.map(task => task.id));
+        if (this.submissionCancelled) throw new Error("Output preparation cancelled");
         registering = true;
         const registered = await this.dependencies.repository.enqueue(tasks);
         this.publish({ tasks: [...registered, ...this.state.tasks], hasData: true });
@@ -601,7 +605,7 @@ export class DrawingController {
             await this.saveTask({ ...task, status: "cancelled", updatedAt: this.now(), finishedAt: this.now() });
           } catch { this.pause(); this.publish({ error: "整批已登记，但取消状态保存失败；队列已暂停，请检查后再继续。" }); }
         }
-      } catch { this.publish({ error: this.submissionCancelled ? null : registering
+      } catch (error) { this.publish({ error: this.submissionCancelled ? null : error instanceof ImageGenerationError ? error.message : registering
         ? "整批任务登记失败，未发起本批生成请求。"
         : "参考图准备或草稿保存失败，未发起本批生成请求；请检查图片或本地存储后重试。",
         ...(this.submissionCancelled ? { notice: "已取消参考图准备，未发起本批生成请求。" } : {}) }); }
@@ -653,11 +657,17 @@ export class DrawingController {
     this.cycleHadFailure = false;
     this.publish({ completion: { sequence: this.state.completion.sequence + 1, allSucceeded } });
   }
+  private async prepareOutput(ids: string[]): Promise<void> {
+    if (!this.dependencies.files.prepareOutputs) return;
+    try { await this.dependencies.files.prepareOutputs(ids); }
+    catch (error) { throw new ImageGenerationError(`${drawingOutputError(error)} 请前往“设置 → 常规 → 绘图输出”检查目录；未发起生成请求。`, "failed", "local-file"); }
+  }
   private async run(initial: DrawingTask, active: ActiveDrawing): Promise<void> {
     let task: DrawingTask = { ...initial, status: "preparing", startedAt: this.now(), updatedAt: this.now(), finishedAt: undefined };
     const parameters = task.parameters;
     try {
       await this.saveTask(task);
+      await this.prepareOutput([task.id]);
       const target = this.settings && getDrawingTarget(this.settings, parameters.configuredModelId);
       if (!target || target.provider.id !== parameters.providerId || target.connection.id !== parameters.connectionId ||
         target.connection.protocol !== parameters.protocol || target.connection.baseUrl !== parameters.baseUrl || target.model.modelId !== parameters.modelId)
@@ -697,7 +707,7 @@ export class DrawingController {
           diagnostic: { category: active.saving ? "local-file" : active.controller.signal.aborted ? "cancelled"
             : error instanceof ImageGenerationError ? error.category ?? (error.outcome === "unknown" ? "network-unknown" : active.sent ? "invalid-response" : "configuration") : active.sent ? "network-unknown" : "local-state",
             ...(error instanceof ImageGenerationError && error.httpStatus ? { httpStatus: error.httpStatus } : {}) },
-          error: active.saving ? "图片已返回，但本地保存未完成。可重试保存；不会重新请求服务。若暂存也失败，图片仅在内存，退出后可能丢失。"
+          error: active.saving ? "图片已返回，但本地保存未完成。请检查任务原输出目录的磁盘连接、空间和写入权限，再重试本地保存；不会重新请求服务。更改输出目录仅影响新任务。若暂存也失败，图片仅在内存，退出后可能丢失。"
           : error instanceof ImageGenerationError ? error.message : active.sent ? "请求结果未知；不会自动重发。" : "本地任务登记失败，未发起生成请求。" };
         this.publish({ error: task.error ?? null });
         try { await this.saveTask(task); }

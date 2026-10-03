@@ -6,8 +6,8 @@
 npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的全部目标/构建/开发依赖，均是保守清单，不是 Windows EXE 的实际链接清单。
 缺少本机许可文件与嵌套依赖需按 [许可说明](THIRD-PARTY-LICENSES.md) 继续核实；源码下载位置不等于品牌素材授权。
 
-- package-lock.json SHA-256: `d692ed867e8f834d158a9de6bec16c1af6b58222ef049c9a0356f06156b033c0`
-- src-tauri/Cargo.lock SHA-256: `8b0c5f34d0c88b3ef7987a83936cc9bae7a5f03f13b25ae8ea67ed5000c5350f`
+- package-lock.json SHA-256: `ca47a162e8f3a4654fb9f32b37287d79091cb5a165b264386b325197c802418d`
+- src-tauri/Cargo.lock SHA-256: `63f58f8f02ad21f4bdb4feb30a9924a156af5eaebfd4cbbd3d78c81f58c62aff`
 - npm: 272 个锁定位置；其中 151 个非 dev 项。
 - Rust: 556 个外部包。
 

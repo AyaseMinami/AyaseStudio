@@ -1,5 +1,17 @@
 # Ayase Studio Architecture
 
+## Configurable device-local drawing output (2026-10-03)
+
+`drawing_output.rs` owns the native-only directory preference, chooser, write/delete probe and immutable per-task locations. Debug defaults to repository `output/`; release defaults to `output/` beside the executable. Isolated application identifiers use their own app-data output. General settings reads/selects/resets via commands; JavaScript never supplies an arbitrary writable path. `DrawingFiles.prepareOutputs` binds each new batch before enqueue and rechecks the pinned directory before dispatch, including regenerated tasks. Preference updates and file operations share `DRAWING_FILES`; an in-flight task retains its original directory even if the user selects another.
+
+The v2 layout below now applies inside each selected output root. Small native `drawing-output.json` and `drawing-locations/<task UUID>.json` records remain in app data and never enter portable backups; legacy tasks with existing files continue using app-data drawing paths, while queued tasks without files or bindings bind on first dispatch. One resolution seam handles save, preview, recovery, export and removal. Writes do not fall back to C: or resend a generation. General settings and the drawing toolbar expose a change-directory entry, while errors retain the existing selection. See [data contracts](DATA-CONTRACTS.md#本机可配置绘图输出2026-10-03).
+
+## Drawing native file layout v2 (2026-10-03)
+
+This layout superseded the physical task-folder layout described in the historical #84/#86 sections below. It originally published new originals directly under `<app_data_dir>/drawing/<task UUID>_<image UUID>.<ext>`. Configurable output now publishes new task originals in the selected root and journals in its `meta/<task UUID>/`; the output-directory command opens that configured root. Origin-scoped input receipts still use app-data `drawing/meta/reference-imports/<scope>/`, and reference inputs remain in `drawing/references/`.
+
+The native `result_path` seam resolves existing logical references without changing their persisted strings or file ownership. `task_directory` chooses an existing legacy directory or the new metadata directory; simultaneous layouts fail closed. Save, recovery, inventory, read/thumbnail/export and deletion all use this same resolution. Existing tasks resume in their original layout, while new tasks use v2; no user-file migration is run. Reference receipt inventory and cleanup accept either location and reject duplicate identities. JSON formats and portable backup exclusions are unchanged; older native clients cannot read layout-v2 files. See [data contracts](DATA-CONTRACTS.md#绘图输出目录布局-v22026-10-03).
+
 ## Background mask tuning (2026-10-03)
 
 The appearance controller and shared durable reader accept background masks from 0 to 90, with 0 rendering a fully transparent overlay. Missing values, newly imported library entries and explicit resets use 50; stored values remain unchanged. Settings and library drafts share the range control and default. Resource ownership and backup projection are unchanged; downgrade limitations are recorded in [DATA-CONTRACTS.md](DATA-CONTRACTS.md).

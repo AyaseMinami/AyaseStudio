@@ -6,13 +6,14 @@ import { createGrokImagesTransport } from "./grokImages";
 import { createSeedreamImagesTransport } from "./seedreamImages";
 import { ImageGenerationError } from "./imageResponse";
 
-/** The host chooses the fixed drawing directory; callers cannot supply paths. */
+/** The host chooses the configured drawing directory; callers cannot supply paths. */
 export async function openDrawingOutputDirectory(): Promise<void> {
   if (!isTauri()) throw new Error("请在桌面应用中打开输出文件夹。");
   await invoke<void>("open_drawing_output_directory");
 }
 
 export const runtimeDrawingFiles: DrawingFiles = {
+  prepareOutputs: taskIds => invoke<void>("prepare_drawing_output", { taskIds }),
   importReference: image => invoke<DrawingFile & { digest: string }>("import_drawing_reference", { image }),
   importReferenceBytes: bytes => invoke<DrawingFile & { digest: string }>("import_drawing_reference_bytes", bytes),
   listReferences: () => invoke<string[]>("list_drawing_references"),

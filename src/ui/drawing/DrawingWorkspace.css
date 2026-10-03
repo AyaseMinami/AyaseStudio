@@ -1,4 +1,5 @@
 .drawing-workspace {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -17,6 +18,7 @@
 .drawing-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.75rem 0; }
 .drawing-queue-summary { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.35rem 0.5rem; font-size: var(--font-small); }
 .drawing-workspace .drawing-notice { margin: 0.75rem 0 1rem; color: rgb(var(--color-muted)); font-size: var(--font-small); line-height: 1.6; }
+.drawing-operation-notice { position: absolute; right: 16px; bottom: 16px; z-index: 5; max-width: min(360px, calc(100% - 32px)); padding: 10px 14px; border: 1px solid var(--workbench-border); border-radius: 10px; background: var(--workbench-surface); box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); color: rgb(var(--color-text-soft)); font-size: var(--font-small); line-height: 1.6; overflow-wrap: anywhere; pointer-events: none; }
 .drawing-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px; align-items: start; }
 .drawing-left-column { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
 .drawing-panel { min-width: 0; border: 1px solid var(--workbench-border); border-radius: 12px; background: var(--workbench-surface); box-shadow: var(--workbench-shadow); padding: 1rem; }
@@ -191,6 +193,10 @@
 .drawing-result-prompt { white-space: pre-wrap; max-height: 12rem; overflow-y: auto; }
 .drawing-empty { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 1.5rem; color: rgb(var(--color-muted)); text-align: center; line-height: 1.6; }
 .drawing-workspace .drawing-history-heading { margin-top: 1.25rem; }
+.drawing-history-heading { flex-wrap: wrap; }
+.drawing-history-heading .drawing-clear-history { margin-left: auto; border-color: rgb(var(--color-error-text) / 0.3); background: rgb(var(--color-error-text) / 0.08); color: rgb(var(--color-error-text)); }
+.drawing-history-heading .drawing-clear-history:hover:not(:disabled) { border-color: rgb(var(--color-error-text) / 0.5); background: rgb(var(--color-error-text) / 0.15); }
+.drawing-history-heading .drawing-clear-history:disabled { opacity: 0.45; }
 .drawing-history { display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.75rem 0; }
 .drawing-history .drawing-button { flex-shrink: 0; }
 .drawing-history .drawing-button { border-color: transparent; padding: 0.45rem; }

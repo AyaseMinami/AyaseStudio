@@ -1,5 +1,33 @@
 # Ayase Studio Development Guide
 
+## Beta 3 release verification
+
+Version `0.1.0-beta.3` includes the post-Beta-2 drawing output configuration and workspace interaction fixes. All npm, Cargo and Tauri version declarations agree; the third-party inventory lockfile hashes were regenerated without dependency changes.
+
+Release checks passed: 16 data-contract script tests, 168 Vitest files / 2839 tests, TypeScript/Vite production build, 160 Rust tests (one existing ignored test), locked Cargo check and nine NSIS installer-policy cases. These checks and packaging temporarily use process CPU affinity `0xfffffff0` to avoid locally observed unstable execution positions; this is an environment constraint, not a crypto-code fix or a permanent system setting. No tests were skipped or relaxed for this release. Earlier default-affinity failures below remain historical evidence, not the latest controlled-run result.
+
+Actual installation, upgrade/data retention, native folder dialogs and real provider requests remain outside this release's automated acceptance. The two machine-specific diagnostic files remain local and excluded from Git.
+
+## Workspace delivery verification (2026-10-03)
+
+Cherry import now uses a workspace-level `canImport` predicate rather than send readiness: empty assistants and no selected conversation may import, while pending operations, stale snapshots, maintenance locks and failed selected-transcript hydration still block. Entry, native chooser and commit share the predicate. The 114 focused session/workspace tests, TypeScript/production build, Cargo check and independent review pass. The confirmation dialog's explicit auto margin restores centering after Tailwind preflight.
+
+The remaining full-suite failure is an intermittent encrypted-backup roundtrip in unchanged `src/backup/codec.test.ts`: default parallel runs and a two-worker run fail at different encrypted cases, while an isolated run passes all 88 codec tests. Temporary synthetic-only diagnostics identified Node WebCrypto `OperationError` with cause `Cipher job failed`; diagnostics were removed, and neither crypto implementation nor test gates were weakened. Root cause remains unresolved. Latest two-worker suite: 2838 passed, 1 failed out of 2839. This delivery does not establish that all bugs or the complete test gate are cleared.
+
+## Configurable drawing output (2026-10-03)
+
+Development defaults to repository-root `output/` (ignored by Git); installed builds use executable-adjacent `output/`. General settings can choose another folder or restore the default. Validate probe failure without changing the previous preference, cancel, restart, output A → B with old A preview/recovery retained, batch binding before dispatch, and no provider call on a failed preflight. Unit cases live in `drawing_output.rs`, `queue.test.ts` and `DrawingOutputSettings.test.tsx`. User-selected paths and immutable task locations are native device-only records excluded from backup; see [data contracts](DATA-CONTRACTS.md#本机可配置绘图输出2026-10-03).
+
+Validation: all 58 drawing Rust tests pass; the data-contract gate, production build, Cargo check and independent Sol/high review pass. Full frontend suite: 2834 passed, 3 failed, all failures in the unrelated untracked `src/chat/useChatSession.cherry.test.tsx`. In-app browser checks with mocked native commands cover selection, cancel, permission-error retention, reset and narrow long-path wrapping. The isolated native startup/close probe reported `guard-settled` at `2026-10-03T14:19:41.594Z` and exited 0. Actual OS folder selection and Explorer interactions remain manual acceptance; no live providers, user-file migration or installer update were performed. Legacy queued tasks without files or bindings select their location on first dispatch; existing file-backed tasks remain in place.
+
+## Drawing output layout v2 (2026-10-03)
+
+Before configurable output, layout v2 placed generated originals directly in the app-data `drawing` root as `<task UUID>_<image UUID>.<ext>`. That layout remains readable; new tasks now use the configured output described above. Task manifests/pending journals and new scoped reference-import receipts lived under `drawing/meta`; selected input originals still remain under `drawing/references`. Existing task folders remain readable in place, with no automatic move of user files. Persisted drawing references are logical identifiers resolved by the native file layer, not paths to open directly. See [data contracts](DATA-CONTRACTS.md#绘图输出目录布局-v22026-10-03) for compatibility and downgrade limits.
+
+Run `cargo test --lib --locked --manifest-path src-tauri/Cargo.toml drawing::tests`, the normal frontend/data-contract gate, Rust check and an isolated `tauri dev` smoke using `scripts/drawing110/close-probe.config.json`. Native tests use temporary directories and synthetic image bytes; do not modify the real app-data directory or call providers. Compilation/startup does not establish Explorer interaction acceptance.
+
+Validation: 51 drawing Rust tests pass, as do data-contract checks, frontend production build, Rust check and diff checks. The isolated close probe started and reported `guard-settled` at `2026-10-03T13:53:27.557Z`, exiting 0. Initial incremental compiler/linker access violations were bypassed with `CARGO_INCREMENTAL=0` and `cargo test --lib -j 1`; no repository build settings changed. Full frontend run: 2818 passed, 4 failed in untouched backup encryption and Cherry-import test files. Independent Sol/high review found no P0/P1/P2 defect in this layout change. No live provider call, real-file migration, installer delivery or Explorer interaction acceptance was performed.
+
 ## Beta 2 packaging (2026-10-03)
 
 `0.1.0-beta.2` packages the current `dev` baseline as a Windows x64 NSIS prerelease. npm, Cargo and Tauri versions are aligned; the locked dependency inventory is regenerated after the root version change. This release includes the post-Beta-1 chat/workbench appearance, navigation performance, general preferences and tray menu, shared controls, and documented cache/backup fixes.

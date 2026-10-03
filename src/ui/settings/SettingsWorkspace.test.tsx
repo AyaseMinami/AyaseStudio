@@ -310,7 +310,8 @@ describe("general settings interactions", () => {
     expect(host.textContent).not.toContain("重新裁切");
     await click("更换头像");
     expect(button("重新裁切").disabled).toBe(false);
-    await click("恢复默认"); expect(saveAvatar).toHaveBeenCalledWith();
+    const restoreAvatar = [...host.querySelectorAll<HTMLButtonElement>('dialog[aria-label="更换头像"] button')].find(node => node.textContent === "恢复默认")!;
+    await act(async () => restoreAvatar.click()); expect(saveAvatar).toHaveBeenCalledWith();
   });
 
   async function openCurrentAvatarCrop() {
