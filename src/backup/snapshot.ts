@@ -88,7 +88,15 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
   const storage = { getItem: (key: string) => snapshot.preferences[key] ?? null, setItem: () => {} };
   const preferences = Object.fromEntries(preferenceKeys.map(k => [k, snapshot.preferences[k]])) as BackupPreferences;
   // Normalize legacy appearance through its documented migration, never copy raw storage.
-  preferences[preferenceKeys[0]] = JSON.stringify(readAppearancePreferences(storage));
+  const appearance = readAppearancePreferences(storage);
+  preferences[preferenceKeys[0]] = JSON.stringify({
+    ...pick(appearance, backupFields(dataPolicies.appearance)),
+    backgroundFocus: appearance.backgroundFocus ? pick(appearance.backgroundFocus, backupFields(dataPolicies.backgroundFocus)) : null,
+    backgroundLibrary: appearance.backgroundLibrary.map(entry => ({
+      ...pick(entry, backupFields(dataPolicies.background)),
+      focus: entry.focus ? pick(entry.focus, backupFields(dataPolicies.backgroundFocus)) : null,
+    })),
+  });
   const assets: BackupAsset[] = [], blobIds = new Map<string, string>(), native = new Map<string, { size?: number; mime?: string }>();
   let total = 0;
   async function addAsset(id: string, mime: string, data: string) {
@@ -119,7 +127,6 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
     for (const p of m.roundVersions?.pairs ?? []) p.forEach(collectMessage);
   }
   for (const c of encoded.chats) c.messages.forEach(collectMessage);
-  const appearance = JSON.parse(preferences[preferenceKeys[0]]!);
   if (appearance.backgroundReference) native.set(appearance.backgroundReference, {});
   for (const entry of appearance.backgroundLibrary) native.set(entry.reference, {});
   for (const [ref, metadata] of native) {

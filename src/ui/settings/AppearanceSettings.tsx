@@ -23,12 +23,14 @@ export interface AppearanceSettingsProps {
   themeMode: ThemeMode; resolvedTheme: ResolvedTheme; accentColor: string | null; canvasColor: string | null;
   assistantBubbleColor: string | null; assistantBubbleTransparency: number; effectiveAccentColor: string; effectiveCanvasColor: string;
   unifiedTransparency: number; sidebarTransparency: number; composerTransparency: number;
+  sidebarGlassEnabled: boolean; composerGlassEnabled: boolean;
   backgroundReference: string | null; backgroundUrl: string | null; backgroundFocus: BackgroundFocus | null; backgroundFit: BackgroundFit;
   backgroundLibrary: BackgroundLibraryEntry[]; backgroundEnabled: boolean; backgroundName: string | null;
   backgroundMask: number; backgroundBlur: number; backgroundBusy: boolean; backgroundError: string | null; readabilityWarnings: string[];
   onThemeModeChange(themeMode: ThemeMode): void; onAccentColorChange(color: string | null): void; onCanvasColorChange(color: string | null): void;
   onAssistantBubbleColorChange(color: string | null): void; onAssistantBubbleTransparencyChange(value: number): void; onEditBackgroundFocus(): void;
   onUnifiedTransparencyChange(value: number | null): void; onSidebarTransparencyChange(value: number): void; onComposerTransparencyChange(value: number): void;
+  onSidebarGlassEnabledChange(enabled: boolean): void; onComposerGlassEnabledChange(enabled: boolean): void;
   onBackgroundFitChange(fit: BackgroundFit): void; onBackgroundMaskChange(mask: number): void; onBackgroundBlurChange(blur: number): void;
   onPrepareLibraryBackground(): Promise<BackgroundResource | null>;
   onSaveLibraryBackground(resource: BackgroundResource, replaceId?: string): Promise<BackgroundLibraryEntry>;
@@ -45,11 +47,13 @@ export function AppearanceSettings({
   colorPreset, onColorPresetChange,
   themeMode, resolvedTheme, accentColor, canvasColor, assistantBubbleColor, assistantBubbleTransparency,
   unifiedTransparency, sidebarTransparency, composerTransparency,
+  sidebarGlassEnabled, composerGlassEnabled,
   effectiveAccentColor, effectiveCanvasColor, backgroundReference, backgroundUrl, backgroundFocus, backgroundFit,
   backgroundLibrary, backgroundEnabled, backgroundName,
   backgroundMask, backgroundBlur, backgroundBusy, backgroundError, readabilityWarnings, onThemeModeChange,
   onAccentColorChange, onCanvasColorChange, onAssistantBubbleColorChange, onAssistantBubbleTransparencyChange,
   onUnifiedTransparencyChange, onSidebarTransparencyChange, onComposerTransparencyChange,
+  onSidebarGlassEnabledChange, onComposerGlassEnabledChange,
   onEditBackgroundFocus, onBackgroundFitChange, onBackgroundMaskChange, onBackgroundBlurChange,
   onPrepareLibraryBackground, onSaveLibraryBackground, onDiscardLibraryBackground, onResolveLibraryBackground,
   onApplyLibraryBackground, onRemoveLibraryBackgrounds, onRestoreBackground,
@@ -141,14 +145,19 @@ export function AppearanceSettings({
       <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。侧栏透明度同时控制聊天的助手栏、对话栏和设置分类导航。</GroupHeading>
       <div className="appearance-rows">
         <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖三个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
+        <div className="appearance-row"><RowCopy title="侧栏玻璃效果" /><button type="button" className="settings-button" aria-label="侧栏玻璃效果" aria-pressed={sidebarGlassEnabled} onClick={() => onSidebarGlassEnabledChange(!sidebarGlassEnabled)}>{sidebarGlassEnabled ? "已开启" : "已关闭"}</button></div>
+        <p className="muted-text">仅作用于聊天助手栏和对话栏，不影响设置分类导航。</p>
+        {sidebarGlassEnabled && <p className="notice appearance-inline-notice">侧栏玻璃效果已开启，覆盖聊天侧栏透明度；下方数值仍会保存，关闭效果后使用。设置分类导航继续使用该透明度值。</p>}
         <div className="appearance-row appearance-range-row"><RowCopy title="侧栏透明度" /><RangeControl value={`${sidebarTransparency}%`} ariaLabel="侧栏透明度" valueNumber={sidebarTransparency} onChange={onSidebarTransparencyChange} onReset={() => onSidebarTransparencyChange(defaultAppearancePreferences.sidebarTransparency)} max="100" min="0" /></div>
+        <div className="appearance-row"><RowCopy title="输入区域玻璃效果" /><button type="button" className="settings-button" aria-label="输入区域玻璃效果" aria-pressed={composerGlassEnabled} onClick={() => onComposerGlassEnabledChange(!composerGlassEnabled)}>{composerGlassEnabled ? "已开启" : "已关闭"}</button></div>
+        {composerGlassEnabled && <p className="notice appearance-inline-notice">输入区域玻璃效果已开启，覆盖输入区域透明度；下方数值仍会保存，关闭效果后使用。</p>}
         <div className="appearance-row appearance-range-row"><RowCopy title="输入区域透明度" /><RangeControl value={`${composerTransparency}%`} ariaLabel="输入区域透明度" valueNumber={composerTransparency} onChange={onComposerTransparencyChange} onReset={() => onComposerTransparencyChange(defaultAppearancePreferences.composerTransparency)} max="100" min="0" /></div>
         <div className="appearance-row appearance-range-row"><RowCopy title="消息气泡透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="消息气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} onReset={() => onAssistantBubbleTransparencyChange(defaultAppearancePreferences.assistantBubbleTransparency)} max="100" min="0" /></div>
       </div>
     </section>
 
     <section className="appearance-group appearance-group-card appearance-reset-group" aria-labelledby="appearance-reset-title">
-      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、各区域透明度和背景设置，保留背景库图片。</GroupHeading>
+      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、各区域透明度和背景设置；侧栏玻璃关闭、输入区域玻璃开启，保留背景库图片。</GroupHeading>
       <button className="settings-button" disabled={backgroundBusy} onClick={() => void onResetCustomAppearance()} type="button"><RotateCcw size={15} />恢复当前主题默认外观</button>
     </section>
     </div>

@@ -71,6 +71,35 @@ async function assetDocument() {
   return doc;
 }
 describe("restore conflict strategies", () => {
+  it("restores both glass flags and transparency together through replacement and reexport", async () => {
+    const test = await setup();
+    const incoming = structuredClone(test.before);
+    incoming.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences,
+      sidebarGlassEnabled: true, composerGlassEnabled: true, sidebarTransparency: 37, composerTransparency: 62 });
+    const exported = await createBackupDocument(incoming, { connections: false, credentials: false }, test.files);
+    const decoded = (await decodeBackup(await encodeBackup(exported))).document;
+    await test.repository.restore(createRestorePlan(decoded, test.before, "replace"), test.before, test.files);
+    const restored = await test.repository.snapshot();
+    expect(JSON.parse(restored.preferences[preferenceKeys[0]]!)).toMatchObject({
+      sidebarGlassEnabled: true, composerGlassEnabled: true, sidebarTransparency: 37, composerTransparency: 62,
+    });
+    const reexported = await createBackupDocument(restored, { connections: false, credentials: false }, test.files);
+    expect(reexported.preferences[preferenceKeys[0]]).toBe(exported.preferences[preferenceKeys[0]]);
+  });
+  it.each([
+    { sidebarGlassEnabled: "true" }, { composerGlassEnabled: 1 }, { futureGlassEnabled: true },
+  ])("rejects invalid incoming glass data before any restore writes: case %#", async patch => {
+    const test = await setup();
+    const exported = await createBackupDocument(test.before, { connections: false, credentials: false }, test.files);
+    exported.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, ...patch });
+    const storeWrite = vi.spyOn(test.store, "setItem"), journalWrite = vi.spyOn(test.db.backupJournal, "add");
+    const text = JSON.stringify(exported);
+    const envelope = JSON.stringify({ format: "ayase-studio-envelope", version: 1, encrypted: false,
+      payload: JSON.stringify({ document: text, sha256: await sha256(new TextEncoder().encode(text)) }) });
+    await expect(decodeBackup(envelope)).rejects.toThrow();
+    expect(storeWrite).not.toHaveBeenCalled(); expect(journalWrite).not.toHaveBeenCalled();
+    expect(test.files.write).not.toHaveBeenCalled(); expect(await test.repository.snapshot()).toEqual(test.before);
+  });
   it.each(["replace", "copy"] as const)("preserves manual conversation ranks during %s", mode => {
     const doc = document(), before = state();
     object(doc.rows.conversations[0]);

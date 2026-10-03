@@ -26,6 +26,8 @@ export function useAppearance() {
     setUnifiedTransparency: (value: number | null) => controller.setUnifiedTransparency(value),
     setSidebarTransparency: (value: number) => controller.setSidebarTransparency(value),
     setComposerTransparency: (value: number) => controller.setComposerTransparency(value),
+    setSidebarGlassEnabled: (enabled: boolean) => controller.setSidebarGlassEnabled(enabled),
+    setComposerGlassEnabled: (enabled: boolean) => controller.setComposerGlassEnabled(enabled),
     setAssistantBubbleTransparency: (value: number) => controller.setAssistantBubbleTransparency(value),
     setBackgroundFit: (fit: BackgroundFit) =>
       controller.setBackgroundFit(fit),

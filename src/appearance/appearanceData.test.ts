@@ -19,9 +19,52 @@ const unsupported = [
   JSON.stringify({ ...defaultAppearancePreferences, backgroundReference: "C:\\synthetic-only\\private.png" }),
   JSON.stringify({ ...defaultAppearancePreferences, themeMode: "future" }),
   JSON.stringify({ ...defaultAppearancePreferences, sidebarTransparency: 101 }),
+  JSON.stringify({ ...defaultAppearancePreferences, sidebarGlassEnabled: "true" }),
+  JSON.stringify({ ...defaultAppearancePreferences, composerGlassEnabled: null }),
 ];
 
 describe("appearance durable compatibility boundary", () => {
+  it("defaults omitted glass flags without writes and persists independent toggles across reload", async () => {
+    const original = storage(JSON.stringify({ sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 19 }));
+    expect(readAppearancePreferences(original)).toMatchObject({ sidebarGlassEnabled: false, composerGlassEnabled: true });
+    expect(original.setItem).not.toHaveBeenCalled();
+    const attributes = new Map<string, string>();
+    const create = () => createAppearanceController({ storage: original,
+      systemTheme: { isDark: () => false, subscribe: () => () => {} },
+      target: { style: { colorScheme: "", setProperty: () => {}, removeProperty: () => {} },
+        setAttribute: (key, value) => { attributes.set(key, value); }, removeAttribute: key => { attributes.delete(key); } },
+    });
+    const controller = create(); await controller.ready;
+    expect(controller.getSnapshot()).toMatchObject({ sidebarGlassEnabled: false, composerGlassEnabled: true });
+    expect(attributes.get("data-sidebar-glass")).toBe("false");
+    expect(attributes.get("data-composer-glass")).toBe("true");
+    const transparencies = { sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 19, unifiedTransparency: 0 };
+    try {
+      for (const [sidebar, composer] of [[true, false], [true, true], [false, true], [false, false], [true, true]]) {
+        controller.setSidebarGlassEnabled(sidebar); controller.setComposerGlassEnabled(composer);
+        expect(controller.getSnapshot()).toMatchObject({ ...transparencies, sidebarGlassEnabled: sidebar, composerGlassEnabled: composer });
+        expect(readAppearancePreferences(original)).toMatchObject({ ...transparencies, sidebarGlassEnabled: sidebar, composerGlassEnabled: composer });
+        expect(attributes.get("data-sidebar-glass")).toBe(String(sidebar));
+        expect(attributes.get("data-composer-glass")).toBe(String(composer));
+      }
+    } finally { controller.destroy(); }
+    const reloaded = create(); await reloaded.ready;
+    try {
+      expect(reloaded.getSnapshot()).toMatchObject({ ...transparencies, sidebarGlassEnabled: true, composerGlassEnabled: true });
+      reloaded.setThemeMode("dark");
+      expect(reloaded.getSnapshot()).toMatchObject({ sidebarGlassEnabled: true, composerGlassEnabled: true });
+      await reloaded.resetCustomAppearance();
+      expect(reloaded.getSnapshot()).toMatchObject({ sidebarGlassEnabled: false, composerGlassEnabled: true });
+    } finally { reloaded.destroy(); }
+  });
+  it.each([false, true])("preserves an explicit composer glass choice %s across reads", enabled => {
+    const encoded = JSON.stringify({ ...defaultAppearancePreferences, composerGlassEnabled: enabled });
+    const original = storage(encoded);
+    expect(readAppearancePreferences(original).composerGlassEnabled).toBe(enabled);
+    expect(loadAppearancePreferences(original).composerGlassEnabled).toBe(enabled);
+    expect(original.getItem()).toBe(encoded);
+    expect(original.setItem).not.toHaveBeenCalled();
+  });
   it("shares pure legacy defaults, crop migration and original resource ownership without writes", () => {
     const encoded = JSON.stringify({ themeMode: "dark", accentColor: "#ABCDEF", backgroundReference: reference,
       backgroundCrop: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }, backgroundMask: 72 });
@@ -36,6 +79,7 @@ describe("appearance durable compatibility boundary", () => {
     expect(original.setItem).not.toHaveBeenCalled();
     const empty = storage(null);
     const defaults = readAppearancePreferences(empty); defaults.backgroundLibrary.push(first.backgroundLibrary[0]);
+    expect(defaults).toMatchObject({ sidebarGlassEnabled: false, composerGlassEnabled: true });
     expect(readAppearancePreferences(empty).backgroundLibrary).toEqual([]);
   });
 
@@ -53,6 +97,8 @@ describe("appearance durable compatibility boundary", () => {
       await controller.ready;
       controller.setThemeMode("dark");
       controller.setAccentColor("#123456");
+      controller.setSidebarGlassEnabled(true);
+      controller.setComposerGlassEnabled(true);
       expect(controller.getSnapshot().backgroundError).toContain("数据");
       expect(original.setItem).not.toHaveBeenCalled();
       expect(original.getItem()).toBe(encoded);

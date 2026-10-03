@@ -31,6 +31,8 @@ export interface AppearancePreferences {
   unifiedTransparency: number;
   sidebarTransparency: number;
   composerTransparency: number;
+  sidebarGlassEnabled: boolean;
+  composerGlassEnabled: boolean;
   // Shared by user and assistant message backgrounds; assistant color remains separate.
   assistantBubbleTransparency: number;
   backgroundReference: string | null;
@@ -115,6 +117,8 @@ export interface AppearanceController {
   setUnifiedTransparency(transparency: number | null): void;
   setSidebarTransparency(transparency: number): void;
   setComposerTransparency(transparency: number): void;
+  setSidebarGlassEnabled(enabled: boolean): void;
+  setComposerGlassEnabled(enabled: boolean): void;
   setAssistantBubbleTransparency(transparency: number): void;
   setBackgroundFit(fit: BackgroundFit): void;
   setBackgroundMask(mask: number): void;
@@ -148,6 +152,8 @@ export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   unifiedTransparency: 0,
   sidebarTransparency: 0,
   composerTransparency: 0,
+  sidebarGlassEnabled: false,
+  composerGlassEnabled: true,
   assistantBubbleTransparency: 6,
   backgroundReference: null,
   backgroundFocus: null,
@@ -228,6 +234,8 @@ export function loadAppearancePreferences(
       unifiedTransparency,
       sidebarTransparency,
       composerTransparency,
+      sidebarGlassEnabled: typeof stored.sidebarGlassEnabled === "boolean" ? stored.sidebarGlassEnabled : defaultAppearancePreferences.sidebarGlassEnabled,
+      composerGlassEnabled: typeof stored.composerGlassEnabled === "boolean" ? stored.composerGlassEnabled : defaultAppearancePreferences.composerGlassEnabled,
       assistantBubbleTransparency,
       backgroundReference: isBackgroundReference(stored.backgroundReference)
         ? stored.backgroundReference
@@ -312,6 +320,8 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
   optional(stored, "backgroundMask", range(35, 90));
   optional(stored, "backgroundBlur", range(0, 32));
   optional(stored, "backgroundEnabled", value => typeof value === "boolean");
+  for (const key of ["sidebarGlassEnabled", "composerGlassEnabled"])
+    optional(stored, key, value => typeof value === "boolean");
   optional(stored, "backgroundName", value => value === null || typeof value === "string" && value.length <= 100);
   if (stored.backgroundCrop !== undefined && stored.backgroundCrop !== null) {
     dataRecord(stored.backgroundCrop); supported(stored.backgroundCrop, ["x", "y", "width", "height"]);
@@ -600,6 +610,8 @@ function applyAppearanceVariables(
   target.style.setProperty("--sidebar-background-opacity", String(1 - preferences.sidebarTransparency / 100));
   target.style.setProperty("--composer-background-opacity", String(1 - preferences.composerTransparency / 100));
   target.style.setProperty("--message-bubble-opacity", String(1 - preferences.assistantBubbleTransparency / 100));
+  target.setAttribute("data-sidebar-glass", String(preferences.sidebarGlassEnabled));
+  target.setAttribute("data-composer-glass", String(preferences.composerGlassEnabled));
   return {
     readabilityWarnings,
     effectiveAccentColor,
@@ -736,6 +748,8 @@ export function createAppearanceController({
     unifiedTransparency: snapshot.unifiedTransparency,
     sidebarTransparency: snapshot.sidebarTransparency,
     composerTransparency: snapshot.composerTransparency,
+    sidebarGlassEnabled: snapshot.sidebarGlassEnabled,
+    composerGlassEnabled: snapshot.composerGlassEnabled,
     assistantBubbleTransparency: snapshot.assistantBubbleTransparency,
     backgroundReference: snapshot.backgroundReference,
     backgroundFocus: snapshot.backgroundFocus,
@@ -994,6 +1008,12 @@ export function createAppearanceController({
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
         updatePreferences({ ...preferences, unifiedTransparency: value, sidebarTransparency: value, composerTransparency: value, assistantBubbleTransparency: value });
       }
+    },
+    setSidebarGlassEnabled(enabled) {
+      updatePreferences({ ...preferences, sidebarGlassEnabled: enabled });
+    },
+    setComposerGlassEnabled(enabled) {
+      updatePreferences({ ...preferences, composerGlassEnabled: enabled });
     },
     setSidebarTransparency(transparency) {
       if (Number.isFinite(transparency)) {

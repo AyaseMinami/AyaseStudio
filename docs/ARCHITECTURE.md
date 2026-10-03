@@ -1,5 +1,9 @@
 # Ayase Studio Architecture
 
+## Optional glass surfaces (#98, 2026-10-03)
+
+The appearance controller owns independent `sidebarGlassEnabled` (default false) and `composerGlassEnabled` (default true) preferences, applying root `data-sidebar-glass` / `data-composer-glass` attributes. Fresh settings, omitted legacy fields and explicit reset use these defaults; saved boolean choices remain intact. CSS derives materials without modifying saved transparency values. Chat assistant/conversation navigation uses one shared backing pseudo-element; its appearance preview uses the same material parameters. Settings category navigation and message bubbles retain existing rendering. Composer and preview share the enabled material selector. Unsupported filters retain original transparency; forced colors/reduced transparency replace enabled materials with opaque surfaces. Appearance module v2 compatibility and defaulting are described in DATA-CONTRACTS.md; no native or provider boundary changes.
+
 ## Application confirmations (2026-10-03)
 
 `useConfirmation` owns one pending asynchronous decision per caller and renders an HTML modal dialog through a portal. Cancel, Escape, unmount and competing requests resolve false; no mutation belongs to this UI helper. Connection settings revalidate the selected scope, immutable target and streaming state after awaiting a decision. `App` injects the async decision callback into `useDrawingWorkspace`; its default safely refuses dangerous exits. The native-close handler acquires its repeated-close guard before waiting, preserves settlement and unsaved-result discard ordering, and blocks stale/unmounted continuations from initiating discard or native close. The existing save-failure alert remains separate. No persisted format or provider request contract changes.

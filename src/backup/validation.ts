@@ -4,7 +4,7 @@ import { validateSessionConfig, type SessionConfig } from "../chat/sessionConfig
 import { isAssistantDefaultAvatar, readAssistantAvatarSelection } from "../avatar/assistantDefaults";
 import { isThinkingSettings } from "../chat/thinking";
 import { isGeminiThinkingSettings } from "../chat/geminiThinking";
-import { readAppearancePreferences } from "../appearance/appearance";
+import { defaultAppearancePreferences, readAppearancePreferences } from "../appearance/appearance";
 import { validateSearchConfiguration, validateSearchSettings, validateTavilySettings, validateZhipuSettings } from "../search/settings";
 import { dataPolicies } from "../storage/dataPolicies";
 import { backupFields } from "../storage/dataContract";
@@ -218,7 +218,8 @@ export async function validateDocument(raw: unknown): Promise<void> {
   if (appearance !== null) {
     text(appearance); const parsed = JSON.parse(appearance); object(parsed);
     const normalized = readAppearancePreferences({ getItem: () => appearance });
-    check(canonical(parsed) === canonical(normalized), "外观配置损坏或包含不支持字段。");
+    check(canonical({ sidebarGlassEnabled: defaultAppearancePreferences.sidebarGlassEnabled,
+      composerGlassEnabled: defaultAppearancePreferences.composerGlassEnabled, ...parsed }) === canonical(normalized), "外观配置损坏或包含不支持字段。");
     if (normalized.backgroundReference) resource(normalized.backgroundReference, "backgrounds/");
     normalized.backgroundLibrary.forEach(b => resource(b.reference, "backgrounds/"));
   }

@@ -111,6 +111,9 @@ describe("Issue 82 portable search compatibility", () => {
   it.each([1, 2, 3])("refuses new provider selections in historical document v%s", async version => {
     const raw = await createBackupDocument(snapshot(), { connections: false, credentials: false }, files()) as any;
     raw.version = version;
+    const appearance = JSON.parse(raw.preferences["ayase-studio.appearance.v1"]);
+    delete appearance.sidebarGlassEnabled; delete appearance.composerGlassEnabled;
+    raw.preferences["ayase-studio.appearance.v1"] = JSON.stringify(appearance);
     delete raw.compatibility; delete raw.drawing; delete raw.searchSettings;
     await expect(readBackupDocument(raw)).rejects.toThrow("搜索模块");
   });

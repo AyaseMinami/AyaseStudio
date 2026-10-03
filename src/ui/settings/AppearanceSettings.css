@@ -16,6 +16,9 @@
 .appearance-group { min-width: 0; margin-top: 0.75rem; }
 .appearance-settings-page .appearance-group-card { padding: 0.875rem 1rem; border: 1px solid color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); border-radius: 12px; background: rgb(var(--color-panel)); }
 .appearance-preview-card { width: 100%; max-width: 60rem; justify-self: center; }
+.appearance-transparency-group .settings-button[aria-pressed] { min-width: 5rem; }
+.appearance-transparency-group .settings-button[aria-pressed="true"] { background: rgb(var(--color-accent) / 0.12); border-color: rgb(var(--color-accent) / 0.35); color: rgb(var(--color-accent-text)); }
+.appearance-transparency-group .appearance-inline-notice { border: 0; background: transparent; padding: 0 1rem; color: rgb(var(--color-muted)); line-height: 1.5; }
 .appearance-theme-group { min-width: 0; margin: 0; padding: 0; border: 0; }
 .appearance-preview-column .appearance-background-preview { margin-top: 0; }
 .appearance-theme-group > legend, .appearance-group-heading h3 { color: rgb(var(--color-text-soft)); font-size: 0.9375rem; font-weight: 600; line-height: 1.5rem; }

@@ -27,6 +27,7 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     onThemeModeChange: vi.fn(), onAccentColorChange: vi.fn(), onCanvasColorChange: vi.fn(),
     onAssistantBubbleColorChange: vi.fn(), onAssistantBubbleTransparencyChange: vi.fn(), onEditBackgroundFocus: vi.fn(),
     onUnifiedTransparencyChange: vi.fn(), onSidebarTransparencyChange: vi.fn(), onComposerTransparencyChange: vi.fn(),
+    onSidebarGlassEnabledChange: vi.fn(), onComposerGlassEnabledChange: vi.fn(),
     onBackgroundFitChange: vi.fn(), onBackgroundMaskChange: vi.fn(), onBackgroundBlurChange: vi.fn(),
     onPrepareLibraryBackground: vi.fn().mockResolvedValue(null), onSaveLibraryBackground: vi.fn(),
     onDiscardLibraryBackground: vi.fn().mockResolvedValue(undefined), onResolveLibraryBackground: vi.fn().mockResolvedValue({ reference: "backgrounds/example.webp", url: "asset://localhost/example.webp" }),
@@ -38,6 +39,7 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     colorPreset: "default",
     themeMode: "system", resolvedTheme: "light", accentColor: null, canvasColor: null,
     assistantBubbleColor: "#123456", unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0,
+    sidebarGlassEnabled: false, composerGlassEnabled: false,
     assistantBubbleTransparency: 6, effectiveAccentColor: "#6d28d9", effectiveCanvasColor: "#fafaf9",
     backgroundReference: "backgrounds/example.webp", backgroundUrl: "asset://localhost/example.webp", backgroundFocus: null, backgroundFit: "cover",
     backgroundLibrary: [], backgroundEnabled: true, backgroundName: "example.webp",
@@ -54,6 +56,28 @@ function changeRange(input: HTMLInputElement, value: string) {
 }
 
 describe("AppearanceSettings", () => {
+  it.each([false, true])("toggles each glass region independently from %s without changing stored transparency", async enabled => {
+    const { handlers } = await render({ sidebarGlassEnabled: enabled, composerGlassEnabled: enabled,
+      sidebarTransparency: 37, composerTransparency: 62 });
+    const sidebar = host!.querySelector<HTMLButtonElement>('[aria-label="侧栏玻璃效果"]')!;
+    const composer = host!.querySelector<HTMLButtonElement>('[aria-label="输入区域玻璃效果"]')!;
+    expect(sidebar.getAttribute("aria-pressed")).toBe(String(enabled));
+    expect(composer.getAttribute("aria-pressed")).toBe(String(enabled));
+    const sidebarRange = host!.querySelector<HTMLInputElement>('[aria-label="侧栏透明度"]')!;
+    const composerRange = host!.querySelector<HTMLInputElement>('[aria-label="输入区域透明度"]')!;
+    expect(sidebarRange.value).toBe("37"); expect(composerRange.value).toBe("62");
+    expect(sidebarRange.disabled).toBe(false); expect(composerRange.disabled).toBe(false);
+    expect(host!.textContent).toContain("仅作用于聊天助手栏和对话栏，不影响设置分类导航");
+    expect(host!.textContent!.includes("关闭效果后使用")).toBe(enabled);
+    await act(async () => sidebar.click());
+    expect(handlers.onSidebarGlassEnabledChange).toHaveBeenCalledWith(!enabled);
+    expect(handlers.onComposerGlassEnabledChange).not.toHaveBeenCalled();
+    await act(async () => composer.click());
+    expect(handlers.onComposerGlassEnabledChange).toHaveBeenCalledWith(!enabled);
+    expect(handlers.onSidebarTransparencyChange).not.toHaveBeenCalled();
+    expect(handlers.onComposerTransparencyChange).not.toHaveBeenCalled();
+    expect(handlers.onUnifiedTransparencyChange).not.toHaveBeenCalled();
+  });
   it.each([0, 16, 32])("changes blur to %ipx without adding a preview zoom", async (blur) => {
     await render({ backgroundBlur: blur, backgroundFit: "contain", backgroundFocus: { x: .3, y: .7, zoom: 1.5 } });
     const preview = host!.querySelector<HTMLElement>(".appearance-background-preview")!;

@@ -7,7 +7,7 @@ import { decodeBackup, encodeBackup, readBackupDocument } from "./codec";
 import { BackupRepository, type BackupStorage } from "./repository";
 import { createRestorePlan } from "./restorePlan";
 import { allPreferenceKeys, createBackupDocument, type LocalSnapshot } from "./snapshot";
-import { backupTables, type BackupFiles, type BackupRows } from "./types";
+import { backupTables, preferenceKeys, type BackupFiles, type BackupRows } from "./types";
 
 const databases: AyaseDatabase[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const db of databases.splice(0)) await db.delete(); });
@@ -104,6 +104,11 @@ describe("Issue 100 original connection module stamps", () => {
   it.each([1, 2, 3, 4, 5] as const)("accepts historical document v%s without supplier fields/rows, without seeding or mutating the input", async version => {
     const raw = await createBackupDocument(snapshot(), { connections: true, credentials: true }, files()) as any;
     raw.version = version; raw.assets = []; delete raw.rows.providerAvatars;
+    if (version <= 3) {
+      const appearance = JSON.parse(raw.preferences[preferenceKeys[0]]);
+      delete appearance.sidebarGlassEnabled; delete appearance.composerGlassEnabled;
+      raw.preferences[preferenceKeys[0]] = JSON.stringify(appearance);
+    }
     delete raw.connections.builtinsInitialized;
     raw.connections.providers = [raw.connections.providers[0]];
     delete raw.connections.providers[0].presetId; delete raw.connections.providers[0].avatar;

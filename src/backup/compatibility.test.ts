@@ -11,6 +11,7 @@ import { createBackupDocument, type LocalSnapshot } from "./snapshot";
 import { createRestorePlan } from "./restorePlan";
 import { BackupRepository } from "./repository";
 import { preferenceKeys, type BackupDocument, type BackupFiles } from "./types";
+import { defaultAppearancePreferences, readAppearancePreferences } from "../appearance/appearance";
 
 const databases: AyaseDatabase[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const db of databases.splice(0)) await db.delete(); });
@@ -40,6 +41,42 @@ async function envelope(value: unknown) {
 const files: BackupFiles = { read: vi.fn(), assertAvailable: vi.fn(async () => {}), write: vi.fn(async () => {}), remove: vi.fn(async () => {}) };
 
 describe("versioned backup data contracts", () => {
+  it.each([1, 2, 3, 4] as const)("reads historical v%s appearance omissions repeatedly with sidebar off and composer on", async version => {
+    const old = document(version);
+    const { sidebarGlassEnabled: _sidebar, composerGlassEnabled: _composer, ...appearance } = defaultAppearancePreferences;
+    old.preferences[preferenceKeys[0]] = JSON.stringify({ ...appearance, sidebarTransparency: 37, composerTransparency: 62 });
+    if (old.compatibility) old.compatibility.modules.appearance = { version: 1, minimumReaderVersion: 1, requiredCapabilities: [] };
+    const before = structuredClone(old);
+    const first = await readBackupDocument(old);
+    expect(await readBackupDocument(first)).toEqual(first);
+    expect(readAppearancePreferences({ getItem: () => first.preferences[preferenceKeys[0]] })).toMatchObject({
+      sidebarGlassEnabled: false, composerGlassEnabled: true, sidebarTransparency: 37, composerTransparency: 62,
+    });
+    expect(old).toEqual(before);
+  });
+  it.each([1, 2, 3, 4] as const)("rejects new glass fields falsely declared as legacy v%s", async version => {
+    const old = document(version);
+    old.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, sidebarGlassEnabled: true });
+    if (old.compatibility) old.compatibility.modules.appearance = { version: 1, minimumReaderVersion: 1, requiredCapabilities: [] };
+    const before = structuredClone(old);
+    await expect(readBackupDocument(old)).rejects.toThrow("外观模块版本");
+    expect(old).toEqual(before);
+  });
+  it("projects independent glass flags into appearance v2 and roundtrips unchanged transparency", async () => {
+    const doc = document();
+    doc.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences,
+      sidebarGlassEnabled: true, composerGlassEnabled: false, sidebarTransparency: 37, composerTransparency: 62 });
+    const snapshot: LocalSnapshot = { rows: doc.rows as LocalSnapshot["rows"], preferences: doc.preferences };
+    const exported = await createBackupDocument(snapshot, { connections: false, credentials: false }, files);
+    expect(exported.version).toBe(5);
+    expect(exported.compatibility!.modules.appearance).toEqual({ version: 2, minimumReaderVersion: 2, requiredCapabilities: [] });
+    const preview = await decodeBackup(await encodeBackup(exported));
+    expect(preview.document.preferences[preferenceKeys[0]]).toBe(exported.preferences[preferenceKeys[0]]);
+    expect(JSON.parse(preview.document.preferences[preferenceKeys[0]]!)).toMatchObject({
+      sidebarGlassEnabled: true, composerGlassEnabled: false, sidebarTransparency: 37, composerTransparency: 62,
+    });
+    expect(await readBackupDocument(preview.document)).toEqual(preview.document);
+  });
   it.each([1, 2, 3] as const)("reads old v%s exactly and keeps its strict unknown-field boundary", async version => {
     const old = document(version);
     expect((await decodeBackup(await envelope(old))).document).toEqual(old);

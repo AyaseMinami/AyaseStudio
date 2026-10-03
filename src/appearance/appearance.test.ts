@@ -28,6 +28,8 @@ const expectedDefaultPreferences = {
   unifiedTransparency: 0,
   sidebarTransparency: 0,
   composerTransparency: 0,
+  sidebarGlassEnabled: false,
+  composerGlassEnabled: true,
   assistantBubbleTransparency: 6,
   backgroundReference: null,
   backgroundFocus: null,
