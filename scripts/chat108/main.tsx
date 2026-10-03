@@ -21,6 +21,7 @@ import type { ThinkingSettings } from "../../src/chat/thinking";
 import type { SearchMode } from "../../src/search/mode";
 import type { ChatLayout } from "../../src/ui/chat/useChatLayout";
 import type { RequestAttachment, SentAttachment } from "../../src/chat/attachments";
+import { GlassPerformance, glassPerformanceEnabled, performanceMessages } from "./glassPerformance";
 
 // Isolated local artwork only; generated wallpaper is an optional ignored local asset.
 const artwork = document.createElement("canvas");
@@ -134,6 +135,7 @@ const appearanceController = createAppearanceController({
 installScrollbarAutoHide(document);
 
 function Review() {
+  const [performanceView, setPerformanceView] = useState({ messages: performanceMessages, generating: false });
   const [page, setPage] = useState<AppPage>("chat");
   const appearance = useSyncExternalStore(appearanceController.subscribe, appearanceController.getSnapshot);
   const theme = appearance.resolvedTheme;
@@ -219,7 +221,7 @@ function Review() {
             creationConfig: { modelId: workspace.effective.modelId, config: workspace.effective.config } }),
           selectVersion: async index => !!conversationId && workspace.execute({ type: "select-round-version", conversationId, index }),
         }}
-        onReadAttachment={readImage} messages={workspace.view.messages} isHydrated={workspace.isReady} isGenerating={false}
+        onReadAttachment={readImage} messages={glassPerformanceEnabled ? performanceView.messages : workspace.view.messages} isHydrated={workspace.isReady} isGenerating={glassPerformanceEnabled && performanceView.generating}
         error={workspace.view.error ?? workspace.operationError ?? workspace.loadError}
         protocolLabel="本地合成回复" modelLabel="合成预览" onDraftChange={workspace.setDraft} onDraftActivate={navigation.activateDraft}
         onClear={() => void clear()} onSend={() => void send()} onStop={() => {}} />
@@ -255,6 +257,9 @@ function Review() {
     <button className="settings-button" type="button" onClick={() => setPage(page === "settings" ? "chat" : "settings")}>{page === "settings" ? "返回真实聊天" : "查看外观预览"}</button>
     <button className="settings-button" disabled={!workspace.isReady} type="button" onClick={() => void saveMessages(seedMessages())}>恢复当前会话示例</button>
     <p>独立合成数据；发送只插入固定回复。编辑、删除、分支和版本切换会写入此预览库。</p>
-  </div></details></>;
+  </div></details>{glassPerformanceEnabled && <GlassPerformance ready={workspace.isReady}
+    onMessages={(messages, generating) => setPerformanceView({ messages, generating })}
+    onGlass={(sidebar, composer) => { appearanceController.setSidebarGlassEnabled(sidebar); appearanceController.setComposerGlassEnabled(composer); }}
+    onTheme={setTheme} onPrepare={() => { setPage("chat"); setWallpaper(true); setWallpaperKind("busy"); setLayout("narrow"); navigation.openConversations(); }} />}</>;
 }
 createRoot(document.getElementById("root")!).render(<Review />);

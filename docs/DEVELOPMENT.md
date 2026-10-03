@@ -1,5 +1,9 @@
 # Ayase Studio Development Guide
 
+## UI closeout evidence (#98 / #108, 2026-10-03)
+
+The [closeout record](ISSUE-98-108-CLOSEOUT.md) supersedes the old prototype-only status for optional glass and the chat-first visual work. It records the final independent switches (sidebar off / composer on), confirmed settings/drawing opaque workbench, existing gates, new production-browser frame/long-task measurements and user acceptance boundaries. The user subsequently reported no material issue in actual use and authorized closing both Issues; their final scope and evidence were synchronized and both were closed as completed on 2026-10-03. This general acceptance does not establish unperformed per-operation native tests or quantitative GPU results. Historical trial measurements below remain historical. The new harness lives only in [chat108](../scripts/chat108/README.md); no production behavior, provider request, migration or native capability changes. The user subsequently authorized committing and pushing this round's docs, samples and harness to dev.
+
 ## Settings and drawing workbench material trial (2026-10-03)
 
 The [isolated fixture](../scripts/workbench-material/README.md) compares the real settings/drawing workspaces against the previous illustrated wallpaper. See the [comparison record](WORKBENCH-MATERIAL-COMPARISON.md). Production panels use one opaque theme-derived surface (panel98/text2), 8% text-color edges, 12px corners and a small 1px/2px shadow at 3.5%. Settings lose the redundant page frame; drawing and connection panel gaps are 8px, reference grouping uses a subtle inset fill, and the drawing canvas remains opaque. No persistent settings, provider contracts or native capabilities change. The 7%/15% translucent variants remain fixture-only candidates.

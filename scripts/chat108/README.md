@@ -4,6 +4,24 @@
 
 本轮使用新端口启动，避免连接旧实例：`npx.cmd vite --config scripts/chat108/vite.config.ts --port 1534`，浏览器入口 <http://127.0.0.1:1534/scripts/chat108/index.html>。隔离原生启动检查：`npm.cmd run tauri dev -- --no-watch --config scripts/chat108/native.config.json`，使用独立应用标识；启动后需手工体验 OS 拖动／窗口按钮，不自动截取或操控原生窗口。
 
+## #98 玻璃性能对照
+
+生产构建后运行隔离预览，打开 <http://127.0.0.1:1541/scripts/chat108/index.html?glass-performance=1>：
+
+```powershell
+npx.cmd tsc --project scripts/chat108/tsconfig.json
+npx.cmd vite build --config scripts/chat108/vite.config.ts
+npx.cmd vite preview --config scripts/chat108/vite.config.ts --host 127.0.0.1 --port 1541 --strictPort
+```
+
+仅查询参数启用时显示“采集浅色性能／采集深色性能”。将内置浏览器设置为 1440×900，分别运行两次并保存只读结果框中的 JSON。每次约三分钟；采集中保持页面可见、不进行其他交互、不同时跑构建／测试。运行后恢复侧栏玻璃关闭、输入框开启，变更只保存在该夹具 origin 的专用键。
+
+采集使用真实消息组件、80 条内存合成消息、密集合成背景和四种玻璃组合；每个场景等待 800ms、采集 2500ms，交替顺序重复三轮。滚动由 rAF 设置真实滚动区，流式只按至少 50ms／24 字符更新内存消息，缩放只改变真实工作区 CSS 宽度。记录帧间隔、Long Tasks、操作次数、滤镜及导航显示状态；这不是实际输入设备、生产网络／持久化、OS 窗口缩放、GPU／耗电或原生 WebView2 验收。rAF 间隔也不是 GPU 实际呈现帧的直接计数。
+
+最终范围、结果与用户验收清单见 [收尾记录](../../docs/ISSUE-98-108-CLOSEOUT.md)。性能采集模块只由此隔离夹具引用，不进入生产应用。
+
+如需复查宽度变化的异常样本，可追加 `&glass-scenario=workspace-resize`，每个主题只采集该场景的 12 个窗口，不必重复空闲、滚动和模拟输出。
+
 仓库根目录运行：
 
 ```powershell

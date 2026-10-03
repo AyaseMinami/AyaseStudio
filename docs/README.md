@@ -17,6 +17,8 @@
 
 ## 证据与历史
 
+- [#98 / #108 收尾记录](ISSUE-98-108-CLOSEOUT.md) 汇总最终视觉与玻璃范围、性能采集、用户接受边界及 2026-10-03 的远端关闭状态。
+
 - `ISSUE-*-IMPLEMENTATION.md` 和 `ISSUE-94-ACCEPTANCE.md` 记录对应切片的实现、检查和人工接受边界；其中旧阶段状态不代表当前 Issue 状态，历史验收不能代替后续变更的验证。
 - `ISSUE-*-RESEARCH.md` 保留调研日期、固定源码版本和依据，属于参考证据；其中 Ayase 旧建议由现行合同取代。
 - [OpenAI 搜索后续](OPENAI-SEARCH-FOLLOWUP.md) 对应 #18 的线路验证工作，与 Exa 外部搜索独立。
