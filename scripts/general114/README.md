@@ -7,3 +7,5 @@
 这不是鼠标点击托盘／标题栏或 OS Alt+F4 的验收；这些交互仍需用户手动检查。备份工作区退出保护要求先返回应用，不在恢复中结束进程。所有 probe 数据与日志仅为合成验收，`.general114.local` 被现有 `*.local` 规则排除。
 
 `disabled.config.json` 通过真实常规页关闭驻留、开启确认，验证 SDK close→勾选不再提醒→取消保持窗口与原偏好，再次 close→确认退出。探针和正式入口一样启用 React.StrictMode。Vite 禁用文件监视，修改 fixture 后须重启 Vite 再运行；否则可能继续使用缓存模块。
+
+`settings.config.json` 使用另一专用 identifier，验证 SDK 隐藏／恢复后发送生产 `ayase-open-settings` 事件进入常规，返回聊天保留合成草稿，再次请求仍进入常规，最后经普通确认退出。报告 `tray-settings-opened` 和 `tray-settings-repeated`；不将 SDK 模拟菜单路径记为真实托盘鼠标点击验收。

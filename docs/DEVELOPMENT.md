@@ -4,6 +4,8 @@
 
 Implementation, executed evidence and subsequent user acceptance are recorded in [#114](ISSUE-114-IMPLEMENTATION.md); Git delivery, automated checks and detailed desktop interaction evidence remain separate.
 
+The subsequent tray Settings entry uses `ayase-open-settings` to open General in the existing app. Its deterministic regressions cover repeated navigation, draft preservation, protected startup/backup pages and StrictMode listener disposal. The `settings.config.json` fixture checks the production native event path with synthetic data; actual right-click selection remains manual acceptance.
+
 Run `npm.cmd test -- src/general src/drawing/useDrawingWorkspace.test.tsx src/ui/settings/SettingsWorkspace.test.tsx src/App.test.tsx`, the data-contract checker and normal full code gate. The isolated actual-app origin and native SDK probe are documented in [scripts/general114/README.md](../scripts/general114/README.md). Use its dedicated identifier and never real credentials or user data. Check generic cancellation/opt-out, separate risk cancellation, storage rejection, repeated close, unmounted continuations and maintenance protection. Compilation and startup are separate from real hide/restore/process-exit evidence. Tray mouse clicks, titlebar X, OS Alt+F4 and subjective appearance remain user manual acceptance even when SDK probes pass.
 
 ## UI closeout evidence (#98 / #108, 2026-10-03)

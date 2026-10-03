@@ -1,6 +1,6 @@
 import "./App.css";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUserAvatar } from "./avatar/useUserAvatar";
 
 import { useAppearance } from "./appearance/useAppearance";
@@ -26,7 +26,9 @@ import {
   type SettingsSection,
 } from "./ui/settings/SettingsWorkspace";
 
-function App({ general, registerExitGuard }: { general?: GeneralSettingsState; registerExitGuard?: RegisterExitGuard }) {
+function App({ general, registerExitGuard, settingsRequest = 0 }: {
+  general?: GeneralSettingsState; registerExitGuard?: RegisterExitGuard; settingsRequest?: number;
+}) {
   const [activePage, setActivePage] = useState<AppPage>(window.location.hash === "#data" ? "settings" : "chat");
   const [activeSettingsSection, setActiveSettingsSection] =
     useState<SettingsSection>(window.location.hash === "#data" ? "data" : "general");
@@ -46,6 +48,13 @@ function App({ general, registerExitGuard }: { general?: GeneralSettingsState; r
     },
   });
   useEffect(() => { drawing.controller.updateSettings(chat.connectionSettings); }, [drawing.controller, chat.connectionSettings]);
+  const handledSettingsRequest = useRef(0);
+  useEffect(() => {
+    if (settingsRequest <= handledSettingsRequest.current || chat.backupPreparing || drawing.closing) return;
+    handledSettingsRequest.current = settingsRequest;
+    setActiveSettingsSection("general");
+    setActivePage("settings");
+  }, [settingsRequest, chat.backupPreparing, drawing.closing]);
   const modelLabel = chat.activeProvider && chat.activeConnection && chat.activeModel
     ? `${chat.activeProvider.name} · ${chat.activeConnection.name} · ${chat.activeModel.displayName || chat.activeModel.modelId}`
     : `${chat.workspace.effective.modelId ? "模型已失效" : "未选择模型"} · 点击选择模型`;

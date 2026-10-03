@@ -7,6 +7,7 @@ import { recoverBackupAtStartup, createBackupApi } from "./runtime";
 import { useDefaultContextMenuPolicy } from "../ui/ActionMenu";
 import { useGeneralSettings } from "../general/preferences";
 import { useApplicationLifecycle } from "../general/useApplicationLifecycle";
+import { useTraySettingsRequest } from "../general/useTraySettingsRequest";
 import { useConfirmation } from "../ui/useConfirmation";
 
 const backupApi = createBackupApi();
@@ -15,6 +16,7 @@ export function BackupApp() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
   const general = useGeneralSettings();
+  const settingsRequest = useTraySettingsRequest();
   const exitConfirmation = useConfirmation();
   const registerExitGuard = useApplicationLifecycle(general, exitConfirmation.confirm,
     () => (ready || error) && window.location.hash !== "#backup");
@@ -29,5 +31,5 @@ export function BackupApp() {
     {error && <><button type="button" className="settings-button" onClick={() => void retry()}>重试整理</button>
       <button type="button" className="settings-button" onClick={() => { window.location.hash = "backup"; window.location.reload(); }}>恢复 Ayase 备份</button></>}</main></>;
   if (window.location.hash === "#backup") return <>{exitConfirmation.dialog}<BackupWorkspace api={backupApi} onExit={() => { window.location.hash = "data"; window.location.reload(); }} /></>;
-  return <>{exitConfirmation.dialog}<App general={general} registerExitGuard={registerExitGuard} /></>;
+  return <>{exitConfirmation.dialog}<App general={general} registerExitGuard={registerExitGuard} settingsRequest={settingsRequest} /></>;
 }

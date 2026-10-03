@@ -15,8 +15,9 @@ pub fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "打开 Ayase Studio", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
     let exit = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &exit])?;
+    let menu = Menu::with_items(app, &[&open, &settings, &exit])?;
     let icon = app.default_window_icon().ok_or_else(|| std::io::Error::other("application icon missing"))?;
     TrayIconBuilder::with_id("ayase-main-tray")
         .icon(icon.clone())
@@ -30,6 +31,13 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                 if show_main_window(app).is_ok() {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.emit("ayase-request-exit", ());
+                    }
+                }
+            }
+            "settings" => {
+                if show_main_window(app).is_ok() {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.emit("ayase-open-settings", ());
                     }
                 }
             }

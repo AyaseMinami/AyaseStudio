@@ -144,6 +144,21 @@ describe("App navigation", () => {
     });
   }
 
+  it("opens General for each tray request without remounting or losing the chat draft", async () => {
+    await renderApp();
+    await setDraft("tray navigation draft");
+    await clickButton("设置");
+    await clickButton("连接配置");
+    await act(async () => root.render(<App settingsRequest={1} />));
+    expect(container.querySelector("#general-background-resident")).not.toBeNull();
+    await clickButton("聊天");
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("tray navigation draft");
+    await act(async () => root.render(<App settingsRequest={1} />));
+    expect(container.querySelector("textarea")).not.toBeNull();
+    await act(async () => root.render(<App settingsRequest={2} />));
+    expect(container.querySelector("#general-background-resident")).not.toBeNull();
+  });
+
   it("keeps drawing drafts separate from chat and disables generation without a selected model", async () => {
     await renderApp();
     await setDraft("聊天草稿");

@@ -26,3 +26,9 @@
 未使用原生桌面截图或原生 UI 自动化，未读取真实凭据、调用供应商。SDK 隐藏／恢复／退出证据不替代真实鼠标托盘左／右键、标题栏 ×、OS Alt+F4、运行中任务及异常关机的逐项交互测试。尤其不能从前端定向测试推断真实供应商后台完成或原生失焦节流表现。授权交付到 dev、验收评论和 Issue 关闭；实际提交与远端状态以 Git 历史及 Issue 为准。未授权或执行安装包打包及 Release。
 
 原生 API 参考：[Tauri 托盘](https://v2.tauri.app/learn/system-tray/)与[单实例插件](https://v2.tauri.app/plugin/single-instance/)。
+
+## 托盘设置入口后续补充（2026-10-03）
+
+用户在原 #114 交付后要求补齐托盘“设置”。右键菜单现在依次提供“打开 Ayase Studio／设置／退出”。设置恢复已有 main 窗口，发出 `ayase-open-settings` 并切到常规；不重载应用，保留聊天草稿和任务。根监听在启动保护期间保留请求，备份恢复页继续保护，备份准备及绘图退出期间延迟导航。无新增持久化字段或原生权限。
+
+补充验证：`npm.cmd run check` 160 文件、2758 项测试及构建通过；Cargo check 通过。独立 Sol/high 审查修正隔离探针的受限 SDK 恢复调用后复审通过，改用第二实例走生产 Rust 恢复。Tauri dev 编译／启动与 `settings.config.json` 原生 SDK 探针通过：`tray-settings-hidden`、`tray-settings-opened`（visible:true）、`tray-settings-repeated`（draftPreserved:true），经普通确认后进程退出码 0。日志为 `.general114.local/tray-check-final.log`、`tray-native-final.log` 和 `native-report.jsonl`。真实右键选择菜单仍待手动接受；本次 SDK 证据与此前用户接受分开记录。

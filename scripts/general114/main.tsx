@@ -28,6 +28,31 @@ function Acceptance() {
       const current = getCurrentWindow();
       const sync = await current.listen("general114-ready", () => {}); sync();
       await report("ready");
+      if (location.search.includes("probe=settings")) {
+        await waitFor(() => document.querySelector<HTMLTextAreaElement>("textarea")?.disabled === false);
+        const draft = document.querySelector<HTMLTextAreaElement>("textarea")!;
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(draft, "synthetic tray draft");
+        draft.dispatchEvent(new Event("input", { bubbles: true }));
+        await current.close();
+        await waitFor(async () => !await current.isVisible());
+        await report("tray-settings-hidden");
+        // A second instance restores via production Rust, then the SDK simulates the menu's frontend event.
+        await waitFor(async () => await current.isVisible());
+        await emitTo("main", "ayase-open-settings");
+        await waitFor(() => !!document.querySelector("#general-background-resident"));
+        await report("tray-settings-opened", { visible: await current.isVisible() });
+        document.querySelector<HTMLButtonElement>('[aria-label="聊天"]')!.click();
+        await waitFor(() => !!document.querySelector("textarea"));
+        const preserved = document.querySelector<HTMLTextAreaElement>("textarea")!.value === "synthetic tray draft";
+        if (!preserved) throw Error("Tray navigation lost the draft");
+        await emitTo("main", "ayase-open-settings");
+        await waitFor(() => !!document.querySelector("#general-background-resident"));
+        await report("tray-settings-repeated", { draftPreserved: preserved });
+        await emitTo("main", "ayase-request-exit");
+        await waitFor(() => !!document.querySelector(".confirmation-dialog"));
+        document.querySelector<HTMLButtonElement>(".confirmation-accept")!.click();
+        return;
+      }
       if (location.search.includes("probe=disabled")) {
         document.querySelector<HTMLButtonElement>('[aria-label="设置"]')!.click();
         await waitFor(() => !!document.querySelector("#general-background-resident"));
