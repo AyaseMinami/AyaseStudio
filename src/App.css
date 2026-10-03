@@ -98,6 +98,10 @@
   --sidebar-background-opacity: 0.5;
   --composer-background-opacity: 1;
   --message-bubble-opacity: 0.88;
+  /* Stable workbench surfaces share a theme-derived tint, not chat alpha. */
+  --workbench-surface: color-mix(in srgb, rgb(var(--color-panel)) 98%, rgb(var(--color-text)));
+  --workbench-border: rgb(var(--color-text) / 0.08);
+  --workbench-shadow: 0 1px 2px rgb(var(--color-shadow) / 0.035);
   color-scheme: dark;
   --font-caption: 0.75rem;
   --font-small: 0.8125rem;
@@ -476,8 +480,8 @@ textarea:disabled {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   background: transparent;
 }
 
@@ -537,6 +541,21 @@ textarea:disabled {
 
 .settings-card > .field:last-child {
   margin-bottom: 0;
+}
+
+.settings-workspace .settings-card {
+  border-color: var(--workbench-border);
+  border-radius: 12px;
+  background: var(--workbench-surface);
+  box-shadow: var(--workbench-shadow);
+}
+
+@media (forced-colors: active) {
+  :root {
+    --workbench-surface: Canvas;
+    --workbench-border: CanvasText;
+    --workbench-shadow: none;
+  }
 }
 
 .connection-settings-page {

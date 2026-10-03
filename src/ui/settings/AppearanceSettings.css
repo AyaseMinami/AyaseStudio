@@ -14,7 +14,7 @@
   .appearance-controls > .appearance-group:first-child { margin-top: 0; }
 }
 .appearance-group { min-width: 0; margin-top: 0.75rem; }
-.appearance-settings-page .appearance-group-card { padding: 0.875rem 1rem; border: 1px solid color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); border-radius: 12px; background: rgb(var(--color-panel)); }
+.appearance-settings-page .appearance-group-card { padding: 0.875rem 1rem; border: 1px solid var(--workbench-border); border-radius: 12px; background: var(--workbench-surface); box-shadow: var(--workbench-shadow); }
 .appearance-preview-card { width: 100%; max-width: 60rem; justify-self: center; }
 .appearance-transparency-group .settings-button[aria-pressed] { min-width: 5rem; }
 .appearance-transparency-group .settings-button[aria-pressed="true"] { background: rgb(var(--color-accent) / 0.12); border-color: rgb(var(--color-accent) / 0.35); color: rgb(var(--color-accent-text)); }

@@ -1,7 +1,7 @@
 .avatar-page { max-width: 800px; margin: 0 auto; }
 .settings-page.settings-workspace-page.avatar-settings-page { max-width: none; margin-inline: 0; padding: 16px 40px; }
 .settings-workspace-page.avatar-settings-page > .settings-page-heading { width: 100%; margin-bottom: 16px; padding: 0; border: 0; border-radius: 0; background: transparent; }
-.avatar-settings-page .avatar-card { border-color: color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); border-radius: 12px; }
+.avatar-settings-page .avatar-card { border-color: var(--workbench-border); border-radius: 12px; background: var(--workbench-surface); box-shadow: var(--workbench-shadow); }
 @media (max-width: 760px) {
   .settings-page.settings-workspace-page.avatar-settings-page { padding-inline: 24px; }
 }

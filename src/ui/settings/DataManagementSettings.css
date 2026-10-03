@@ -1,7 +1,7 @@
 .settings-page.data-management-page { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: none; margin-inline: 0; padding: 16px 40px; }
 .data-management-page > .settings-page-heading { width: 100%; margin-bottom: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .data-management-page > .settings-page-heading h2 { margin-top: 0; }
-.data-management-page .settings-card { padding: 20px; border-radius: 12px; border-color: color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); box-shadow: none; }
+.data-management-page .settings-card { padding: 20px; border-radius: 12px; border-color: var(--workbench-border); background: var(--workbench-surface); box-shadow: var(--workbench-shadow); }
 .data-management-page > :is(.data-management-intro, .data-import-page) { width: 100%; max-width: 80rem; }
 .data-management-entry-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .data-management-entry-tag { font-size: var(--font-caption); color: rgb(var(--color-muted)); background: rgb(var(--color-canvas)); border-radius: 5px; padding: 3px 8px; }

@@ -1,5 +1,5 @@
 .about-page { max-width: 680px; margin: 0 auto; font-size: var(--font-ui); line-height: 1.6; }
-.about-card { min-width: 0; padding: 24px; border: 1px solid color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); border-radius: 16px; background: rgb(var(--color-panel)); }
+.about-card { min-width: 0; padding: 24px; border: 1px solid var(--workbench-border); border-radius: 12px; background: var(--workbench-surface); box-shadow: var(--workbench-shadow); }
 .about-brand { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 16px 0 32px; }
 .about-brand h2 { font-size: 26px; font-weight: 600; line-height: 1.25; letter-spacing: -.6px; margin: 20px 0 10px; }
 .about-brand > p { color: rgb(var(--color-muted)); font-size: inherit; margin: 0; }

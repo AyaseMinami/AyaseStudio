@@ -34,17 +34,17 @@
 
 .connection-settings-page .connection-settings-workbench {
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: 4px;
+  gap: 8px;
   border: 0;
   background: transparent;
 }
 
 .connection-settings-page .connection-tree,
 .connection-settings-page .connection-detail {
-  border: 1px solid color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel)));
+  border: 1px solid var(--workbench-border);
   border-radius: 12px;
-  background: rgb(var(--color-panel));
-  box-shadow: none;
+  background: var(--workbench-surface);
+  box-shadow: var(--workbench-shadow);
 }
 
 .connection-settings-page .connection-tree {
