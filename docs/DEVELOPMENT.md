@@ -6,6 +6,8 @@
 
 At the user's request, packaging does not rerun additional tests or independent review. `npm.cmd run build:windows` executes the production TypeScript/Vite build, Rust release compilation and NSIS packaging. Artifact version, size, signature status, SHA-256, remote tag and uploaded asset digest are checked separately. Existing implementation verification remains historical evidence; fresh installation, upgrade/data retention, native tray interactions and real provider compatibility are not established by packaging.
 
+Packaging succeeded after two rustc process crashes (`0xc0000005`, then `0xc0000374`) and a package-scoped Release cache clean; no source or optimization settings changed for recovery. Final TypeScript/Vite build, optimized Rust compilation and NSIS packaging passed. Both application and installer report `0.1.0-beta.2`; installer size is 7758146 bytes, Authenticode status is `NotSigned`, SHA-256 is `87174d11a37a0e7a0b010e946088cb406c30ece9bed0d02a3ed31b6e2dc878d0`. Build logs are kept under the ignored `release-beta2.local/` directory.
+
 ## Switch and checkbox unification (2026-10-03)
 
 Explicit shared classes in `src/ui/ToggleControls.css` style boolean settings as switches and retain checkboxes for selection/confirmation. Callbacks, disabled boundaries, save timing and persisted formats are unchanged. The workbench fixture now supplies in-memory general preferences for safe interaction checks.
