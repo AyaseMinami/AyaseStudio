@@ -52,6 +52,38 @@ async function prepare(f: ReturnType<typeof fixture>, count?: number, concurrenc
 }
 const taskById = (f: ReturnType<typeof fixture>, id: string) => f.saved().tasks.find(task => task.id === id)!;
 
+it("pins a complete batch before enqueue and checks the same task bindings before dispatch", async () => {
+  const f = fixture(); await prepare(f, 2); f.controller.pause();
+  const reserve = f.files.prepareOutputs = vi.fn(async () => undefined);
+  await f.controller.generate(f.settings);
+  expect(reserve).toHaveBeenCalledExactlyOnceWith(["task-1", "task-2"]);
+  expect(reserve.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(f.repository.enqueue).mock.invocationCallOrder[0]);
+  f.controller.resume();
+  await vi.waitFor(() => expect(f.transport.generate).toHaveBeenCalledTimes(2));
+  expect(reserve).toHaveBeenCalledWith(["task-1"]);
+  expect(reserve).toHaveBeenCalledWith(["task-2"]);
+});
+
+it("blocks requests and batch registration when the output directory cannot be written", async () => {
+  const f = fixture(); await prepare(f, 2);
+  f.files.prepareOutputs = vi.fn(async () => { throw "drawing-output-unwritable"; });
+  await f.controller.generate(f.settings);
+  expect(f.repository.enqueue).not.toHaveBeenCalled();
+  expect(f.transport.generate).not.toHaveBeenCalled();
+  expect(f.controller.getSnapshot().error).toContain("无法写入此输出目录");
+});
+
+it("does not dispatch a queued task if its pinned output becomes unavailable", async () => {
+  const f = fixture(); await prepare(f); f.controller.pause();
+  const reserve = f.files.prepareOutputs = vi.fn(async () => undefined);
+  await f.controller.generate(f.settings);
+  reserve.mockRejectedValue("drawing-output-unavailable");
+  f.controller.resume();
+  await vi.waitFor(() => expect(taskById(f, "task-1").status).toBe("failed"));
+  expect(f.transport.generate).not.toHaveBeenCalled();
+  expect(taskById(f, "task-1").diagnostic?.category).toBe("local-file");
+});
+
 describe("task lifecycle and history ownership #88", () => {
   it("reuses one active replacement, permits later deliberate regeneration, and retains frozen inputs", async () => {
     const f = fixture(); await prepare(f); await f.controller.generate(f.settings);

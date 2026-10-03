@@ -1,5 +1,7 @@
 .confirmation-dialog {
   box-sizing: border-box;
+  /* Tailwind preflight resets the native dialog's auto margins. */
+  margin: auto;
   width: min(28rem, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   padding: 24px;

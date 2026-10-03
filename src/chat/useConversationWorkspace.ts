@@ -192,6 +192,8 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
     isSettled: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     canSend: () => !maintenanceLocked() && pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
+    canImport: () => !maintenanceLocked() && pending.current === 0 && !!snapshot && snapshotRef.current === snapshot &&
+      (!id || stores.current.has(id)) && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,
     flushSessionWrites: async () => {
       await queue.current;

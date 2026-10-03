@@ -145,6 +145,7 @@ function App({ general, registerExitGuard, settingsRequest = 0 }: {
           onRemoveReference={id => void drawing.controller.removeReference(id)}
           onMoveReference={(id, direction) => void drawing.controller.moveReference(id, direction)}
           onUseAsReference={id => void drawing.controller.useAsReference(id)} readReference={drawing.controller.readReference}
+          onOutputSettings={() => { setActiveSettingsSection("general"); setActivePage("settings"); }}
           onConfigure={() => { setActiveSettingsSection("connections"); setActivePage("settings"); }} />
       ) : (
         <SettingsWorkspace

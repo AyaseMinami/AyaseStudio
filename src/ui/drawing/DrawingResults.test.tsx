@@ -45,6 +45,38 @@ async function key(element: Element, value: string, shiftKey = false) {
   await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key: value, shiftKey, bubbles: true, cancelable: true })));
 }
 
+it("clears every history page only after confirmation and preserves results arriving after the prompt", async () => {
+  const options = props();
+  const results = Array.from({ length: 51 }, (_, index) => ({ ...result, id: `history-${index}` }));
+  await act(async () => root.render(<DrawingWorkspace {...options} results={results} selectedResultId={null} />));
+  const opener = button("清空历史");
+  expect(opener.closest(".drawing-history-heading")).not.toBeNull();
+  await click("清空历史");
+  expect(host.querySelector('[role="dialog"]')?.textContent).toContain("全部 51 张");
+  expect(options.onDeleteResults).not.toHaveBeenCalled();
+  await click("取消");
+  expect(document.activeElement).toBe(opener);
+  expect(options.onDeleteResults).not.toHaveBeenCalled();
+  await click("清空历史");
+  await act(async () => root.render(<DrawingWorkspace {...options} results={[second, ...results]} selectedResultId={null} />));
+  await click("确认删除成果");
+  expect(options.onDeleteResults).toHaveBeenCalledExactlyOnceWith(results.map(item => item.id));
+});
+
+it("disables history clearing for empty or unavailable workspaces and invalidates stale confirmation", async () => {
+  const options = props();
+  for (const overrides of [{ results: [] }, { ready: false }, { closing: true }, { managementBusy: true }, { submitting: true }]) {
+    await act(async () => root.render(<DrawingWorkspace {...options} {...overrides} />));
+    expect(button("清空历史").disabled).toBe(true);
+  }
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  await click("清空历史");
+  await act(async () => root.render(<DrawingWorkspace {...options} results={[second]} />));
+  expect(button("确认删除成果").disabled).toBe(true);
+  await click("确认删除成果");
+  expect(options.onDeleteResults).not.toHaveBeenCalled();
+});
+
 it("keeps folder access first in the preview toolbar and resets result disclosures when switching images", async () => {
   const options = { ...props(), onOpenOutputDirectory: vi.fn() };
   await act(async () => root.render(<DrawingWorkspace {...options} />));

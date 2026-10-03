@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FolderOpen, RotateCcw } from "lucide-react";
+import { ChevronDown, FolderOpen, RotateCcw, Trash2 } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
 import { SelectField } from "../SelectField";
 import { SearchSelectField } from "../SearchSelectField";
@@ -10,6 +10,7 @@ import { SettingsHelp } from "../settings/SettingsHelp";
 import type { DrawingPresetInput, DrawingPromptPreset } from "../../drawing/presets";
 import { DrawingResultThumbnail } from "./DrawingResultThumbnail";
 import { DrawingResultPreview } from "./DrawingResultPreview";
+import { drawingOutputError } from "../../drawing/outputDirectory";
 import { drawingAspectRatios, drawingResolutions } from "../../drawing/geminiImage";
 import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImages";
 import { geminiSafetyThresholds } from "../../drawing/geminiOptions";
@@ -174,7 +175,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
   onAddReferences, onRemoveReference, onMoveReference, onUseAsReference, readReference, referencesBusy,
   onClearReferences, readThumbnail, onDeleteResults, onExportResults, onCopyPrompt, onPreviewActive,
   presets = [], presetsBusy = false, onApplyPreset, onCreatePreset, onUpdatePreset, onDeletePreset,
-  onReuseTask, onCopyTaskPrompt, onOpenOutputDirectory,
+  onReuseTask, onCopyTaskPrompt, onOpenOutputDirectory, onOutputSettings,
   closing = false, notice }: {
   draft: DrawingDraft;
   references?: DrawingReferenceSelection[];
@@ -226,6 +227,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
   onReuseTask?(id: string): void;
   onCopyTaskPrompt?(id: string): void;
   onOpenOutputDirectory?(): Promise<void>;
+  onOutputSettings?(): void;
   closing?: boolean;
   notice?: string | null;
 }) {
@@ -343,13 +345,15 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
     else onRegenerate?.(confirmation.selected[0].id);
   }
 
-  function deleteResults(ids: string[], opener: HTMLButtonElement) {
+  function deleteResults(ids: string[], opener: HTMLButtonElement, clearHistory = false) {
     if (!canManage || !onDeleteResults || !ids.length) return;
     const selected = ids.map(id => results.find(result => result.id === id)).filter((result): result is DrawingResult => Boolean(result));
     if (selected.length !== ids.length) return;
     setConfirmation({ kind: "delete-results", opener,
       selected: selected.map(result => ({ id: result.id, signature: JSON.stringify(result) })),
-      text: `删除 ${selected.length} 张绘图成果（${selected.map(result => `成果 ${resultNumber(result.id)}`).join("、")}）？此操作无法撤销；已被草稿或任务引用的参考图仍会保留。` });
+      text: clearHistory
+        ? `清空当前全部 ${selected.length} 张绘图成果（包括其他分页）？此操作无法撤销，将删除成果记录及不再被引用的本地图片。任务记录、提示词和预设保留；已被草稿或任务引用的参考图仍会保留。确认期间新生成的成果不受影响。`
+        : `删除 ${selected.length} 张绘图成果（${selected.map(result => `成果 ${resultNumber(result.id)}`).join("、")}）？此操作无法撤销；已被草稿或任务引用的参考图仍会保留。` });
   }
 
   function resultActions(result: DrawingResult) {
@@ -403,7 +407,6 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
         {memoryTasks.length > 0 && <p className="drawing-error" role="alert" aria-label="未保存图片内存风险">
           {memoryTasks.length} 项任务的 {memoryImages} 张图片仅保存在内存。保存失败时继续生成会增加内存占用，建议暂停队列并重试本地保存；退出可能丢失这些图片。
         </p>}
-        {notice && <p className="drawing-muted" role="status">{notice}</p>}
 
           <div className="drawing-layout">
             <div className="drawing-left-column">
@@ -754,9 +757,10 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     setOpeningDirectory(true);
                     setDirectoryError(null);
                     try { await onOpenOutputDirectory(); }
-                    catch { setDirectoryError("无法打开输出文件夹，请稍后重试。"); }
+                    catch (error) { setDirectoryError(drawingOutputError(error)); }
                     finally { openingDirectoryRef.current = false; setOpeningDirectory(false); }
                   }}><FolderOpen size={16} aria-hidden="true" />打开输出文件夹</button>}
+                {onOutputSettings && <button type="button" className="drawing-button" disabled={closing} onClick={onOutputSettings}>更改输出目录</button>}
                 {selectedResult && resultActions(selectedResult)}
                 </div>
               </DrawingResultPreview>
@@ -766,7 +770,14 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                   <span className="drawing-muted">详细信息</span></summary>
                 <ResultDetails result={selectedResult} />
               </details>}
-              <h2 className="drawing-history-heading">生成历史</h2>
+              <div className="drawing-section-heading drawing-history-heading">
+                <h2>生成历史</h2>
+                {onDeleteResults && <button type="button" className="drawing-button drawing-clear-history"
+                  disabled={!canManage || !results.length}
+                  onClick={event => { if (event.detail <= 1) deleteResults(results.map(result => result.id), event.currentTarget, true); }}>
+                  <Trash2 size={15} aria-hidden="true" />清空历史
+                </button>}
+              </div>
               <RecordPagination page={activeHistoryPage} count={results.length} onPage={setHistoryPage} label="生成历史" />
               <div className="drawing-history" aria-label="生成历史">
                 {results.length ? results.slice(activeHistoryPage * recordsPerPage, (activeHistoryPage + 1) * recordsPerPage).map((result) => <HistoryItem key={result.id} result={result} number={resultNumber(result.id)}
@@ -777,6 +788,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
           </div>
 
       </div>
+      {notice && <p className="drawing-operation-notice" role="status">{notice}</p>}
       {confirmation && <TaskConfirmationDialog confirmation={confirmation} valid={confirmationValid}
         onClose={() => setConfirmation(null)} onConfirm={confirmTaskAction} />}
     </div>

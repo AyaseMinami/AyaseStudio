@@ -13,8 +13,8 @@ export const dataModules = {
   search: { version: 3, capabilities: [], resources: "independent Exa/Tavily/Zhipu credentials; disabled new providers; v1 MCP and v2 Exa migrate without writes; governs new provider selections and records across modules" },
   drawingSettings: { version: 3, capabilities: [], resources: "allowlisted Gemini/Grok/Seedream controls with explicit version contracts; no prompt or image bindings" },
   drawingPresets: { version: 1, capabilities: [], resources: "explicit text only; dedicated drawing.presets projection" },
-  drawingHistory: { version: 2, capabilities: [], resources: "excluded; Grok/Seedream frozen parameters; retained local task/result/image ownership; #110 session selections excluded, legacy draft bindings retained until explicit removal" },
-  recovery: { version: 1, capabilities: [], resources: "private journals; origin-scoped native drawing import receipts v1; never portable" },
+  drawingHistory: { version: 2, capabilities: [], resources: "excluded; stable logical image references; native layout v2 stores new originals in drawing root and journals in drawing/meta, legacy task directories remain readable; Grok/Seedream frozen parameters; #110 session selections excluded, legacy draft bindings retained until explicit removal" },
+  recovery: { version: 1, capabilities: [], resources: "private journals; origin-scoped native drawing import receipts v1 under drawing/meta/reference-imports with legacy inventory support; never portable" },
 } as const;
 
 /** Every Dexie table, including intentionally excluded tables, must be registered. */
@@ -36,6 +36,11 @@ export const persistentTables = {
 } as const satisfies Record<string, { module: keyof typeof dataModules; fields: keyof typeof dataPolicies | null; backup: "included" | "excluded" | "projected" }>;
 
 export const DATA_COMPATIBILITY_KEY = "ayase-studio.data-compatibility.v1";
+/** Native JSON is validated by Rust serde deny_unknown_fields, not a TS row projection. */
+export const nativePersistentFiles = {
+  "drawing-output.json": { module: "general", version: 1, minimumReaderVersion: 1, backup: "excluded", fields: { version: "exclude", directory: "exclude" } },
+  "drawing-locations/<task UUID>.json": { module: "recovery", version: 1, minimumReaderVersion: 1, backup: "excluded", fields: { version: "exclude", task: "exclude", directory: "exclude" } },
+} as const;
 export const persistentPreferences = {
   "ayase-studio.general.v1": { module: "general", backup: "excluded" },
   "ayase-studio.appearance.v1": { module: "appearance", backup: "included" },

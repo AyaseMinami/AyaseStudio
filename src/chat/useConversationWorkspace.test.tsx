@@ -63,6 +63,7 @@ describe("workspace failure recovery", () => {
       expect(current.isTemporarilyBusy).toBe(true);
       expect(current.isReady).toBe(false);
       expect(current.canSend()).toBe(false);
+      expect(current.canImport()).toBe(false);
     } finally { await act(async () => { finish(); await result; }); }
     await wait(() => current.isReady);
     expect(current.isTemporarilyBusy).toBe(false);
@@ -108,9 +109,11 @@ describe("workspace failure recovery", () => {
     expect(result).toBe(true);
     expect(current.conversation?.id).toBe("new");
     expect(current.canSend()).toBe(false);
+    expect(current.canImport()).toBe(false);
     expect(current.loadError).toContain("操作已保存");
     await act(async () => current.retry()); await wait(() => current.isReady);
     expect(current.conversation?.id).toBe("new");
+    expect(current.canImport()).toBe(true);
     expect(current.snapshot?.conversations).toHaveLength(2);
   });
 

@@ -116,6 +116,8 @@ export interface DrawingExportParameters {
 }
 
 export interface DrawingFiles {
+  /** Pin a whole new batch to the current device-local output directory before enqueue. */
+  prepareOutputs?(taskIds: string[]): Promise<void>;
   importReference(image: DrawingImageInput): Promise<DrawingFile & { digest: string }>;
   importReferenceBytes?(bytes: Uint8Array<ArrayBuffer>): Promise<DrawingFile & { digest: string }>;
   listReferences?(): Promise<string[]>;
