@@ -13,9 +13,12 @@
 | 领域术语 | [CONTEXT.md](../CONTEXT.md) |
 | Cherry 导入 | [导入指南](CHERRY-IMPORT.md) |
 | Ayase 备份与恢复 | [备份指南](AYASE-BACKUP.md) |
+| 第三方许可、字体与资源归属 | [许可说明](THIRD-PARTY-LICENSES.md) · [锁定依赖清单](THIRD-PARTY-DEPENDENCIES.md) |
 | 独立绘图与后续范围 | [#83 当前范围索引](ISSUE-83-DRAWING-SPEC.md) |
 
 ## 证据与历史
+
+- [#57 / #106 审查记录](ISSUE-57-106-AUDIT.md) 记录 2026-10-03 非样式审查、缓存清单、修复、验证与许可待核实项。
 
 - [#98 / #108 收尾记录](ISSUE-98-108-CLOSEOUT.md) 汇总最终视觉与玻璃范围、性能采集、用户接受边界及 2026-10-03 的远端关闭状态。
 

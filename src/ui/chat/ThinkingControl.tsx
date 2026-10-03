@@ -96,7 +96,7 @@ export function ThinkingControl({ protocol = "gemini-native", value, disabled, h
         }}>应用预算</button><span>已应用：{settings.budget}</span>
     </label>
     </div>}
-    <div className="thinking-field"><label className="thinking-summary-toggle"><input type="checkbox" checked={capability.summary && settings.includeSummary}
+    <div className="thinking-field"><label className="thinking-summary-toggle"><input className="ui-switch" type="checkbox" role="switch" checked={capability.summary && settings.includeSummary}
       disabled={disabled || !capability.summary} onChange={(event) => onChange({ ...settings, includeSummary: event.target.checked })} />显示思考内容</label>
     </div>
     <span className="thinking-hint">{disabled ? "暂不可修改" : capability.summaryHint ?? hint}</span>

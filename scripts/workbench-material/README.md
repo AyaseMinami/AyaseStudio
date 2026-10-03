@@ -7,6 +7,8 @@ Restart the server and reload after edits; this fixture disables HMR and watchin
 It mounts actual `AppShell`, `SettingsWorkspace`, settings pages and
 `DrawingWorkspace`, with in-memory appearance, mock connection/file callbacks,
 three completed synthetic drawing tasks and a locally drawn PNG preview.
+General settings use in-memory preferences so switch clicks and keyboard input
+can be checked without changing real window/exit preferences.
 The avatar library is isolated in `WorkbenchMaterialSynthetic` by the fixture's
 Vite transform. Search settings use only this separate origin. Never enter real
 credentials or invoke network-search tests in the fixture. CSP allows only

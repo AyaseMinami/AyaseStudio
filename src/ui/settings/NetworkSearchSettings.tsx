@@ -106,7 +106,7 @@ function SearchProfileCard({ provider, initial, onSave }: {
         <SettingsHelp label={name}>{`${additional ? `调用 ${name} 官方搜索 API，需要官方 API Key，费用按量计费。` : api ? "直接调用 Exa 搜索 API，需要 API Key。" : "通过 Exa MCP 搜索，Key 选填；匿名额度和限流由 Exa 决定。"}查询会发送给所配置的搜索服务。`}</SettingsHelp>
       </div><p className="network-search-service-description">{additional ? "启用并保存后，可在聊天中选择" : api ? "使用 API Key 连接 Exa 搜索" : "支持匿名搜索，也可填写独立 Key"}</p></div>
       {"enabled" in draft && <div className="settings-label-help">
-        <label className="network-search-enable" htmlFor={id + "-enabled"}><input id={id + "-enabled"} type="checkbox" checked={draft.enabled} disabled={busy}
+        <label className="network-search-enable" htmlFor={id + "-enabled"}><input id={id + "-enabled"} className="ui-switch" type="checkbox" role="switch" checked={draft.enabled} disabled={busy}
           onChange={(event) => { setDraft({ ...draft, enabled: event.target.checked }); setFeedback(""); }} />启用{name === "Tavily" ? " Tavily " : name}搜索</label>
         <SettingsHelp label={name + "启用"}>启用并保存后出现在聊天搜索菜单；关闭后保存即可隐藏。测试搜索也需要 API Key。</SettingsHelp>
       </div>}
@@ -203,7 +203,7 @@ export function NetworkSearchSettings() {
     return result[key];
   }
   return <section className="settings-page network-search-page" aria-labelledby="network-search-title">
-    <header className="settings-page-heading"><h2 id="network-search-title">网络搜索</h2><p className="muted-text">配置外部搜索服务，在聊天中选择使用。各服务独立保存；测试使用当前填写的内容，不会保存设置。</p></header>
+    <header className="settings-page-heading"><h2 id="network-search-title">网络搜索</h2><p className="muted-text">配置搜索服务，为对话补充网络信息。</p></header>
     {!initial && !loadFailed && <p role="status">正在读取搜索设置…</p>}
     {loadFailed && <section className="settings-card network-search-card">
       <p className="error-banner" role="alert">无法读取搜索设置，请重试。</p>

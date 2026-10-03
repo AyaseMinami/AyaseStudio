@@ -32,7 +32,7 @@ export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState;
   return <section className="settings-page general-settings-page" aria-labelledby="general-settings-title">
     <header className="settings-page-heading">
       <h2 id="general-settings-title">常规</h2>
-      <p className="muted-text">个人资料与窗口、退出偏好。</p>
+      <p className="muted-text">按你的习惯调整应用的日常使用偏好。</p>
     </header>
     <div className="general-settings-groups">
       <section className="settings-card general-settings-group" aria-labelledby="general-profile-title">
@@ -57,19 +57,19 @@ export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState;
         <div className="general-preference-row">
           <label htmlFor="general-background-resident">关闭窗口后在后台运行</label>
           <SettingsHelp label="关闭窗口后在后台运行">开启后，关闭窗口会隐藏到系统托盘，应用和任务继续运行。点击托盘图标或“打开 Ayase Studio”可恢复窗口；通过托盘菜单“退出”结束应用。关闭此选项后，关闭窗口将退出应用。</SettingsHelp>
-          <input id="general-background-resident" type="checkbox" role="switch" checked={general?.preferences.backgroundResident ?? false} disabled={unavailable} onChange={(event) => void changePreference("backgroundResident", event.target.checked)} />
+          <input id="general-background-resident" className="ui-switch" type="checkbox" role="switch" checked={general?.preferences.backgroundResident ?? false} disabled={unavailable} onChange={(event) => void changePreference("backgroundResident", event.target.checked)} />
         </div>
         <div className="general-preference-row">
           <label htmlFor="general-confirm-exit">退出前确认</label>
           <SettingsHelp label="退出前确认">控制普通退出确认，不影响隐藏到托盘。关闭后，正在进行的绘图任务和未保存成果仍会显示各自的风险提示。</SettingsHelp>
-          <input id="general-confirm-exit" type="checkbox" role="switch" checked={general?.preferences.confirmBeforeExit ?? false} disabled={unavailable} onChange={(event) => void changePreference("confirmBeforeExit", event.target.checked)} />
+          <input id="general-confirm-exit" className="ui-switch" type="checkbox" role="switch" checked={general?.preferences.confirmBeforeExit ?? false} disabled={unavailable} onChange={(event) => void changePreference("confirmBeforeExit", event.target.checked)} />
         </div>
         {!general && <p className="muted-text general-settings-unavailable">常规设置暂不可用。</p>}
         {(general?.error || saveError) && <p className="error-banner" role="alert">{general?.error || saveError}</p>}
       </section>
     </div>
     {avatarDialog && avatar && <AvatarModal title={avatarDialog} busy={avatarBusy} onClose={closeAvatarDialog}>
-      <AvatarLibraryPanel avatar={avatar} onBusyChange={setLibraryBusy} />
+      <AvatarLibraryPanel avatar={avatar} initialManaging={avatarDialog === "管理头像库"} onBusyChange={setLibraryBusy} />
     </AvatarModal>}
   </section>;
 }

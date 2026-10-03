@@ -18,7 +18,9 @@ import type { DrawingPromptPreset } from "../drawing/presets";
 import { projectDrawingSettings, readDrawingPromptPresetData } from "../drawing/settingsData";
 import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
 
-export const allPreferenceKeys = Object.keys(persistentPreferences);
+// Device-only preferences are outside both portable backups and private rollback.
+export const allPreferenceKeys = Object.entries(persistentPreferences)
+  .filter(([, policy]) => policy.backup !== "excluded").map(([key]) => key);
 /** drawing is private rollback state; it must never be copied into portable rows. */
 export interface LocalSnapshot { rows: BackupRows; preferences: Record<string, string | null>;
   drawing?: { draft?: DrawingDraft; presets: DrawingPromptPreset[]; targets?: { modelId: string; providerId: string; connectionId: string; protocol: string; baseUrl: string; upstreamModelId: string }[] } }

@@ -15,6 +15,7 @@ function PdfPreview({ data }: { data: string }) {
       try {
         const pdfjs = await import("pdfjs-dist");
         const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        if (cancelled) return;
         pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
         const task = pdfjs.getDocument({ data: base64ToBytes(data), useSystemFonts: false });
         close = () => void task.destroy();

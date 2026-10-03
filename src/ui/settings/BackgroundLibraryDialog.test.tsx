@@ -148,7 +148,7 @@ it("keeps per-image parameter drafts isolated and only submits the applied candi
 it("resets only draft values and discards all parameter edits on cancel", async () => {
   await mount(); await changeInput("背景遮罩强度", "40"); await changeInput("背景模糊程度", "10");
   await click("恢复背景遮罩强度默认值");
-  expect(host.querySelector<HTMLInputElement>('[aria-label="背景遮罩强度"]')!.value).toBe("65");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="背景遮罩强度"]')!.value).toBe("50");
   expect(host.querySelector<HTMLInputElement>('[aria-label="背景模糊程度"]')!.value).toBe("10");
   await click("取消"); expect(props.onApply).not.toHaveBeenCalled(); expect(props.onSave).not.toHaveBeenCalled();
   await act(async () => root.render(null)); await mount();

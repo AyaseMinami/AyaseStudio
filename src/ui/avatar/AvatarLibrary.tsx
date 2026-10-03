@@ -28,16 +28,17 @@ export function AvatarModal({ title, children, busy = false, onClose }: { title:
 type View = { type: "crop"; draft: Draft; entry?: AvatarLibraryEntry } | { type: "delete"; entries: AvatarLibraryEntry[] };
 type Choice = { type: "library"; id: string } | { type: "builtin"; id: BrandId } | { type: "automatic" };
 
-export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvatar, legacyIcon, assistantName, assistantId, automaticChoice, onApply, onBuiltinApply, onClose, onBusyChange }: {
+export function AvatarLibraryPanel({ avatar, inline = false, initialManaging = false, value, defaultAvatar, legacyIcon, assistantName, assistantId, automaticChoice, onApply, onBuiltinApply, onClose, onBusyChange }: {
   avatar?: UserAvatarState; inline?: boolean; value?: UserAvatar; defaultAvatar?: string; legacyIcon?: string; assistantName?: string; assistantId?: string;
   automaticChoice?: { label: string; preview: ReactNode; isCurrent: boolean };
+  initialManaging?: boolean;
   onApply?(avatar: UserAvatar | undefined, defaultAvatar?: string): void; onBuiltinApply?(id: BrandId): void; onClose?(): void; onBusyChange?(busy: boolean): void;
 }) {
   const [entries, setEntries] = useState<AvatarLibraryEntry[]>([]);
   const [usages, setUsages] = useState<Record<string, AvatarUsage[]>>({});
   const [choice, setChoice] = useState<Choice>();
   const [view, setView] = useState<View>();
-  const [managing, setManaging] = useState(false);
+  const [managing, setManaging] = useState(initialManaging);
   const [marked, setMarked] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -160,7 +161,7 @@ export function AvatarLibraryPanel({ avatar, inline = false, value, defaultAvata
             else setChoice({ type: "library", id: entry.id });
           }}>
           <AssistantAvatar avatar={entry.avatar} />
-          {(selected || managing) && <span className="avatar-library-check" aria-hidden="true">{selected && <Check size={12} />}</span>}
+          {(selected || managing) && <span className={`avatar-library-check${managing ? " ui-selection-marker" : ""}`} data-selected={selected} aria-hidden="true">{selected && <Check size={12} />}</span>}
           {(usage || currentDraft) && <span className="avatar-library-in-use" role="img" aria-label={usage || currentDraft} />}
         </button>;
       })}</div>

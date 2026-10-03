@@ -105,12 +105,22 @@ describe("background library lifecycle", () => {
     expect(restarted.getSnapshot()).toMatchObject({ backgroundFit: "contain", backgroundMask: 48, backgroundBlur: 7, backgroundFocus: { x: .2, y: 1.1, zoom: 2 } });
   });
 
+  it("preserves a zero mask through apply, restart and image switching", async () => {
+    const h = harness(); await h.controller.ready; const a = await add(h); const b = await add(h);
+    expect(a.mask).toBe(50);
+    await h.controller.applyLibraryBackground(a.id, { ...a, mask: 0 });
+    const restarted = h.create(); await restarted.ready;
+    expect(restarted.getSnapshot().backgroundMask).toBe(0);
+    await restarted.applyLibraryBackground(b.id); await restarted.applyLibraryBackground(a.id);
+    expect(restarted.getSnapshot().backgroundMask).toBe(0);
+  });
+
   it("leaves library and applied parameters unchanged when saving candidate edits fails", async () => {
     const h = harness(); await h.controller.ready; const a = await add(h); const b = await add(h);
     await h.controller.applyLibraryBackground(a.id); const before = h.saved(); h.fail();
     await expect(h.controller.applyLibraryBackground(b.id, { reference: b.reference, focus: null, fit: "contain", mask: 40, blur: 8 })).rejects.toThrow("无法保存");
     expect(h.saved()).toBe(before);
-    expect(h.controller.getSnapshot()).toMatchObject({ backgroundReference: a.reference, backgroundMask: 65, backgroundBlur: 0 });
+    expect(h.controller.getSnapshot()).toMatchObject({ backgroundReference: a.reference, backgroundMask: 50, backgroundBlur: 0 });
     expect(h.controller.getSnapshot().backgroundLibrary.find((entry) => entry.id === b.id)).toEqual(b);
   });
 
@@ -141,7 +151,7 @@ describe("background library lifecycle", () => {
     h.controller.editBackgroundFocus(); await h.controller.confirmBackgroundFocus({ x: -.2, y: 1.4, zoom: .75 });
     h.controller.setUnifiedThemeColor("#abcdef"); h.controller.setSidebarTransparency(23);
     await h.controller.applyLibraryBackground(b.id);
-    expect(h.controller.getSnapshot()).toMatchObject({ backgroundFit: "cover", backgroundMask: 65, backgroundBlur: 0, backgroundFocus: null });
+    expect(h.controller.getSnapshot()).toMatchObject({ backgroundFit: "cover", backgroundMask: 50, backgroundBlur: 0, backgroundFocus: null });
     await h.controller.applyLibraryBackground(a.id);
     expect(h.controller.getSnapshot()).toMatchObject({ backgroundFit: "contain", backgroundMask: 40, backgroundBlur: 8,
       backgroundFocus: { x: -.2, y: 1.4, zoom: .75 }, accentColor: "#abcdef", sidebarTransparency: 23 });

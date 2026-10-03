@@ -906,7 +906,7 @@ export function ConnectionSettings({
     >
       <div className="settings-page-heading connection-settings-heading">
           <h2 id="connection-title">连接配置</h2>
-          <p className="muted-text">管理连接与模型，设置助手的新对话默认模型。</p>
+          <p className="muted-text">配置模型服务，管理可用的连接与模型。</p>
       </div>
         <div className="connection-settings-workbench">
           <nav className="connection-tree" aria-label="供应商列表" onClickCapture={treeDrag.suppressClick}

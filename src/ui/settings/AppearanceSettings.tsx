@@ -76,7 +76,7 @@ export function AppearanceSettings({
   const presetPalette = getColorPresetPalette(colorPreset, resolvedTheme);
   const readingSelected = themeMode === "light" && colorPreset === "reading";
   return <section className="settings-page settings-workspace-page appearance-settings-page" aria-labelledby="appearance-title">
-    <div className="settings-page-heading"><h2 id="appearance-title">外观</h2><p className="muted-text">选择 Ayase Studio 在这台设备上的显示方式。</p></div>
+    <div className="settings-page-heading"><h2 id="appearance-title">外观</h2><p className="muted-text">调整应用的界面风格与显示效果。</p></div>
 
     <div className="appearance-layout">
     <div className="appearance-preview-column">
@@ -148,11 +148,11 @@ export function AppearanceSettings({
       <div className="appearance-rows">
         <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖四个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
         <div className="appearance-row appearance-range-row"><RowCopy title="顶栏与功能栏背景透明度" /><RangeControl value={`${chromeTransparency}%`} ariaLabel="顶栏与功能栏背景透明度" valueNumber={chromeTransparency} onChange={onChromeTransparencyChange} onReset={() => onChromeTransparencyChange(defaultAppearancePreferences.chromeTransparency)} max="100" min="0" /></div>
-        <div className="appearance-row"><RowCopy title="侧栏玻璃效果" /><button type="button" className="settings-button" aria-label="侧栏玻璃效果" aria-pressed={sidebarGlassEnabled} onClick={() => onSidebarGlassEnabledChange(!sidebarGlassEnabled)}>{sidebarGlassEnabled ? "已开启" : "已关闭"}</button></div>
+        <div className="appearance-row appearance-switch-row"><RowCopy title="侧栏玻璃效果" /><input type="checkbox" role="switch" className="ui-switch" aria-label="侧栏玻璃效果" checked={sidebarGlassEnabled} onChange={(event) => onSidebarGlassEnabledChange(event.target.checked)} /></div>
         <p className="muted-text">仅作用于聊天助手栏和对话栏，不影响设置分类导航。</p>
         {sidebarGlassEnabled && <p className="notice appearance-inline-notice">侧栏玻璃效果已开启，覆盖聊天侧栏透明度；下方数值仍会保存，关闭效果后使用。设置分类导航继续使用该透明度值。</p>}
         <div className="appearance-row appearance-range-row"><RowCopy title="侧栏透明度" /><RangeControl value={`${sidebarTransparency}%`} ariaLabel="侧栏透明度" valueNumber={sidebarTransparency} onChange={onSidebarTransparencyChange} onReset={() => onSidebarTransparencyChange(defaultAppearancePreferences.sidebarTransparency)} max="100" min="0" /></div>
-        <div className="appearance-row"><RowCopy title="输入区域玻璃效果" /><button type="button" className="settings-button" aria-label="输入区域玻璃效果" aria-pressed={composerGlassEnabled} onClick={() => onComposerGlassEnabledChange(!composerGlassEnabled)}>{composerGlassEnabled ? "已开启" : "已关闭"}</button></div>
+        <div className="appearance-row appearance-switch-row"><RowCopy title="输入区域玻璃效果" /><input type="checkbox" role="switch" className="ui-switch" aria-label="输入区域玻璃效果" checked={composerGlassEnabled} onChange={(event) => onComposerGlassEnabledChange(event.target.checked)} /></div>
         {composerGlassEnabled && <p className="notice appearance-inline-notice">输入区域玻璃效果已开启，覆盖输入区域透明度；下方数值仍会保存，关闭效果后使用。</p>}
         <div className="appearance-row appearance-range-row"><RowCopy title="输入区域透明度" /><RangeControl value={`${composerTransparency}%`} ariaLabel="输入区域透明度" valueNumber={composerTransparency} onChange={onComposerTransparencyChange} onReset={() => onComposerTransparencyChange(defaultAppearancePreferences.composerTransparency)} max="100" min="0" /></div>
         <div className="appearance-row appearance-range-row"><RowCopy title="消息气泡透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="消息气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} onReset={() => onAssistantBubbleTransparencyChange(defaultAppearancePreferences.assistantBubbleTransparency)} max="100" min="0" /></div>

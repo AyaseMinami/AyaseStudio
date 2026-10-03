@@ -723,7 +723,6 @@ export class DrawingController {
     const completed: DrawingTask = { ...task, status: "completed", updatedAt: this.now(), finishedAt: this.now(), error: undefined, recovery: undefined, diagnostic: undefined };
     const results = files.map(file => ({ ...file, taskId: task.id, createdAt: task.createdAt, parameters: task.parameters }));
     await this.dependencies.repository.complete(completed, results);
-    this.unsaved.delete(task.id);
     this.publish({ tasks: [completed, ...this.state.tasks.filter(item => item.id !== task.id)],
       results: [...results, ...this.state.results.filter(item => item.taskId !== task.id)], selectedResultId: results[0].id });
   }

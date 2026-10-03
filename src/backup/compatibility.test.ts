@@ -77,6 +77,16 @@ describe("versioned backup data contracts", () => {
     });
     expect(await readBackupDocument(preview.document)).toEqual(preview.document);
   });
+  it.each([0, 10, 65])("roundtrips mask %s through backup export and decode", async backgroundMask => {
+    const doc = document();
+    doc.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, backgroundMask });
+    const snapshot: LocalSnapshot = { rows: doc.rows as LocalSnapshot["rows"], preferences: doc.preferences };
+    const exported = await createBackupDocument(snapshot, { connections: false, credentials: false }, files);
+    const preview = await decodeBackup(await encodeBackup(exported));
+    expect(JSON.parse(preview.document.preferences[preferenceKeys[0]]!).backgroundMask).toBe(backgroundMask);
+    expect(await readBackupDocument(preview.document)).toEqual(preview.document);
+  });
+
   it("reads appearance v2 without chrome through the same defaults and reexports as v3", async () => {
     const old = document();
     const { chromeTransparency: _chrome, ...appearance } = defaultAppearancePreferences;

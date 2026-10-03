@@ -1,5 +1,38 @@
 # Ayase Studio Development Guide
 
+## Switch and checkbox unification (2026-10-03)
+
+Explicit shared classes in `src/ui/ToggleControls.css` style boolean settings as switches and retain checkboxes for selection/confirmation. Callbacks, disabled boundaries, save timing and persisted formats are unchanged. The workbench fixture now supplies in-memory general preferences for safe interaction checks.
+
+Validation: `npm.cmd run check` passed 166 suites / 2811 tests, data-contract checks, TypeScript and production build. A subsequently added stream-control regression and related tests passed 5 suites / 55 tests; the final CSS alignment adjustment was followed by another successful production build. Cargo check, fixture TypeScript and Git diff checks passed. Existing large-chunk build advice remains.
+
+In-app browser checks used the workbench and select116 fixtures: light/dark settings, 640px narrow general/appearance layouts, 36×20 switch geometry, aligned general controls, Space-key toggling, conversation disabled fieldset feedback, and search/drawing controls. Browser inspection caught and corrected a specificity conflict that removed the general switches' automatic left margin. Import partial selection, backup confirmations and resource management remain covered by component regressions; those flows and forced-colors rendering were not separately exercised in the browser this round. No provider requests or native window behavior were tested. Local screenshot: `.chat108.local/toggle-general.png`; full check log: `.chat108.local/toggle-check.log`.
+
+## Background mask tuning verification (2026-10-03)
+
+Range 0–90 and default/reset 50: `npm.cmd run check` passed (166 files / 2811 tests, data-contract checks and production build), as did `cargo check --manifest-path src-tauri/Cargo.toml` and `git diff --check`. Deterministic tests cover zero-mask persistence, restart, library switching, backup encode/decode, missing defaults and preservation of saved 65. In-app browser inspection of the isolated workbench fixture confirmed the rendered control has min 0, max 90 and value 50; that fixture disables the background control, so slider interaction/reset is covered by component tests, not browser interaction acceptance. No live provider or native interaction was exercised.
+
+## Nonvisual release audit (#57 / #106, 2026-10-03)
+
+[Audit record](ISSUE-57-106-AUDIT.md) distinguishes the reviewed baseline and scoped fixes from concurrent UI/tray edits, records cache boundaries, and keeps native pressure/installation acceptance separate. Focused regression commands:
+
+```powershell
+npm.cmd test -- src/chat/contextBudget.test.ts src/ui/chat/SentAttachmentPreview.test.tsx src/backup/restore.test.ts src/ui/settings/BackupWorkspace.test.tsx
+node scripts/inventory-third-party.mjs
+```
+
+The second command regenerates the [locked dependency inventory](THIRD-PARTY-DEPENDENCIES.md) using installed npm metadata and offline Cargo metadata; it does not validate an installer or install dependencies. See [license and asset attribution](THIRD-PARTY-LICENSES.md) for missing texts, compound licenses and pending brand permissions.
+
+## Rounded tray menu verification (2026-10-03)
+
+Compact follow-up: the menu is now 224×131 inside a 240×147 host; the earlier 150/166 heights below describe the initial version. Removed the permanent bottom error row; errors appear as a first-item subtitle within the existing row. Browser measurement confirmed approximately 7px at both top and bottom with no overflow. All 8 tray tests passed; production build, locked Cargo check and diff check passed. This sizing change still needs the updated native executable for desktop confirmation.
+
+`tray.html` is a separate Vite build entry. Preview it on an isolated localhost origin without loading the main app; browser mode does not invoke native commands. The fixed 240×166 logical-pixel host includes an 8px transparent shadow gutter. Browser acceptance checked the actual renderer in light/dark themes, its 224×150 menu without overflow, ArrowDown and End navigation; deterministic tests also cover action dispatch, Escape/Tab cycling, repeated-click suppression, errors and read-only appearance updates. Native geometry tests cover work-area edges, negative monitor origins and scale-adjusted menu sizes.
+
+Validation: `npm.cmd run check` passed 166 suites / 2792 tests, data-contract checks, TypeScript and the two-entry production build (existing large-chunk advisory). Targeted tray/general/App tests passed 58 tests; Rust tray tests passed 2 tests, locked Cargo check and scoped diff checks passed. Independent Sol/high review found no confirmed P1/P2 defect.
+
+Native startup is **unverified**: `npm.cmd run tauri dev -- --no-watch --config .tray-smoke.local/native.config.json` could not replace the already-running development executable (Windows access denied). An ignored separate harness executable failed before startup with `0xc0000139`; it supplies no native acceptance evidence. The running user application was preserved. Actual tray right-click, focus/blur dismissal, multi-monitor mixed-DPI placement, fallback while the main window is hidden, and accepted exit terminating both WebViews remain manual acceptance after restarting with the updated build. Local browser captures and diagnostic harness files are under ignored `.tray-smoke.local/`.
+
 ## Shared selector browser fixture (#116)
 
 Use [scripts/select116/README.md](../scripts/select116/README.md) for isolated selector acceptance with actual production components and synthetic long-label data. From the repository root:

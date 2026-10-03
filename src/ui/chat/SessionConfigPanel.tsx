@@ -116,7 +116,7 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
             <div className="session-config-grid">{numericFields.filter((item) => item.group === "sampling").map((item) => settingRow(item.field, item.label))}</div>
             <p className="muted-text">按当前协议发送，参数支持情况由供应商判断。</p>
             <label className="session-config-check">
-              <input id="session-stream" type="checkbox" checked={config.stream === true} onChange={(event) => onChange({ ...config, stream: event.target.checked })} />
+              <input id="session-stream" className="ui-switch" type="checkbox" role="switch" checked={config.stream === true} onChange={(event) => onChange({ ...config, stream: event.target.checked })} />
               流式输出
             </label>
 

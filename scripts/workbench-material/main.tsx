@@ -60,6 +60,7 @@ const tasks: DrawingTask[] = [1, 2, 3].map(index => ({ id: `sample-task-${index}
 const readSample = async () => sampleImage;
 
 function Review() {
+  const [generalPreferences, setGeneralPreferences] = useState({ version: 1 as const, backgroundResident: true, confirmBeforeExit: true });
   const [page, setPage] = useState<AppPage>("settings");
   const [section, setSection] = useState<SettingsSection>("appearance");
   const [variant, setVariant] = useState("production");
@@ -99,6 +100,7 @@ function Review() {
       onAddReferences={noop} onRemoveReference={noop} onMoveReference={noop} onUseAsReference={noop}
       readReference={readSample} readThumbnail={readSample} onOpenOutputDirectory={asyncNoop} />
       : <SettingsWorkspace activeSection={section} onSectionChange={setSection} appearance={appearanceProps} connection={connectionProps}
+        general={{ preferences: generalPreferences, error: null, setPreference: async (key, value) => { setGeneralPreferences(current => ({ ...current, [key]: value })); return true; } }}
         avatar={{ value: undefined, url: undefined, busy: false, error: undefined, save: async () => true }} />}
     </AppShell>
     <details className="workbench-trial-controls"><summary>容器对照</summary><div>

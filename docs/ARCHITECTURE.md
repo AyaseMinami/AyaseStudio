@@ -1,5 +1,15 @@
 # Ayase Studio Architecture
 
+## Background mask tuning (2026-10-03)
+
+The appearance controller and shared durable reader accept background masks from 0 to 90, with 0 rendering a fully transparent overlay. Missing values, newly imported library entries and explicit resets use 50; stored values remain unchanged. Settings and library drafts share the range control and default. Resource ownership and backup projection are unchanged; downgrade limitations are recorded in [DATA-CONTRACTS.md](DATA-CONTRACTS.md).
+
+## Nonvisual audit (#106, 2026-10-03)
+
+Known OpenAI token counters remain module-scoped and bounded to two encodings. Cold callers recheck the cache after asynchronous imports, before synchronous construction, so parallel conversations share the same counter; failed loading is not cached. PDF preview checks cancellation after lazy imports before allocating a document/worker, and destroys already-created tasks on effect cleanup.
+
+Private backup snapshots and rollback apply only non-excluded registered preferences (including legacy sources and compatibility reports). Device-only general preferences are never read or overwritten by backup, including old journals that incorrectly captured them. No data version or schema changes. The reviewed cache ownership, unbounded intentional retention and remaining acceptance limits are recorded in [#57 / #106 audit](ISSUE-57-106-AUDIT.md).
+
 ## Shared selectors (#116, 2026-10-03)
 
 `SelectField` owns short single-choice lists, keyboard navigation, disabled options and viewport-clamped positioning. Focus stays on its trigger. Its fixed listbox portals to `document.body` so filtered surfaces such as the glass composer do not change its coordinate system; inside a native HTML `dialog`, it portals into that dialog to remain in the top layer. `containsSelectFieldTarget` associates a portaled listbox with its trigger through `aria-controls`, preserving the owning menu's outside-click and scroll boundaries.
@@ -9,6 +19,8 @@
 `ModelPicker` maps chat models into the same searchable dialog while retaining the caller's existing current-conversation save callback. `ModelSelectField` uses that picker for assistant and conversation drafts; the owning form still decides when to save or cancel. Selector replacement does not change provider requests, persisted configuration or draft/confirmation semantics. Per-control visual acceptance is recorded in [#116 implementation and coverage](ISSUE-116-IMPLEMENTATION.md).
 
 ## General settings and residency (#114, 2026-10-03)
+
+The tray popup uses an isolated `tray.html` / `src/tray` renderer with no main App, database, resource bootstrap or lifecycle owner. It reads appearance through the existing pure preference projection and updates on storage, system-theme and focus changes. Rust owns the hidden undecorated window, physical work-area positioning at the target monitor's DPI, focus-loss dismissal and an allow-listed `tray_menu_action` command restricted to the tray window. Ready is cleared on navigation; an unavailable renderer falls back to the native menu. Both menus restore the existing main window and share the original Settings/Exit events. The menu is excluded from window-state persistence; destruction of the main window after its accepted exit ends the process so the hidden menu cannot keep it alive. No residency preference defaults or data formats change.
 
 Settings navigation starts with General (personal profile and window/exit), replacing the separate avatars page. The daily user-avatar preview is 64px; existing library and crop operations retain their modal workflows. App-level behavior and personal preferences belong here; provider, display and data-management settings keep their established boundaries.
 

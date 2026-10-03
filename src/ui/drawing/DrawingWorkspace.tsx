@@ -536,7 +536,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                   : seedream ? "版本契约需手动选择，不根据模型 ID 推断。尺寸选项随版本变化，也可输入宽x高；输出格式仅支持 5.0 系列。自动选项跟随服务默认。"
                   : "512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。"}</SettingsHelp></span>
               <label className="drawing-label drawing-sound">
-                <input type="checkbox" checked={draft.completionSound ?? true} disabled={!ready || submitting}
+                <input className="ui-switch" type="checkbox" role="switch" checked={draft.completionSound ?? true} disabled={!ready || submitting}
                   onChange={event => onDraftChange({ ...draft, completionSound: event.target.checked })} /> 完成提示音
               </label>
               </div>

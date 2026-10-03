@@ -92,10 +92,12 @@ describe("AppearanceSettings", () => {
   it.each([false, true])("toggles each glass region independently from %s without changing stored transparency", async enabled => {
     const { handlers } = await render({ sidebarGlassEnabled: enabled, composerGlassEnabled: enabled,
       sidebarTransparency: 37, composerTransparency: 62 });
-    const sidebar = host!.querySelector<HTMLButtonElement>('[aria-label="侧栏玻璃效果"]')!;
-    const composer = host!.querySelector<HTMLButtonElement>('[aria-label="输入区域玻璃效果"]')!;
-    expect(sidebar.getAttribute("aria-pressed")).toBe(String(enabled));
-    expect(composer.getAttribute("aria-pressed")).toBe(String(enabled));
+    const sidebar = host!.querySelector<HTMLInputElement>('[aria-label="侧栏玻璃效果"]')!;
+    const composer = host!.querySelector<HTMLInputElement>('[aria-label="输入区域玻璃效果"]')!;
+    expect(sidebar.getAttribute("role")).toBe("switch");
+    expect(sidebar.checked).toBe(enabled);
+    expect(composer.getAttribute("role")).toBe("switch");
+    expect(composer.checked).toBe(enabled);
     const sidebarRange = host!.querySelector<HTMLInputElement>('[aria-label="侧栏透明度"]')!;
     const composerRange = host!.querySelector<HTMLInputElement>('[aria-label="输入区域透明度"]')!;
     expect(sidebarRange.value).toBe("37"); expect(composerRange.value).toBe("62");

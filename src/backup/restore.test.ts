@@ -16,6 +16,7 @@ import { createChatRepository } from "../chat/repository";
 import { SEARCH_SETTINGS_KEY, validateSearchConfiguration } from "../search/settings";
 import { currentModuleVersions } from "../storage/dataRegistry";
 import { object } from "./validation";
+import { generalPreferencesKey } from "../general/preferences";
 
 const databases: AyaseDatabase[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const db of databases.splice(0)) await db.delete(); });
@@ -71,6 +72,44 @@ async function assetDocument() {
   return doc;
 }
 describe("restore conflict strategies", () => {
+  it.each(["replace", "merge", "copy"] as const)("keeps device preferences outside snapshot and %s writes", async mode => {
+    const test = await setup();
+    const raw = '{"version":99,"futureDeviceSetting":"preserve"}';
+    test.store.values.set(generalPreferencesKey, raw);
+    const read = vi.spyOn(test.store, "getItem");
+    const write = vi.spyOn(test.store, "setItem"), remove = vi.spyOn(test.store, "removeItem");
+    const before = await test.repository.snapshot();
+    expect(before.preferences).not.toHaveProperty(generalPreferencesKey);
+    expect(read).not.toHaveBeenCalledWith(generalPreferencesKey);
+    const plan = createRestorePlan(document(), before, mode);
+    expect(plan.after.preferences).not.toHaveProperty(generalPreferencesKey);
+    await test.repository.restore(plan, before, test.files);
+    expect(write.mock.calls.some(([key]) => key === generalPreferencesKey)).toBe(false);
+    expect(remove).not.toHaveBeenCalledWith(generalPreferencesKey);
+    expect(test.store.values.get(generalPreferencesKey)).toBe(raw);
+  });
+
+  it.each(["staging", "applying"] as const)("ignores previously captured device preferences when repeating %s recovery", async phase => {
+    const test = await setup();
+    // Journals created before #106 erroneously captured this now-excluded key.
+    const legacy = structuredClone(test.before);
+    legacy.preferences[generalPreferencesKey] = '{"version":1,"backgroundResident":true,"confirmBeforeExit":true}';
+    await test.db.backupJournal.put({ id: "restore", before: legacy, references: [], phase });
+    vi.mocked(test.files.remove).mockRejectedValueOnce(Error("locked file"));
+    await expect(test.repository.recover(test.files)).rejects.toThrow("locked file");
+    const latest = '{"version":1,"backgroundResident":true,"confirmBeforeExit":false}';
+    test.store.values.set(generalPreferencesKey, latest);
+    const write = vi.spyOn(test.store, "setItem"), remove = vi.spyOn(test.store, "removeItem");
+    const name = test.db.name; test.db.close();
+    const reopened = new AyaseDatabase(name); databases.push(reopened);
+    const restarted = new BackupRepository(reopened, test.store);
+    expect(await restarted.recover(test.files)).toBe(true);
+    expect(test.store.values.get(generalPreferencesKey)).toBe(latest);
+    expect(write.mock.calls.some(([key]) => key === generalPreferencesKey)).toBe(false);
+    expect(remove).not.toHaveBeenCalledWith(generalPreferencesKey);
+    expect(await restarted.recover(test.files)).toBe(false);
+  });
+
   it("restores both glass flags and transparency together through replacement and reexport", async () => {
     const test = await setup();
     const incoming = structuredClone(test.before);

@@ -145,7 +145,7 @@ export function DataImportSettings(props: DataImportSettingsProps) {
           const name = assistant.name || "未命名助手";
           return <section className="data-import-assistant" key={assistant.id}>
             <label className="data-import-assistant-heading" title={name}>
-              <input type="checkbox" aria-label={`选择助手 ${name}`} disabled={locked || !keys.length}
+              <input className="ui-checkbox" type="checkbox" aria-label={`选择助手 ${name}`} disabled={locked || !keys.length}
                 checked={keys.length > 0 && selectedCount === keys.length}
                 ref={(input) => { if (input) input.indeterminate = selectedCount > 0 && selectedCount < keys.length; }}
                 onChange={(event) => toggle(keys, event.currentTarget.checked)} />
@@ -155,7 +155,7 @@ export function DataImportSettings(props: DataImportSettingsProps) {
               const title = conversation.title || "未命名对话";
               const files = conversation.messages.reduce((sum, message) => sum + message.files.length, 0);
               return <label className="data-import-conversation" key={conversation.sourceKey} title={title}>
-                <input type="checkbox" aria-label={`选择对话 ${title}`} disabled={locked} checked={selected.has(conversation.sourceKey)}
+                <input className="ui-checkbox" type="checkbox" aria-label={`选择对话 ${title}`} disabled={locked} checked={selected.has(conversation.sourceKey)}
                   onChange={(event) => toggle([conversation.sourceKey], event.currentTarget.checked)} />
                 <span className="data-import-conversation-detail"><span className="data-import-conversation-title">{title}</span>
                   <small>{conversation.messages.length} 条消息 · {files} 个附件{duplicates.has(conversation.sourceKey) ? " · 已导入" : ""}</small>

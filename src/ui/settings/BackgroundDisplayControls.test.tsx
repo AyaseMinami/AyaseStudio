@@ -6,6 +6,19 @@ import { BackgroundDisplayControls } from "./BackgroundDisplayControls";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+it("allows no mask and restores the 50 percent default", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); const onMaskChange = vi.fn();
+  try {
+    await act(async () => root.render(<BackgroundDisplayControls fit="cover" mask={0} blur={0}
+      onFitChange={vi.fn()} onMaskChange={onMaskChange} onBlurChange={vi.fn()} />));
+    const slider = host.querySelector<HTMLInputElement>('[aria-label="背景遮罩强度"]')!;
+    expect([slider.min, slider.max, slider.value]).toEqual(["0", "90", "0"]);
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="恢复背景遮罩强度默认值"]')!.click());
+    expect(onMaskChange).toHaveBeenCalledExactlyOnceWith(50);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("chooses background fit by keyboard while keeping the controlled value until its owner updates", async () => {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);

@@ -7,6 +7,25 @@ import { SessionConfigPanel } from "./SessionConfigPanel";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+it("keeps the stream switch controlled and within the disabled panel", async () => {
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const change = vi.fn(); const config = defaultSessionConfig();
+  const render = (stream: boolean, disabled = false) => root.render(<SessionConfigPanel config={{ ...config, stream }} errors={{}} model="synthetic" disabled={disabled}
+    onChange={change} onClose={() => {}} onReset={() => {}} />);
+  try {
+    await act(async () => render(false));
+    const stream = host.querySelector<HTMLInputElement>("#session-stream")!;
+    expect(stream.getAttribute("role")).toBe("switch");
+    expect(stream.checked).toBe(false);
+    expect(stream.labels?.[0]?.textContent).toContain("流式输出");
+    await act(async () => stream.click());
+    expect(change).toHaveBeenLastCalledWith({ ...config, stream: true });
+    await act(async () => render(true, true));
+    expect(stream.checked).toBe(true);
+    expect(stream.closest("fieldset")?.disabled).toBe(true);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("maps numeric modes, cancels the popup before the dialog, and preserves errors", async () => {
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   const change = vi.fn(); const close = vi.fn(); const config = defaultSessionConfig();

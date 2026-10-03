@@ -73,6 +73,7 @@ it("allows OpenAI Chat compatible reasoning display in the shared control", asyn
       value={{ ...defaultGeminiThinking, includeSummary: true }} disabled={false} onChange={() => { changes++; }} />));
     expect(await optionsFor(host, "思考强度（当前助手）")).toEqual(labelsFor("default", "off", "minimal", "low", "medium", "high", "xhigh", "max"));
     const summary = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(summary?.getAttribute("role")).toBe("switch");
     expect(summary?.disabled).toBe(false);
     expect(summary?.checked).toBe(true);
     await act(async () => summary?.click());

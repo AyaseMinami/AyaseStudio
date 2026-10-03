@@ -56,7 +56,7 @@ export function SettingsWorkspace({
             aria-current={activeSection === "general" ? "page" : undefined}
             onClick={() => onSectionChange("general")} type="button">
             <UserRound size={18} />
-            <span><strong>常规</strong><small>个人资料、窗口与退出</small></span>
+            <span><strong>常规</strong><small>日常使用偏好</small></span>
           </button>
           <button
             className="settings-navigation-button"
@@ -68,7 +68,7 @@ export function SettingsWorkspace({
             <Server size={18} />
             <span>
               <strong>连接配置</strong>
-              <small>协议、地址与模型</small>
+              <small>模型服务与连接</small>
             </span>
           </button>
           <button
@@ -81,20 +81,20 @@ export function SettingsWorkspace({
             <Palette size={18} />
             <span>
               <strong>外观</strong>
-              <small>主题与显示偏好</small>
+              <small>界面风格与显示</small>
             </span>
           </button>
           <button className="settings-navigation-button" aria-label="网络搜索"
             aria-current={activeSection === "search" ? "page" : undefined}
             onClick={() => onSectionChange("search")} type="button">
             <Globe size={18} />
-            <span><strong>网络搜索</strong><small>Exa、Tavily、智谱与搜索凭据</small></span>
+            <span><strong>网络搜索</strong><small>搜索服务与偏好</small></span>
           </button>
           <button className="settings-navigation-button" aria-label="数据管理"
             aria-current={activeSection === "data" ? "page" : undefined}
             onClick={() => onSectionChange("data")} type="button">
             <Import size={18} />
-            <span><strong>数据管理</strong><small>备份、恢复与迁移</small></span>
+            <span><strong>数据管理</strong><small>本地数据与备份</small></span>
           </button>
           <button className="settings-navigation-button" aria-label="关于"
             aria-current={activeSection === "about" ? "page" : undefined}
@@ -123,7 +123,7 @@ export function SettingsWorkspace({
             <section className="settings-page data-management-page" aria-label="数据管理">
               <header className="settings-page-heading">
                 <h2>数据管理</h2>
-                <p className="muted-text">备份、恢复与迁移，所有处理均在本机完成。</p>
+                <p className="muted-text">管理与迁移你的应用数据，所有处理均在本机完成。</p>
               </header>
               <section className="settings-card data-management-intro" aria-label="Ayase 备份与恢复入口">
                 <div className="data-management-entry-heading"><h3>Ayase 备份与恢复</h3><span className="data-management-entry-tag">本应用数据</span></div>

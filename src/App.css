@@ -2,6 +2,7 @@
 @import "./scrollbars.css";
 @import "./ui/ConfirmationSurfaces.css";
 @import "./ui/FloatingSurfaces.css";
+@import "./ui/ToggleControls.css";
 
 .thinking-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 4px 8px 10px; font-size: 12px; }
 .thinking-select, .thinking-summary-toggle, .thinking-budget { display: inline-flex; align-items: center; gap: 6px; }
@@ -88,7 +89,7 @@
   --color-shadow: 0 0 0;
   --appearance-background-image: none;
   --appearance-background-fit: cover;
-  --appearance-background-mask: 0.65;
+  --appearance-background-mask: 0.5;
   --appearance-background-blur: 0px;
   --app-navigation-width: 48px;
   --app-navigation-inset: 6px;
@@ -386,7 +387,7 @@ textarea:disabled {
   align-items: center;
   justify-content: flex-end;
   gap: 1rem;
-  border-bottom: 1px solid rgb(var(--color-border));
+  border-bottom: 0;
   background: transparent;
   padding-left: 0.75rem;
 }
@@ -2876,7 +2877,7 @@ textarea:disabled {
 }
 
 .conversation-workspace { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
-.conversation-navigation-toolbar { position: relative; display: flex; align-items: center; gap: 0.5rem; min-width: 0; height: 2.5rem; min-height: 2.5rem; flex-shrink: 0; padding-left: 0.75rem; border-bottom: 1px solid rgb(var(--color-border) / 0.55); background: transparent; font-size: var(--font-ui); }
+.conversation-navigation-toolbar { position: relative; display: flex; align-items: center; gap: 0.5rem; min-width: 0; height: 2.5rem; min-height: 2.5rem; flex-shrink: 0; padding-left: 0.75rem; border-bottom: 0; background: transparent; font-size: var(--font-ui); }
 .conversation-navigation-toolbar > .chat-header { align-self: stretch; margin-left: auto; }
 .conversation-navigation-toolbar .chat-header-actions { align-self: stretch; }
 .conversation-navigation-toolbar .window-controls > button { min-height: 0; }

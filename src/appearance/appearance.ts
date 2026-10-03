@@ -161,7 +161,7 @@ export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   backgroundReference: null,
   backgroundFocus: null,
   backgroundFit: "cover",
-  backgroundMask: 65,
+  backgroundMask: 50,
   backgroundBlur: 0,
   backgroundLibrary: [],
   backgroundEnabled: true,
@@ -253,7 +253,7 @@ export function loadAppearancePreferences(
           : defaultAppearancePreferences.backgroundFit,
       backgroundMask: numberInRange(
         stored.backgroundMask,
-        35,
+        0,
         90,
         defaultAppearancePreferences.backgroundMask,
       ),
@@ -278,7 +278,7 @@ function normalizeBackgroundLibrary(stored: Partial<AppearancePreferences> & { b
     return [{ id: stored.backgroundReference, name: "原有背景", reference: stored.backgroundReference,
       focus: normalizeBackgroundFocus(stored.backgroundFocus) ?? focusFromLegacyCrop(stored.backgroundCrop),
       fit: stored.backgroundFit === "contain" ? "contain" : "cover",
-      mask: numberInRange(stored.backgroundMask, 35, 90, 65), blur: numberInRange(stored.backgroundBlur, 0, 32, 0) }];
+      mask: numberInRange(stored.backgroundMask, 0, 90, defaultAppearancePreferences.backgroundMask), blur: numberInRange(stored.backgroundBlur, 0, 32, 0) }];
   }
   if (!Array.isArray(stored.backgroundLibrary)) return [];
   const ids = new Set<string>();
@@ -288,7 +288,7 @@ function normalizeBackgroundLibrary(stored: Partial<AppearancePreferences> & { b
     return [{ id: entry.id, reference: entry.reference,
       name: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim().slice(0, 100) : "背景",
       focus: normalizeBackgroundFocus(entry.focus), fit: entry.fit === "contain" ? "contain" as const : "cover" as const,
-      mask: numberInRange(entry.mask, 35, 90, 65), blur: numberInRange(entry.blur, 0, 32, 0) }];
+      mask: numberInRange(entry.mask, 0, 90, defaultAppearancePreferences.backgroundMask), blur: numberInRange(entry.blur, 0, 32, 0) }];
   });
 }
 
@@ -322,7 +322,7 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
   optional(stored, "backgroundReference", value => value === null || isBackgroundReference(value));
   optional(stored, "backgroundFocus", focus);
   optional(stored, "backgroundFit", value => value === "cover" || value === "contain");
-  optional(stored, "backgroundMask", range(35, 90));
+  optional(stored, "backgroundMask", range(0, 90));
   optional(stored, "backgroundBlur", range(0, 32));
   optional(stored, "backgroundEnabled", value => typeof value === "boolean");
   for (const key of ["sidebarGlassEnabled", "composerGlassEnabled"])
@@ -343,7 +343,7 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
       optional(entry, "name", value => typeof value === "string" && value.length <= 100);
       optional(entry, "focus", focus);
       optional(entry, "fit", value => value === "cover" || value === "contain");
-      optional(entry, "mask", range(35, 90)); optional(entry, "blur", range(0, 32));
+      optional(entry, "mask", range(0, 90)); optional(entry, "blur", range(0, 32));
     }
   }
   return loadAppearancePreferences({ getItem: () => encoded, setItem: () => {} });
@@ -1058,7 +1058,7 @@ export function createAppearanceController({
     setBackgroundMask(mask) {
       if (Number.isFinite(mask)) {
         updateBackgroundPreferences({
-          backgroundMask: Math.round(Math.min(90, Math.max(35, mask))),
+          backgroundMask: Math.round(Math.min(90, Math.max(0, mask))),
         });
       }
     },
@@ -1176,7 +1176,7 @@ export function createAppearanceController({
         if (replaceId && !previous) throw new BackgroundResourceError("这张背景已不在库中，请重新选择。");
         const entry: BackgroundLibraryEntry = { id: previous?.id ?? resource.reference,
           name: previous?.name ?? (pending.name?.trim().slice(0, 100) || "背景"),
-          reference: pending.reference, focus: null, fit: previous?.fit ?? "cover", mask: previous?.mask ?? 65, blur: previous?.blur ?? 0 };
+          reference: pending.reference, focus: null, fit: previous?.fit ?? "cover", mask: previous?.mask ?? defaultAppearancePreferences.backgroundMask, blur: previous?.blur ?? 0 };
         const backgroundLibrary = previous ? preferences.backgroundLibrary.map((item) => item.id === previous.id ? entry : item)
           : [...preferences.backgroundLibrary, entry];
         updatePreferences({ ...preferences, backgroundLibrary }, true);
@@ -1198,7 +1198,7 @@ export function createAppearanceController({
         if (edit && edit.reference !== entry.reference) throw new BackgroundResourceError("这张背景已被替换，请重新选择后调整。");
         const focus = edit?.focus === null ? null : normalizeBackgroundFocus(edit?.focus);
         if (edit && ((edit.focus !== null && !focus) || !["cover", "contain"].includes(edit.fit)
-          || !Number.isFinite(edit.mask) || edit.mask < 35 || edit.mask > 90
+          || !Number.isFinite(edit.mask) || edit.mask < 0 || edit.mask > 90
           || !Number.isFinite(edit.blur) || edit.blur < 0 || edit.blur > 32)) {
           throw new BackgroundResourceError("背景参数无效，请重新调整。");
         }

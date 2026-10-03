@@ -52,7 +52,7 @@ function ConfirmationDialog({ options, onResult }: {
     }}>
     <h3 id={`${id}-title`}>{options.title}</h3>
     <p id={`${id}-message`} className="confirmation-message">{options.message}</p>
-    {options.checkbox && <label className="confirmation-checkbox"><input type="checkbox" checked={checked}
+    {options.checkbox && <label className="confirmation-checkbox"><input className="ui-checkbox" type="checkbox" checked={checked}
       onChange={event => { setChecked(event.target.checked); options.checkbox?.onChange(event.target.checked); }} />{options.checkbox.label}</label>}
     <div className="confirmation-actions">
       <button ref={cancelRef} type="button" className="confirmation-button" onClick={() => onResult(false)}>

@@ -128,7 +128,7 @@ describe("SettingsWorkspace", () => {
     expect(html).toMatch(/<button[^>]*aria-label="网络搜索"[^>]*aria-current="page"/);
     const navigationLabels = [...html.matchAll(/<button[^>]*class="settings-navigation-button"[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
     expect(navigationLabels).toEqual(["常规", "连接配置", "外观", "网络搜索", "数据管理", "关于"]);
-    expect(html).toContain("Exa、Tavily、智谱");
+    expect(html).toContain("搜索服务与偏好");
     expect(html).toContain("网络搜索");
     expect(html).not.toContain('aria-label="供应商列表"');
   });
@@ -279,7 +279,8 @@ describe("general settings interactions", () => {
       const dialog = host.querySelector<HTMLDialogElement>(`dialog[aria-label="${label}"]`)!;
       expect(dialog.open).toBe(true);
       expect(dialog.textContent).toContain("导入图片"); expect(dialog.textContent).toContain("管理");
-      expect(dialog.textContent).toContain("用作用户头像");
+      expect(dialog.textContent).toContain(label === "管理头像库" ? "删除所选" : "用作用户头像");
+      expect(dialog.querySelector('[aria-pressed="true"]')?.textContent).toBe(label === "管理头像库" ? "完成管理" : undefined);
       await click("关闭头像弹窗");
       expect(host.querySelector("dialog")).toBeNull();
       expect(document.activeElement).toBe(trigger);
@@ -353,7 +354,7 @@ describe("general settings interactions", () => {
   it("cancels only the nested library deletion and retains the outer library and management selection", async () => {
     const original = new Blob(["synthetic"], { type: "image/png" });
     vi.mocked(avatarLibrary.list).mockResolvedValue([{ id: "one", name: "雪", version: "v1", avatar: { original, thumbnail: original, crop: centeredCrop } }]);
-    await mount(); await click("管理头像库"); await click("管理"); await click("勾选 雪"); await click("删除所选（1）");
+    await mount(); await click("管理头像库"); await click("勾选 雪"); await click("删除所选（1）");
     const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像库"]')!;
     const deletion = host.querySelector<HTMLDialogElement>('dialog[aria-label="删除头像"]')!;
     expect(deletion.open).toBe(true);

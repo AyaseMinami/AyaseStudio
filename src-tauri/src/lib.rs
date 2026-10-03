@@ -47,6 +47,7 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle().plugin(
                 tauri_plugin_window_state::Builder::default()
+                    .with_filter(|label| label != "tray-menu")
                     .with_state_flags(
                         tauri_plugin_window_state::StateFlags::SIZE
                             | tauri_plugin_window_state::StateFlags::MAXIMIZED,
@@ -66,6 +67,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             tray::hide_main_window,
+            tray::tray_menu_action,
             drawing::save_drawing_result,
             drawing::recover_drawing_result,
             drawing::inspect_drawing_recovery,

@@ -10,6 +10,10 @@ function storage(encoded: string | null) {
 }
 const reference = "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png";
 const unsupported = [
+  ...[-1, 91, "0", null].flatMap(mask => [
+    JSON.stringify({ backgroundMask: mask }),
+    JSON.stringify({ backgroundLibrary: [{ id: "mask", reference, mask }] }),
+  ]),
   "{broken", "null", "[]",
   JSON.stringify({ ...defaultAppearancePreferences, securityPolicy: { value: "do not disclose" } }),
   JSON.stringify({ ...defaultAppearancePreferences, backgroundLibrary: {} }),
@@ -25,6 +29,26 @@ const unsupported = [
 ];
 
 describe("appearance durable compatibility boundary", () => {
+  it.each([0, 10, 35, 65, 90])("preserves explicit mask %s in local and shared backup reads", mask => {
+    const original = storage(JSON.stringify({ backgroundReference: reference, backgroundMask: mask }));
+    const first = readAppearancePreferences(original);
+    expect(first.backgroundMask).toBe(mask);
+    expect(first.backgroundLibrary[0].mask).toBe(mask);
+    expect(readAppearancePreferences(original)).toEqual(first);
+    expect(original.setItem).not.toHaveBeenCalled();
+    saveAppearancePreferences(original, first);
+    expect(readAppearancePreferences(original)).toEqual(first);
+  });
+  it("defaults missing masks to 50 without rewriting old records", () => {
+    for (const encoded of [null, JSON.stringify({ backgroundReference: reference }),
+      JSON.stringify({ backgroundLibrary: [{ id: "legacy", reference }] })]) {
+      const original = storage(encoded);
+      const preferences = readAppearancePreferences(original);
+      expect(preferences.backgroundMask).toBe(50);
+      for (const entry of preferences.backgroundLibrary) expect(entry.mask).toBe(50);
+      expect(original.setItem).not.toHaveBeenCalled();
+    }
+  });
   it("applies the tuned alpha before first render in either theme without writes", () => {
     for (const systemPrefersDark of [false, true]) {
       const original = storage(null);
