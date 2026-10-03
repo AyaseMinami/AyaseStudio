@@ -1,5 +1,13 @@
 # Ayase Studio Development Guide
 
+## Beta 3 release verification
+
+Version `0.1.0-beta.3` includes the post-Beta-2 drawing output configuration and workspace interaction fixes. All npm, Cargo and Tauri version declarations agree; the third-party inventory lockfile hashes were regenerated without dependency changes.
+
+Release checks passed: 16 data-contract script tests, 168 Vitest files / 2839 tests, TypeScript/Vite production build, 160 Rust tests (one existing ignored test), locked Cargo check and nine NSIS installer-policy cases. These checks and packaging temporarily use process CPU affinity `0xfffffff0` to avoid locally observed unstable execution positions; this is an environment constraint, not a crypto-code fix or a permanent system setting. No tests were skipped or relaxed for this release. Earlier default-affinity failures below remain historical evidence, not the latest controlled-run result.
+
+Actual installation, upgrade/data retention, native folder dialogs and real provider requests remain outside this release's automated acceptance. The two machine-specific diagnostic files remain local and excluded from Git.
+
 ## Workspace delivery verification (2026-10-03)
 
 Cherry import now uses a workspace-level `canImport` predicate rather than send readiness: empty assistants and no selected conversation may import, while pending operations, stale snapshots, maintenance locks and failed selected-transcript hydration still block. Entry, native chooser and commit share the predicate. The 114 focused session/workspace tests, TypeScript/production build, Cargo check and independent review pass. The confirmation dialog's explicit auto margin restores centering after Tailwind preflight.
