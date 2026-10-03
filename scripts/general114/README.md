@@ -1,0 +1,9 @@
+# #114 隔离验收
+
+`npx.cmd vite --config scripts/general114/vite.config.ts` 启动独立 origin（1524），浏览器打开 `/scripts/general114/index.html` 验证真实 BackupApp → App → 常规设置、头像库和开关。不要填写真实密钥或发送模型请求。
+
+原生 `npm.cmd run tauri dev -- --config scripts/general114/native.config.json --no-watch` 使用专用 identifier，启动真实宿主与托盘。SDK 探针通过生产 close listener 隐藏窗口，并报告 `.general114.local/native-report.jsonl` 的 `hidden-alive`；再次启动该构建的 debug exe 验证单实例恢复，然后模拟退出事件、勾选不再提醒并确认退出。随后用 `restart.config.json` 启动，检查重启偏好和跳过普通确认后的真实进程退出。
+
+这不是鼠标点击托盘／标题栏或 OS Alt+F4 的验收；这些交互仍需用户手动检查。备份工作区退出保护要求先返回应用，不在恢复中结束进程。所有 probe 数据与日志仅为合成验收，`.general114.local` 被现有 `*.local` 规则排除。
+
+`disabled.config.json` 通过真实常规页关闭驻留、开启确认，验证 SDK close→勾选不再提醒→取消保持窗口与原偏好，再次 close→确认退出。探针和正式入口一样启用 React.StrictMode。Vite 禁用文件监视，修改 fixture 后须重启 Vite 再运行；否则可能继续使用缓存模块。

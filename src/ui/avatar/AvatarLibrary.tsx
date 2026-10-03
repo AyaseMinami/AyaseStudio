@@ -20,7 +20,7 @@ export function AvatarModal({ title, children, busy = false, onClose }: { title:
     return () => { node.close(); previous?.focus(); };
   }, []);
   return <dialog ref={dialog} className="avatar-crop-dialog avatar-library-dialog" aria-label={title}
-    onKeyDown={(event) => { event.stopPropagation(); }} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
+    onKeyDown={(event) => { event.stopPropagation(); }} onCancel={(event) => { event.preventDefault(); event.stopPropagation(); if (!busy) onClose(); }}>
     <div className="avatar-library-modal-heading"><h2>{title}</h2><button type="button" className="settings-button" aria-label="关闭头像弹窗" disabled={busy} onClick={onClose}><X size={18} /></button></div>{children}
   </dialog>;
 }

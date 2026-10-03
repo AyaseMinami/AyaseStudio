@@ -1,5 +1,11 @@
 # Ayase Studio Development Guide
 
+## General settings / residency verification (#114)
+
+Implementation, executed evidence and subsequent user acceptance are recorded in [#114](ISSUE-114-IMPLEMENTATION.md); Git delivery, automated checks and detailed desktop interaction evidence remain separate.
+
+Run `npm.cmd test -- src/general src/drawing/useDrawingWorkspace.test.tsx src/ui/settings/SettingsWorkspace.test.tsx src/App.test.tsx`, the data-contract checker and normal full code gate. The isolated actual-app origin and native SDK probe are documented in [scripts/general114/README.md](../scripts/general114/README.md). Use its dedicated identifier and never real credentials or user data. Check generic cancellation/opt-out, separate risk cancellation, storage rejection, repeated close, unmounted continuations and maintenance protection. Compilation and startup are separate from real hide/restore/process-exit evidence. Tray mouse clicks, titlebar X, OS Alt+F4 and subjective appearance remain user manual acceptance even when SDK probes pass.
+
 ## UI closeout evidence (#98 / #108, 2026-10-03)
 
 The [closeout record](ISSUE-98-108-CLOSEOUT.md) supersedes the old prototype-only status for optional glass and the chat-first visual work. It records the final independent switches (sidebar off / composer on), confirmed settings/drawing opaque workbench, existing gates, new production-browser frame/long-task measurements and user acceptance boundaries. The user subsequently reported no material issue in actual use and authorized closing both Issues; their final scope and evidence were synchronized and both were closed as completed on 2026-10-03. This general acceptance does not establish unperformed per-operation native tests or quantitative GPU results. Historical trial measurements below remain historical. The new harness lives only in [chat108](../scripts/chat108/README.md); no production behavior, provider request, migration or native capability changes. The user subsequently authorized committing and pushing this round's docs, samples and harness to dev.

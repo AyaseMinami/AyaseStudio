@@ -13,6 +13,8 @@ import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
 import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
 import { useConfirmation } from "./ui/useConfirmation";
+import type { GeneralSettingsState } from "./general/preferences";
+import type { RegisterExitGuard } from "./general/lifecycle";
 import { openDrawingOutputDirectory } from "./drawing/runtime";
 import { getDrawingModels } from "./chat/settings";
 import { ChatHeader } from "./ui/chat/ChatHeader";
@@ -24,16 +26,16 @@ import {
   type SettingsSection,
 } from "./ui/settings/SettingsWorkspace";
 
-function App() {
+function App({ general, registerExitGuard }: { general?: GeneralSettingsState; registerExitGuard?: RegisterExitGuard }) {
   const [activePage, setActivePage] = useState<AppPage>(window.location.hash === "#data" ? "settings" : "chat");
   const [activeSettingsSection, setActiveSettingsSection] =
-    useState<SettingsSection>(window.location.hash === "#data" ? "data" : "connections");
+    useState<SettingsSection>(window.location.hash === "#data" ? "data" : "general");
   const appearance = useAppearance();
   const avatar = useUserAvatar();
   const chatLayout = useChatLayout();
   const navigation = useConversationNavigation();
   const drawingCloseConfirmation = useConfirmation();
-  const drawing = useDrawingWorkspace(activePage === "drawing", drawingCloseConfirmation.confirm);
+  const drawing = useDrawingWorkspace(activePage === "drawing", drawingCloseConfirmation.confirm, registerExitGuard);
   const [backupError, setBackupError] = useState<string>();
   const chat = useChatSession({
     externalBusy: drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued") || drawing.closing,
@@ -137,6 +139,7 @@ function App() {
           onConfigure={() => { setActiveSettingsSection("connections"); setActivePage("settings"); }} />
       ) : (
         <SettingsWorkspace
+          general={general}
           dataImport={chat.dataImport}
           backupDisabled={chat.backupDisabled || appearance.backgroundBusy || avatar.busy || !drawing.ready || drawing.closing}
           backupError={backupError ?? chat.backupPreparationError}

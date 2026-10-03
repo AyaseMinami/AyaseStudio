@@ -1,4 +1,5 @@
 mod background;
+mod tray;
 mod drawing;
 mod attachments;
 mod ayase_backup;
@@ -15,12 +16,9 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
-        use tauri::Manager;
         // Keep private attachment staging and its DB ownership in one process.
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
-            }
+            let _ = tray::show_main_window(app);
         }));
     }
     builder
@@ -62,9 +60,12 @@ pub fn run() {
             #[cfg(windows)]
             let builder = builder.decorations(std::env::var_os("AYASE_NATIVE_TITLEBAR").is_some());
             builder.build()?;
+            #[cfg(desktop)]
+            tray::install(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            tray::hide_main_window,
             drawing::save_drawing_result,
             drawing::recover_drawing_result,
             drawing::inspect_drawing_recovery,

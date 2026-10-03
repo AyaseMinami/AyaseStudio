@@ -1,9 +1,9 @@
 import { Info, Palette, Server, UserRound, Import, Globe } from "lucide-react";
 import { NetworkSearchSettings } from "./NetworkSearchSettings";
 import { DataImportSettings, type DataImportSettingsProps } from "./DataImportSettings";
-import { AvatarPreview } from "./AvatarSettings";
+import { GeneralSettings } from "./GeneralSettings";
+import type { GeneralSettingsState } from "../../general/preferences";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
-import { AvatarLibraryPanel } from "../avatar/AvatarLibrary";
 import { AboutSettings } from "./AboutSettings";
 import { WindowControls } from "../window/WindowControls";
 import "./DataManagementSettings.css";
@@ -17,12 +17,13 @@ import {
   type ConnectionSettingsProps,
 } from "./ConnectionSettings";
 
-export type SettingsSection = "connections" | "search" | "appearance" | "avatars" | "data" | "about";
+export type SettingsSection = "general" | "connections" | "search" | "appearance" | "data" | "about";
 
 export interface SettingsWorkspaceProps {
   activeSection: SettingsSection;
   appearance: AppearanceSettingsProps;
   avatar?: UserAvatarState;
+  general?: GeneralSettingsState;
   connection: ConnectionSettingsProps;
   dataImport?: DataImportSettingsProps;
   backupDisabled?: boolean;
@@ -35,6 +36,7 @@ export function SettingsWorkspace({
   activeSection,
   appearance,
   avatar,
+  general,
   connection,
   dataImport,
   backupDisabled,
@@ -50,6 +52,12 @@ export function SettingsWorkspace({
 
       <div className="settings-body">
         <nav className="settings-navigation" aria-label="设置分类">
+          <button className="settings-navigation-button" aria-label="常规"
+            aria-current={activeSection === "general" ? "page" : undefined}
+            onClick={() => onSectionChange("general")} type="button">
+            <UserRound size={18} />
+            <span><strong>常规</strong><small>个人资料、窗口与退出</small></span>
+          </button>
           <button
             className="settings-navigation-button"
             aria-label="连接配置"
@@ -75,12 +83,6 @@ export function SettingsWorkspace({
               <strong>外观</strong>
               <small>主题与显示偏好</small>
             </span>
-          </button>
-          <button className="settings-navigation-button" aria-label="头像"
-            aria-current={activeSection === "avatars" ? "page" : undefined}
-            onClick={() => onSectionChange("avatars")} type="button">
-            <UserRound size={18} />
-            <span><strong>头像</strong><small>用户头像与裁切</small></span>
           </button>
           <button className="settings-navigation-button" aria-label="网络搜索"
             aria-current={activeSection === "search" ? "page" : undefined}
@@ -109,7 +111,9 @@ export function SettingsWorkspace({
               : ""
           }`}
         >
-          {activeSection === "connections" ? (
+          {activeSection === "general" ? (
+            <GeneralSettings avatar={avatar} general={general} />
+          ) : activeSection === "connections" ? (
             <ConnectionSettings {...connection} />
           ) : activeSection === "search" ? (
             <NetworkSearchSettings />
@@ -132,16 +136,6 @@ export function SettingsWorkspace({
                 {backupError && <p className="error-banner" role="alert">{backupError}</p>}
               </section>
               {dataImport ? <DataImportSettings {...dataImport} /> : <p className="muted-text">请在桌面应用中导入聊天。</p>}
-            </section>
-          ) : activeSection === "avatars" ? (
-            <section className="settings-page settings-workspace-page avatar-settings-page" aria-labelledby="avatar-settings-title">
-              <header className="settings-page-heading"><h2 id="avatar-settings-title">头像</h2><p className="muted-text">管理用户头像与本地头像库。</p></header>
-              <div className="avatar-settings-layout">
-                <div className="avatar-settings-preview">{avatar && <AvatarPreview avatar={avatar} />}</div>
-                <div className="avatar-settings-controls">
-                  {avatar && <AvatarLibraryPanel avatar={avatar} />}
-                </div>
-              </div>
             </section>
           ) : (
             <AboutSettings />

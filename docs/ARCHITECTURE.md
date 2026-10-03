@@ -1,5 +1,13 @@
 # Ayase Studio Architecture
 
+## General settings and residency (#114, 2026-10-03)
+
+Settings navigation starts with General (personal profile and window/exit), replacing the separate avatars page. The daily user-avatar preview is 64px; existing library and crop operations retain their modal workflows. App-level behavior and personal preferences belong here; provider, display and data-management settings keep their established boundaries.
+
+`BackupApp` owns the single `ApplicationLifecycle` close listener across startup, the normal workspace and backup mode. Residency defaults on: a normal close hides the original WebView without unmounting chat or drawing. Explicit tray exit bypasses residency, restores the window, and uses ordinary confirmation followed by the App-registered drawing settlement/loss guard. The drawing hook retains its standalone native guard for isolated existing probes, but registers only a participant under the root owner. Repeated requests and stale decisions are rejected; maintenance true-exit requires returning from backup, while hiding remains allowed. Generic opt-out is committed only after the risk guard accepts; it never disables queue/unsaved-result warnings.
+
+Rust installs one tray with Open and Exit, and owns hide/show/unminimize/focus. The hide command checks the main window and live tray before hiding. Single-instance relaunch calls the same restore operation. Tray Exit emits a frontend request rather than exiting Rust directly. The approved SDK close path still requires allow-close and allow-destroy. Device-only preferences and acceptance boundaries are in [DATA-CONTRACTS.md](DATA-CONTRACTS.md) and [DEVELOPMENT.md](DEVELOPMENT.md).
+
 ## Shared window chrome (2026-10-03)
 
 `AppShell` paints one non-interactive L-shaped background behind the 48px icon rail and 40px workspace titlebars. A CSS mask rounds its inside corner without stacking translucent fills or changing native drag/control regions. Settings align their titlebar at y=0; content navigation retains its separate material. The fixed 1920px appearance preview shares the same chrome surface, width, horizontal inset and opacity variables. Forced colors/reduced transparency use an opaque chrome surface.

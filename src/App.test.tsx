@@ -15,6 +15,7 @@ import {
 } from "vitest";
 
 import App from "./App";
+import { GeneralSettings } from "./ui/settings/GeneralSettings";
 import * as contextBudget from "./chat/contextBudget";
 import { createChatRepository, type ChatSnapshot } from "./chat/repository";
 import { defaultSessionConfig } from "./chat/sessionConfig";
@@ -272,6 +273,7 @@ describe("App navigation", () => {
     });
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     const handle = getButton("拖动排序 C");
     const target = getButton("A");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
@@ -305,6 +307,7 @@ describe("App navigation", () => {
     });
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     const target = getButton("查看连接 合成线路 a").closest<HTMLElement>("[data-sort-connection]")!;
     vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
     vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 40));
@@ -583,6 +586,7 @@ describe("App navigation", () => {
     await clickButtonWithText("保存助手");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     await clickButton("设置");
+    await clickButton("连接配置");
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://relay.example.com/v1beta/models/test-model:generateContent",
     );
@@ -595,6 +599,13 @@ describe("App navigation", () => {
 
     await clickButton("设置");
     expect(container.querySelector("textarea")).toBeNull();
+    expect(getButton("常规").getAttribute("aria-current")).toBe("page");
+    expect(container.querySelector(".general-profile")).not.toBeNull();
+    expect(container.querySelector(".general-avatar-preview")).not.toBeNull();
+    expect(container.querySelector('[aria-label="头像聊天效果预览"]')).toBeNull();
+    expect(container.querySelector('.settings-navigation button[aria-label="头像"]')).toBeNull();
+    expect(container.querySelector('.settings-navigation button')?.getAttribute("aria-label")).toBe("常规");
+    await clickButton("连接配置");
     expect(container.textContent).toContain("连接配置");
     expect(container.querySelector('button[aria-label="添加供应商"]')).not.toBeNull();
 
@@ -606,6 +617,22 @@ describe("App navigation", () => {
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       "状态保留检查",
     );
+  });
+
+  it("shows general preference save failure when the controller returns false without an error", async () => {
+    const setPreference = vi.fn().mockResolvedValue(false);
+    await act(async () => root.render(<GeneralSettings general={{
+      preferences: { version: 1, backgroundResident: true, confirmBeforeExit: true },
+      error: null, setPreference,
+    }} />));
+    const background = container.querySelector<HTMLInputElement>("#general-background-resident")!;
+    await act(async () => background.click());
+    expect(setPreference).toHaveBeenCalledWith("backgroundResident", false);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("常规设置保存失败，请重试。");
+    expect(background.checked).toBe(true);
+    expect(background.disabled).toBe(false);
+    await act(async () => getButton("关闭窗口后在后台运行说明").focus());
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("打开 Ayase Studio");
   });
 
   it("redirects missing configuration to connections and retains the error", async () => {
@@ -748,6 +775,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("查看连接 Gemini 专线");
     await clickButton("设为助手默认模型 gemini-model");
     await clickButton("聊天");
@@ -822,6 +850,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     expect(container.textContent).toContain("model-a");
     expect(container.textContent).not.toContain("model-d");
 
@@ -895,6 +924,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButtonWithText("获取模型列表");
     await waitFor(() => container.textContent?.includes("gpt-new") === true);
 
@@ -962,6 +992,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButtonWithText("获取模型列表");
     await waitFor(() => list.mock.calls.length === 1);
     await clickButton("关闭模型目录");
@@ -1011,6 +1042,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("测试模型 test-model");
     await answerConfirmation(true);
     await waitFor(() => observedRequest !== undefined);
@@ -1072,6 +1104,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("测试模型 model-one");
     await answerConfirmation(true);
     await waitFor(() => observedRequests.length === 1);
@@ -1112,6 +1145,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await clickButton("编辑模型 model-one");
     const editedId = container.querySelector<HTMLInputElement>(
       '.model-edit-form input[name="modelId"]',
@@ -1170,6 +1204,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await openConnectionMenu("连接 1");
     await clickButton("删除连接 连接 1");
     await answerConfirmation(true);
@@ -1220,6 +1255,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     await openConnectionMenu("OpenAI 主线路");
     await clickButton("删除连接 OpenAI 主线路");
     await answerConfirmation(true);
@@ -1269,6 +1305,7 @@ describe("App navigation", () => {
 
     await renderApp();
     await clickButton("设置");
+    await clickButton("连接配置");
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://relay.example.com/v1/chat/completions",
     );

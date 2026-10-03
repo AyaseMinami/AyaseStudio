@@ -6,6 +6,7 @@ import { useDrawingWorkspace } from "./useDrawingWorkspace";
 import { initialDrawingDraft } from "./types";
 import type { ConnectionSettingsState } from "../chat/settings";
 import { useConfirmation } from "../ui/useConfirmation";
+import type { ExitGuard } from "../general/lifecycle";
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), enqueue: vi.fn(), saveDraft: vi.fn(), saveTask: vi.fn(), complete: vi.fn(),
   save: vi.fn(), recover: vi.fn(), read: vi.fn(), export: vi.fn(), generate: vi.fn(),
@@ -45,6 +46,23 @@ beforeEach(async () => {
   await act(async () => root.render(<Harness />));
 });
 afterEach(async () => { if (root) await act(async () => root.unmount()); host?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("registers a managed exit guard without owning native close or hiding requests", async () => {
+  let guard!: ExitGuard;
+  const release = vi.fn();
+  const register = vi.fn((value: ExitGuard) => { guard = value; return release; });
+  function ManagedHarness() { state = useDrawingWorkspace(true, mocks.confirm, register); return null; }
+  await act(async () => root.render(<ManagedHarness />));
+  mocks.onCloseRequested.mockClear(); mocks.close.mockClear();
+  const settle = vi.spyOn(state.controller, "settleForClose");
+  expect(register).toHaveBeenCalledOnce(); expect(settle).not.toHaveBeenCalled();
+  let prepared = false;
+  await act(async () => { prepared = await guard.prepare(); });
+  expect(prepared).toBe(true); expect(settle).toHaveBeenCalledOnce();
+  expect(mocks.close).not.toHaveBeenCalled(); expect(mocks.onCloseRequested).not.toHaveBeenCalled();
+  await act(async () => guard.cancel()); expect(state.closing).toBe(false);
+  await act(async () => root.unmount()); expect(release).toHaveBeenCalledOnce();
+});
 
 it("releases originals when preview is hidden and reads only when it becomes visible again", async () => {
   await act(async () => state.controller.generate(settings));

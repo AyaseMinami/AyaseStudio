@@ -9,6 +9,7 @@ export interface ConfirmationOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  checkbox?: { label: string; onChange(checked: boolean): void };
 }
 
 interface PendingConfirmation {
@@ -24,6 +25,7 @@ function ConfirmationDialog({ options, onResult }: {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<HTMLElement | null | undefined>(undefined);
   const id = useId();
+  const [checked, setChecked] = useState(false);
   useEffect(() => {
     if (openerRef.current === undefined) {
       openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -50,6 +52,8 @@ function ConfirmationDialog({ options, onResult }: {
     }}>
     <h3 id={`${id}-title`}>{options.title}</h3>
     <p id={`${id}-message`} className="confirmation-message">{options.message}</p>
+    {options.checkbox && <label className="confirmation-checkbox"><input type="checkbox" checked={checked}
+      onChange={event => { setChecked(event.target.checked); options.checkbox?.onChange(event.target.checked); }} />{options.checkbox.label}</label>}
     <div className="confirmation-actions">
       <button ref={cancelRef} type="button" className="confirmation-button" onClick={() => onResult(false)}>
         {options.cancelLabel ?? "取消"}

@@ -1,0 +1,33 @@
+.settings-page.general-settings-page { width: 100%; max-width: none; margin-inline: 0; padding: 16px 40px; }
+.general-settings-page > .settings-page-heading { width: 100%; margin-bottom: 16px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.general-settings-groups { display: grid; gap: 16px; max-width: 800px; }
+.general-settings-group { display: grid; gap: 16px; min-width: 0; padding: 20px; border-color: var(--workbench-border); border-radius: 12px; background: var(--workbench-surface); box-shadow: var(--workbench-shadow); }
+.general-settings-group h3 { margin: 0; font-size: var(--font-section); font-weight: 600; }
+.general-profile { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.general-avatar-preview { display: grid; place-items: center; flex: 0 0 64px; width: 64px; height: 64px; overflow: hidden; border-radius: 12px; color: rgb(var(--color-muted)); background: rgb(var(--color-hover)); }
+.general-avatar-image { background: transparent; }
+.general-avatar-preview img { width: 64px; height: 64px; object-fit: cover; }
+.general-profile-details { min-width: 0; }
+.general-profile-label { display: flex; align-items: center; gap: 6px; font-size: var(--font-ui); }
+.general-profile-label strong { font-weight: 500; }
+.general-profile-details p { margin: 4px 0 10px; font-size: var(--font-small); }
+.general-avatar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.general-avatar-actions .settings-button { min-height: 36px; }
+.general-preference-row { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: var(--font-ui); }
+.general-preference-row label { cursor: pointer; }
+.general-preference-row input { margin: 0 0 0 auto; flex-shrink: 0; accent-color: rgb(var(--color-accent)); cursor: pointer; }
+.general-preference-row input:disabled { cursor: default; }
+.general-settings-unavailable { margin: 0; font-size: var(--font-small); }
+.general-settings-page .avatar-library-dialog { width: min(520px, calc(100vw - 32px)); border-radius: 16px; }
+.general-settings-page .avatar-library-dialog > .avatar-page { width: 100%; max-width: none; margin: 0; padding: 16px 0 0; }
+@media (max-width: 760px) {
+  .settings-page.general-settings-page { padding-inline: 24px; }
+  .general-settings-group { padding: 16px; }
+}
+@media (max-width: 480px) {
+  .general-profile { align-items: flex-start; gap: 12px; }
+  .general-preference-row label { min-width: 0; }
+}
+@media (forced-colors: active) {
+  .general-settings-group { border-color: CanvasText; box-shadow: none; }
+}

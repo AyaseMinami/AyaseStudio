@@ -3,6 +3,7 @@ import type { DataVersion } from "./dataContract";
 
 /** Module data versions are independent of application, Dexie schema and backup envelope versions. */
 export const dataModules = {
+  general: { version: 1, capabilities: [], resources: "device-local residency and exit confirmation; intentionally excluded from portable backup" },
   chat: { version: 3, capabilities: [], resources: "managed attachments; scoped provider replay; per-invocation generation metrics v1; exact requested API model snapshots; no runtime continuation" },
   session: { version: 1, capabilities: [], resources: "none; parameter compatibility only" },
   workspace: { version: 1, capabilities: [], resources: "model/assistant/conversation IDs remapped by restore plan" },
@@ -36,6 +37,7 @@ export const persistentTables = {
 
 export const DATA_COMPATIBILITY_KEY = "ayase-studio.data-compatibility.v1";
 export const persistentPreferences = {
+  "ayase-studio.general.v1": { module: "general", backup: "excluded" },
   "ayase-studio.appearance.v1": { module: "appearance", backup: "included" },
   "ayase-studio.chat-layout.v1": { module: "workspace", backup: "included" },
   // Historical compatibility only since #81; new assistants no longer consume it.

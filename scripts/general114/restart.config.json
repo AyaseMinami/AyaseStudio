@@ -1,0 +1,5 @@
+{
+  "identifier": "io.github.ayaseminami.ayasestudio.general114synthetic",
+  "build": { "beforeDevCommand": "", "devUrl": "http://127.0.0.1:1524/scripts/general114/index.html?probe=restart" },
+  "app": { "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1524; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:" } }
+}

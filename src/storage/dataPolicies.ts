@@ -22,6 +22,7 @@ import type { BackgroundFocus } from "../appearance/backgroundFocus";
 import type { Table } from "dexie";
 import type { GenerationMetrics } from "../chat/generationMetrics";
 import type { TokenUsage } from "../chat/types";
+import type { GeneralPreferences } from "../general/preferences";
 
 // Infer the real row parameter, not toArray's final generic callback overload (which returns unknown).
 type TableRow<T> = T extends Table<infer Row, infer _Key, infer _Insert> ? Row : never;
@@ -29,6 +30,7 @@ type TableRow<T> = T extends Table<infer Row, infer _Key, infer _Insert> ? Row :
 // Exhaustive policies: a new declared field cannot compile until its disposition is chosen.
 // Nested persisted records have their own policies; resources still use their existing validators.
 export const dataPolicies = {
+  general: { version: "exclude", backgroundResident: "exclude", confirmBeforeExit: "exclude" } satisfies FieldPolicy<GeneralPreferences>,
   session: {
     version: "backup", systemInstruction: "backup", temperature: "backup", topP: "backup", topK: "backup",
     contextBudget: "backup", maxOutput: "backup", stream: "backup", dualSamplingConfirmed: "backup", customJson: "backup",

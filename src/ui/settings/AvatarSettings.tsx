@@ -65,7 +65,7 @@ export function AvatarCropDialog({ draft, saving, error, onCancel, onSave }: {
   const dialog = useRef<HTMLDialogElement>(null);
   const [processing, setProcessing] = useState(false);
   useEffect(() => { const node = dialog.current!; node.showModal(); return () => node.close(); }, []);
-  return <dialog ref={dialog} className="avatar-crop-dialog" aria-labelledby="avatar-crop-title" onKeyDown={(event) => event.stopPropagation()} onCancel={(event) => { event.preventDefault(); if (!saving && !processing) onCancel(); }}>
+  return <dialog ref={dialog} className="avatar-crop-dialog" aria-labelledby="avatar-crop-title" onKeyDown={(event) => event.stopPropagation()} onCancel={(event) => { event.preventDefault(); event.stopPropagation(); if (!saving && !processing) onCancel(); }}>
     <AvatarCropContent draft={draft} saving={saving} error={error} onCancel={onCancel} onSave={onSave} onProcessingChange={setProcessing} />
   </dialog>;
 }

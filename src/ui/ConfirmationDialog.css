@@ -13,6 +13,7 @@
 .confirmation-dialog h3 { margin: 0; font-size: var(--font-section); }
 .confirmation-message { margin: 16px 0 24px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .confirmation-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirmation-checkbox { display: flex; align-items: center; gap: 8px; margin: -8px 0 20px; font-size: var(--font-body); }
 .confirmation-button {
   min-height: 36px;
   padding: 0 16px;
