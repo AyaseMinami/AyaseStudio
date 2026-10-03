@@ -1,5 +1,11 @@
 # Ayase Studio Development Guide
 
+## Beta 2 packaging (2026-10-03)
+
+`0.1.0-beta.2` packages the current `dev` baseline as a Windows x64 NSIS prerelease. npm, Cargo and Tauri versions are aligned; the locked dependency inventory is regenerated after the root version change. This release includes the post-Beta-1 chat/workbench appearance, navigation performance, general preferences and tray menu, shared controls, and documented cache/backup fixes.
+
+At the user's request, packaging does not rerun additional tests or independent review. `npm.cmd run build:windows` executes the production TypeScript/Vite build, Rust release compilation and NSIS packaging. Artifact version, size, signature status, SHA-256, remote tag and uploaded asset digest are checked separately. Existing implementation verification remains historical evidence; fresh installation, upgrade/data retention, native tray interactions and real provider compatibility are not established by packaging.
+
 ## Switch and checkbox unification (2026-10-03)
 
 Explicit shared classes in `src/ui/ToggleControls.css` style boolean settings as switches and retain checkboxes for selection/confirmation. Callbacks, disabled boundaries, save timing and persisted formats are unchanged. The workbench fixture now supplies in-memory general preferences for safe interaction checks.
