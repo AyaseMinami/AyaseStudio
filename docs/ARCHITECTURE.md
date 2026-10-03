@@ -1,5 +1,13 @@
 # Ayase Studio Architecture
 
+## Shared window chrome (2026-10-03)
+
+`AppShell` paints one non-interactive L-shaped background behind the 48px icon rail and 40px workspace titlebars. A CSS mask rounds its inside corner without stacking translucent fills or changing native drag/control regions. Settings align their titlebar at y=0; content navigation retains its separate material. The fixed 1920px appearance preview shares the same chrome surface, width, horizontal inset and opacity variables. Forced colors/reduced transparency use an opaque chrome surface.
+
+The appearance controller owns `chromeTransparency` (integer 0–100, default 40), applies `--chrome-background-opacity` before first render and persists through the existing strict clone-based preference seam. Sidebar transparency defaults to 50 and message bubbles to 12 after the illustrated-wallpaper comparison; this supersedes the earlier 75/20/6 trial; explicit saved values remain unchanged. Individual changes affect both titlebar and rail backgrounds; the unified slider updates four regions atomically. Appearance module v3/reader3 adds the registered backup field; legacy omissions default without writes and unsupported input is rejected. Existing glass switches govern their original content surfaces. See [DATA-CONTRACTS.md](DATA-CONTRACTS.md).
+
+Non-glass chat navigation overlays retain the saved sidebar alpha but render their single backing with an opacity floor of .94 to reduce underlying chat text interference. Docked navigation uses the saved alpha; enabled glass retains its existing blur material. This is CSS-only and does not modify preferences or docking state.
+
 ## Optional glass surfaces (#98, 2026-10-03)
 
 The appearance controller owns independent `sidebarGlassEnabled` (default false) and `composerGlassEnabled` (default true) preferences, applying root `data-sidebar-glass` / `data-composer-glass` attributes. Fresh settings, omitted legacy fields and explicit reset use these defaults; saved boolean choices remain intact. CSS derives materials without modifying saved transparency values. Chat assistant/conversation navigation uses one shared backing pseudo-element; its appearance preview uses the same material parameters. Settings category navigation and message bubbles retain existing rendering. Composer and preview share the enabled material selector. Unsupported filters retain original transparency; forced colors/reduced transparency replace enabled materials with opaque surfaces. Appearance module v2 compatibility and defaulting are described in DATA-CONTRACTS.md; no native or provider boundary changes.

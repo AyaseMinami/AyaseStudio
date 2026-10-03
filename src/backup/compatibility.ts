@@ -10,7 +10,7 @@ import { APPEARANCE_STORAGE_KEY } from "../appearance/appearance";
 /** Check the original stamps before normalization replaces them with current versions. */
 export function validateGenerationMetricsCompatibility(raw: unknown): void {
   dataRecord(raw);
-  validateAppearanceGlassCompatibility(raw);
+  validateAppearanceCompatibility(raw);
   validateAdditionalSearchCompatibility(raw);
   dataRecord(raw.rows);
   const supplierSupport = (raw.version === 4 || raw.version === 5) && (() => {
@@ -67,19 +67,21 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   }
 }
 
-/** Glass flags require the original v2 appearance declaration, before any restamping. */
-function validateAppearanceGlassCompatibility(raw: Record<string, unknown>): void {
+/** New appearance fields require their original module declaration, before restamping. */
+function validateAppearanceCompatibility(raw: Record<string, unknown>): void {
   dataRecord(raw.preferences);
   const encoded = raw.preferences[APPEARANCE_STORAGE_KEY];
   if (encoded === null || encoded === undefined) return;
   dataCheck(typeof encoded === "string");
   const appearance: unknown = JSON.parse(encoded);
   dataRecord(appearance);
-  if (!("sidebarGlassEnabled" in appearance) && !("composerGlassEnabled" in appearance)) return;
-  dataCheck(raw.version === 4 || raw.version === 5, "玻璃效果与外观模块版本不匹配，请升级应用。");
+  const minimumVersion = "chromeTransparency" in appearance ? 3
+    : "sidebarGlassEnabled" in appearance || "composerGlassEnabled" in appearance ? 2 : 1;
+  if (minimumVersion === 1) return;
+  dataCheck(raw.version === 4 || raw.version === 5, "外观字段与外观模块版本不匹配，请升级应用。");
   dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.appearance);
-  dataCheck(typeof raw.compatibility.modules.appearance.version === "number" && raw.compatibility.modules.appearance.version >= 2,
-    "玻璃效果与外观模块版本不匹配，请升级应用。");
+  dataCheck(typeof raw.compatibility.modules.appearance.version === "number" && raw.compatibility.modules.appearance.version >= minimumVersion,
+    "外观字段与外观模块版本不匹配，请升级应用。");
 }
 
 /** The search module owns provider identities wherever selections/results are stored. */

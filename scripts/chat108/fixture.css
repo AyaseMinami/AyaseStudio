@@ -17,6 +17,8 @@
 .chat108-controls select { max-width: 160px; background: rgb(var(--color-panel)); color: rgb(var(--color-text)); }
 .chat108-controls input[type="range"] { width: 130px; }
 .chat108-controls p { margin: 0; color: rgb(var(--color-muted)); line-height: 1.5; }
+.chat108-comparisons { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.chat108-comparisons .settings-button { min-width: 0; font-size: 11px; padding-inline: 4px; }
 .chat108-preview-page { overflow: auto; padding: 48px 28px; }
 .chat108-preview-page h2 { margin: 0 0 18px; }
 .chat108-preview-page > p { color: rgb(var(--color-muted)); margin-bottom: 18px; }

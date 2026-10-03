@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   APPEARANCE_STORAGE_KEY, createAppearanceController, defaultAppearancePreferences,
-  loadAppearancePreferences, readAppearancePreferences, saveAppearancePreferences,
+  applyInitialAppearance, loadAppearancePreferences, readAppearancePreferences, saveAppearancePreferences,
 } from "./appearance";
 
 function storage(encoded: string | null) {
@@ -21,9 +21,65 @@ const unsupported = [
   JSON.stringify({ ...defaultAppearancePreferences, sidebarTransparency: 101 }),
   JSON.stringify({ ...defaultAppearancePreferences, sidebarGlassEnabled: "true" }),
   JSON.stringify({ ...defaultAppearancePreferences, composerGlassEnabled: null }),
+  ...[-1, 101, 15.5, "85", null].map(chromeTransparency => JSON.stringify({ ...defaultAppearancePreferences, chromeTransparency })),
 ];
 
 describe("appearance durable compatibility boundary", () => {
+  it("applies the tuned alpha before first render in either theme without writes", () => {
+    for (const systemPrefersDark of [false, true]) {
+      const original = storage(null);
+      const properties = new Map<string, string>();
+      applyInitialAppearance({ storage: original, systemPrefersDark,
+        target: { style: { colorScheme: "", setProperty: (key, value) => { properties.set(key, value); }, removeProperty() {} }, setAttribute() {}, removeAttribute() {} },
+      });
+      expect(properties.get("--chrome-background-opacity")).toBe("0.6");
+      expect(properties.get("--sidebar-background-opacity")).toBe("0.5");
+      expect(properties.get("--message-bubble-opacity")).toBe("0.88");
+      expect(original.setItem).not.toHaveBeenCalled();
+    }
+  });
+  it.each([[85, 0, 6], [75, 20, 6]])("uses missing-field defaults without overwriting saved %s/%s/%s choices", (chromeTransparency, sidebarTransparency, assistantBubbleTransparency) => {
+    const empty = storage(null);
+    expect(readAppearancePreferences(empty)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, assistantBubbleTransparency: 12 });
+    expect(empty.setItem).not.toHaveBeenCalled();
+    const encoded = JSON.stringify({ chromeTransparency, sidebarTransparency, assistantBubbleTransparency });
+    const existing = storage(encoded);
+    expect(readAppearancePreferences(existing)).toMatchObject({ chromeTransparency, sidebarTransparency, assistantBubbleTransparency });
+    expect(loadAppearancePreferences(existing)).toMatchObject({ chromeTransparency, sidebarTransparency, assistantBubbleTransparency });
+    expect(existing.getItem()).toBe(encoded);
+    expect(existing.setItem).not.toHaveBeenCalled();
+  });
+  it("defaults old records without writes and persists independent chrome, unified changes and reset", async () => {
+    const original = storage(JSON.stringify({ sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 19 }));
+    expect(readAppearancePreferences(original).chromeTransparency).toBe(40);
+    expect(readAppearancePreferences(original)).toEqual(readAppearancePreferences(original));
+    expect(original.setItem).not.toHaveBeenCalled();
+    const properties = new Map<string, string>();
+    const controller = createAppearanceController({ storage: original,
+      systemTheme: { isDark: () => false, subscribe: () => () => {} },
+      target: { style: { colorScheme: "", setProperty: (key, value) => { properties.set(key, value); }, removeProperty() {} }, setAttribute() {}, removeAttribute() {} },
+    });
+    try {
+      await controller.ready;
+      controller.setChromeTransparency(60);
+      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 60, sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 19 });
+      expect(properties.get("--chrome-background-opacity")).toBe("0.4");
+      controller.setChromeTransparency(Number.NaN);
+      expect(readAppearancePreferences(original).chromeTransparency).toBe(60);
+      controller.setUnifiedTransparency(24);
+      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 24, sidebarTransparency: 24, composerTransparency: 24, assistantBubbleTransparency: 24, unifiedTransparency: 24 });
+      controller.setChromeTransparency(40);
+      expect(readAppearancePreferences(original).unifiedTransparency).toBe(24);
+      controller.setSidebarTransparency(40); controller.setComposerTransparency(40); controller.setAssistantBubbleTransparency(40);
+      expect(readAppearancePreferences(original).unifiedTransparency).toBe(40);
+      controller.setUnifiedTransparency(null);
+      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
+      controller.setChromeTransparency(45);
+      await controller.resetCustomAppearance();
+      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, assistantBubbleTransparency: 12 });
+    } finally { controller.destroy(); }
+  });
+
   it("defaults omitted glass flags without writes and persists independent toggles across reload", async () => {
     const original = storage(JSON.stringify({ sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 19 }));
     expect(readAppearancePreferences(original)).toMatchObject({ sidebarGlassEnabled: false, composerGlassEnabled: true });
@@ -96,6 +152,7 @@ describe("appearance durable compatibility boundary", () => {
     try {
       await controller.ready;
       controller.setThemeMode("dark");
+      controller.setChromeTransparency(12);
       controller.setAccentColor("#123456");
       controller.setSidebarGlassEnabled(true);
       controller.setComposerGlassEnabled(true);

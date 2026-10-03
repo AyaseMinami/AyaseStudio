@@ -24,6 +24,7 @@ export function useAppearance() {
       controller.setCanvasColor(color),
     setAssistantBubbleColor: (color: string | null) => controller.setAssistantBubbleColor(color),
     setUnifiedTransparency: (value: number | null) => controller.setUnifiedTransparency(value),
+    setChromeTransparency: (value: number) => controller.setChromeTransparency(value),
     setSidebarTransparency: (value: number) => controller.setSidebarTransparency(value),
     setComposerTransparency: (value: number) => controller.setComposerTransparency(value),
     setSidebarGlassEnabled: (enabled: boolean) => controller.setSidebarGlassEnabled(enabled),

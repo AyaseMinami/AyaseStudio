@@ -73,7 +73,7 @@ export const dataPolicies = {
   attachment: { reference: "resource", name: "backup", size: "backup", mimeType: "backup" } satisfies FieldPolicy<SentAttachment>,
   appearance: {
     colorPreset: "backup", themeMode: "backup", accentColor: "backup", userBubbleColor: "backup", unifiedThemeColor: "backup",
-    canvasColor: "backup", assistantBubbleColor: "backup", unifiedTransparency: "backup", sidebarTransparency: "backup",
+    canvasColor: "backup", assistantBubbleColor: "backup", unifiedTransparency: "backup", chromeTransparency: "backup", sidebarTransparency: "backup",
     composerTransparency: "backup", assistantBubbleTransparency: "backup", backgroundReference: "resource", backgroundFocus: "backup",
     sidebarGlassEnabled: "backup", composerGlassEnabled: "backup",
     backgroundFit: "backup", backgroundMask: "backup", backgroundBlur: "backup", backgroundLibrary: "resource", backgroundEnabled: "backup", backgroundName: "backup",

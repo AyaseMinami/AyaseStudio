@@ -3,7 +3,8 @@ import type { BackgroundFocus } from "../../appearance/backgroundFocus";
 import type { BackgroundFit } from "../../appearance/appearance";
 import { BackgroundImage } from "./BackgroundImage";
 import { AssistantAvatar } from "../chat/AssistantAvatar";
-import { Copy, RefreshCw, UserRound } from "lucide-react";
+import { Copy, Image, MessageSquare, RefreshCw, Settings, UserRound } from "lucide-react";
+import appIcon from "../../../assets/branding/ayase-icon.svg";
 import "./AppearanceSettings.css";
 
 export function AppearanceChatPreview({ url, focus, fit, mask, blur, onImageError }: {
@@ -25,7 +26,8 @@ export function AppearanceChatPreview({ url, focus, fit, mask, blur, onImageErro
   return <div ref={previewRef} style={style} aria-label="聊天界面预览" className="appearance-background-preview" data-has-image={url ? "true" : undefined}>
     <div className="appearance-preview-stage" style={{ transform: `scale(${scale})` }}>
       <div className="appearance-background-art"><BackgroundImage url={url} focus={focus} fit={fit} blur={blur} aspectRatio={16 / 9} onError={onImageError} /></div>{url && <div className="appearance-background-preview-mask" />}
-      <div className="appearance-preview-rail" aria-hidden="true"><strong>A</strong><span>聊天</span><span>设置</span></div>
+      <div className="app-window-chrome" aria-hidden="true" />
+      <div className="appearance-preview-rail" aria-hidden="true"><div className="app-navigation-brand"><img src={appIcon} width={28} height={28} alt="" /></div><span className="appearance-preview-page-current"><MessageSquare size={19} /></span><span><Image size={19} /></span><span><Settings size={19} /></span></div>
       <div className="appearance-preview-titlebar"><span>☰</span><strong>今天的阅读笔记</strong><span>−　□　×</span></div>
       <div className="appearance-background-preview-content">
         <div className="appearance-preview-navigation">

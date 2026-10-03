@@ -1,5 +1,9 @@
 # #108 真实聊天组件隔离预览
 
+2026-10-03 外框调整后，“设置”入口使用真实 `AppearanceSettings` 控件与预览；外观控制器只读取本隔离源的 `chat108-appearance` 专用键，透明度／玻璃开关／主题可保存并重载。此说明取代下文“主题与透明度只在内存”的旧描述。人物背景对比后顶栏与功能栏透明度默认 40%、侧栏默认 50%、气泡默认 12%，统一透明度同时更新四区域。夹具支持无背景、合成渐变、密集明暗构图和可选生成壁纸，并提供外框／侧栏／气泡成组候选按钮及背景遮罩控制；生成壁纸需放在忽略目录 `.chat108.local/anime-opacity/wallpaper.png`，它是本地对比素材，不作为默认壁纸；原生资源选择／背景库操作在此夹具禁用。绘图入口只展示同样的透明 header 和外框，不能据此声称完整绘图交互已验收。
+
+本轮使用新端口启动，避免连接旧实例：`npx.cmd vite --config scripts/chat108/vite.config.ts --port 1534`，浏览器入口 <http://127.0.0.1:1534/scripts/chat108/index.html>。隔离原生启动检查：`npm.cmd run tauri dev -- --no-watch --config scripts/chat108/native.config.json`，使用独立应用标识；启动后需手工体验 OS 拖动／窗口按钮，不自动截取或操控原生窗口。
+
 仓库根目录运行：
 
 ```powershell

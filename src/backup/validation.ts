@@ -218,7 +218,8 @@ export async function validateDocument(raw: unknown): Promise<void> {
   if (appearance !== null) {
     text(appearance); const parsed = JSON.parse(appearance); object(parsed);
     const normalized = readAppearancePreferences({ getItem: () => appearance });
-    check(canonical({ sidebarGlassEnabled: defaultAppearancePreferences.sidebarGlassEnabled,
+    check(canonical({ chromeTransparency: defaultAppearancePreferences.chromeTransparency,
+      sidebarGlassEnabled: defaultAppearancePreferences.sidebarGlassEnabled,
       composerGlassEnabled: defaultAppearancePreferences.composerGlassEnabled, ...parsed }) === canonical(normalized), "外观配置损坏或包含不支持字段。");
     if (normalized.backgroundReference) resource(normalized.backgroundReference, "backgrounds/");
     normalized.backgroundLibrary.forEach(b => resource(b.reference, "backgrounds/"));

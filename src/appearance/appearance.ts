@@ -29,6 +29,7 @@ export interface AppearancePreferences {
   canvasColor: string | null;
   assistantBubbleColor: string | null;
   unifiedTransparency: number;
+  chromeTransparency: number;
   sidebarTransparency: number;
   composerTransparency: number;
   sidebarGlassEnabled: boolean;
@@ -115,6 +116,7 @@ export interface AppearanceController {
   setCanvasColor(color: string | null): void;
   setAssistantBubbleColor(color: string | null): void;
   setUnifiedTransparency(transparency: number | null): void;
+  setChromeTransparency(transparency: number): void;
   setSidebarTransparency(transparency: number): void;
   setComposerTransparency(transparency: number): void;
   setSidebarGlassEnabled(enabled: boolean): void;
@@ -150,11 +152,12 @@ export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   canvasColor: null,
   assistantBubbleColor: null,
   unifiedTransparency: 0,
-  sidebarTransparency: 0,
+  chromeTransparency: 40,
+  sidebarTransparency: 50,
   composerTransparency: 0,
   sidebarGlassEnabled: false,
   composerGlassEnabled: true,
-  assistantBubbleTransparency: 6,
+  assistantBubbleTransparency: 12,
   backgroundReference: null,
   backgroundFocus: null,
   backgroundFit: "cover",
@@ -211,10 +214,11 @@ export function loadAppearancePreferences(
       return { ...defaultAppearancePreferences };
     }
 
+    const chromeTransparency = transparencyInRange(stored.chromeTransparency, defaultAppearancePreferences.chromeTransparency);
     const sidebarTransparency = transparencyInRange(stored.sidebarTransparency, defaultAppearancePreferences.sidebarTransparency);
     const composerTransparency = transparencyInRange(stored.composerTransparency, defaultAppearancePreferences.composerTransparency);
     const assistantBubbleTransparency = transparencyInRange(stored.assistantBubbleTransparency, defaultAppearancePreferences.assistantBubbleTransparency);
-    const unifiedTransparency = sidebarTransparency === composerTransparency && sidebarTransparency === assistantBubbleTransparency
+    const unifiedTransparency = chromeTransparency === sidebarTransparency && sidebarTransparency === composerTransparency && sidebarTransparency === assistantBubbleTransparency
       ? sidebarTransparency
       : transparencyInRange(stored.unifiedTransparency, defaultAppearancePreferences.unifiedTransparency);
 
@@ -232,6 +236,7 @@ export function loadAppearancePreferences(
       canvasColor: normalizeHexColor(stored.canvasColor),
       assistantBubbleColor: normalizeHexColor(stored.assistantBubbleColor),
       unifiedTransparency,
+      chromeTransparency,
       sidebarTransparency,
       composerTransparency,
       sidebarGlassEnabled: typeof stored.sidebarGlassEnabled === "boolean" ? stored.sidebarGlassEnabled : defaultAppearancePreferences.sidebarGlassEnabled,
@@ -312,7 +317,7 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
   optional(stored, "themeMode", value => ["light", "dark", "system"].includes(value as string));
   for (const key of ["accentColor", "userBubbleColor", "unifiedThemeColor", "canvasColor", "assistantBubbleColor"])
     optional(stored, key, value => value === null || normalizeHexColor(value) !== null);
-  for (const key of ["unifiedTransparency", "sidebarTransparency", "composerTransparency", "assistantBubbleTransparency"])
+  for (const key of ["unifiedTransparency", "chromeTransparency", "sidebarTransparency", "composerTransparency", "assistantBubbleTransparency"])
     optional(stored, key, range(0, 100, true));
   optional(stored, "backgroundReference", value => value === null || isBackgroundReference(value));
   optional(stored, "backgroundFocus", focus);
@@ -607,6 +612,7 @@ function applyAppearanceVariables(
       target.style.setProperty(property, value);
     }
   });
+  target.style.setProperty("--chrome-background-opacity", String(1 - preferences.chromeTransparency / 100));
   target.style.setProperty("--sidebar-background-opacity", String(1 - preferences.sidebarTransparency / 100));
   target.style.setProperty("--composer-background-opacity", String(1 - preferences.composerTransparency / 100));
   target.style.setProperty("--message-bubble-opacity", String(1 - preferences.assistantBubbleTransparency / 100));
@@ -746,6 +752,7 @@ export function createAppearanceController({
     canvasColor: snapshot.canvasColor,
     assistantBubbleColor: snapshot.assistantBubbleColor,
     unifiedTransparency: snapshot.unifiedTransparency,
+    chromeTransparency: snapshot.chromeTransparency,
     sidebarTransparency: snapshot.sidebarTransparency,
     composerTransparency: snapshot.composerTransparency,
     sidebarGlassEnabled: snapshot.sidebarGlassEnabled,
@@ -1000,13 +1007,20 @@ export function createAppearanceController({
     },
     setUnifiedTransparency(transparency) {
       if (transparency === null) {
-        const { unifiedTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency } = defaultAppearancePreferences;
-        updatePreferences({ ...preferences, unifiedTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency });
+        const { unifiedTransparency, chromeTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency } = defaultAppearancePreferences;
+        updatePreferences({ ...preferences, unifiedTransparency, chromeTransparency, sidebarTransparency, composerTransparency, assistantBubbleTransparency });
         return;
       }
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
-        updatePreferences({ ...preferences, unifiedTransparency: value, sidebarTransparency: value, composerTransparency: value, assistantBubbleTransparency: value });
+        updatePreferences({ ...preferences, unifiedTransparency: value, chromeTransparency: value, sidebarTransparency: value, composerTransparency: value, assistantBubbleTransparency: value });
+      }
+    },
+    setChromeTransparency(transparency) {
+      if (Number.isFinite(transparency)) {
+        const value = Math.round(Math.min(100, Math.max(0, transparency)));
+        const next = { ...preferences, chromeTransparency: value };
+        updatePreferences(next.sidebarTransparency === value && next.composerTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setSidebarGlassEnabled(enabled) {
@@ -1019,21 +1033,21 @@ export function createAppearanceController({
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
         const next = { ...preferences, sidebarTransparency: value };
-        updatePreferences(next.composerTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
+        updatePreferences(next.chromeTransparency === value && next.composerTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setComposerTransparency(transparency) {
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
         const next = { ...preferences, composerTransparency: value };
-        updatePreferences(next.sidebarTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
+        updatePreferences(next.chromeTransparency === value && next.sidebarTransparency === value && next.assistantBubbleTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setAssistantBubbleTransparency(transparency) {
       if (Number.isFinite(transparency)) {
         const value = Math.round(Math.min(100, Math.max(0, transparency)));
         const next = { ...preferences, assistantBubbleTransparency: value };
-        updatePreferences(next.sidebarTransparency === value && next.composerTransparency === value ? { ...next, unifiedTransparency: value } : next);
+        updatePreferences(next.chromeTransparency === value && next.sidebarTransparency === value && next.composerTransparency === value ? { ...next, unifiedTransparency: value } : next);
       }
     },
     setBackgroundFit(fit) {

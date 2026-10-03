@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import "../../src/App.css";
 import "./fixture.css";
@@ -8,19 +8,21 @@ import { useConversationNavigation } from "../../src/ui/chat/useConversationNavi
 import { ChatWorkspace } from "../../src/ui/chat/ChatWorkspace";
 import { ChatHeader } from "../../src/ui/chat/ChatHeader";
 import { AppearanceChatPreview } from "../../src/ui/settings/AppearanceChatPreview";
+import { AppearanceSettings } from "../../src/ui/settings/AppearanceSettings";
+import { WindowControls } from "../../src/ui/window/WindowControls";
 import { BackgroundImage } from "../../src/ui/settings/BackgroundImage";
 import { installScrollbarAutoHide } from "../../src/ui/scrollbarAutoHide";
 import { useConversationWorkspace } from "../../src/chat/useConversationWorkspace";
 import { createChatRepository, type StoredChatMessage } from "../../src/chat/repository";
 import { defaultSessionConfig } from "../../src/chat/sessionConfig";
 import { emptyConnectionSettings } from "../../src/chat/settings";
-import { applyInitialAppearance, defaultAppearancePreferences } from "../../src/appearance/appearance";
+import { createAppearanceController } from "../../src/appearance/appearance";
 import type { ThinkingSettings } from "../../src/chat/thinking";
 import type { SearchMode } from "../../src/search/mode";
 import type { ChatLayout } from "../../src/ui/chat/useChatLayout";
 import type { RequestAttachment, SentAttachment } from "../../src/chat/attachments";
 
-// Only local synthetic artwork: no URL, resource store, or image API is consulted.
+// Isolated local artwork only; generated wallpaper is an optional ignored local asset.
 const artwork = document.createElement("canvas");
 artwork.width = 960; artwork.height = 600;
 const context = artwork.getContext("2d")!;
@@ -34,6 +36,16 @@ for (let row = 0; row < 8; row++) for (let column = 0; column < 14; column++) {
 context.fillStyle = "#f5e4cf"; context.font = "600 44px sans-serif";
 context.fillText("AYASE / SYNTHETIC", 54, 530);
 const wallpaperUrl = artwork.toDataURL("image/png");
+const busyArtwork = document.createElement("canvas");
+busyArtwork.width = 960; busyArtwork.height = 600;
+const busyContext = busyArtwork.getContext("2d")!;
+busyContext.drawImage(artwork, 0, 0);
+for (let index = 0; index < 28; index++) {
+  busyContext.fillStyle = ["#fff9", "#18314999", "#e1988099", "#8ac4c8aa"][index % 4];
+  busyContext.beginPath(); busyContext.moveTo(index * 48 - 120, 0); busyContext.lineTo(index * 48 + 170, 600);
+  busyContext.lineTo(index * 48 + 190, 600); busyContext.lineTo(index * 48 - 90, 0); busyContext.fill();
+}
+const busyWallpaperUrl = busyArtwork.toDataURL("image/png");
 const demoImage = wallpaperUrl.split(",")[1];
 const imageBlob = await new Promise<Blob>((resolve, reject) => artwork.toBlob(blob => blob ? resolve(blob) : reject(new Error("Synthetic image encoding failed")), "image/png"));
 const imageAttachment: SentAttachment = { reference: "chat108-synthetic-image", name: "合成构图.png", mimeType: "image/png", size: imageBlob.size };
@@ -114,30 +126,42 @@ if (!initial.assistants.some(assistant => assistant.id === "chat108-reading")) {
 }
 const emptyModelIds: string[] = [];
 const generatingIds = new Set<string>();
-applyInitialAppearance({ storage: { getItem: () => JSON.stringify({ ...defaultAppearancePreferences, themeMode: "light" }), setItem: () => {} },
-  systemPrefersDark: false, target: document.documentElement });
+// Dedicated fixture key on a dedicated origin; no production preferences or native resources.
+const appearanceController = createAppearanceController({
+  storage: { getItem: () => localStorage.getItem("chat108-appearance"), setItem: (_key, value) => localStorage.setItem("chat108-appearance", value) },
+  systemTheme: { isDark: () => false, subscribe: () => () => {} }, target: document.documentElement,
+});
 installScrollbarAutoHide(document);
 
 function Review() {
   const [page, setPage] = useState<AppPage>("chat");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [palette, setPalette] = useState<"default" | "reading" | "custom">("default");
+  const appearance = useSyncExternalStore(appearanceController.subscribe, appearanceController.getSnapshot);
+  const theme = appearance.resolvedTheme;
+  const setTheme = appearanceController.setThemeMode;
+  const palette = appearance.colorPreset === "reading" ? "reading" : appearance.userBubbleColor === "#18364a" ? "custom" : "default";
+  function setPalette(next: "default" | "reading" | "custom") {
+    appearanceController.setColorPreset(next === "reading" ? "reading" : "default");
+    if (next === "custom") {
+      appearanceController.setUserBubbleColor("#18364a");
+      appearanceController.setAssistantBubbleColor(theme === "light" ? "#e9cfaa" : "#443d32");
+    }
+  }
   const [wallpaper, setWallpaper] = useState(false);
-  const [transparency, setTransparency] = useState(0);
+  const [wallpaperKind, setWallpaperKind] = useState<"complex" | "busy" | "anime">("complex");
+  const displayedWallpaper = wallpaperKind === "anime" ? "/.chat108.local/anime-opacity/wallpaper.png" : wallpaperKind === "busy" ? busyWallpaperUrl : wallpaperUrl;
+  const transparency = appearance.unifiedTransparency;
+  const setTransparency = appearanceController.setUnifiedTransparency;
   const [layout, setLayout] = useState<ChatLayout>("narrow");
   const [thinking, setThinking] = useState<ThinkingSettings>();
   const [searchMode, setSearchMode] = useState<SearchMode>("off");
   const navigation = useConversationNavigation();
   const workspace = useConversationWorkspace(repository, null, emptyModelIds, () => false);
   useEffect(() => {
-    applyInitialAppearance({ storage: { getItem: () => JSON.stringify({ ...defaultAppearancePreferences, themeMode: theme,
-      colorPreset: palette === "reading" ? "reading" : "default",
-      userBubbleColor: palette === "custom" ? "#18364a" : null,
-      assistantBubbleColor: palette === "custom" ? theme === "light" ? "#e9cfaa" : "#443d32" : null,
-      sidebarTransparency: transparency, composerTransparency: transparency, assistantBubbleTransparency: transparency, backgroundMask: 25 }), setItem: () => {} },
-    systemPrefersDark: false, target: document.documentElement });
-    if (wallpaper) document.documentElement.setAttribute("data-has-background", "true");
-  }, [theme, palette, transparency, wallpaper]);
+    if (palette === "custom") appearanceController.setAssistantBubbleColor(theme === "light" ? "#e9cfaa" : "#443d32");
+  }, [theme, palette]);
+  useEffect(() => {
+    document.documentElement.setAttribute("data-has-background", String(wallpaper));
+  }, [wallpaper, appearance]);
 
   async function saveMessages(messages: StoredChatMessage[]) {
     if (!workspace.isReady || !workspace.store) return;
@@ -154,10 +178,24 @@ function Review() {
   async function clear() { await saveMessages([]); }
   const conversationId = workspace.conversation?.id;
   const toggleLayout = () => setLayout(current => current === "wide" ? "narrow" : "wide");
-  const preview = <section className="chat108-preview-page"><h2>外观设置 · 真实预览组件</h2><p>工具栏的主题、透明度与合成背景同时应用于此预览。返回聊天检查真实交互。</p>
-    <AppearanceChatPreview url={wallpaper ? wallpaperUrl : null} focus={null} fit="cover" mask={25} blur={0} /></section>;
+  const preview = <div className="settings-workspace"><header className="settings-header" data-tauri-drag-region><WindowControls /></header><div className="settings-page-scroll">
+    <AppearanceSettings {...appearance} backgroundUrl={wallpaper ? displayedWallpaper : null}
+      onThemeModeChange={appearanceController.setThemeMode} onColorPresetChange={appearanceController.setColorPreset}
+      onUnifiedThemeColorChange={appearanceController.setUnifiedThemeColor} onUserBubbleColorChange={appearanceController.setUserBubbleColor}
+      onAccentColorChange={appearanceController.setAccentColor} onCanvasColorChange={appearanceController.setCanvasColor}
+      onAssistantBubbleColorChange={appearanceController.setAssistantBubbleColor} onAssistantBubbleTransparencyChange={appearanceController.setAssistantBubbleTransparency}
+      onUnifiedTransparencyChange={appearanceController.setUnifiedTransparency} onChromeTransparencyChange={appearanceController.setChromeTransparency}
+      onSidebarTransparencyChange={appearanceController.setSidebarTransparency} onComposerTransparencyChange={appearanceController.setComposerTransparency}
+      onSidebarGlassEnabledChange={appearanceController.setSidebarGlassEnabled} onComposerGlassEnabledChange={appearanceController.setComposerGlassEnabled}
+      onBackgroundFitChange={appearanceController.setBackgroundFit} onBackgroundMaskChange={appearanceController.setBackgroundMask} onBackgroundBlurChange={appearanceController.setBackgroundBlur}
+      onEditBackgroundFocus={() => {}} onPrepareLibraryBackground={async () => null}
+      onSaveLibraryBackground={async () => { throw new Error("The fixture only uses generated artwork."); }} onDiscardLibraryBackground={async () => {}}
+      onResolveLibraryBackground={async () => { throw new Error("No native resources in this fixture."); }} onApplyLibraryBackground={async () => {}}
+      onRemoveLibraryBackgrounds={async () => {}} onRestoreBackground={async () => {}} onRemoveBackground={async () => {}}
+      onResetCustomAppearance={appearanceController.resetCustomAppearance} />
+    </div></div>;
   return <><AppShell activePage={page} onPageChange={setPage}
-    background={wallpaper ? <BackgroundImage url={wallpaperUrl} focus={null} fit="cover" blur={0} /> : undefined}>
+    background={wallpaper ? <BackgroundImage url={displayedWallpaper} focus={null} fit="cover" blur={0} /> : undefined}>
     {page === "chat" ? <ConversationNavigation workspace={workspace} settings={emptyConnectionSettings} generatingIds={generatingIds} navigation={navigation}
       toolbar={<ChatHeader conversationId={conversationId} title={workspace.conversation?.title ?? "加载合成会话"} layout={layout} onToggleLayout={toggleLayout}
         isHydrated={workspace.isReady} isWorkspaceBusy={workspace.isTemporarilyBusy} isGenerating={false} onClear={() => void clear()} />}>
@@ -185,7 +223,7 @@ function Review() {
         error={workspace.view.error ?? workspace.operationError ?? workspace.loadError}
         protocolLabel="本地合成回复" modelLabel="合成预览" onDraftChange={workspace.setDraft} onDraftActivate={navigation.activateDraft}
         onClear={() => void clear()} onSend={() => void send()} onStop={() => {}} />
-    </ConversationNavigation> : page === "settings" ? preview : <section className="chat108-preview-page"><h2>页面切换检查</h2><p>此夹具只预览聊天。返回聊天可检查导航状态是否保留。</p></section>}
+    </ConversationNavigation> : page === "settings" ? preview : <div className="drawing-workspace"><header className="drawing-header" data-tauri-drag-region><WindowControls /></header><section className="chat108-preview-page"><h2>绘图外框检查</h2><p>仅检查共享功能栏与标题栏，不生成图片。</p><AppearanceChatPreview url={wallpaper ? displayedWallpaper : null} focus={null} fit="cover" mask={appearance.backgroundMask} blur={0} /></section></div>}
   </AppShell><details className="chat108-toolbar"><summary>预览控制 · #108</summary><div className="chat108-controls">
     <label>主题<select aria-label="夹具主题" value={theme} onChange={event => {
       const nextTheme = event.currentTarget.value as "light" | "dark";
@@ -197,8 +235,22 @@ function Review() {
       if (nextPalette === "reading") setTheme("light");
       setPalette(nextPalette);
     }}><option value="default">默认</option><option value="reading">阅读</option><option value="custom">深色用户／暖色助手</option></select></label>
-    <label>合成背景<select aria-label="夹具背景" value={wallpaper ? "complex" : "none"} onChange={event => setWallpaper(event.currentTarget.value === "complex")}><option value="none">纯色</option><option value="complex">复杂构图</option></select></label>
+    <label>合成背景<select aria-label="夹具背景" value={wallpaper ? wallpaperKind : "none"} onChange={event => {
+      const value = event.currentTarget.value;
+      setWallpaper(value !== "none"); if (value !== "none") setWallpaperKind(value as "complex" | "busy" | "anime");
+    }}><option value="none">纯色</option><option value="complex">复杂构图</option><option value="busy">密集明暗构图</option><option value="anime">生成的二次元壁纸</option></select></label>
     <label>透明度 {transparency}%<input aria-label="夹具统一透明度" type="range" min="0" max="100" step="5" value={transparency} onChange={event => setTransparency(Number(event.currentTarget.value))} /></label>
+    <label>外框 {appearance.chromeTransparency}%<input aria-label="夹具外框透明度" type="range" min="0" max="100" value={appearance.chromeTransparency} onChange={event => appearanceController.setChromeTransparency(Number(event.currentTarget.value))} /></label>
+    <label>侧栏 {appearance.sidebarTransparency}%<input aria-label="夹具侧栏透明度" type="range" min="0" max="100" value={appearance.sidebarTransparency} onChange={event => appearanceController.setSidebarTransparency(Number(event.currentTarget.value))} /></label>
+    <label>气泡 {appearance.assistantBubbleTransparency}%<input aria-label="夹具气泡透明度" type="range" min="0" max="100" value={appearance.assistantBubbleTransparency} onChange={event => appearanceController.setAssistantBubbleTransparency(Number(event.currentTarget.value))} /></label>
+    <label>遮罩 {appearance.backgroundMask}%<input aria-label="夹具背景遮罩" type="range" min="0" max="100" value={appearance.backgroundMask} onChange={event => appearanceController.setBackgroundMask(Number(event.currentTarget.value))} /></label>
+    <label>侧栏玻璃<input aria-label="夹具侧栏玻璃" type="checkbox" checked={appearance.sidebarGlassEnabled} onChange={event => appearanceController.setSidebarGlassEnabled(event.currentTarget.checked)} /></label>
+    <div className="chat108-comparisons" aria-label="透明度对照">
+      {[[75, 20, 6], [25, 35, 6], [35, 45, 6], [40, 50, 6], [45, 55, 6], [50, 60, 6], [60, 70, 6], [40, 50, 12], [40, 50, 20], [40, 50, 30]].map(([chrome, sidebar, bubble]) =>
+        <button className="settings-button" type="button" key={`${chrome}-${sidebar}-${bubble}`} onClick={() => {
+          appearanceController.setChromeTransparency(chrome); appearanceController.setSidebarTransparency(sidebar); appearanceController.setAssistantBubbleTransparency(bubble);
+        }}>{`外框 ${chrome} / 侧栏 ${sidebar} / 气泡 ${bubble}`}</button>)}
+    </div>
     <label>聊天宽度<select aria-label="夹具聊天宽度" value={layout} onChange={event => setLayout(event.currentTarget.value as ChatLayout)}><option value="narrow">窄屏</option><option value="wide">宽屏</option></select></label>
     <button className="settings-button" type="button" onClick={() => setPage(page === "settings" ? "chat" : "settings")}>{page === "settings" ? "返回真实聊天" : "查看外观预览"}</button>
     <button className="settings-button" disabled={!workspace.isReady} type="button" onClick={() => void saveMessages(seedMessages())}>恢复当前会话示例</button>

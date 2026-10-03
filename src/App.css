@@ -90,9 +90,14 @@
   --appearance-background-fit: cover;
   --appearance-background-mask: 0.65;
   --appearance-background-blur: 0px;
-  --sidebar-background-opacity: 1;
+  --app-navigation-width: 48px;
+  --app-navigation-inset: 6px;
+  --app-titlebar-height: 40px;
+  --app-chrome-radius: 12px;
+  --chrome-background-opacity: 0.6;
+  --sidebar-background-opacity: 0.5;
   --composer-background-opacity: 1;
-  --message-bubble-opacity: 0.94;
+  --message-bubble-opacity: 0.88;
   color-scheme: dark;
   --font-caption: 0.75rem;
   --font-small: 0.8125rem;
@@ -263,22 +268,39 @@ textarea:disabled {
   z-index: 1;
 }
 
+/* A single painted L surface avoids double alpha where the rail meets the titlebar.
+   The radial mask rounds the inside corner; controls are separate opaque content. */
+.app-window-chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgb(var(--color-panel) / var(--chrome-background-opacity));
+  mask:
+    linear-gradient(#000 0 0) left top / 100% var(--app-titlebar-height) no-repeat,
+    linear-gradient(#000 0 0) left top / var(--app-navigation-width) 100% no-repeat,
+    radial-gradient(circle at bottom right, transparent calc(var(--app-chrome-radius) - 0.5px), #000 var(--app-chrome-radius))
+      left var(--app-navigation-width) top var(--app-titlebar-height) / var(--app-chrome-radius) var(--app-chrome-radius) no-repeat;
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .app-window-chrome { background: rgb(var(--color-panel)); }
+}
+
 .app-navigation {
   display: flex;
-  width: 4.25rem;
+  width: var(--app-navigation-width);
   flex-shrink: 0;
   flex-direction: column;
   align-items: center;
-  gap: 0.55rem;
-  border-right: 1px solid rgb(var(--color-border));
-  background: rgb(var(--color-panel));
-  padding: 0.65rem 0.45rem;
+  gap: 4px;
+  background: transparent;
+  padding: 0 var(--app-navigation-inset) 8px;
 }
 
 .app-navigation-brand {
   display: grid;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 36px;
+  height: var(--app-titlebar-height);
   flex-shrink: 0;
   place-items: center;
 }
@@ -288,22 +310,27 @@ textarea:disabled {
   width: 100%;
   flex: 1;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 6px;
 }
 
 .app-navigation-button {
   display: flex;
   width: 100%;
-  min-height: 3rem;
-  flex-direction: column;
+  height: 36px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
   border: 1px solid transparent;
-  border-radius: 0.8rem;
+  border-radius: 10px;
   color: rgb(var(--color-muted));
   font-size: var(--font-caption);
   line-height: 1;
+  cursor: pointer;
+}
+
+.app-navigation-button:focus-visible {
+  outline: 2px solid rgb(var(--color-focus));
+  outline-offset: 2px;
 }
 
 .app-navigation-button:hover {
@@ -338,7 +365,7 @@ textarea:disabled {
   flex-direction: column;
   overflow: hidden;
   gap: 4px;
-  padding: 4px;
+  padding: 0 4px 4px;
   background: transparent;
 }
 
@@ -359,7 +386,7 @@ textarea:disabled {
   background: transparent;
   padding-left: 0.75rem;
 }
-.settings-header { margin: -4px -4px 0; }
+.settings-header { margin: 0 -4px 0; }
 .settings-header .window-controls > button,
 .drawing-header .window-controls > button { min-height: 0; }
 
@@ -2599,8 +2626,8 @@ textarea:disabled {
   }
 
   .app-navigation {
-    width: 4rem;
-    padding-inline: 0.45rem;
+    width: var(--app-navigation-width);
+    padding-inline: var(--app-navigation-inset);
   }
 
   .settings-navigation {
@@ -2782,12 +2809,12 @@ textarea:disabled {
 
 @media (max-height: 560px) {
   .app-navigation {
-    gap: 0.4rem;
-    padding-block: 0.5rem;
+    gap: 4px;
+    padding-block: 0 8px;
   }
 
   .app-navigation-button {
-    min-height: 2.9rem;
+    height: 36px;
   }
 
   .settings-page {
@@ -2872,6 +2899,11 @@ textarea:disabled {
 }
 .conversation-workspace-body[data-navigation-open="true"]::before { opacity: 1; visibility: visible; }
 .conversation-workspace-body[data-navigation-docked="false"]::before { box-shadow: 0 8px 24px rgb(var(--color-shadow) / 0.16); }
+/* An overlay sits above live chat text; its backing needs more coverage than
+   docked navigation. Preserve the saved value and the optional glass material. */
+:root[data-sidebar-glass="false"] .conversation-workspace-body[data-navigation-open="true"][data-navigation-docked="false"]::before {
+  background: rgb(var(--color-panel) / max(0.94, var(--sidebar-background-opacity)));
+}
 @supports (backdrop-filter: blur(8px)) {
   :root[data-sidebar-glass="true"] :is(.conversation-workspace-body, .appearance-preview-navigation) {
     --sidebar-glass-alpha: 0.62;
