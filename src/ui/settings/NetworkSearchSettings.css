@@ -15,6 +15,7 @@ legend.network-search-section-label { margin-bottom: 10px; }
 .network-search-row { display: grid; min-width: 0; gap: 6px; }
 .network-search-card .field-label { margin: 0; font-weight: 500; }
 .network-search-card .field { min-width: 0; height: 36px; margin: 0; padding: 0 10px; border-radius: 6px; font-size: var(--font-small); background: color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas))); }
+.network-search-card .select-field { font-size: var(--font-small); }
 .network-search-card .settings-button { min-height: 36px; padding: 6px 10px; white-space: nowrap; }
 .network-search-address { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 6px; min-width: 0; }
 .network-search-key { display: grid; grid-template-columns: minmax(0, 1fr) 36px 36px; align-items: center; gap: 6px; min-width: 0; }

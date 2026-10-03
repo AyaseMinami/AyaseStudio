@@ -3,6 +3,7 @@ import { Database, Gauge, Hash, Timer } from "lucide-react";
 import type { StoredChatMessage } from "../../chat/repository";
 import type { GenerationMetrics } from "../../chat/generationMetrics";
 import { SettingsHelp } from "../settings/SettingsHelp";
+import { containsSelectFieldTarget, SelectField } from "../SelectField";
 import "./GenerationStats.css";
 
 const unavailable = "未提供";
@@ -53,7 +54,7 @@ function StatsBar({ replies, latest }: { replies: StoredChatMessage[]; latest: S
   const metrics = invocations[index];
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
-      if (details.current?.open && !details.current.contains(event.target as Node)) details.current.open = false;
+      if (details.current?.open && !containsSelectFieldTarget(details.current, event.target)) details.current.open = false;
     };
     document.addEventListener("pointerdown", closeOutside);
     return () => document.removeEventListener("pointerdown", closeOutside);
@@ -69,7 +70,7 @@ function StatsBar({ replies, latest }: { replies: StoredChatMessage[]; latest: S
     ["思考首字时间", metrics.streaming ? duration(metrics.firstThinkingMs) : "非流式不可测"],
     ["平均速度（端到端）", averageSpeed(metrics)],
   ];
-  return <div className="generation-stats-row"><details ref={details} className="generation-stats" onKeyDown={event => {
+  return <div className="generation-stats-row"><details ref={details} className="generation-stats" data-select-surface onKeyDown={event => {
     if (event.key === "Escape" && details.current?.open) {
       event.preventDefault(); event.stopPropagation(); details.current.open = false; summary.current?.focus();
     }
@@ -84,12 +85,12 @@ function StatsBar({ replies, latest }: { replies: StoredChatMessage[]; latest: S
     </summary>
     <section className="generation-stats-panel" aria-label="生成统计详情">
       <div className="generation-stats-selectors">
-        <label>回复<select aria-label="选择回复统计" value={reply.id} onChange={event => {
-          setSelectedReply(event.target.value); setSelectedInvocation(undefined);
-        }}>{replies.map((item, position) => <option key={item.id} value={item.id}>第 {position + 1} 条回复{item.id === latest.id ? "（最近）" : ""}</option>)}</select></label>
-        {invocations.length > 1 && <label>请求<select aria-label="选择生成请求" value={index} onChange={event => setSelectedInvocation(Number(event.target.value))}>
-          {invocations.map((item, position) => <option key={position} value={position}>第 {position + 1} 次 · {statusLabels[item.status]}</option>)}
-        </select></label>}
+        <label>回复<SelectField label="选择回复统计" value={reply.id} onChange={value => {
+          setSelectedReply(value); setSelectedInvocation(undefined);
+        }} options={replies.map((item, position) => ({ value: item.id,
+          label: `第 ${position + 1} 条回复${item.id === latest.id ? "（最近）" : ""}` }))} /></label>
+        {invocations.length > 1 && <label>请求<SelectField label="选择生成请求" value={String(index)} onChange={value => setSelectedInvocation(Number(value))}
+          options={invocations.map((item, position) => ({ value: String(position), label: `第 ${position + 1} 次 · ${statusLabels[item.status]}` }))} /></label>}
       </div>
       <p className="generation-stats-state">{statusLabels[metrics.status]} · {metrics.streaming ? "流式" : "非流式"} · {metrics.usageComplete ? "供应商终态用量" : metrics.usage ? "供应商部分用量" : "供应商未返回用量"}</p>
       <dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>

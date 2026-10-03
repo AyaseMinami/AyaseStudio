@@ -186,8 +186,7 @@ describe("SettingsWorkspace", () => {
     expect(html).toContain("自定义配色");
     expect(html).toContain('type="color"');
     expect(html).toContain("选择背景");
-    expect(html).toContain("填充");
-    expect(html).toContain("适应");
+    expect(html).toMatch(/role="combobox"[^>]*aria-label="图片适配方式"[^>]*><span>填充<\/span>/);
     expect(html).toContain("遮罩强度");
     expect(html).toContain("模糊程度");
     expect(html).toContain("恢复当前主题默认外观");
@@ -217,7 +216,7 @@ describe("SettingsWorkspace", () => {
     expect(html).toContain("停用背景");
     expect(html).toContain("52%");
     expect(html).toContain("8px");
-    expect(html).toMatch(/<option value="contain" selected=""/);
+    expect(html).toMatch(/role="combobox"[^>]*aria-label="图片适配方式"[^>]*><span>适应<\/span>/);
   });
 });
 

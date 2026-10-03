@@ -36,13 +36,15 @@ it("shows latest reply below composer, browses earlier/continued requests, and r
     expect(summary.textContent).toContain("输入 200");
     expect(summary.textContent).toContain("缓存 未提供");
     expect(summary.textContent).toContain("首字 非流式");
-    const invocation = host.querySelector<HTMLSelectElement>('[aria-label="选择生成请求"]')!;
-    await act(async () => { invocation.value = "0"; invocation.dispatchEvent(new Event("change", { bubbles: true })); });
-    expect(host.querySelector(".generation-stats-state")!.textContent).toContain("已暂停");
-    const select = host.querySelector<HTMLSelectElement>('[aria-label="选择回复统计"]')!;
-    await act(async () => { select.value = "a"; select.dispatchEvent(new Event("change", { bubbles: true })); });
-    expect(host.querySelector(".generation-stats-panel")!.textContent).toContain("80%");
     const details = host.querySelector("details")!; details.open = true;
+    const invocation = host.querySelector<HTMLButtonElement>('[aria-label="选择生成请求"]')!;
+    await act(async () => invocation.click());
+    await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === "第 1 次 · 已暂停")!.click());
+    expect(host.querySelector(".generation-stats-state")!.textContent).toContain("已暂停");
+    const select = host.querySelector<HTMLButtonElement>('[aria-label="选择回复统计"]')!;
+    await act(async () => select.click());
+    await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === "第 1 条回复")!.click());
+    expect(host.querySelector(".generation-stats-panel")!.textContent).toContain("80%");
     await act(async () => select.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(details.open).toBe(false); expect(document.activeElement).toBe(summary);
     await act(async () => root.render(<GenerationStats messages={[reply("other", [{ ...metrics, usage: { inputTokens: 9 } }])]} />));
@@ -50,6 +52,27 @@ it("shows latest reply below composer, browses earlier/continued requests, and r
     expect(host.querySelector("summary")!.textContent).not.toContain("200");
     await act(async () => root.render(<GenerationStats messages={[reply("legacy")]} />));
     expect(host.querySelector("details")).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("keeps nested selector clicks in stats, cancels the selector before details, and closes on outside pointer", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<GenerationStats messages={[reply("a", [metrics]), reply("b", [metrics])]} />));
+    const details = host.querySelector("details")!; details.open = true;
+    const trigger = host.querySelector<HTMLButtonElement>('[aria-label="选择回复统计"]')!;
+    await act(async () => trigger.click());
+    const option = document.querySelector<HTMLElement>('[role="option"]')!;
+    expect(details.contains(option)).toBe(false);
+    await act(async () => option.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(details.open).toBe(true);
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(details.open).toBe(true); expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(trigger.textContent).toContain("第 2 条回复（最近）");
+    await act(async () => trigger.click());
+    await act(async () => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(details.open).toBe(false); expect(document.querySelector('[role="listbox"]')).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 

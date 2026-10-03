@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { SearchSelectField } from "../SearchSelectField";
 import type { DrawingPresetInput, DrawingPromptPreset } from "../../drawing/presets";
 
 type PresetDialog = {
@@ -122,14 +123,12 @@ export function DrawingPresets({ presets, prompt, disabled = false, onApply, onC
   return <section className="drawing-presets" aria-label="提示词预设">
     <div className="drawing-field drawing-preset-controls" inert={dialogOpen}>
       <label className="drawing-label" htmlFor={selectId}>提示词预设</label>
-      <select id={selectId} value={selected?.id ?? ""} disabled={disabled} onChange={event => {
-        const id = event.target.value;
-        setSelectedId(id);
-        if (presets.some(preset => preset.id === id)) onApply(id);
-      }}>
-        <option value="">选择预设，直接载入提示词</option>
-        {presets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-      </select>
+      <SearchSelectField id={selectId} label="提示词预设" value={selected?.id ?? ""} disabled={disabled}
+        options={[{ value: "", label: "选择预设，直接载入提示词" }, ...presets.map(preset => ({ value: preset.id, label: preset.name, description: preset.content.length > 160 ? `${preset.content.slice(0, 160)}…` : preset.content }))]}
+        onChange={id => {
+          setSelectedId(id);
+          if (presets.some(preset => preset.id === id)) onApply(id);
+        }} />
       <div className="drawing-actions">
         {([
           ["update", "更新"], ["save-as", "另存"], ["edit", "编辑"], ["delete", "删除"],

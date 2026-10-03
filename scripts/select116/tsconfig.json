@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "target": "ES2022", "lib": ["ESNext", "DOM", "DOM.Iterable"] },
+  "include": ["./main.tsx", "./vite.config.ts", "../../src/vite-env.d.ts", "../../src/ui/markdownMathTypes.d.ts"],
+  "references": []
+}

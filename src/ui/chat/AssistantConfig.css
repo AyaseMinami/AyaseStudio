@@ -18,40 +18,42 @@
 .assistant-config-basics .assistant-avatar-editor { margin: 0; min-width: 0; }
 .assistant-config-basics .assistant-avatar-editor-profile { align-items: center; }
 .assistant-config-basics .assistant-avatar-editor-note { margin-top: 8px; font-size: var(--font-caption); }
-.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) :is(.session-config-field input, .session-config-field select, .assistant-identity-row input, #assistant-model, #conversation-title, #conversation-model) {
+.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) :is(.session-config-field input, .session-config-field .select-field, .assistant-identity-row input, #assistant-model, #conversation-title, #conversation-model) {
   height: 36px; padding: 0 10px; border-radius: 6px;
   background: color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas)));
   font-variant-numeric: tabular-nums;
 }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) #session-system { min-height: 8rem; padding: 12px; line-height: 1.6; border-radius: 8px; }
-.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-capabilities { margin-top: 0; gap: 8px 16px; }
+.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-capabilities { margin-top: 4px; gap: 12px; }
 :is(.assistant-config-model, .conversation-config-model) .session-config-capabilities {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; padding-top: 4px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start;
 }
 :is(.assistant-config-model, .conversation-config-model) .session-config-capabilities .thinking-control-inline {
-  display: flex; flex-direction: column; min-width: 0; gap: 10px; padding: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 12px; padding: 0; font-size: var(--font-ui);
 }
 :is(.assistant-config-model, .conversation-config-model) .thinking-field { width: 100%; }
-:is(.assistant-config-model, .conversation-config-model) .web-search-inline > .select-field { grid-column: 1 / -1; }
 :is(.assistant-config-model, .conversation-config-model) .session-config-capabilities :is(.web-search-inline, .thinking-select) {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px;
+  display: grid; grid-template-columns: 16px 84px minmax(0, 1fr); align-items: center; gap: 8px;
 }
-:is(.assistant-config-model, .conversation-config-model) .thinking-select:not(:has(> svg)) { grid-template-columns: minmax(0, 1fr); }
-:is(.assistant-config-model, .conversation-config-model) .session-config-capabilities :is(.web-search-inline, .thinking-select) > select {
-  grid-column: 1 / -1; width: 100%; min-width: 0; max-width: none; height: 36px;
-  padding: 0 10px; border: 1px solid rgb(var(--color-border)); border-radius: 6px;
-  background: color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas)));
-  color: rgb(var(--color-text));
+:is(.assistant-config-model, .conversation-config-model) .session-config-capabilities .thinking-select:not(:has(> svg)) { grid-template-columns: 84px minmax(0, 1fr); padding-left: 24px; }
+:is(.assistant-config-model, .conversation-config-model) .session-config-capabilities :is(.web-search-inline, .thinking-select) > .select-field {
+  width: 100%; min-width: 0; max-width: 15rem;
 }
-:is(.assistant-config-model, .conversation-config-model) .session-config-capabilities .thinking-summary-toggle { min-height: 24px; }
-:is(.assistant-config-model, .conversation-config-model) .thinking-budget { min-width: 0; }
+:is(.assistant-config-model, .conversation-config-model) .session-config-capabilities .thinking-summary-toggle { min-height: 24px; padding-left: 116px; }
+:is(.assistant-config-model, .conversation-config-model) .thinking-hint { padding-left: 116px; line-height: 1.6; }
+:is(.assistant-config-model, .conversation-config-model) .thinking-budget {
+  display: grid; grid-template-columns: 84px minmax(0, 100px) auto; gap: 8px; padding-left: 24px; min-width: 0;
+}
+:is(.assistant-config-model, .conversation-config-model) .thinking-budget input { width: 100%; min-width: 0; height: 36px; }
+:is(.assistant-config-model, .conversation-config-model) .thinking-budget > button { justify-self: start; }
+:is(.assistant-config-model, .conversation-config-model) .thinking-budget > span { grid-column: 2 / -1; font-size: var(--font-small); color: rgb(var(--color-muted)); }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-disclosure { font-weight: 500; }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-panel-footer { flex-wrap: wrap; padding: 16px 24px; gap: 8px; background: rgb(var(--color-panel)); }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .settings-button { min-height: 36px; transition: background-color 120ms, color 120ms, transform 140ms cubic-bezier(.16, 1, .3, 1); }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .settings-button:not(:disabled):active { transform: translateY(1px); }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-reset { border-color: transparent; background: transparent; color: rgb(var(--color-muted)); }
 @media (max-width: 620px) {
-  :is(.assistant-config-model, .conversation-config-model) .session-config-capabilities { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  :is(.assistant-config-model, .conversation-config-model) .session-config-capabilities { grid-template-columns: minmax(0, 1fr); }
   .assistant-config-identity { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) :is(.session-config-panel-header, .session-config-panel-scroll, .session-config-panel-footer) { padding-inline: 16px; }
 }

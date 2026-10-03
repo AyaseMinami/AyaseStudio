@@ -4,6 +4,7 @@ import { ChevronRight, X } from "lucide-react";
 import { changeNumericSetting, type ConfigErrors, type NumericField, type NumericSetting, type SessionConfig } from "../../chat/sessionConfig";
 import { parameterCapability } from "../../chat/requestMapping";
 import type { ChatProtocol } from "../../chat/types";
+import { SelectField } from "../SelectField";
 
 const numericFields: Array<{ field: NumericField; label: string; group: "sampling" | "context" }> = [
   { field: "temperature", label: "Temperature", group: "sampling" },
@@ -56,16 +57,16 @@ export function SessionConfigPanel({ presentation = "drawer", disabled = false, 
         <label htmlFor={`config-${field}`}>{label}</label>
 
         <div className="session-config-number-row">
-          <select
+          <SelectField
             id={`config-${field}`}
+            label={label}
+            disabled={disabled}
             value={setting.mode}
-            onChange={(event) => onChange(changeNumericSetting(config, field,
-              event.target.value === "auto" ? { mode: "auto" } : { mode: "custom", value: "" },
+            options={[{ value: "auto", label: "自动" }, { value: "custom", label: "自定义", disabled: unsupported }]}
+            onChange={value => onChange(changeNumericSetting(config, field,
+              value === "auto" ? { mode: "auto" } : { mode: "custom", value: "" },
             ))}
-          >
-            <option value="auto">自动</option>
-            <option value="custom" disabled={unsupported}>自定义</option>
-          </select>
+          />
           {setting.mode === "custom" && (
             <input
               aria-label={`${label} 自定义值`}

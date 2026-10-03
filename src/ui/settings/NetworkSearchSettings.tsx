@@ -9,6 +9,7 @@ import { openExternal } from "../../chat/externalLinks";
 import type { SearchRecord } from "../../chat/nativeSearch";
 import { SearchResults } from "../chat/SearchResults";
 import { SettingsHelp } from "./SettingsHelp";
+import { SelectField } from "../SelectField";
 import "./NetworkSearchSettings.css";
 
 const TEST_QUERY = "What is the Exa search API?";
@@ -142,19 +143,18 @@ function SearchProfileCard({ provider, initial, onSave }: {
       </div>
       {"searchDepth" in draft && <div className="network-search-option">
         <label className="field-label" htmlFor={id + "-search-depth"}>搜索深度</label>
-        <select id={id + "-search-depth"} className="field" value={draft.searchDepth} onChange={(event) => {
-          if (event.target.value === "basic" || event.target.value === "advanced") setDraft({ ...draft, searchDepth: event.target.value });
+        <SelectField id={id + "-search-depth"} label="搜索深度" value={draft.searchDepth} onChange={(value) => {
+          if (value === "basic" || value === "advanced") setDraft({ ...draft, searchDepth: value });
           setFeedback("");
-        }}><option value="basic">Basic（1 credit/次）</option><option value="advanced">Advanced（2 credits/次）</option></select>
+        }} options={[{ value: "basic", label: "Basic（1 credit/次）" }, { value: "advanced", label: "Advanced（2 credits/次）" }]} />
       </div>}
       {"searchEngine" in draft && <div className="network-search-option">
         <label className="field-label" htmlFor={id + "-search-engine"}>搜索引擎</label>
-        <select id={id + "-search-engine"} className="field" value={draft.searchEngine} onChange={(event) => {
-          const searchEngine = event.target.value;
+        <SelectField id={id + "-search-engine"} label="搜索引擎" value={draft.searchEngine} onChange={(searchEngine) => {
           if (searchEngine === "search_std" || searchEngine === "search_pro" || searchEngine === "search_pro_sogou" || searchEngine === "search_pro_quark") setDraft({ ...draft, searchEngine });
           setFeedback("");
-        }}><option value="search_std">search_std（¥0.01/次）</option><option value="search_pro">search_pro（¥0.03/次）</option>
-          <option value="search_pro_sogou">search_pro_sogou（¥0.05/次）</option><option value="search_pro_quark">search_pro_quark（¥0.05/次）</option></select>
+        }} options={[{ value: "search_std", label: "search_std（¥0.01/次）" }, { value: "search_pro", label: "search_pro（¥0.03/次）" },
+          { value: "search_pro_sogou", label: "search_pro_sogou（¥0.05/次）" }, { value: "search_pro_quark", label: "search_pro_quark（¥0.05/次）" }]} />
       </div>}
       </div>
       <div className="network-search-actions">

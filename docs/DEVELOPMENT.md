@@ -1,5 +1,19 @@
 # Ayase Studio Development Guide
 
+## Shared selector browser fixture (#116)
+
+Use [scripts/select116/README.md](../scripts/select116/README.md) for isolated selector acceptance with actual production components and synthetic long-label data. From the repository root:
+
+```powershell
+npx.cmd tsc -p scripts/select116/tsconfig.json
+npx.cmd vite build --config scripts/select116/vite.config.ts
+npx.cmd vite --config scripts/select116/vite.config.ts
+```
+
+Open `http://127.0.0.1:1557/scripts/select116/index.html`. Port 1557 is strict and HMR/watching are disabled; restart the server after source edits. Toolbar buttons switch between connection settings, network search, background display, all four drawing protocols, generation statistics, assistant/conversation configuration and selectors inside a native HTML dialog. The statistics page also hosts the actual thinking toolbar in a glass composer to check fixed-popup placement.
+
+The fixture uses in-memory drafts/search configuration, synthetic search results and a separate `Select116Synthetic` avatar database. It does not import the application entrypoint or read real preferences/credentials; runtime fetch and external-link opening are blocked, and its callbacks do not invoke native capabilities or send provider requests. Check light/dark themes, responsive sizes, long labels, search/grouping, keyboard/IME behavior, disabled choices, nested menus and dialog focus. Per-control acceptance and screenshots are tracked in [#116 implementation and coverage](ISSUE-116-IMPLEMENTATION.md); fixture compilation alone is not browser visual or native Tauri interaction acceptance.
+
 ## General settings / residency verification (#114)
 
 Implementation, executed evidence and subsequent user acceptance are recorded in [#114](ISSUE-114-IMPLEMENTATION.md); Git delivery, automated checks and detailed desktop interaction evidence remain separate.

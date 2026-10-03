@@ -34,7 +34,7 @@ function useSearchChoices() {
     ...(available.zhipu ? [{ mode: "zhipu" as const, label: "智谱" }] : [])] };
 }
 
-export function WebSearchControl({ config, disabled, onChange, customSelect = false }: {
+export function WebSearchControl({ config, disabled, onChange }: {
   config: SessionConfig; disabled: boolean; customSelect?: boolean; onChange(config: SessionConfig): void;
 }) {
   const { choices, error } = useSearchChoices();
@@ -42,16 +42,11 @@ export function WebSearchControl({ config, disabled, onChange, customSelect = fa
   const unavailable = !choices.some(choice => choice.mode === mode);
   return <label className="session-config-web-search web-search-inline">
     <Globe size={16} aria-hidden="true" /><span>联网搜索</span>
-    {customSelect ? <SelectField label="联网搜索" disabled={disabled} value={mode}
+    <SelectField label="联网搜索" disabled={disabled} value={mode}
       title={error ? "网络搜索设置无法读取，请到设置中检查。" : undefined}
       options={[...choices.map(choice => ({ value: choice.mode, label: choice.label })),
         ...(unavailable ? [{ value: mode, label: `${labelFor(mode)}（已关闭或不可用）`, disabled: true }] : [])]}
       onChange={value => { if (choices.some(choice => choice.mode === value)) onChange(withSearchMode(config, value as SearchMode)); }} />
-    : <select aria-label="联网搜索" disabled={disabled} value={mode} title={error ? "网络搜索设置无法读取，请到设置中检查。" : undefined}
-      onChange={(event) => onChange(withSearchMode(config, event.target.value as SearchMode))}>
-      {choices.map(({ mode, label }) => <option key={mode} value={mode}>{label}</option>)}
-      {unavailable && <option value={mode} disabled hidden>{labelFor(mode)}（已关闭或不可用）</option>}
-    </select>}
   </label>;
 }
 

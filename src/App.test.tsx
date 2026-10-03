@@ -99,6 +99,28 @@ describe("App navigation", () => {
     return button as HTMLButtonElement;
   }
 
+  async function chooseModel(selector: string, label: string): Promise<void> {
+    const trigger = container.querySelector<HTMLButtonElement>(selector)!;
+    expect(trigger).toBeInstanceOf(HTMLButtonElement);
+    await act(async () => trigger.click());
+    const option = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")].find(item => {
+      const parts = item.querySelector("strong")?.textContent?.split(" / ");
+      return parts?.[parts.length - 1] === label;
+    });
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+    await waitFor(() => !document.querySelector(".model-picker"));
+  }
+
+  async function chooseShortOption(selector: string, label: string): Promise<void> {
+    const trigger = container.querySelector<HTMLButtonElement>(selector)!;
+    expect(trigger.getAttribute("role")).toBe("combobox");
+    await act(async () => trigger.click());
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === label);
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+  }
+
   async function setDraft(value: string): Promise<void> {
     const draft = container.querySelector<HTMLTextAreaElement>("textarea");
     expect(draft).toBeInstanceOf(HTMLTextAreaElement);
@@ -164,7 +186,7 @@ describe("App navigation", () => {
     await setDraft("聊天草稿");
     const before = loadConnectionSettings();
     await clickButton("绘图");
-    await waitFor(() => container.querySelector<HTMLSelectElement>("#drawing-model")?.disabled === false);
+    await waitFor(() => container.querySelector<HTMLButtonElement>("#drawing-model")?.disabled === false);
     const prompt = container.querySelector<HTMLTextAreaElement>("#drawing-prompt");
     expect(prompt).toBeInstanceOf(HTMLTextAreaElement);
     await act(async () => {
@@ -215,13 +237,9 @@ describe("App navigation", () => {
     await setDraft("保留的聊天草稿");
     expect(getButton("切换模型").textContent).toContain("聊天测试模型");
     await clickButton("绘图");
-    await waitFor(() => container.querySelector<HTMLSelectElement>("#drawing-model")?.disabled === false);
+    await waitFor(() => container.querySelector<HTMLButtonElement>("#drawing-model")?.disabled === false);
     expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(true);
-    await act(async () => {
-      const select = container.querySelector<HTMLSelectElement>("#drawing-model")!;
-      select.value = "image-model";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#drawing-model", "绘图测试模型");
     await setPanelText("#drawing-prompt", "合成湖泊图像");
     expect(container.querySelector<HTMLButtonElement>("#drawing-generate")?.disabled).toBe(false);
     await act(async () => container.querySelector<HTMLButtonElement>("#drawing-generate")!.click());
@@ -236,7 +254,7 @@ describe("App navigation", () => {
     expect(loadConnectionSettings()).toEqual(settings);
     await clickButton("绘图");
     expect(container.querySelector<HTMLTextAreaElement>("#drawing-prompt")?.value).toBe("合成湖泊图像");
-    expect(container.querySelector<HTMLSelectElement>("#drawing-model")?.value).toBe("image-model");
+    expect(container.querySelector<HTMLButtonElement>("#drawing-model")?.textContent).toContain("绘图测试模型");
     expect(container.querySelector("#drawing-generate")?.textContent).toContain("加入队列");
     expect(generate).toHaveBeenCalledOnce();
     expect(drawingRuntimeMocks.createRuntimeImageTransport).toHaveBeenCalledOnce();
@@ -459,11 +477,7 @@ describe("App navigation", () => {
     await renderApp();
     await setDraft("Keep draft");
     await clickButtonWithText("编辑对话");
-    await act(async () => {
-      const select = container.querySelector<HTMLSelectElement>("#config-temperature");
-      if (select) select.value = "custom";
-      select?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseShortOption("#config-temperature", "自定义");
     await setPanelText('input[aria-label="Temperature 自定义值"]', "bad");
     const save = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "保存对话");
     expect(save?.disabled).toBe(false);
@@ -1286,7 +1300,9 @@ describe("App navigation", () => {
       "当前会话的模型未选择或已失效",
     );
     await clickButtonWithText("编辑对话");
-    expect(container.querySelector<HTMLSelectElement>("#conversation-model")?.value).toBe("model-openai");
+    expect(container.querySelector<HTMLButtonElement>("#conversation-model")?.textContent).toContain("失效");
+    const persisted = await createChatRepository().initializeWorkspace(null, ["model-gemini"]);
+    expect(persisted.conversations.find(conversation => conversation.id === "current")?.settings?.modelId).toBe("model-openai");
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain("原模型已失效，请重新选择");
   });
 
@@ -1353,14 +1369,7 @@ describe("App navigation", () => {
       "https://gemini.example.com/v1beta/models/model%2Fwith%20space:streamGenerateContent?alt=sse",
     );
 
-    const protocol = container.querySelector<HTMLSelectElement>(
-      "#connection-protocol",
-    );
-    expect(protocol).toBeInstanceOf(HTMLSelectElement);
-    await act(async () => {
-      if (protocol) protocol.value = "anthropic-native";
-      protocol?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseShortOption("#connection-protocol", "Anthropic Native");
     await answerConfirmation(true);
     expect(container.querySelector(".endpoint-preview")?.textContent).toContain(
       "https://gemini.example.com/v1/messages",
@@ -1388,11 +1397,7 @@ describe("App navigation", () => {
     // Assistant defaults no longer retarget an existing conversation.
     // Select the invalid-URL connection in the conversation before testing send.
     await clickButtonWithText("编辑对话");
-    await act(async () => {
-      const model = container.querySelector<HTMLSelectElement>("#conversation-model")!;
-      model.value = "model-gemini";
-      model.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseModel("#conversation-model", "model/with space");
     await clickButtonWithText("保存对话");
     await waitFor(() => !container.querySelector('[role="dialog"]'));
     await setDraft("must not send");

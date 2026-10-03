@@ -49,6 +49,56 @@ function button(text: string) {
   if (!result) throw new Error(`Missing button: ${text}`);
   return result;
 }
+function field(label: string) { return host.querySelector<HTMLButtonElement>(`.select-field[aria-label="${label}"]`)!; }
+function fieldText(label: string) { return field(label).querySelector("span")?.textContent; }
+async function choose(label: string, text: string) {
+  await act(async () => field(label).click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"], .model-picker-option')]
+    .find(item => (item.querySelector("strong")?.textContent ?? item.querySelector("span")?.textContent) === text);
+  if (!option) throw new Error(`Missing ${label} option: ${text}`);
+  await act(async () => option.click());
+}
+async function inspectChoices(label: string) {
+  await act(async () => field(label).click());
+  const choices = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  const result = choices.map(option => ({ label: option.querySelector("span")?.textContent, disabled: option.getAttribute("aria-disabled") === "true" }));
+  await act(async () => field(label).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  return result;
+}
+
+it("searches full model labels by explicit protocol without changing drafts or dispatching until selection", async () => {
+  const options = props();
+  const fullLabel = "Synthetic provider / connection / extremely long OpenAI model label kept in full";
+  const draft = { ...initialDrawingDraft, prompt: "kept", modelId: "removed", reusedProtocol: "openai-images" as const,
+    openai: { size: "1536x1024", quality: "high" } };
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft} models={[
+    ...options.models, { id: "available", label: fullLabel, protocol: "openai-images" },
+  ]} />));
+  const trigger = field("绘图模型");
+  await act(async () => { trigger.focus(); trigger.click(); });
+  const search = document.querySelector<HTMLInputElement>('[aria-label="搜索绘图模型"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "OpenAI Images");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  expect(document.querySelector(".model-picker h3")?.textContent).toBe("OpenAI Images");
+  expect(document.querySelector('.model-picker section[aria-label="OpenAI Images"] .model-picker-option strong')?.textContent).toBe(fullLabel);
+  expect(document.querySelectorAll(".model-picker-option")).toHaveLength(2);
+  expect(options.onDraftChange).not.toHaveBeenCalled();
+  expect(options.onGenerate).not.toHaveBeenCalled();
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="关闭绘图模型"]')!.click());
+  expect(document.activeElement).toBe(trigger);
+  expect(fieldText("画质")).toBe("high");
+  await choose("绘图模型", fullLabel);
+  expect(options.onDraftChange).toHaveBeenCalledExactlyOnceWith({ ...initialDrawingDraft, prompt: "kept", modelId: "available", openai: draft.openai });
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={{ ...draft, modelId: "available" }} models={[
+    { id: "available", label: fullLabel, protocol: "openai-images" },
+  ]} />));
+  await choose("绘图模型", "选择绘图模型");
+  expect(options.onDraftChange).toHaveBeenLastCalledWith({ ...initialDrawingDraft, prompt: "kept", modelId: null, openai: draft.openai });
+  expect(options.onGenerate).not.toHaveBeenCalled();
+});
 
 it("keeps task UUID labels stable across reordering, removal, internal tabs and workspace remount", async () => {
   const options = props();
@@ -383,14 +433,10 @@ it("edits optional Gemini controls, rejects invalid temperature and preserves op
   await act(async () => root.render(<Harness />));
   expect(host.querySelector('[aria-label="Gemini temperature"]')).toBeNull();
   await act(async () => button("Gemini 高级参数").click());
-  const change = async (label: string, value: string) => {
-    const select = host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
-    await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
-  };
   const input = host.querySelector<HTMLInputElement>('[aria-label="Gemini temperature"]')!;
   const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   await act(async () => { setInput.call(input, "0"); input.dispatchEvent(new Event("input", { bubbles: true })); });
-  await change("Gemini 安全阈值", "BLOCK_NONE"); await change("Gemini 输出模式", "image");
+  await choose("Gemini 安全阈值", "BLOCK_NONE"); await choose("Gemini 输出模式", "仅图片");
   expect(drafts[drafts.length - 1].gemini).toEqual({ temperature: 0, safetyThreshold: "BLOCK_NONE", outputMode: "image" });
   const calls = drafts.length;
   await act(async () => { setInput.call(input, "3"); input.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -398,8 +444,7 @@ it("edits optional Gemini controls, rejects invalid temperature and preserves op
   expect(input.getAttribute("aria-invalid")).toBe("true");
   await act(async () => button("恢复模型温度").click());
   expect(drafts[drafts.length - 1].gemini).not.toHaveProperty("temperature");
-  await act(async () => { const select = host.querySelector<HTMLSelectElement>('#drawing-model')!;
-    select.value = "openai"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  await choose("绘图模型", "OpenAI");
   expect(host.querySelector('[aria-label="Gemini 安全阈值"]')).toBeNull();
   expect(drafts[drafts.length - 1].gemini).toEqual({ safetyThreshold: "BLOCK_NONE", outputMode: "image" });
   expect(options.onGenerate).not.toHaveBeenCalled();
@@ -414,8 +459,7 @@ it("shows presets only with complete handlers, allows editing during generation 
   await act(async () => root.render(<DrawingWorkspace {...options} {...handlers} presets={presets} busy tasks={[task]} />));
   expect(button("另存预设").disabled).toBe(false);
   expect(host.querySelector('.drawing-presets')!.previousElementSibling!.querySelector('textarea')).not.toBeNull();
-  const select = host.querySelector<HTMLSelectElement>('.drawing-presets select')!;
-  await act(async () => { select.value = "preset"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  await choose("提示词预设", "合成预设");
   expect(handlers.onApplyPreset).toHaveBeenCalledExactlyOnceWith("preset");
   expect(options.onGenerate).not.toHaveBeenCalled(); expect(options.onRegenerate).not.toHaveBeenCalled();
   for (const state of [{ ready: false }, { closing: true }, { presetsBusy: true }]) {
@@ -463,21 +507,20 @@ it("switches protocol fields, preserves both drafts and offers current sizes/qua
       models={[...options.models, { id: "openai", label: "OpenAI 合成", protocol: "openai-images" }]} />;
   }
   await act(async () => root.render(<Harness />));
-  const change = async (select: HTMLSelectElement, value: string) => { await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); }); };
-  await change(host.querySelectorAll("select")[1], "1:8");
-  await change(host.querySelectorAll("select")[2], "512");
-  await change(host.querySelectorAll("select")[0], "openai");
+  await choose("宽高比", "1:8");
+  await choose("分辨率", "512（0.5K）");
+  await choose("绘图模型", "OpenAI 合成");
   expect(host.textContent).not.toContain("宽高比"); expect(host.textContent).toContain("画质");
-  expect([...host.querySelectorAll("select")[2].options].map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-  await change(host.querySelectorAll("select")[1], "custom");
+  expect((await inspectChoices("画质")).map(option => option.label)).toEqual(["自动", "low", "medium", "high", "xhigh", "max"]);
+  await choose("尺寸", "自定义尺寸");
   expect(host.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe("1536x864");
-  await change(host.querySelectorAll("select")[2], "max");
+  await choose("画质", "max");
   await act(async () => button("任务日志").click()); await act(async () => button("任务列表").click());
   expect(host.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe("1536x864");
-  await change(host.querySelectorAll("select")[0], "configured-image-model");
-  expect([...host.querySelectorAll("select")].map(select => select.value)).toEqual(["configured-image-model", "1:8", "512"]);
-  await change(host.querySelectorAll("select")[0], "openai");
-  expect([...host.querySelectorAll("select")].map(select => select.value)).toEqual(["openai", "custom", "max"]);
+  await choose("绘图模型", "合成绘图模型");
+  expect([fieldText("绘图模型"), fieldText("宽高比"), fieldText("分辨率")]).toEqual(["合成绘图模型", "1:8", "512（0.5K）"]);
+  await choose("绘图模型", "OpenAI 合成");
+  expect([fieldText("绘图模型"), fieldText("尺寸"), fieldText("画质")]).toEqual(["OpenAI 合成", "自定义尺寸", "max"]);
 });
 
 it("preserves all protocol drafts and requires explicit Grok and Seedream version contracts", async () => {
@@ -495,63 +538,60 @@ it("preserves all protocol drafts and requires explicit Grok and Seedream versio
     ]} />;
   }
   await act(async () => root.render(<Harness />));
-  const select = (label: string) => host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
-  const change = async (element: HTMLSelectElement | HTMLInputElement, value: string) => {
+  const changeInput = async (element: HTMLInputElement, value: string) => {
     await act(async () => {
-      if (element instanceof HTMLInputElement) {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
-        element.dispatchEvent(new Event("input", { bubbles: true }));
-      } else { element.value = value; element.dispatchEvent(new Event("change", { bubbles: true })); }
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
     });
   };
-  const model = () => host.querySelector<HTMLSelectElement>("#drawing-model")!;
-  expect(select("Grok 版本契约").value).toBe("legacy");
-  expect(select("Grok 画质").querySelector<HTMLOptionElement>('[value="medium"]')?.disabled).toBe(true);
-  await change(select("Grok 版本契约"), "2.0");
-  await change(select("Grok 宽高比"), "16:9");
-  await change(select("Grok 分辨率"), "2k");
-  await change(select("Grok 画质"), "medium");
-  await change(model(), "grok-other");
-  expect(select("Grok 版本契约").value).toBe("2.0");
-  expect(select("Grok 画质").value).toBe("medium");
-  await change(select("Grok 版本契约"), "legacy");
-  expect(select("Grok 画质").value).toBe("medium");
+  expect(fieldText("Grok 版本契约")).toBe("legacy");
+  expect((await inspectChoices("Grok 画质")).find(option => option.label === "medium")?.disabled).toBe(true);
+  expect((await inspectChoices("Grok 宽高比")).filter(option => option.disabled).map(option => option.label)).toEqual(["21:9", "5:2"]);
+  await choose("Grok 版本契约", "2.0");
+  await choose("Grok 宽高比", "16:9");
+  await choose("Grok 分辨率", "2k");
+  await choose("Grok 画质", "medium");
+  await choose("绘图模型", "Unrelated model ID");
+  expect(fieldText("Grok 版本契约")).toBe("2.0");
+  expect(fieldText("Grok 画质")).toBe("medium");
+  await choose("Grok 版本契约", "legacy");
+  expect(fieldText("Grok 画质")).toBe("medium");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("不支持画质参数");
   expect(button("生成图片").disabled).toBe(true);
-  await change(select("Grok 版本契约"), "2.0");
+  await choose("Grok 版本契约", "2.0");
   expect(button("生成图片").disabled).toBe(false);
-  await change(select("Grok 画质"), "auto");
-  await change(select("Grok 宽高比"), "21:9");
-  await change(select("Grok 版本契约"), "legacy");
-  expect(select("Grok 宽高比").value).toBe("21:9");
+  await choose("Grok 画质", "自动");
+  await choose("Grok 宽高比", "21:9");
+  await choose("Grok 版本契约", "legacy");
+  expect(fieldText("Grok 宽高比")).toBe("21:9");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("宽高比仅支持 2.0");
   expect(button("生成图片").disabled).toBe(true);
-  await change(select("Grok 版本契约"), "2.0");
-  await change(select("Grok 宽高比"), "16:9");
-  await change(select("Grok 画质"), "medium");
-  await change(model(), "seedream");
-  expect(select("Seedream 版本契约").value).toBe("4.5");
-  expect([...select("Seedream 尺寸").options].map(option => option.value)).toEqual(["auto", "2K", "4K", "custom"]);
-  expect(select("Seedream 输出格式").querySelector<HTMLOptionElement>('[value="png"]')?.disabled).toBe(true);
-  await change(select("Seedream 版本契约"), "5.0-pro");
-  expect([...select("Seedream 尺寸").options].map(option => option.value)).toEqual(["auto", "1K", "1.5K", "2K", "custom"]);
-  await change(select("Seedream 尺寸"), "custom");
-  await change(host.querySelector<HTMLInputElement>('[aria-label="Seedream 自定义尺寸"]')!, "2048x2048");
-  await change(select("Seedream 输出格式"), "jpeg");
-  await change(select("Seedream 水印"), "off");
-  await change(select("Seedream 版本契约"), "4.0");
-  expect(select("Seedream 输出格式").value).toBe("jpeg");
+  await choose("Grok 版本契约", "2.0");
+  await choose("Grok 宽高比", "16:9");
+  await choose("Grok 画质", "medium");
+  await choose("绘图模型", "Model ID contains 5.0-pro");
+  expect(fieldText("Seedream 版本契约")).toBe("4.5");
+  expect((await inspectChoices("Seedream 尺寸")).map(option => option.label)).toEqual(["自动", "2K", "4K", "自定义尺寸"]);
+  expect((await inspectChoices("Seedream 输出格式")).find(option => option.label === "PNG")?.disabled).toBe(true);
+  await choose("Seedream 版本契约", "5.0-pro");
+  expect((await inspectChoices("Seedream 尺寸")).map(option => option.label)).toEqual(["自动", "1K", "1.5K", "2K", "自定义尺寸"]);
+  await choose("Seedream 尺寸", "自定义尺寸");
+  await changeInput(host.querySelector<HTMLInputElement>('[aria-label="Seedream 自定义尺寸"]')!, "2048x2048");
+  await choose("Seedream 输出格式", "JPEG");
+  await choose("Seedream 水印", "关闭");
+  await choose("Seedream 版本契约", "4.0");
+  expect(fieldText("Seedream 输出格式")).toBe("JPEG");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("输出格式仅支持 5.0");
   expect(button("生成图片").disabled).toBe(true);
-  await change(select("Seedream 版本契约"), "5.0-pro");
-  for (const id of ["openai", "configured-image-model", "grok"]) await change(model(), id);
-  expect(select("Grok 宽高比").value).toBe("16:9");
-  expect(select("Grok 分辨率").value).toBe("2k");
-  expect(select("Grok 画质").value).toBe("medium");
-  await change(model(), "seedream");
+  await choose("Seedream 版本契约", "5.0-pro");
+  for (const label of ["OpenAI", "合成绘图模型", "Model ID contains 2.0"]) await choose("绘图模型", label);
+  expect(fieldText("Grok 宽高比")).toBe("16:9");
+  expect(fieldText("Grok 分辨率")).toBe("2k");
+  expect(fieldText("Grok 画质")).toBe("medium");
+  await choose("绘图模型", "Model ID contains 5.0-pro");
   expect(host.querySelector<HTMLInputElement>('[aria-label="Seedream 自定义尺寸"]')?.value).toBe("2048x2048");
-  expect(select("Seedream 输出格式").value).toBe("jpeg");
-  expect(select("Seedream 水印").value).toBe("off");
+  expect(fieldText("Seedream 输出格式")).toBe("JPEG");
+  expect(fieldText("Seedream 水印")).toBe("关闭");
   expect(currentDraft.modelId).toBe("seedream");
   expect(currentDraft.grok).toEqual({ modelVersion: "2.0", aspectRatio: "16:9", resolution: "2k", quality: "medium" });
   expect(options.onGenerate).not.toHaveBeenCalled();
@@ -607,10 +647,9 @@ it("updates the independent controlled draft and retains values when switching t
     setValue.call(textarea, "清晨的山谷湖泊");
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const [model, ratio, resolution] = host.querySelectorAll("select");
-  for (const [select, value] of [[model, "configured-image-model"], [ratio, "16:9"], [resolution, "2K"]] as const) {
-    await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
-  }
+  await choose("绘图模型", "合成绘图模型");
+  await choose("宽高比", "16:9");
+  await choose("分辨率", "2K");
   expect(options.onDraftChange).toHaveBeenLastCalledWith({
     id: "current", prompt: "清晨的山谷湖泊", aspectRatio: "16:9", resolution: "2K", modelId: "configured-image-model",
   });
@@ -621,7 +660,7 @@ it("updates the independent controlled draft and retains values when switching t
   expect(host.textContent).toContain("暂无任务日志");
   await act(async () => button("任务列表").click());
   expect(host.querySelector("textarea")?.value).toBe("清晨的山谷湖泊");
-  expect([...host.querySelectorAll("select")].map((item) => item.value)).toEqual(["configured-image-model", "16:9", "2K"]);
+  expect([fieldText("绘图模型"), fieldText("宽高比"), fieldText("分辨率")]).toEqual(["合成绘图模型", "16:9", "2K"]);
 });
 
 it("enables enqueueing while busy and guards submitting, references and invalid drafts", async () => {

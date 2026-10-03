@@ -1,5 +1,13 @@
 # Ayase Studio Architecture
 
+## Shared selectors (#116, 2026-10-03)
+
+`SelectField` owns short single-choice lists, keyboard navigation, disabled options and viewport-clamped positioning. Focus stays on its trigger. Its fixed listbox portals to `document.body` so filtered surfaces such as the glass composer do not change its coordinate system; inside a native HTML `dialog`, it portals into that dialog to remain in the top layer. `containsSelectFieldTarget` associates a portaled listbox with its trigger through `aria-controls`, preserving the owning menu's outside-click and scroll boundaries.
+
+`SearchChoiceDialog` supplies shared long-list search across labels, descriptions and groups, complete option labels and explicit selection. Search and focus do not change the selected value. It confines keyboard focus, makes surrounding content inert while open, restores the opener's focus on close and ignores navigation/closing keys during IME composition. `SearchSelectField` wraps it for connection-copy, drawing-model and preset fields.
+
+`ModelPicker` maps chat models into the same searchable dialog while retaining the caller's existing current-conversation save callback. `ModelSelectField` uses that picker for assistant and conversation drafts; the owning form still decides when to save or cancel. Selector replacement does not change provider requests, persisted configuration or draft/confirmation semantics. Per-control visual acceptance is recorded in [#116 implementation and coverage](ISSUE-116-IMPLEMENTATION.md).
+
 ## General settings and residency (#114, 2026-10-03)
 
 Settings navigation starts with General (personal profile and window/exit), replacing the separate avatars page. The daily user-avatar preview is 64px; existing library and crop operations retain their modal workflows. App-level behavior and personal preferences belong here; provider, display and data-management settings keep their established boundaries.

@@ -240,10 +240,11 @@ it("preserves unavailable reused OpenAI controls until an explicit model selecti
   expect(host.textContent).toContain("画质");
   expect(host.querySelector(".drawing-form")?.textContent).not.toContain("宽高比");
   expect(host.querySelector(".drawing-form")?.textContent).not.toContain("分辨率");
-  expect([...host.querySelectorAll("select")].map(select => select.value)).toEqual(["", "1536x1024", "high"]);
+  expect([...host.querySelectorAll(".select-field > span")].map(span => span.textContent)).toEqual(["选择绘图模型（已复用 OpenAI Images 参数）", "1536 × 1024", "high"]);
   expect(button("生成图片").disabled).toBe(true);
-  const model = host.querySelector<HTMLSelectElement>("#drawing-model")!;
-  await act(async () => { model.value = "gemini"; model.dispatchEvent(new Event("change", { bubbles: true })); });
+  await act(async () => host.querySelector<HTMLButtonElement>("#drawing-model")!.click());
+  const model = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")].find(option => option.querySelector("strong")?.textContent === "Gemini 可用模型")!;
+  await act(async () => model.click());
   expect(options.onDraftChange).toHaveBeenCalledWith({ ...initialDrawingDraft, prompt: "复用画面", modelId: "gemini",
     openai: { size: "1536x1024", quality: "high" } });
 });

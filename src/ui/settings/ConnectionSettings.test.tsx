@@ -59,10 +59,12 @@ describe("ConnectionSettings", () => {
     props.connectionSettings = structuredClone(connectionSettings);
     const connection = props.connectionSettings.providers[0].connections[0];
     await render(props);
-    const select = container.querySelector<HTMLSelectElement>("#connection-protocol")!;
-    expect([...select.options].map(option => option.value)).toEqual(expect.arrayContaining(["grok-images", "seedream-images"]));
+    const select = container.querySelector<HTMLButtonElement>("#connection-protocol")!;
     for (const protocol of ["grok-images", "seedream-images"] as const) {
-      await act(async () => { select.value = protocol; select.dispatchEvent(new Event("change", { bubbles: true })); });
+      await act(async () => select.click());
+      const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+      expect(options.map(option => option.textContent)).toEqual(expect.arrayContaining(["Grok 绘图", "Seedream 绘图"]));
+      await act(async () => options.find(option => option.textContent === (protocol === "grok-images" ? "Grok 绘图" : "Seedream 绘图"))!.click());
       await answerConfirmation(true);
       expect(props.onConnectionChange).toHaveBeenLastCalledWith(connection.id, "protocol", protocol);
       connection.protocol = protocol;
@@ -164,6 +166,54 @@ describe("ConnectionSettings", () => {
     expect(dialog?.open).toBe(true);
     await act(async () => dialog.querySelectorAll<HTMLButtonElement>("button")[accept ? 1 : 0].click());
   }
+
+  it("preserves the protocol after cancelling a keyboard choice and freezes it during generation", async () => {
+    const props = makeProps();
+    await render(props);
+    const trigger = container.querySelector<HTMLButtonElement>("#connection-protocol")!;
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })));
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })));
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    await answerConfirmation(false);
+    expect(props.onConnectionChange).not.toHaveBeenCalled();
+    expect(trigger.textContent).toBe("OpenAI Chat");
+    await render({ ...props, isStreaming: true });
+    expect(trigger.disabled).toBe(true);
+    await act(async () => trigger.click());
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it("submits custom creation choices and resets them after cancelling and reopening", async () => {
+    const props = makeProps();
+    await render(props);
+    await act(async () => button("为 示例供应商 添加连接").click());
+    const chooseProtocol = async () => {
+      await act(async () => container.querySelector<HTMLButtonElement>("#new-connection-protocol")!.click());
+      await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === "Anthropic Native")!.click());
+    };
+    const chooseCopy = async () => {
+      await act(async () => container.querySelector<HTMLButtonElement>("#copy-connection")!.click());
+      await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.model-picker-option')].find(option => option.textContent?.includes("主线路"))!.click());
+    };
+    await chooseProtocol();
+    await chooseCopy();
+    let form = container.querySelector<HTMLFormElement>(".connection-create-card")!;
+    expect(new FormData(form).get("protocol")).toBe("anthropic-native");
+    expect(new FormData(form).get("copyFromConnectionId")).toBe("connection-a");
+    await act(async () => [...form.querySelectorAll("button")].find(item => item.textContent === "取消")!.click());
+    expect(props.onAddConnection).not.toHaveBeenCalled();
+    await act(async () => button("为 示例供应商 添加连接").click());
+    form = container.querySelector<HTMLFormElement>(".connection-create-card")!;
+    expect(new FormData(form).get("protocol")).toBe("grok-images");
+    expect(new FormData(form).get("copyFromConnectionId")).toBe("");
+    await chooseProtocol();
+    await chooseCopy();
+    await act(async () => {
+      form.querySelector<HTMLInputElement>('[name="connectionName"]')!.value = "复制的新线路";
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(props.onAddConnection).toHaveBeenCalledExactlyOnceWith("provider-a", "复制的新线路", "anthropic-native", "connection-a");
+  });
 
   it.each(["Escape", "cancel"])("preserves a model draft and restores focus when confirmation is dismissed with %s", async (method) => {
     await render(withSecondaryConnection());

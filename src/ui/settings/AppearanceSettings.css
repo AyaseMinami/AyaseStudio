@@ -55,6 +55,7 @@
 .appearance-row-copy small { color: rgb(var(--color-muted)); font-size: var(--font-caption); line-height: 1.125rem; }
 .appearance-row input[type="color"] { width: 2rem; height: 2rem; flex: 0 0 auto; border: 1px solid rgb(var(--color-border-strong)); border-radius: 0.4rem; background: rgb(var(--color-input)); padding: 0.12rem; cursor: pointer; }
 .appearance-row .field { width: min(14rem, 48%); height: 2.25rem; padding: 0 0.75rem; font-size: var(--font-ui); line-height: 1.25rem; margin: 0; }
+.appearance-row .background-fit-select { width: min(14rem, 48%); flex: 0 0 auto; font-size: var(--font-ui); }
 .appearance-range-control { display: flex; width: min(14rem, 48%); min-width: 10rem; align-items: center; gap: 0.6rem; }
 .appearance-range-control output { min-width: 2.7rem; color: rgb(var(--color-text-soft)); font-size: var(--font-small); font-variant-numeric: tabular-nums; text-align: right; }
 .appearance-range-row:first-child .appearance-range-control output { min-width: 4.3rem; }
@@ -99,6 +100,7 @@
 .appearance-preview-tools { display: flex; justify-content: space-between; align-items: center; min-height: 32px; color: rgb(var(--color-text-soft)); font-size: 14px; }
 @media (max-width: 620px) { .appearance-theme-options { width: 100%; } .appearance-row { align-items: flex-start; flex-direction: column; gap: 0.6rem; } .appearance-row input[type="color"], .appearance-row .field, .appearance-range-control { width: 100%; } .appearance-row input[type="color"] { width: 2.2rem; } .appearance-range-control output { text-align: left; } .appearance-background-actions .settings-button, .appearance-reset-group .settings-button { width: 100%; } }
 @media (max-width: 420px) { .appearance-theme-option { gap: 0.25rem; padding-inline: 0.35rem; } .appearance-theme-option > span:last-child { font-size: var(--font-caption); } }
+@media (max-width: 620px) { .appearance-row .background-fit-select { width: 100%; } }
 .appearance-color-child { padding-left: 1rem; }
 .appearance-color-control { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 0.5rem; }
 .appearance-settings-page .appearance-group-card .appearance-color-reset { display: inline-flex; width: 2rem; height: 2rem; min-height: 2rem; padding: 0; align-items: center; justify-content: center; }

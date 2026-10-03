@@ -10,7 +10,7 @@ import type { useConversationWorkspace } from "../../chat/useConversationWorkspa
 import { defaultSessionConfig, validateSessionConfig } from "../../chat/sessionConfig";
 import { validateRequestConfig } from "../../chat/requestMapping";
 import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settings";
-import { isChatConnection } from "../../chat/settings";
+import { ModelSelectField } from "./ModelSelectField";
 import { DEFAULT_ASSISTANT_ID, type AssistantInput, type AssistantPreset, type WorkspaceCommand } from "../../chat/workspace";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
@@ -376,17 +376,15 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       </section>
       <section className="session-config-section assistant-config-model">
         <h3>模型与能力</h3>
-        <label htmlFor="assistant-model">默认模型 / 连接</label><select id="assistant-model" value={dialog.input.defaultModelId ?? ""} disabled={busy}
-          onChange={(event) => {
-            const defaultModelId = event.target.value || null;
+        <label htmlFor="assistant-model">默认模型 / 连接</label><ModelSelectField id="assistant-model" label="默认模型 / 连接"
+          settings={settings} selectedModelId={dialog.input.defaultModelId} disabled={busy} hint="仅修改配置草稿，点击创建或保存助手后生效。"
+          onSelect={async value => {
+            const defaultModelId = value || null;
             const next = getActiveTarget({ ...settings, activeModelId: defaultModelId });
             setDialog({ ...dialog, input: { ...dialog.input, defaultModelId,
               defaultConfig: next ? switchThinkingProtocol(dialog.input.defaultConfig, editorTarget?.connection.protocol, next.connection.protocol) : dialog.input.defaultConfig } });
-          }}>
-          <option value="">未选择模型</option>
-          {dialog.input.defaultModelId && !editorTarget && <option value={dialog.input.defaultModelId}>原模型已失效，请重新选择</option>}
-          {settings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => <option value={model.id} key={model.id}>{provider.name} / {connection.name} / {model.displayName || model.modelId}</option>)))}
-        </select>
+            return true;
+          }} />
         <div className="session-config-capabilities">
         <WebSearchControl config={dialog.input.defaultConfig} disabled={busy} customSelect
           onChange={(defaultConfig) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig } })} />

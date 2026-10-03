@@ -1,6 +1,8 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, FolderOpen, RotateCcw } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
+import { SelectField } from "../SelectField";
+import { SearchSelectField } from "../SearchSelectField";
 import type { DrawingDraft, DrawingImageInput, DrawingModelOption, DrawingParameters, DrawingProtocol, DrawingReferenceSelection, DrawingResult, DrawingTask, DrawingTaskStatus } from "../../drawing/types";
 import { DrawingReferences } from "./DrawingReferences";
 import { DrawingPresets } from "./DrawingPresets";
@@ -13,7 +15,7 @@ import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImag
 import { geminiSafetyThresholds } from "../../drawing/geminiOptions";
 import { grokAspectRatios, grokResolutions, grokQualities, initialGrokDrawingOptions } from "../../drawing/grokImages";
 import { initialSeedreamDrawingOptions, seedreamModelVersions, seedreamSizesByVersion } from "../../drawing/seedreamImages";
-import type { GeminiDrawingOptions, GeminiSafetyThreshold } from "../../drawing/types";
+import type { GeminiDrawingOptions } from "../../drawing/types";
 import "./DrawingWorkspace.css";
 
 export { initialDrawingDraft } from "../../drawing/types";
@@ -409,15 +411,16 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               <div className="drawing-field">
                 <label className="drawing-label" htmlFor="drawing-model">绘图模型</label>
                 <div className="drawing-model">
-                  <select id="drawing-model" value={draft.modelId ?? ""} disabled={!ready}
-                    onChange={(event) => {
-                      const next = { ...draft, modelId: event.target.value || null };
+                  <SearchSelectField id="drawing-model" label="绘图模型" value={draft.modelId ?? ""} disabled={!ready}
+                    options={[
+                      { value: "", label: reusedProtocol ? `选择绘图模型（已复用 ${protocolNames[reusedProtocol]} 参数）` : "选择绘图模型" },
+                      ...models.map(model => ({ value: model.id, label: model.label, group: protocolNames[model.protocol] })),
+                    ]}
+                    onChange={value => {
+                      const next = { ...draft, modelId: value || null };
                       delete next.reusedProtocol;
                       onDraftChange(next);
-                    }}>
-                    <option value="">{reusedProtocol ? `选择绘图模型（已复用 ${protocolNames[reusedProtocol]} 参数）` : "选择绘图模型"}</option>
-                    {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-                  </select>
+                    }} />
                   <button type="button" className="drawing-button" onClick={onConfigure}>前往设置</button>
                 </div>
                 {reusedProtocol && <p className="drawing-muted" role="status">原模型不可用，请重新选择绘图模型。已保留 {protocolNames[reusedProtocol]} 协议参数。</p>}
@@ -438,81 +441,77 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 <div className="drawing-parameters">
                   <label className="drawing-field">
                     <span className="drawing-label">尺寸</span>
-                    <select value={presetSize ? size : "custom"} onChange={event => setOpenAI({ size: event.target.value === "custom" ? "1536x864" : event.target.value })}>
-                      {openAIImageSizes.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value.replace("x", " × ")}</option>)}
-                      <option value="custom">自定义尺寸</option>
-                    </select>
+                    <SelectField label="尺寸" value={presetSize ? size : "custom"}
+                      options={[...openAIImageSizes.map(value => ({ value, label: value === "auto" ? "自动" : value.replace("x", " × ") })), { value: "custom", label: "自定义尺寸" }]}
+                      onChange={value => setOpenAI({ size: value === "custom" ? "1536x864" : value })} />
                   </label>
                   <label className="drawing-field">
                     <span className="drawing-label">画质</span>
-                    <select value={quality} onChange={event => setOpenAI({ quality: event.target.value })}>
-                      {openAIImageQualities.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                    </select>
+                    <SelectField label="画质" value={quality}
+                      options={openAIImageQualities.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
+                      onChange={value => setOpenAI({ quality: value })} />
                   </label>
                 </div>
               </> : grok ? <>
                 <label className="drawing-field"><span className="drawing-label">Grok 版本契约</span>
-                  <select aria-label="Grok 版本契约" value={grokOptions.modelVersion} onChange={event => setGrok({ modelVersion: event.target.value as "legacy" | "2.0" })}>
-                    <option value="legacy">legacy</option><option value="2.0">2.0</option>
-                  </select>
+                  <SelectField label="Grok 版本契约" value={grokOptions.modelVersion}
+                    options={[{ value: "legacy", label: "legacy" }, { value: "2.0", label: "2.0" }]}
+                    onChange={value => { if (value === "legacy" || value === "2.0") setGrok({ modelVersion: value }); }} />
                 </label>
                 <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">宽高比</span>
-                    <select aria-label="Grok 宽高比" value={grokOptions.aspectRatio} onChange={event => setGrok({ aspectRatio: event.target.value })}>
-                      {grokAspectRatios.map(value => <option key={value} value={value} disabled={grokOptions.modelVersion === "legacy" && ["21:9", "5:2"].includes(value)}>{value === "auto" ? "自动" : value}</option>)}
-                    </select>
+                    <SelectField label="Grok 宽高比" value={grokOptions.aspectRatio}
+                      options={grokAspectRatios.map(value => ({ value, label: value === "auto" ? "自动" : value, disabled: grokOptions.modelVersion === "legacy" && ["21:9", "5:2"].includes(value) }))}
+                      onChange={value => setGrok({ aspectRatio: value })} />
                   </label>
                   <label className="drawing-field"><span className="drawing-label">分辨率</span>
-                    <select aria-label="Grok 分辨率" value={grokOptions.resolution} onChange={event => setGrok({ resolution: event.target.value })}>
-                      {grokResolutions.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                    </select>
+                    <SelectField label="Grok 分辨率" value={grokOptions.resolution}
+                      options={grokResolutions.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
+                      onChange={value => setGrok({ resolution: value })} />
                   </label>
                 </div>
                 <label className="drawing-field"><span className="drawing-label">画质</span>
-                  <select aria-label="Grok 画质" value={grokOptions.quality} onChange={event => setGrok({ quality: event.target.value })}>
-                    {grokQualities.map(value => <option key={value} value={value} disabled={value !== "auto" && grokOptions.modelVersion !== "2.0"}>{value === "auto" ? "自动" : value}</option>)}
-                  </select>
+                  <SelectField label="Grok 画质" value={grokOptions.quality}
+                    options={grokQualities.map(value => ({ value, label: value === "auto" ? "自动" : value, disabled: value !== "auto" && grokOptions.modelVersion !== "2.0" }))}
+                    onChange={value => setGrok({ quality: value })} />
                 </label>
               </> : seedream ? <>
                 <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">Seedream 版本契约</span>
-                    <select aria-label="Seedream 版本契约" value={seedreamOptions.modelVersion} onChange={event => setSeedream({ modelVersion: event.target.value as NonNullable<DrawingDraft["seedream"]>["modelVersion"] })}>
-                      {seedreamModelVersions.map(value => <option key={value} value={value}>{value}</option>)}
-                    </select>
+                    <SelectField label="Seedream 版本契约" value={seedreamOptions.modelVersion}
+                      options={seedreamModelVersions.map(value => ({ value, label: value }))}
+                      onChange={value => { const modelVersion = seedreamModelVersions.find(version => version === value); if (modelVersion) setSeedream({ modelVersion }); }} />
                   </label>
                   <label className="drawing-field"><span className="drawing-label">尺寸</span>
-                    <select aria-label="Seedream 尺寸" value={seedreamPreset ? seedreamOptions.size : "custom"} onChange={event => setSeedream({ size: event.target.value === "custom" ? "" : event.target.value })}>
-                      {seedreamSizes.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                      <option value="custom">自定义尺寸</option>
-                    </select>
+                    <SelectField label="Seedream 尺寸" value={seedreamPreset ? seedreamOptions.size : "custom"}
+                      options={[...seedreamSizes.map(value => ({ value, label: value === "auto" ? "自动" : value })), { value: "custom", label: "自定义尺寸" }]}
+                      onChange={value => setSeedream({ size: value === "custom" ? "" : value })} />
                   </label>
                 </div>
                 <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">输出格式</span>
-                    <select aria-label="Seedream 输出格式" value={seedreamOptions.outputFormat} onChange={event => setSeedream({ outputFormat: event.target.value as NonNullable<DrawingDraft["seedream"]>["outputFormat"] })}>
-                      <option value="auto">自动</option><option value="png" disabled={!seedreamOptions.modelVersion.startsWith("5.0")}>PNG</option><option value="jpeg" disabled={!seedreamOptions.modelVersion.startsWith("5.0")}>JPEG</option>
-                    </select>
+                    <SelectField label="Seedream 输出格式" value={seedreamOptions.outputFormat}
+                      options={[{ value: "auto", label: "自动" }, { value: "png", label: "PNG", disabled: !seedreamOptions.modelVersion.startsWith("5.0") }, { value: "jpeg", label: "JPEG", disabled: !seedreamOptions.modelVersion.startsWith("5.0") }]}
+                      onChange={value => { if (value === "auto" || value === "png" || value === "jpeg") setSeedream({ outputFormat: value }); }} />
                   </label>
                   <label className="drawing-field"><span className="drawing-label">水印</span>
-                    <select aria-label="Seedream 水印" value={seedreamOptions.watermark} onChange={event => setSeedream({ watermark: event.target.value as NonNullable<DrawingDraft["seedream"]>["watermark"] })}>
-                      <option value="auto">自动</option><option value="on">开启</option><option value="off">关闭</option>
-                    </select>
+                    <SelectField label="Seedream 水印" value={seedreamOptions.watermark}
+                      options={[{ value: "auto", label: "自动" }, { value: "on", label: "开启" }, { value: "off", label: "关闭" }]}
+                      onChange={value => { if (value === "auto" || value === "on" || value === "off") setSeedream({ watermark: value }); }} />
                   </label>
                 </div>
               </> : <><div className="drawing-parameters">
                 <label className="drawing-field">
                   <span className="drawing-label">宽高比</span>
-                  <select value={draft.aspectRatio}
-                    onChange={(event) => onDraftChange({ ...draft, aspectRatio: event.target.value })}>
-                    {drawingAspectRatios.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value}</option>)}
-                  </select>
+                  <SelectField label="宽高比" value={draft.aspectRatio}
+                    options={drawingAspectRatios.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
+                    onChange={value => onDraftChange({ ...draft, aspectRatio: value })} />
                 </label>
                 <label className="drawing-field">
                   <span className="drawing-label">分辨率</span>
-                  <select value={draft.resolution}
-                    onChange={(event) => onDraftChange({ ...draft, resolution: event.target.value })}>
-                    {drawingResolutions.map(value => <option key={value} value={value}>{value === "auto" ? "自动" : value === "512" ? "512（0.5K）" : value}</option>)}
-                  </select>
+                  <SelectField label="分辨率" value={draft.resolution}
+                    options={drawingResolutions.map(value => ({ value, label: value === "auto" ? "自动" : value === "512" ? "512（0.5K）" : value }))}
+                    onChange={value => onDraftChange({ ...draft, resolution: value })} />
                 </label>
               </div>
               </>}
@@ -584,20 +583,17 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 <div className="drawing-field drawing-advanced-inline">
                   <label className="drawing-label" htmlFor="drawing-gemini-safety">安全阈值</label>
                   <SettingsHelp label="安全阈值">适用于骚扰、仇恨、色情和危险内容四类；服务端仍可能拒绝内容或参数，支持范围以模型和中转为准。</SettingsHelp>
-                  <select id="drawing-gemini-safety" aria-label="Gemini 安全阈值" value={draft.gemini?.safetyThreshold ?? "auto"} disabled={!ready || closing}
-                    onChange={event => setGemini({ safetyThreshold: event.target.value === "auto" ? undefined : event.target.value as GeminiSafetyThreshold })}>
-                    <option value="auto">服务默认</option>
-                    {geminiSafetyThresholds.map(value => <option key={value} value={value}>{value}</option>)}
-                  </select>
+                  <SelectField id="drawing-gemini-safety" label="Gemini 安全阈值" value={draft.gemini?.safetyThreshold ?? "auto"} disabled={!ready || closing}
+                    options={[{ value: "auto", label: "服务默认" }, ...geminiSafetyThresholds.map(value => ({ value, label: value }))]}
+                    onChange={value => { const safetyThreshold = geminiSafetyThresholds.find(threshold => threshold === value); if (value === "auto" || safetyThreshold) setGemini({ safetyThreshold }); }} />
                 </div>
                 </div>
                 </div>
                 </div>
                 <label className="drawing-field"><span className="drawing-label">输出模式</span>
-                  <select aria-label="Gemini 输出模式" value={draft.gemini?.outputMode ?? "text-image"} disabled={!ready || closing}
-                    onChange={event => setGemini({ outputMode: event.target.value as "text-image" | "image" })}>
-                    <option value="text-image">文字＋图片</option><option value="image">仅图片</option>
-                  </select>
+                  <SelectField label="Gemini 输出模式" value={draft.gemini?.outputMode ?? "text-image"} disabled={!ready || closing}
+                    options={[{ value: "text-image", label: "文字＋图片" }, { value: "image", label: "仅图片" }]}
+                    onChange={value => { if (value === "text-image" || value === "image") setGemini({ outputMode: value }); }} />
                 </label>
               </div>}</>}
               <div className="drawing-submit">

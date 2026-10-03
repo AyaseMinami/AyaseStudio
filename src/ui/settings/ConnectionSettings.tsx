@@ -57,6 +57,8 @@ import type { UserAvatar } from "../../avatar/repository";
 import { ProviderAvatar } from "../avatar/ProviderAvatar";
 import { BrandAvatar } from "../avatar/BrandAvatar";
 import { AvatarModal, AvatarLibraryPanel } from "../avatar/AvatarLibrary";
+import { SelectField } from "../SelectField";
+import { SearchSelectField } from "../SearchSelectField";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -123,6 +125,23 @@ type PendingFocus =
   | { kind: "provider"; id: string }
   | { kind: "connection"; id: string }
   | { kind: "model"; id: string };
+
+function ConnectionCreateOptions({ provider, disabled }: { provider: ProviderGroup; disabled: boolean }) {
+  const [protocol, setProtocol] = useState<string>(protocolOptions[0].value);
+  const [copyFromConnectionId, setCopyFromConnectionId] = useState("");
+  return <>
+    <label className="field-label" htmlFor="new-connection-protocol">协议类型</label>
+    <SelectField id="new-connection-protocol" label="协议类型" disabled={disabled}
+      value={protocol} options={protocolOptions.map(({ value, label }) => ({ value, label }))} onChange={setProtocol} />
+    <input type="hidden" name="protocol" value={protocol} disabled={disabled} />
+    <label className="field-label" htmlFor="copy-connection">复制地址和密钥（可选）</label>
+    <SearchSelectField id="copy-connection" label="复制地址和密钥（可选）" title="选择要复制的连接" disabled={disabled}
+      value={copyFromConnectionId} options={[{ value: "", label: "不复制" }, ...provider.connections.map(connection => ({
+        value: connection.id, label: connection.name, description: getProtocolOption(connection.protocol).label,
+      }))]} onChange={setCopyFromConnectionId} />
+    <input type="hidden" name="copyFromConnectionId" value={copyFromConnectionId} disabled={disabled} />
+  </>;
+}
 
 type SettingsMenuTarget = (
   | { kind: "provider"; id: string }
@@ -1021,37 +1040,7 @@ export function ConnectionSettings({
                     required
                     autoFocus
                   />
-                  <label className="field-label" htmlFor="new-connection-protocol">
-                    协议类型
-                  </label>
-                  <select
-                    id="new-connection-protocol"
-                    name="protocol"
-                    className="field"
-                    disabled={isStreaming}
-                  >
-                    {protocolOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <label className="field-label" htmlFor="copy-connection">
-                    复制地址和密钥（可选）
-                  </label>
-                  <select
-                    id="copy-connection"
-                    name="copyFromConnectionId"
-                    className="field"
-                    disabled={isStreaming}
-                  >
-                    <option value="">不复制</option>
-                    {selectedProvider.connections.map((connection) => (
-                      <option key={connection.id} value={connection.id}>
-                        {connection.name}
-                      </option>
-                    ))}
-                  </select>
+                  <ConnectionCreateOptions key={selectedProvider.id} provider={selectedProvider} disabled={isStreaming} />
                   <div className="inline-actions">
                     <button
                       type="submit"
@@ -1100,10 +1089,9 @@ export function ConnectionSettings({
                           }} />
                       </label>
                       <label className="field-label">协议类型
-                        <select id="connection-protocol" className="field" value={connection.protocol} disabled={isStreaming}
-                          onChange={(event) => handleProtocolChange(event.target.value as ServiceProtocol)}>
-                          {protocolOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
+                        <SelectField id="connection-protocol" label="协议类型" value={connection.protocol} disabled={isStreaming}
+                          options={protocolOptions.map(({ value, label }) => ({ value, label }))}
+                          onChange={(value) => void handleProtocolChange(value as ServiceProtocol)} />
                       </label>
                     </div>
                     <div className="connection-field-group">

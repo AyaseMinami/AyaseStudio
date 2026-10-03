@@ -275,7 +275,7 @@ describe("conversation navigation runtime layout", () => {
     expect(ui.onStop).not.toHaveBeenCalled();
   });
 
-  it("keeps expansion for scrolling, secondary clicks and locally rendered modal controls", async () => {
+  it("keeps expansion for scrolling, secondary clicks and portal modal controls", async () => {
     const ui = await mount({ modelPicker: true });
     await click(ui.button("默认助手"));
     const region = ui.host.querySelector(".active-chat-workspace")!;
@@ -286,12 +286,12 @@ describe("conversation navigation runtime layout", () => {
     expect(ui.layout().expanded).toBe("true");
     // Keyboard activation opens the actual model picker without collapsing navigation.
     await click(ui.button("切换模型"), 0);
-    const overlay = region.querySelector(".model-picker-backdrop")!;
+    const overlay = document.querySelector(".model-picker-backdrop")!;
     expect(overlay).not.toBeNull();
     await click(overlay.querySelector("input")!);
     await click(overlay);
     expect(ui.layout().expanded).toBe("true");
-    await click(ui.button("关闭模型选择"));
+    await click(ui.button("关闭模型选择", overlay));
     expect(ui.layout().expanded).toBe("true");
     await click(region);
     expect(ui.layout().expanded).toBe("false");

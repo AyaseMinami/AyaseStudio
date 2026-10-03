@@ -20,10 +20,11 @@ it("shows chat models only and treats a drawing model reference as invalid", asy
   const onClose = vi.fn();
   try {
     await act(async () => root.render(<ModelPicker settings={settings} selectedModelId="image-model" disabled={false} onSelect={onSelect} onClose={onClose} />));
-    expect(container.textContent).toContain("chat/example");
-    expect(container.textContent).not.toContain("image/example");
-    expect(container.textContent).toContain("当前模型已失效，请重新选择。");
-    await act(async () => container.querySelector<HTMLButtonElement>(".model-picker-option")!.click());
+    const panel = document.querySelector('.model-picker')!;
+    expect(panel.textContent).toContain("chat/example");
+    expect(panel.textContent).not.toContain("image/example");
+    expect(panel.textContent).toContain("当前模型已失效，请重新选择。");
+    await act(async () => panel.querySelector<HTMLButtonElement>(".model-picker-option")!.click());
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("chat-model");
     expect(onClose).toHaveBeenCalledOnce();
   } finally {

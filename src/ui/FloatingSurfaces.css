@@ -67,7 +67,8 @@
 :root .thinking-popover :is(.thinking-options legend, .thinking-hint, .thinking-notice) { padding: 8px 10px; line-height: 1.6; }
 :root .thinking-popover .thinking-summary-toggle { margin-top: 8px; padding: 12px 10px; border-color: rgb(var(--color-border) / 0.65); }
 :root .thinking-popover .thinking-select { display: flex; justify-content: space-between; padding: 4px 10px 8px; }
-:root .thinking-popover .thinking-select select { min-width: 0; flex: 1; }
+:root .thinking-popover .thinking-select > span { flex: none; white-space: nowrap; }
+:root .thinking-popover .thinking-select > .select-field { min-width: 0; width: 0; flex: 1; }
 :root .thinking-popover .thinking-budget { gap: 8px; padding: 8px 10px; }
 :root .thinking-popover .thinking-budget :is(input, button) { min-height: 32px; }
 :root .thinking-popover .thinking-budget button { padding: 4px 8px; border-radius: 6px; background: rgb(var(--color-accent) / 0.1); }

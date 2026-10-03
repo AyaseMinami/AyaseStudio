@@ -130,7 +130,10 @@ async function changeInput(label: string, value: string) {
 it("keeps per-image parameter drafts isolated and only submits the applied candidate", async () => {
   await mount();
   await changeInput("背景遮罩强度", "48"); await changeInput("背景模糊程度", "7");
-  await act(async () => { const select = host.querySelector("select")!; select.value = "contain"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  await click("图片适配方式");
+  const fitOption = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === "适应")!;
+  expect(fitOption).toBeTruthy();
+  await act(async () => fitOption.click());
   expect(host.querySelector<HTMLElement>(".appearance-background-preview")!.style.getPropertyValue("--appearance-background-mask")).toBe("0.48");
   expect(props.onApply).not.toHaveBeenCalled(); expect(props.onSave).not.toHaveBeenCalled();
   expect(entries[0]).toEqual(snow);

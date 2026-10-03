@@ -5,9 +5,18 @@ import "./SelectField.css";
 
 export interface SelectOption { value: string; label: string; disabled?: boolean }
 
+/** Fixed listboxes may live outside a filtered surface; ownership still belongs to its trigger. */
+export function containsSelectFieldTarget(container: Element | null, target: EventTarget | null): boolean {
+  if (!(target instanceof Node) || !container) return false;
+  if (container.contains(target)) return true;
+  const list = (target instanceof Element ? target : target.parentElement)?.closest('.select-field-popup');
+  return Boolean(list?.id && Array.from(container.querySelectorAll('[role="combobox"][aria-controls]'))
+    .some(trigger => trigger.getAttribute("aria-controls") === list.id));
+}
+
 /** Short, single-choice lists. Focus stays on the trigger inside its owning dialog. */
-export function SelectField({ value, options, label, disabled = false, title, onChange }: {
-  value: string; options: SelectOption[]; label: string; disabled?: boolean; title?: string;
+export function SelectField({ value, options, label, disabled = false, title, id: fieldId, className, onChange }: {
+  value: string; options: SelectOption[]; label: string; disabled?: boolean; title?: string; id?: string; className?: string;
   onChange(value: string): void;
 }) {
   const id = useId();
@@ -23,7 +32,7 @@ export function SelectField({ value, options, label, disabled = false, title, on
   const search = useRef({ text: "", time: 0 });
 
   function show() {
-    if (disabled || !enabled.length) return;
+    if (disabled || trigger.current?.matches(":disabled") || !enabled.length) return;
     setActive(enabled.some(option => option.value === value) ? value : enabled[0].value);
     search.current = { text: "", time: 0 };
     setOpen(true);
@@ -35,10 +44,16 @@ export function SelectField({ value, options, label, disabled = false, title, on
     const bounds = trigger.current!.getBoundingClientRect();
     const below = window.innerHeight - bounds.bottom - 14;
     const above = bounds.top - 14;
-    const wanted = Math.min(280, options.length * 38 + 12);
+    // Let short labels determine a comfortable width before clamping to the viewport.
+    if (popup.current) popup.current.style.width = "max-content";
+    // Reserve space for a checkmark and a possible vertical scrollbar too.
+    const naturalWidth = popup.current ? popup.current.offsetWidth + 32 : 0;
+    const width = Math.min(Math.max(bounds.width, 180, naturalWidth), Math.max(0, window.innerWidth - 16));
+    // Measure wrapped labels at their final width before deciding which side fits.
+    if (popup.current) popup.current.style.width = `${width}px`;
+    const wanted = Math.min(280, popup.current?.scrollHeight || options.length * 38 + 12);
     const up = below < wanted && above > below;
     const maxHeight = Math.max(0, Math.min(280, up ? above : below));
-    const width = Math.min(Math.max(bounds.width, 180), Math.max(0, window.innerWidth - 16));
     const height = Math.min(popup.current?.scrollHeight || wanted, maxHeight);
     setPosition({ left: Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8)),
       top: up ? Math.max(8, bounds.top - height - 6) : bounds.bottom + 6, width, maxHeight });
@@ -66,18 +81,20 @@ export function SelectField({ value, options, label, disabled = false, title, on
     };
   }, [shown]);
   function choose(option: SelectOption) {
-    if (disabled || option.disabled) return;
+    if (disabled || trigger.current?.matches(":disabled") || option.disabled) return;
     setOpen(false);
     trigger.current?.focus({ preventScroll: true });
     if (option.value !== value) onChange(option.value);
   }
   return <>
-    <button ref={trigger} type="button" className="select-field" role="combobox" aria-label={label}
+    <button ref={trigger} id={fieldId} type="button" className={`select-field${className ? ` ${className}` : ""}`} role="combobox" aria-label={label}
       aria-haspopup="listbox" aria-expanded={shown} aria-controls={shown ? id : undefined}
       aria-activedescendant={shown && activeIndex >= 0 ? `${id}-${activeIndex}` : undefined}
-      disabled={disabled} title={title} onBlur={() => setOpen(false)}
+      disabled={disabled} title={title ?? selected?.label ?? value} onBlur={() => setOpen(false)}
       onClick={() => shown ? setOpen(false) : show()}
       onKeyDown={event => {
+        if (disabled || trigger.current?.matches(":disabled")) return;
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) { event.stopPropagation(); return; }
         if (event.key === "Escape" && shown) { event.preventDefault(); event.stopPropagation(); setOpen(false); return; }
         if (event.key === "Tab") { setOpen(false); return; }
         if (["ArrowDown", "ArrowUp", "Home", "End", "Enter", " "].includes(event.key)) {
@@ -107,6 +124,6 @@ export function SelectField({ value, options, label, disabled = false, title, on
         aria-selected={option.value === value} aria-disabled={option.disabled || undefined} data-active={option.value === active && !option.disabled}
         className="select-field-option" onPointerMove={() => { if (!option.disabled) setActive(option.value); }}
         onClick={() => choose(option)}><span>{option.label}</span>{option.value === value && <Check size={16} aria-hidden="true" />}</div>)}
-    </div>, trigger.current?.closest('dialog, [role="dialog"]') ?? document.body)}
+    </div>, trigger.current?.closest('dialog') ?? document.body)}
   </>;
 }
