@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { artifactNames, artifactUrl, PLATFORM, REPOSITORY, invariant, parseVersion, validatePublicKey, validateSignature, validateManifest, checksumText, hashRecord, verifyArtifacts } from "./contracts.mjs";
@@ -29,9 +29,16 @@ export async function loadArtifacts(directory, version) {
   const names = await readdir(directory);
   return Object.fromEntries(await Promise.all(names.map(async name => [name, await readFile(path.join(directory, name))])));
 }
-export function verifyNativeSignature(directory, names, publicKey, version, root = ".", run = spawnSync) {
+function runProcess(command, args, options) {
+  return new Promise(resolve => {
+    const child = spawn(command, args, options);
+    child.once("error", error => resolve({ error }));
+    child.once("close", status => resolve({ status }));
+  });
+}
+export async function verifyNativeSignature(directory, names, publicKey, version, root = ".", run = runProcess) {
   parseVersion(version);
-  const result = run("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "release-tools", "--bin", "verify-updater-signature", "--", validatePublicKey(publicKey), path.resolve(directory, names.installer), path.resolve(directory, names.signature), version], { cwd: root, stdio: "inherit" });
+  const result = await run("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "release-tools", "--bin", "verify-updater-signature", "--", validatePublicKey(publicKey), path.resolve(directory, names.installer), path.resolve(directory, names.signature), version], { cwd: root, stdio: "inherit" });
   invariant(!result.error && result.status === 0, "Native updater signature verification failed");
 }
 export function verifyInstallerVersion(directory, names, version, run = spawnSync) {
@@ -61,6 +68,6 @@ export async function prepareArtifacts({ root = ".", directory, publicKey, sourc
   await writeFile(path.join(directory, names.provenance), files[names.provenance]);
   verifyArtifacts(await loadArtifacts(directory, version), { version, publicKey: key, sourceSha });
   verifyInstallerVersion(directory, names, version);
-  verifyNativeSignature(directory, names, key, version, root);
+  await verifyNativeSignature(directory, names, key, version, root);
   return version;
 }
