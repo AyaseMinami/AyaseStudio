@@ -850,8 +850,8 @@ describe("assistant workspace public behavior", () => {
     expect(container.textContent).not.toContain("应用助手设置");
     await click("编辑助手 写作助手"); expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Revised default"); await click("关闭");
     await click("删除助手 写作助手");
-    expect(container.textContent).toContain("包含 1 个对话");
-    await click("迁移对话到默认助手并删除助手");
+    expect(document.querySelector(".batch-delete-dialog")?.textContent).toContain("1 个对话将移至默认助手");
+    await click("删除 1 个助手");
     await wait(() => !container.querySelector('[role="dialog"]'));
     const state = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(selectedConversation(state)).toMatchObject({ id: "b", assistantId: "default" });

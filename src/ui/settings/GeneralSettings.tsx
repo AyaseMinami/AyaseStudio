@@ -46,8 +46,7 @@ export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState;
             <div className="general-profile-label"><strong>用户头像</strong><SettingsHelp label="用户头像">所有对话共用此头像。图片和裁切结果仅保存在本机，不会上传或随消息发送。恢复默认不会删除头像库图片。</SettingsHelp></div>
             <p className="muted-text">{avatar?.url ? "当前使用自定义头像" : "当前使用默认头像"}</p>
             <div className="general-avatar-actions">
-              <button type="button" className="settings-button" disabled={!avatar || avatarBusy} onClick={() => setAvatarDialog("更换头像")}>更换头像</button>
-              <button type="button" className="settings-button" disabled={!avatar || avatarBusy} onClick={() => setAvatarDialog("管理头像库")}>管理头像库</button>
+              <button type="button" className="settings-button" disabled={!avatar || avatarBusy} onClick={() => setAvatarDialog("管理头像")}>管理头像</button>
             </div>
           </div>
         </div>
@@ -71,7 +70,7 @@ export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState;
       </section>
     </div>
     {avatarDialog && avatar && <AvatarModal title={avatarDialog} busy={avatarBusy} onClose={closeAvatarDialog}>
-      <AvatarLibraryPanel avatar={avatar} initialManaging={avatarDialog === "管理头像库"} onBusyChange={setLibraryBusy} />
+      <AvatarLibraryPanel avatar={avatar} onBusyChange={setLibraryBusy} />
     </AvatarModal>}
   </section>;
 }

@@ -64,6 +64,7 @@ export function exportConnections(state: ConnectionSettingsState, credentials: b
   return { ...pick(state, backupFields(dataPolicies.connections)), providers: state.providers.map(p => ({ ...pick(p, backupFields(dataPolicies.provider)),
     ...(p.avatar ? { avatar: pick(p.avatar, backupFields(dataPolicies.providerAvatar)) } : {}),
     connections: p.connections.map(c => ({ ...pick(c, backupFields(dataPolicies.connection, credentials)),
+      ...(c.modelGroups !== undefined ? { modelGroups: c.modelGroups.map(group => pick(group, backupFields(dataPolicies.modelGroup))) } : {}),
       models: c.models.map(m => pick(m, backupFields(dataPolicies.model))) })) })) };
 }
 export async function createBackupDocument(snapshot: LocalSnapshot, options: BackupOptions, files: BackupFiles): Promise<BackupDocument> {

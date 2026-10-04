@@ -53,6 +53,7 @@ export type WorkspaceCommand =
   | { type: "move-conversation"; id: string; direction: -1 | 1 }
   | { type: "reorder-conversation"; id: string; targetId: string; placement: "before" | "after" }
   | { type: "delete-assistant"; id: string; mode: "move" | "delete" }
+  | { type: "delete-assistants"; ids: string[]; mode: "move" | "delete"; expected: string }
   | { type: "create-conversation"; id: string; assistantId: string }
   | { type: "rename-conversation"; id: string; title: string }
   | { type: "start-conversation-title"; id: string; messageId: string }
@@ -64,6 +65,7 @@ export type WorkspaceCommand =
   | { type: "fork-conversation"; id: string; conversationId: string; messageId: string;
       creationConfig: NonNullable<Conversation["creationConfig"]> }
   | { type: "delete-conversation"; id: string }
+  | { type: "delete-conversations"; ids: string[]; assistantId: string; expected: string }
   | { type: "select"; assistantId: string; conversationId?: string | null }
   | { type: "select-model"; assistantId: string; modelId: string | null }
   | { type: "repair-models"; validModelIds: string[] };
@@ -73,6 +75,15 @@ export function selectedConversation(workspace: WorkspaceSnapshot): Conversation
   return workspace.conversations.find((item) =>
     item.id === workspace.selection.lastSelected[assistantId] && item.assistantId === assistantId,
   );
+}
+
+/** Freeze ownership and displayed identities, independent of transcript activity timestamps. Runtime only. */
+export function workspaceDeletionFingerprint(snapshot: WorkspaceSnapshot, kind: "assistants" | "conversations", ids: readonly string[]): string {
+  const selected = new Set(ids);
+  const assistants = kind === "assistants" ? snapshot.assistants.filter(item => selected.has(item.id)) : [];
+  const conversations = snapshot.conversations.filter(item => kind === "assistants" ? selected.has(item.assistantId) : selected.has(item.id));
+  return JSON.stringify({ assistants: [...assistants].sort((a, b) => a.id.localeCompare(b.id)).map(({ id, name }) => ({ id, name })),
+    conversations: [...conversations].sort((a, b) => a.id.localeCompare(b.id)).map(({ id, assistantId, title, createdAt }) => ({ id, assistantId, title, createdAt })) });
 }
 
 export function orderedConversations(conversations: Conversation[]): Conversation[] {

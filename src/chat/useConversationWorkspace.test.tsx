@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createChatRepository } from "./repository";
 import { useConversationWorkspace } from "./useConversationWorkspace";
+import { workspaceDeletionFingerprint } from "./workspace";
 
 describe("workspace failure recovery", () => {
   let root: ReturnType<typeof createRoot>;
@@ -23,6 +24,20 @@ describe("workspace failure recovery", () => {
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     await act(async () => root.render(<Probe />)); await wait(() => current.isReady);
   }
+
+  it("blocks the entire selected set if one conversation starts generating during flush", async () => {
+    const repo = createChatRepository(`BatchGeneration-${crypto.randomUUID()}`);
+    await repo.initializeWorkspace(null, []);
+    await repo.execute({ type: "create-conversation", id: "second", assistantId: "default" });
+    await repo.execute({ type: "select", assistantId: "default", conversationId: "current" });
+    await mount(repo);
+    const expected = workspaceDeletionFingerprint(current.snapshot!, "conversations", ["current", "second"]);
+    vi.spyOn(current.store!, "flush").mockImplementationOnce(async () => { generatingId.current = "second"; });
+    let saved!: boolean;
+    await act(async () => { saved = await current.execute({ type: "delete-conversations", ids: ["current", "second"], assistantId: "default", expected }); });
+    expect(saved).toBe(false); expect(current.operationError).toContain("等待生成");
+    expect(await repo.load("current")).toBeDefined(); expect(await repo.load("second")).toBeDefined();
+  });
 
   it.each([false, true])("distinguishes the first transcript read from later busy guards (readFails=%s)", async readFails => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

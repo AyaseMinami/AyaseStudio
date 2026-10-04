@@ -9,7 +9,7 @@ export const dataModules = {
   workspace: { version: 1, capabilities: [], resources: "model/assistant/conversation IDs remapped by restore plan" },
   avatars: { version: 1, capabilities: [], resources: "encoded Blobs and library ownership" },
   appearance: { version: 3, capabilities: [], resources: "shared titlebar/rail transparency defaults to 40%, sidebar to 50%, message bubbles to 12%; independent glass flags default sidebar off/composer on; managed background originals; derived thumbnails excluded" },
-  connections: { version: 5, capabilities: [], resources: "built-in preset identities and initialization marker; bundled brand IDs; immutable provider avatar snapshots exported only with selected connections; local record remains v3" },
+  connections: { version: 6, capabilities: [], resources: "connection-scoped model groups and explicit model membership; built-in preset identities and initialization marker; bundled brand IDs; immutable provider avatar snapshots exported only with selected connections; local record remains v3" },
   search: { version: 3, capabilities: [], resources: "independent Exa/Tavily/Zhipu credentials; disabled new providers; v1 MCP and v2 Exa migrate without writes; governs new provider selections and records across modules" },
   drawingSettings: { version: 3, capabilities: [], resources: "allowlisted Gemini/Grok/Seedream controls with explicit version contracts; no prompt or image bindings" },
   drawingPresets: { version: 1, capabilities: [], resources: "explicit text only; dedicated drawing.presets projection" },

@@ -23,6 +23,28 @@ vi.mock("./repository", async original => {
   return { ...actual, createChatRepository: () => actual.createChatRepository("Providers100Synthetic") };
 });
 
+it("saves group commands atomically and keeps React state and raw data when persistence fails", async () => {
+  await act(async () => { expect(session.changeModelGroups("c", { kind: "create", id: "g", name: "常用" })).toBe(true); });
+  await act(async () => { expect(session.changeModelGroups("c", { kind: "assign", modelIds: ["m"], groupId: "g" })).toBe(true); });
+  const before = localStorage.getItem(connectionSettingsStorageKey), state = session.connectionSettings;
+  expect(loadConnectionSettings().providers[0].connections[0].models[0].groupId).toBe("g");
+  const write = localStorage.setItem.bind(localStorage);
+  vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key === connectionSettingsStorageKey) throw new Error("synthetic group quota");
+    write(key, value);
+  });
+  await act(async () => { expect(() => session.changeModelGroups("c", { kind: "delete", id: "g" })).toThrow("synthetic group quota"); });
+  expect(session.connectionSettings).toBe(state);
+  expect(localStorage.getItem(connectionSettingsStorageKey)).toBe(before);
+});
+
+it("blocks group commands while another workspace holds shared settings", async () => {
+  externalBusy = true; await render();
+  const before = localStorage.getItem(connectionSettingsStorageKey);
+  await act(async () => { expect(session.changeModelGroups("c", { kind: "create", id: "g", name: "常用" })).toBe(false); });
+  expect(localStorage.getItem(connectionSettingsStorageKey)).toBe(before);
+});
+
 const repository = createChatRepository();
 const initial: ConnectionSettingsState = { version: 3, activeModelId: "m", providers: [
   { id: "p", name: "OpenAI", avatar: { kind: "builtin", id: "gemini" }, connections: [
@@ -86,6 +108,49 @@ it("initializes all eleven builtins after unchanged custom providers without inf
   expect(providers.slice(1).map(provider => provider.presetId)).toEqual([...brandIds]);
   expect(loadConnectionSettings().builtinsInitialized).toBe(true);
   expect(loadConnectionSettings().providers).toEqual(providers);
+});
+
+it("persists a provider batch exactly once, rejects a duplicate and keeps unrelated providers intact", async () => {
+  const targets = session.connectionSettings.providers.slice(0, 2), unrelated = session.connectionSettings.providers[2];
+  const writes = vi.spyOn(localStorage, "setItem");
+  let saved!: boolean, duplicate!: boolean;
+  await act(async () => { saved = session.deleteProviders(targets); duplicate = session.deleteProviders(targets); });
+  expect(saved).toBe(true); expect(duplicate).toBe(false);
+  expect(writes.mock.calls.filter(([key]) => key === connectionSettingsStorageKey)).toHaveLength(1);
+  expect(loadConnectionSettings().providers.some(provider => targets.some(target => target.id === provider.id))).toBe(false);
+  expect(session.connectionSettings.providers.find(provider => provider.id === unrelated.id)).toBe(unrelated);
+  expect((await repository.load("current"))?.messages).toEqual([]);
+});
+
+it("rejects stale and maintenance-blocked batches without any preference writes", async () => {
+  const stale = session.connectionSettings.providers[0];
+  await act(async () => session.updateConnection("c", "name", "changed synthetic connection"));
+  const writes = vi.spyOn(localStorage, "setItem");
+  expect(session.deleteProviders([stale])).toBe(false);
+  externalBusy = true; await render();
+  expect(session.deleteProviders([session.connectionSettings.providers[0]])).toBe(false);
+  expect(session.deleteConnections("p", session.connectionSettings.providers[0].connections)).toBe(false);
+  expect(writes.mock.calls.filter(([key]) => key === connectionSettingsStorageKey)).toHaveLength(0);
+});
+
+it("keeps the entire provider batch and its durable preference when saving fails", async () => {
+  const targets = session.connectionSettings.providers.slice(0, 2), before = localStorage.getItem(connectionSettingsStorageKey);
+  vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => { throw new Error("synthetic quota failure"); });
+  await act(async () => { expect(() => session.deleteProviders(targets)).toThrow("synthetic quota failure"); });
+  expect(session.connectionSettings.providers.slice(0, 2)).toEqual(targets);
+  expect(localStorage.getItem(connectionSettingsStorageKey)).toBe(before);
+});
+
+it("removes a connection batch through one save while preserving its supplier and conversation settings", async () => {
+  await act(async () => session.addConnection("p", "empty synthetic connection", "openai-chat"));
+  const provider = session.connectionSettings.providers[0], config = session.workspace.conversation?.settings;
+  const writes = vi.spyOn(localStorage, "setItem");
+  let saved!: boolean;
+  await act(async () => { saved = session.deleteConnections("p", provider.connections); });
+  expect(saved).toBe(true);
+  expect(writes.mock.calls.filter(([key]) => key === connectionSettingsStorageKey)).toHaveLength(1);
+  expect(loadConnectionSettings().providers[0]).toMatchObject({ id: "p", connections: [] });
+  expect(session.workspace.conversation?.settings).toEqual(config);
 });
 
 it("saves builtin avatar IDs durably while preserving every connection protocol and field", async () => {

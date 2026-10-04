@@ -99,15 +99,17 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
       try {
         const current = snapshotRef.current!;
         const messageAction = action.type === "edit-message" || action.type === "delete-message" || action.type === "fork-conversation" || action.type === "select-round-version";
+        const assistantIds = action.type === "delete-assistant" ? [action.id] : action.type === "delete-assistants" ? action.ids : [];
+        const conversationIds = action.type === "delete-conversation" ? [action.id] : action.type === "delete-conversations" ? action.ids : [];
+        const affected = assistantIds.length
+          ? current.conversations.filter(item => assistantIds.includes(item.assistantId)).map(item => item.id)
+          : conversationIds.length ? conversationIds : messageAction ? [action.conversationId] : [];
         if (
-          (messageAction && isGenerating(action.conversationId)) ||
-          (action.type === "delete-conversation" && isGenerating(action.id)) ||
-          (action.type === "delete-assistant" && current.conversations.some((item) => isGenerating(item.id) && item.assistantId === action.id))
+          affected.some(isGenerating)
         ) throw new Error("请先停止该对话的生成并等待保存完成，再执行此操作。");
-        const affected = action.type === "delete-assistant"
-          ? current.conversations.filter((item) => item.assistantId === action.id).map((item) => item.id)
-          : action.type === "delete-conversation" ? [action.id] : messageAction ? [action.conversationId] : [];
         await Promise.all(affected.map((id) => stores.current.get(id)?.flush()));
+        // Preparation may yield while a task starts; recheck before the transaction.
+        if (affected.some(isGenerating) || maintenanceLocked()) throw new Error("请等待生成或数据维护完成后重试。");
         const updated = await repository.execute(action);
         success = true;
         snapshotRef.current = updated;

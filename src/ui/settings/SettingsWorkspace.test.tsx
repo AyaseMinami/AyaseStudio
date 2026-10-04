@@ -266,7 +266,7 @@ describe("general settings interactions", () => {
     await click("常规"); expect(onSectionChange).toHaveBeenCalledWith("general");
   });
 
-  it("shows only a compact current avatar until either library entry opens a modal, then restores focus", async () => {
+  it("opens avatar selection from a single entry, manages the library inside the modal, then restores focus", async () => {
     await mount();
     expect(host.querySelector('[aria-label="常规"]')?.getAttribute("aria-current")).toBe("page");
     const image = host.querySelector<HTMLImageElement>('img[alt="当前用户头像"]')!;
@@ -274,23 +274,29 @@ describe("general settings interactions", () => {
     expect(host.querySelector("dialog")).toBeNull();
     expect(host.querySelector('[aria-label="头像聊天效果预览"]')).toBeNull();
     expect(avatarLibrary.list).not.toHaveBeenCalled();
-    for (const label of ["更换头像", "管理头像库"]) {
-      const trigger = button(label); trigger.focus(); await click(label);
-      const dialog = host.querySelector<HTMLDialogElement>(`dialog[aria-label="${label}"]`)!;
-      expect(dialog.open).toBe(true);
-      expect(dialog.textContent).toContain("导入图片"); expect(dialog.textContent).toContain("管理");
-      expect(dialog.textContent).toContain(label === "管理头像库" ? "删除所选" : "用作用户头像");
-      expect(dialog.querySelector('[aria-pressed="true"]')?.textContent).toBe(label === "管理头像库" ? "完成管理" : undefined);
-      await click("关闭头像弹窗");
-      expect(host.querySelector("dialog")).toBeNull();
-      expect(document.activeElement).toBe(trigger);
-    }
+    expect(host.textContent).not.toContain("管理头像库");
+    expect(host.textContent).not.toContain("更换头像");
+    const trigger = button("管理头像"); trigger.focus(); await click("管理头像");
+    const dialog = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像"]')!;
+    expect(dialog.open).toBe(true);
+    expect(dialog.textContent).toContain("导入图片");
+    expect(dialog.textContent).toContain("用作用户头像");
+    expect(button("管理").getAttribute("aria-pressed")).toBe("false");
+    await click("管理");
+    expect(button("完成管理").getAttribute("aria-pressed")).toBe("true");
+    expect(dialog.textContent).toContain("删除所选");
+    expect(dialog.textContent).not.toContain("用作用户头像");
+    await click("完成管理");
+    expect(dialog.textContent).toContain("用作用户头像");
+    await click("关闭头像弹窗");
+    expect(host.querySelector("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("blocks modal close while the existing avatar library is loading", async () => {
     let finish!: (entries: Awaited<ReturnType<typeof avatarLibrary.list>>) => void;
     vi.mocked(avatarLibrary.list).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-    await mount(); button("管理头像库").focus(); await click("管理头像库");
+    await mount(); button("管理头像").focus(); await click("管理头像");
     expect(button("关闭头像弹窗").disabled).toBe(true);
     const dialog = host.querySelector("dialog")!;
     const cancel = new Event("cancel", { bubbles: true, cancelable: true });
@@ -300,7 +306,7 @@ describe("general settings interactions", () => {
     expect(button("关闭头像弹窗").disabled).toBe(false);
     await act(async () => dialog.dispatchEvent(new Event("cancel", { bubbles: true, cancelable: true })));
     expect(host.querySelector("dialog")).toBeNull();
-    expect(document.activeElement).toBe(button("管理头像库"));
+    expect(document.activeElement).toBe(button("管理头像"));
   });
 
   it("preserves current-avatar recrop and restore-default controls inside the modal", async () => {
@@ -308,9 +314,9 @@ describe("general settings interactions", () => {
     await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="general" general={general}
       avatar={{ ...avatar, value: { original, thumbnail: original, crop: centeredCrop } }} />));
     expect(host.textContent).not.toContain("重新裁切");
-    await click("更换头像");
+    await click("管理头像");
     expect(button("重新裁切").disabled).toBe(false);
-    const restoreAvatar = [...host.querySelectorAll<HTMLButtonElement>('dialog[aria-label="更换头像"] button')].find(node => node.textContent === "恢复默认")!;
+    const restoreAvatar = [...host.querySelectorAll<HTMLButtonElement>('dialog[aria-label="管理头像"] button')].find(node => node.textContent === "恢复默认")!;
     await act(async () => restoreAvatar.click()); expect(saveAvatar).toHaveBeenCalledWith();
   });
 
@@ -318,8 +324,8 @@ describe("general settings interactions", () => {
     const original = new Blob(["synthetic"], { type: "image/png" });
     await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="general" general={general}
       avatar={{ ...avatar, value: { original, thumbnail: original, crop: centeredCrop } }} />));
-    await click("更换头像"); await click("重新裁切");
-    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="更换头像"]')!;
+    await click("管理头像"); await click("重新裁切");
+    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像"]')!;
     const crop = host.querySelector<HTMLDialogElement>('dialog[aria-labelledby="avatar-crop-title"]')!;
     expect(library.open).toBe(true); expect(crop.open).toBe(true);
     return { library, crop };
@@ -355,8 +361,8 @@ describe("general settings interactions", () => {
   it("cancels only the nested library deletion and retains the outer library and management selection", async () => {
     const original = new Blob(["synthetic"], { type: "image/png" });
     vi.mocked(avatarLibrary.list).mockResolvedValue([{ id: "one", name: "雪", version: "v1", avatar: { original, thumbnail: original, crop: centeredCrop } }]);
-    await mount(); await click("管理头像库"); await click("勾选 雪"); await click("删除所选（1）");
-    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像库"]')!;
+    await mount(); await click("管理头像"); await click("管理"); await click("勾选 雪"); await click("删除所选（1）");
+    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像"]')!;
     const deletion = host.querySelector<HTMLDialogElement>('dialog[aria-label="删除头像"]')!;
     expect(deletion.open).toBe(true);
     const cancel = new Event("cancel", { bubbles: false, cancelable: true });

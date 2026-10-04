@@ -1,5 +1,19 @@
 # 持久数据契约
 
+## 模型自定义分组 #119（2026-10-04）
+
+连接新增可选 `modelGroups: { id, name }[]`，模型新增可选 `groupId`；两者与嵌套分组均通过穷尽 FieldPolicy 注册为 backup，真实快照投影使用这些策略。分组身份只在所属连接内唯一，名称去首尾空白后非空、忽略大小写不能重复；模型引用必须指向本连接已有组，不能跨连接。没有手动引用的模型继续由既有自动规则展示，不将推导结果写入数据。空组可持久保存。删除组保留模型并清除其 `groupId`；模型编辑或重新获取目录不覆盖手动归属。
+
+connections 模块升为 v6／最低读者 6，没有新增能力、凭据、资源、表或索引；本机连接记录 v3、原存储键、Dexie schema、备份文档 v5／信封 v1 保持。旧本机 v2→v3 使用既有纯克隆迁移；旧本机 v3 及旧备份缺失字段保持缺失，零写入、不自动创建或归属分组，没有新的语义转换步骤。原始 v4／v5 备份携带任一新字段必须声明 connections 至少 v6；旧 v1–v3 文档不能携带这些字段。校验在模块重标前执行，结构、引用及未知字段不能按可选参数过滤。旧客户端会拒绝新字段／最低读者，不保证降级使用。
+
+本机与备份使用同一个严格克隆读入口校验未知字段、非法数组、重复身份／名称和无效引用，拒绝后保留原文。整批移动先校验所有目标再一次保存，持久化失败不发布新 React 状态。恢复合并保留冲突连接的完整本机分组，副本为连接／模型分配新 ID，但保留其连接内组 ID 与对应引用；替换导入来源，私有日志回滚保留完整旧值。组不绑定受管资源，不改变密钥包含条件；未勾选连接备份时分组一同排除。证据见 `src/chat/modelGroups.test.ts`、`src/backup/modelGroups.test.ts` 及会话／界面定向测试。
+
+## 批量删除合同 #118（2026-10-04）
+
+本次仅增加现有对象的整批删除／助手对话迁移命令，没有新增持久字段、表、偏好、资源类别或备份格式；数据注册、字段策略、模块版本、最低读者及缺失字段规则保持。管理选择和确认范围仅在内存中，不进入备份，无需结构迁移或降级转换。
+
+聊天删除在同一事务内校验所有目标后修改助手／对话／消息／旧配置与导航；默认助手受保护，跨助手的对话混选、无效目标、重复 ID 和确认后增加的子项整批拒绝。迁移仅改变归属及必要排序，不改变对话配置或消息。连接配置在严格读取旧值和完整新投影后整批保存，保存失败保留原值，禁止逐项写入形成部分成功。删除助手／对话后的附件整理继续扫描所有现存消息引用，保留共享附件；供应商删除不删除头像库、聊天记录或绘图成果。覆盖与失败回滚证据见 `batchDeletion.test.ts`、`useConversationWorkspace.test.tsx` 和 `useChatSession.providers100.test.tsx`；执行数据契约门禁及独立审查后再记录验收结果。
+
 ## 本机可配置绘图输出（2026-10-03）
 
 常规设置的输出路径仅由原生目录选择器返回或恢复默认，默认开发仓库 `output/`、安装版可执行文件同级 `output/`。应用数据目录新增 `drawing-output.json` v1（`version`、可空 `directory`）及 `drawing-locations/<task UUID>.json` v1（`version`、`task`、绝对 `directory`），最低读者均为本次 v1 实现，无额外能力或凭据；缺失偏好／null 使用默认，无任务定位记录时继续读取既有 app-data 绘图布局。两类原生文件及字段在 `nativePersistentFiles` 注册为排除，Rust 严格只读解析器共用于加载、配置写入前校验及任务绑定；未知字段／版本／非法路径保留原文并拒绝写入，不静默重置。没有新增 Dexie 表、持久 TypeScript 行字段或可移植备份模块，因此现有 FieldPolicy 和 schema／模块版本保持。
@@ -80,7 +94,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。#93 当前新导出是文档 v5／信封 v1，不新增 Dexie schema；连接模块 v4（本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、绘图设置模块 v3（最低读者 3），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v3（最低读者 3）、绘图设置模块 v3（最低读者 3），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 

@@ -112,7 +112,7 @@ describe("drawing backup category integration", () => {
     await assertPrivateData(t);
     const exported = await createBackupDocument(await t.repository.snapshot(), { connections: false, credentials: false }, t.files);
     expect(exported.compatibility?.modules.drawingSettings.version).toBe(3);
-    expect(exported.compatibility?.modules.connections.version).toBe(5);
+    expect(exported.compatibility?.modules.connections.version).toBe(6);
     expect((await readBackupDocument(exported)).drawing).toEqual(exported.drawing);
   });
   it.each([1, 2])("replaces module v%s settings without retaining newer protocol overrides", async version => {

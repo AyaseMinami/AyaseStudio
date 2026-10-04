@@ -1,0 +1,6 @@
+body { margin: 0; background: var(--color-bg); }
+.group-preview { height: 100vh; display: flex; flex-direction: column; padding: 16px; gap: 12px; box-sizing: border-box; }
+.group-preview-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; flex: none; }
+.group-preview-tools label { display: flex; align-items: center; gap: 6px; }
+.group-preview-tools span { color: var(--color-muted); }
+.group-preview > .connection-settings-page { flex: 1; min-height: 0; overflow: auto; }

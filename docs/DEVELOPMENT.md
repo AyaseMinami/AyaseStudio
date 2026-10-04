@@ -1,5 +1,29 @@
 # Ayase Studio Development Guide
 
+## 本轮人工验收与交付（2026-10-04）
+
+用户确认本轮所有功能已手动测试通过，并授权提交、推送工作区全部改动及关闭对应 Issue #118、#119。本次交付不追加测试、构建或独立 review，仅核对提交范围、分支同步、Git diff 格式和远端状态。下述实现阶段记录中的待人工验收状态已由本次确认更新；此前自动化与浏览器检查结果仍作为历史证据。
+
+## Model grouping #119 (2026-10-04)
+
+Focused deterministic coverage includes `src/chat/modelGroups.test.ts`, `src/backup/modelGroups.test.ts`, `src/ui/settings/ModelGroupManagement.test.tsx`, `src/ui/settings/ConnectionSettings.groups.test.tsx`, and the existing provider-session and chat picker tests. Covers legacy/repeated reads without writes, automatic fallback, empty groups, same-connection references, full-batch validation, failed persistence, restore merge/copy/replace/re-export/rollback, hidden selections, deletion confirmation and connection switching. Independent Sol/high review found no production defect; its preview add-provider/add-connection signature finding was corrected before delivery.
+
+Validation: `npm.cmd run check` passed 16 contract tests, registry coverage, 175 Vitest files / 2913 tests, TypeScript and production build; `cargo check --locked --manifest-path src-tauri/Cargo.toml` passed. The final group-assignment CSS refinement is checked by rebuilding and browser inspection; successful unrelated checks are not repeated.
+
+Run the isolated preview with `npm.cmd run dev -- scripts/model-groups119 --config scripts/model-groups119/vite.config.ts`, then open `http://127.0.0.1:1520/`. It uses production settings/picker components with synthetic models, empty credentials, namespaced preview preferences and mocked avatar/native/provider boundaries. Browser acceptance covered create/assign/rename/delete, automatic fallback, picker group search and connection context, refresh restoration, hidden selections and save failure, generation guards, light/dark themes at the default 1280×720 viewport and an 820×760 narrow viewport. No live user data, provider requests, native window interaction or installer acceptance was performed; user visual preference acceptance remains open. See [preview instructions](../scripts/model-groups119/README.md).
+
+## Batch management #118 (2026-10-04)
+
+Focused coverage lives in `src/chat/batchDeletion.test.ts`, `src/ui/chat/ConversationNavigation.batch.test.tsx`, `src/ui/settings/ConnectionSettings.batch.test.tsx` and the existing workspace/provider-session tests. Cover empty and single selections, exact batch target sets, assistant migration versus cascade, Cancel/Escape, scope changes, generation during flush, stale targets, storage failure/transaction rollback and one durable settings write. Existing navigation performance and single-delete tests remain applicable.
+
+Run the default `npm.cmd run check`, locked Cargo check and diff checks. Independent review is required for the new cross-module commands and mutation guards. For browser acceptance, run `npm.cmd run dev -- scripts/batch118 --config scripts/batch118/vite.config.ts` and use the isolated fixture at `http://127.0.0.1:1519/`; see [fixture instructions](../scripts/batch118/README.md). Each page uses a uniquely named synthetic Dexie database, memory-only avatars/themes and blocked native/provider requests. Check light/dark, narrow navigation, parent/child scopes, empty selection, cancellation, cascade/migration and generation protection. Native styling remains user acceptance; this change adds no native capability.
+
+Validation: `npm.cmd run check` passed 16 data-contract script tests, 171 Vitest files / 2878 tests, TypeScript and the production build; locked Cargo check also passed. The frontend gate used the existing temporary process-affinity workaround documented below. Independent Sol/high review has no remaining P1/P2 finding after correcting cancellation during external generation and returning focus to an enabled, non-inert management or navigation control.
+
+Isolated in-app browser acceptance covered all four scopes at 1280px and 640px, light/dark dialogs, mandatory confirmation for empty parents/connections, assistant move versus cascade, default-assistant protection, scope-specific selection, generation blocking, Cancel/Escape preserving selection, and focus after cancellation/success. No horizontal page overflow was observed at 640px. Real user data, provider requests, installer/upgrade and native rendering were not exercised. No commit, push or remote Issue update was performed.
+
+Layout follow-up: management actions now sit beside their own list/detail title, with an aligned selection toolbar, selectable rows, separate hover/selection feedback and provider impact summaries. The confirmation surface uses the existing 16px radius/24px padding. The 91 focused navigation/connection tests pass, including entry/exit focus regressions; locked Cargo check and diff checks pass. In-app browser checks covered 1280px/640px, both themes, long-name ellipsis, whole-row selection, Space/Escape and management focus. The final shared-worktree gate passed 16 data-contract tests, 175 Vitest files / 2913 tests and production build, using temporary process affinity. Earlier checks were blocked by parallel model-group test type errors, which were resolved before this final run; this gate includes those parallel changes but does not independently accept their feature scope. Native visual acceptance remains pending.
+
 ## Beta 3 release verification
 
 Version `0.1.0-beta.3` includes the post-Beta-2 drawing output configuration and workspace interaction fixes. All npm, Cargo and Tauri version declarations agree; the third-party inventory lockfile hashes were regenerated without dependency changes.

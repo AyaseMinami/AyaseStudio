@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronRight, GripVertical, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, Check, ChevronRight, GripVertical, ListChecks, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { AssistantAvatarEditor } from "./AssistantAvatarEditor";
 import { useNavigationDocking } from "./useNavigationDocking";
@@ -18,31 +18,17 @@ import { WebSearchControl } from "./WebSearchControl";
 import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 import { useNavigationListDrag } from "./useNavigationListDrag";
 import { ConversationNavigationList, type ConversationListActions } from "./ConversationNavigationList";
+import { BatchDeleteDialog, BatchManagementBar } from "../BatchManagement";
+import { workspaceDeletionFingerprint } from "../../chat/workspace";
 import "./AssistantConfig.css";
-
-function ManagementDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose(): void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>("input, button")?.focus();
-    return () => previous?.focus();
-  }, []);
-  return <div className="management-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <div ref={ref} className="management-dialog" role="dialog" aria-modal="true" aria-label={title} onKeyDown={(event) => {
-      if (event.key === "Escape") onClose();
-      if (event.key !== "Tab") return;
-      const fields = [...(ref.current?.querySelectorAll<HTMLElement>("input:not(:disabled), button:not(:disabled), select:not(:disabled)") ?? [])];
-      const first = fields[0]; const last = fields[fields.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }}><h2>{title}</h2>{children}</div>
-  </div>;
-}
 
 type Dialog =
   | { type: "conversation"; id: string }
-  | { type: "assistant"; id: string; existing?: AssistantPreset; input: AssistantInput }
-  | { type: "delete-assistant"; id: string; name: string; count: number; permanent: boolean };
+  | { type: "assistant"; id: string; existing?: AssistantPreset; input: AssistantInput };
+
+type Management = { kind: "assistants" } | { kind: "conversations"; assistantId: string };
+type DeletePlan = { kind: "assistants" | "conversations"; ids: string[]; names: string[]; expected: string;
+  conversationCount: number; assistantId: string; mode: "move" | "delete" };
 
 export function ConversationNavigation({ workspace, settings, generatingIds, children, toolbar, navigation: controlledNavigation }: {
   workspace: ReturnType<typeof useConversationWorkspace>;
@@ -60,10 +46,15 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string>();
   const [sortAnnouncement, setSortAnnouncement] = useState("");
+  const [management, setManagement] = useState<Management>();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deletePlan, setDeletePlan] = useState<DeletePlan>();
+  const [batchNotice, setBatchNotice] = useState("");
   const menu = useActionMenu<{ kind: "assistant" | "conversation"; id: string }>();
   const pendingDeleteRef = useRef<HTMLLIElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const assistantManagementRef = useRef<HTMLButtonElement>(null), conversationManagementRef = useRef<HTMLButtonElement>(null);
   const commandPending = useRef(false);
   function closeNavigation() {
     toggleRef.current?.focus({ preventScroll: true });
@@ -80,7 +71,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     if (await execute(command)) setSortAnnouncement(`${label}的顺序已保存。`);
   }
   const navigationDrag = useNavigationListDrag({
-    disabled: busy || !!dialog || !navigationOpen,
+    disabled: busy || !!dialog || !!management || !!deletePlan || !navigationOpen,
     onStart: () => { menu.close(); setPendingDelete(undefined); setSortAnnouncement(""); },
     onMove: (item, targetId, placement) => {
       const label = item.kind === "assistant" ? snapshot?.assistants.find((entry) => entry.id === item.id)?.name
@@ -131,6 +122,59 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     for (const item of snapshot?.conversations ?? []) counts.set(item.assistantId, (counts.get(item.assistantId) ?? 0) + 1);
     return counts;
   }, [snapshot?.conversations]);
+  const manageAssistants = management?.kind === "assistants";
+  const manageConversations = management?.kind === "conversations" && management.assistantId === selectedAssistant?.id;
+  const manageableIds = manageAssistants ? snapshot?.assistants.filter(item => item.id !== DEFAULT_ASSISTANT_ID).map(item => item.id) ?? []
+    : manageConversations ? conversations.map(item => item.id) : [];
+  const batchSelected = manageableIds.filter(id => selectedIds.has(id));
+  const selectedGenerating = snapshot?.conversations.some(item => generatingIds.has(item.id) &&
+    (manageAssistants ? selectedIds.has(item.assistantId) : manageConversations && selectedIds.has(item.id))) ?? false;
+  const deletionBlocked = deletePlan && snapshot ? workspaceDeletionFingerprint(snapshot, deletePlan.kind, deletePlan.ids) !== deletePlan.expected
+    ? "删除范围已变化，请取消后重新选择并确认。"
+    : snapshot.conversations.some(item => generatingIds.has(item.id) && (deletePlan.kind === "assistants" ? deletePlan.ids.includes(item.assistantId) : deletePlan.ids.includes(item.id)))
+      ? "请先停止所选对话的生成并等待保存完成。" : undefined : undefined;
+  useEffect(() => {
+    if (!navigationOpen || (management?.kind === "conversations" && (management.assistantId !== selectedAssistant?.id || !conversationPanelOpen))
+      || (management?.kind === "assistants" && !assistantExpanded)) {
+      setManagement(undefined); setSelectedIds(new Set()); setDeletePlan(undefined);
+    }
+  }, [navigationOpen, conversationPanelOpen, assistantExpanded, selectedAssistant?.id, management]);
+  useEffect(() => {
+    if (!management) return;
+    const available = new Set(management.kind === "assistants" ? snapshot?.assistants.filter(item => item.id !== DEFAULT_ASSISTANT_ID).map(item => item.id)
+      : snapshot?.conversations.filter(item => item.assistantId === management.assistantId).map(item => item.id));
+    setSelectedIds(current => [...current].some(id => !available.has(id)) ? new Set([...current].filter(id => available.has(id))) : current);
+  }, [snapshot, management]);
+  useEffect(() => { if (!batchNotice) return; const timer = window.setTimeout(() => setBatchNotice(""), 3500); return () => window.clearTimeout(timer); }, [batchNotice]);
+  function beginManagement(next?: Management) {
+    if (busy || dialog || deletePlan) return;
+    navigationDrag.cancel(); menu.close(); setPendingDelete(undefined); setBatchNotice("");
+    setManagement(next); setSelectedIds(new Set());
+  }
+  const toggleSelected = useCallback((id: string, checked: boolean) => {
+    setSelectedIds(current => { const next = new Set(current); if (checked) next.add(id); else next.delete(id); return next; });
+  }, []);
+  function prepareDelete(kind: DeletePlan["kind"], ids: string[]) {
+    if (!snapshot || busy || !ids.length) return;
+    const rows = kind === "assistants" ? snapshot.assistants.filter(item => ids.includes(item.id)) : snapshot.conversations.filter(item => ids.includes(item.id));
+    if (rows.length !== ids.length || kind === "assistants" && ids.includes(DEFAULT_ASSISTANT_ID)) return;
+    menu.close(); setPendingDelete(undefined);
+    setDeletePlan({ kind, ids: [...ids], names: rows.map(item => "name" in item ? item.name : item.title),
+      expected: workspaceDeletionFingerprint(snapshot, kind, ids),
+      conversationCount: kind === "assistants" ? snapshot.conversations.filter(item => ids.includes(item.assistantId)).length : ids.length,
+      assistantId: selectedAssistant?.id ?? DEFAULT_ASSISTANT_ID, mode: "move" });
+  }
+  async function deleteSelected(): Promise<boolean> {
+    if (!deletePlan || busy || deletionBlocked || commandPending.current) return false;
+    const plan = deletePlan;
+    commandPending.current = true;
+    try {
+      const saved = await execute(plan.kind === "assistants" ? { type: "delete-assistants", ids: plan.ids, mode: plan.mode, expected: plan.expected }
+        : { type: "delete-conversations", ids: plan.ids, assistantId: plan.assistantId, expected: plan.expected });
+      if (saved) { setDeletePlan(undefined); setSelectedIds(new Set()); setBatchNotice(`已删除 ${plan.ids.length} 个${plan.kind === "assistants" ? "助手" : "对话"}`); }
+      return saved;
+    } finally { commandPending.current = false; }
+  }
   const close = () => { if (!busy && !avatarBusy) setDialog(undefined); };
   async function perform(command: WorkspaceCommand) {
     if (commandPending.current) return;
@@ -163,7 +207,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   }
 
   function openContextMenu(target: { kind: "assistant" | "conversation"; id: string }, event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) {
-    if (busy || dialog || isEditableContextTarget(event.target)) return;
+    if (busy || dialog || management || deletePlan || isEditableContextTarget(event.target)) return;
     const opener = event.target instanceof HTMLElement && event.target.closest<HTMLButtonElement>(".navigation-drag-handle")
       || event.currentTarget.querySelector<HTMLButtonElement>(".chat-navigation-select");
     if (!opener) return;
@@ -208,7 +252,6 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const menuItems: ActionMenuItem[] = [];
   if (menuAssistant && snapshot) {
     const index = snapshot.assistants.findIndex((item) => item.id === menuAssistant.id);
-    const count = snapshot.conversations.filter((item) => item.assistantId === menuAssistant.id).length;
     const generating = snapshot.conversations.some((item) => item.assistantId === menuAssistant.id && generatingIds.has(item.id));
     const defaultAssistant = menuAssistant.id === DEFAULT_ASSISTANT_ID;
     menuItems.push(
@@ -219,7 +262,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
         onSelect: () => { void saveOrder({ type: "move-assistant", id: menuAssistant.id, direction: 1 }, menuAssistant.name); } },
       { id: "delete", label: "删除", accessibleLabel: `删除助手 ${menuAssistant.name}`, icon: <Trash2 size={15} />, danger: true, separatorBefore: true,
         disabled: busy || defaultAssistant || generating, description: defaultAssistant ? "默认助手不可删除" : generating ? "请先停止该助手下对话的生成并等待保存完成" : undefined,
-        onSelect: () => setDialog({ type: "delete-assistant", id: menuAssistant.id, name: menuAssistant.name, count, permanent: false }) },
+        onSelect: () => prepareDelete("assistants", [menuAssistant.id]) },
     );
   } else if (menuConversation) {
     const siblings = snapshot?.conversations.filter((item) => item.assistantId === menuConversation.assistantId) ?? [];
@@ -243,9 +286,10 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   }
 
   return <div ref={navigationRef} className="conversation-workspace" onClickCapture={navigationDrag.suppressClick} onKeyDown={(event) => {
-    if (event.key !== "Escape" || event.defaultPrevented || dialog || !navigationOpen) return;
+    if (event.key !== "Escape" || event.defaultPrevented || dialog || deletePlan || !navigationOpen) return;
     event.preventDefault();
     event.stopPropagation();
+    if (management) { beginManagement(); return; }
     if (pendingDelete) {
       pendingDeleteRef.current?.querySelector<HTMLButtonElement>(".conversation-delete-button")?.focus();
       setPendingDelete(undefined);
@@ -284,9 +328,14 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       }}>
       <span className="navigation-space-probe" aria-hidden="true" />
       <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表" data-open={navigationOpen} inert={!navigationOpen} aria-hidden={!navigationOpen}>
-        <div className="assistant-pane-tools">
-        <div className="chat-navigation-heading assistant-pane-heading" inert={!assistantExpanded} aria-hidden={!assistantExpanded}><h2>助手</h2></div>
-        <button type="button" className="settings-button assistant-create-button" aria-label="新建助手" title="新建助手" disabled={busy || !snapshot} data-busy-only={busy && !!snapshot} onClick={() => editAssistant()}><Plus size={15} /><span className="assistant-create-label" aria-hidden={!assistantExpanded}>新建助手</span></button>
+        <div className="assistant-pane-tools" data-managing={manageAssistants || undefined}>
+        <div className="chat-navigation-heading assistant-pane-heading" inert={!assistantExpanded} aria-hidden={!assistantExpanded}><h2>助手</h2>
+          <button ref={assistantManagementRef} type="button" className="batch-manage-trigger" aria-label={manageAssistants ? "完成助手管理" : "批量管理助手"} disabled={busy || !!dialog || !!deletePlan || !snapshot}
+            data-active={manageAssistants || undefined} onClick={() => beginManagement(manageAssistants ? undefined : { kind: "assistants" })}>
+            {manageAssistants ? <Check size={14} aria-hidden="true" /> : <ListChecks size={14} aria-hidden="true" />}<span>{manageAssistants ? "完成" : "管理"}</span></button></div>
+        {!manageAssistants && <button type="button" className="settings-button assistant-create-button" aria-label="新建助手" title="新建助手" disabled={busy || !snapshot || !!management} data-busy-only={busy && !!snapshot} onClick={() => editAssistant()}><Plus size={15} /><span className="assistant-create-label" aria-hidden={!assistantExpanded}>新建助手</span></button>}
+        {manageAssistants && <BatchManagementBar label="助手" total={manageableIds.length} selected={batchSelected.length} disabled={busy} deleteDisabled={selectedGenerating}
+          onSelectAll={checked => setSelectedIds(checked ? new Set(manageableIds) : new Set())} onDelete={() => prepareDelete("assistants", batchSelected)} />}
         </div>
         <ul className="chat-navigation-list">{snapshot?.assistants.map((assistant) => {
           const selected = assistant.id === selectedAssistant?.id;
@@ -295,7 +344,11 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
           return <li className="chat-navigation-item assistant-branch" key={assistant.id} {...sortAttributes("assistant", assistant.id)}
             onContextMenu={(event) => openContextMenu({ kind: "assistant", id: assistant.id }, event)}
             onKeyDown={(event) => { if (isContextMenuKey(event)) openContextMenu({ kind: "assistant", id: assistant.id }, event); }}>
-          <button type="button" className="navigation-drag-handle" inert={!assistantExpanded} aria-hidden={!assistantExpanded} tabIndex={assistantExpanded ? undefined : -1} disabled={busy || !!dialog} data-busy-only={busy && !dialog} aria-label={`拖动助手 ${assistant.name}`}
+          {manageAssistants ? <label className="batch-row-select" data-selected={selectedIds.has(assistant.id) || undefined} data-disabled={assistant.id === DEFAULT_ASSISTANT_ID || undefined}><input className="ui-checkbox" type="checkbox" aria-label={`选择助手 ${assistant.name}`} checked={selectedIds.has(assistant.id)}
+            disabled={busy || assistant.id === DEFAULT_ASSISTANT_ID} onChange={event => toggleSelected(assistant.id, event.target.checked)} />
+            <AssistantAvatar className="assistant-branch-icon" assistantName={assistant.name} assistantId={assistant.id} avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} />
+            <span className="assistant-branch-copy"><span className="assistant-branch-name" title={assistant.name}>{assistant.name}</span><span className="assistant-conversation-count">{assistant.id === DEFAULT_ASSISTANT_ID ? "默认助手不可删除" : `${count} 个对话`}</span></span></label> : <>
+          <button type="button" className="navigation-drag-handle" inert={!assistantExpanded} aria-hidden={!assistantExpanded} tabIndex={assistantExpanded ? undefined : -1} disabled={busy || !!dialog || !!management} data-busy-only={busy && !dialog} aria-label={`拖动助手 ${assistant.name}`}
             title="拖动排序；Shift+F10 或右键打开菜单上移／下移" onPointerDown={(event) => navigationDrag.begin(event, { kind: "assistant", id: assistant.id }, assistant.name)}><GripVertical size={14} aria-hidden="true" /></button>
           <button type="button" className="chat-navigation-select assistant-branch-toggle" aria-label={assistant.name} title={assistant.name} aria-expanded={expanded} aria-controls={selected ? `assistant-conversations-${assistant.id}` : undefined} aria-pressed={selected} disabled={busy}
             onPointerDown={(event) => navigationDrag.begin(event, { kind: "assistant", id: assistant.id }, assistant.name)}
@@ -303,7 +356,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
             <AssistantAvatar className="assistant-branch-icon" assistantName={assistant.name} assistantId={assistant.id} avatar={assistant.avatar} defaultAvatar={assistant.defaultAvatar} legacyIcon={assistant.icon} />
             <span className="assistant-branch-copy" aria-hidden={!assistantExpanded}><span className="assistant-branch-name" title={assistant.name}>{assistant.name}</span><span className="assistant-conversation-count" aria-hidden="true">{count} 个对话</span></span>
           </button>
-          <div className="assistant-actions" inert={!assistantExpanded} aria-hidden={!assistantExpanded}><button className="assistant-menu-trigger" type="button" disabled={busy} tabIndex={assistantExpanded ? undefined : -1}
+          <div className="assistant-actions" inert={!assistantExpanded} aria-hidden={!assistantExpanded}><button className="assistant-menu-trigger" type="button" disabled={busy || !!management} tabIndex={assistantExpanded ? undefined : -1}
             aria-label={`管理助手 ${assistant.name}`} title="管理助手" aria-haspopup="menu"
             aria-expanded={menuTarget?.kind === "assistant" && menuTarget.id === assistant.id}
             onClick={(event) => {
@@ -313,21 +366,27 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault(); setPendingDelete(undefined); menu.open({ kind: "assistant", id: assistant.id }, event.currentTarget);
               }
-            }}><MoreHorizontal size={16} aria-hidden="true" /></button></div>
+            }}><MoreHorizontal size={16} aria-hidden="true" /></button></div></>}
           </li>;
         })}</ul>
       </aside>
       {selectedAssistant && <aside id={`assistant-conversations-${selectedAssistant.id}`} className="conversation-cascade-pane" aria-label={`${selectedAssistant.name}的对话`} data-open={navigationOpen && conversationPanelOpen} inert={!navigationOpen || !conversationPanelOpen} aria-hidden={!navigationOpen || !conversationPanelOpen}>
             <div className="chat-navigation-heading">
               <h2>{selectedAssistant.name}的对话</h2>
-              <button className="conversation-collapse-button" type="button" onClick={closeConversations} aria-label="收起对话栏" title="收起对话栏">
+              <button ref={conversationManagementRef} type="button" className="batch-manage-trigger" aria-label={manageConversations ? "完成对话管理" : "批量管理对话"} disabled={busy || !!dialog || !!deletePlan}
+                data-active={manageConversations || undefined} onClick={() => beginManagement(manageConversations ? undefined : { kind: "conversations", assistantId: selectedAssistant.id })}>
+                {manageConversations ? <Check size={14} aria-hidden="true" /> : <ListChecks size={14} aria-hidden="true" />}<span>{manageConversations ? "完成" : "管理"}</span></button>
+              <button className="conversation-collapse-button" type="button" disabled={!!deletePlan} onClick={closeConversations} aria-label="收起对话栏" title="收起对话栏">
                 <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M8 2 3 6l5 4Z" fill="currentColor" /></svg>
               </button>
             </div>
-            <button className="settings-button new-conversation-button" type="button" disabled={busy} data-busy-only={busy} onClick={() => void openConversation({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}><Plus size={14} />新建对话</button>
+            {manageConversations ? <BatchManagementBar label="对话" total={manageableIds.length} selected={batchSelected.length} disabled={busy} deleteDisabled={selectedGenerating}
+              onSelectAll={checked => setSelectedIds(checked ? new Set(manageableIds) : new Set())} onDelete={() => prepareDelete("conversations", batchSelected)} />
+              : <button className="settings-button new-conversation-button" type="button" disabled={busy || !!management} data-busy-only={busy} onClick={() => void openConversation({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}><Plus size={14} />新建对话</button>}
             {conversations.length === 0 && <p className="muted-text assistant-conversations-empty">还没有对话</p>}
             <ConversationNavigationList conversations={conversations} selectedId={conversation?.id} generatingIds={generatingIds}
               busy={busy} dialogOpen={!!dialog} pendingDelete={pendingDelete} pendingDeleteRef={pendingDeleteRef}
+              management={manageConversations} selection={manageConversations ? selectedIds : undefined} onSelect={manageConversations ? toggleSelected : undefined} mutationsDisabled={!!management}
               drag={navigationDrag.drag} actions={listActions} />
       </aside>}
       {navigationOpen && !conversationPanelOpen && selectedAssistant && <button type="button" className="conversation-expand-handle"
@@ -398,13 +457,18 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
         {editorErrors.thinking && <p className="session-config-error" role="alert">{editorErrors.thinking}</p>}
       </section>
     </SessionConfigPanel>}
-    {dialog && dialog.type !== "assistant" && dialog.type !== "conversation" && <ManagementDialog title="删除确认" onClose={close}>
-      {dialog.type === "delete-assistant" && <><p>助手“{dialog.name}”包含 {dialog.count} 个对话。迁移后保留各对话设置和消息，仅改变所属助手。</p>
-        {dialog.permanent ? <><p>将永久删除该助手、全部对话和消息，无法撤销。</p><button className="settings-button confirm-danger" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "delete" })}>确认永久删除助手及对话</button></>
-          : <><button className="settings-button confirm-primary" type="button" disabled={busy} onClick={() => void perform({ type: "delete-assistant", id: dialog.id, mode: "move" })}>迁移对话到默认助手并删除助手</button><button className="settings-button confirm-danger" type="button" disabled={busy} onClick={() => setDialog({ ...dialog, permanent: true })}>选择永久删除全部内容…</button></>}
-      </>}
-      {workspace.operationError && <p role="alert">{workspace.operationError}</p>}
-      <button className="settings-button" type="button" disabled={busy} onClick={close}>取消</button>
-    </ManagementDialog>}
+    {deletePlan && <BatchDeleteDialog title={`删除 ${deletePlan.ids.length} 个${deletePlan.kind === "assistants" ? "助手" : "对话"}？`} names={deletePlan.names}
+      assistantMode={deletePlan.kind === "assistants" && deletePlan.conversationCount > 0 ? deletePlan.mode : undefined}
+      onAssistantModeChange={mode => setDeletePlan(current => current && { ...current, mode })}
+      impact={deletePlan.kind === "conversations" ? "同时删除所选对话的全部消息。" : deletePlan.conversationCount === 0 ? "所选助手均无对话。"
+        : deletePlan.mode === "move" ? `${deletePlan.conversationCount} 个对话将移至默认助手，消息和对话设置保留。` : `同时删除 ${deletePlan.conversationCount} 个对话及全部消息。`}
+      confirmLabel={deletePlan.kind === "assistants" && deletePlan.mode === "delete" && deletePlan.conversationCount > 0 ? "删除助手及对话"
+        : `删除 ${deletePlan.ids.length} 个${deletePlan.kind === "assistants" ? "助手" : "对话"}`}
+      busy={busy} blockedReason={deletionBlocked} failureReason={workspace.operationError} onConfirm={deleteSelected} onCancel={() => setDeletePlan(undefined)}
+      returnFocus={() => {
+        const target = deletePlan.kind === "assistants" ? assistantManagementRef.current : conversationManagementRef.current;
+        return target?.isConnected && !target.disabled && !target.closest('[inert], [hidden], [aria-hidden="true"]') ? target : toggleRef.current;
+      }} />}
+    {batchNotice && <div className="batch-result-notice" role="status">{batchNotice}</div>}
   </div>;
 }

@@ -27,6 +27,15 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
       for (const connection of provider.connections) {
         dataRecord(connection);
         if ("presetProtocol" in connection) dataCheck(supplierSupport, "内置连接与模块版本不匹配。");
+        dataCheck(Array.isArray(connection.models));
+        if ("modelGroups" in connection || connection.models.some(model => {
+          dataRecord(model); return "groupId" in model;
+        })) {
+          dataCheck((raw.version === 4 || raw.version === 5) && (() => {
+            dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.connections);
+            return (raw.compatibility.modules.connections.version as number) >= 6;
+          })(), "模型分组与连接模块版本不匹配，请升级应用。");
+        }
       }
     }
   }
