@@ -28,7 +28,7 @@ export class GitHub {
 export async function assertUnusedTag(api, version) {
   parseVersion(version);
   const tag = `v${version}`;
-  invariant(!(await api.call(`releases/tags/${tag}`, { allow404: true })), "Release already exists; use publish workflow to recover channels, do not rebuild");
+  invariant(!(await releaseByTag(api, tag)), "Release already exists; use publish workflow to recover channels, do not rebuild");
   invariant(!(await api.call(`git/ref/tags/${tag}`, { allow404: true })), "Tag already exists; do not rebuild or overwrite its assets");
 }
 export async function tagSource(api, tag) {
@@ -85,7 +85,7 @@ async function releaseByTag(api, tag) {
     invariant(matches.length <= 1, "Ambiguous release tag; refusing publication");
     if (releases.length < 100) break;
   }
-  invariant(matches.length === 1, "Release not found for exact tag");
+  if (matches.length === 0) return null;
   invariant(Number.isSafeInteger(matches[0].id) && matches[0].id > 0, "Invalid release ID");
   return api.call(`releases/${matches[0].id}`);
 }
@@ -95,6 +95,7 @@ export async function inspectRelease(api, tag, publicKey, mainSha, ancestry = as
   const version = tag.slice(1);
   parseVersion(version);
   const release = await releaseByTag(api, tag);
+  invariant(release, "Release not found for exact tag");
   invariant(release.tag_name === tag && typeof release.draft === "boolean" && release.prerelease === (parseVersion(version).beta !== null), "Release tag/channel mismatch");
   const files = await readReleaseArtifacts(api, release, version);
   const verified = verifyArtifacts(files, { version, publicKey });

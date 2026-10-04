@@ -272,8 +272,15 @@ test("published stable retry returns without reading or changing GitHub Latest",
 });
 test("candidate preflight refuses existing tags/releases", async () => {
   await assert.rejects(assertUnusedTag(releaseApi(), "1.2.3-beta.1"), /already exists/);
-  await assert.rejects(assertUnusedTag({ call: async route => route.startsWith("git/") ? { object: {} } : null }, "1.2.3-beta.1"), /Tag already exists/);
-  await assert.doesNotReject(assertUnusedTag({ call: async () => null }, "1.2.3-beta.1"));
+  await assert.rejects(assertUnusedTag({ call: async route => route.startsWith("git/") ? { object: {} } : route.startsWith("releases?") ? [] : null }, "1.2.3-beta.1"), /Tag already exists/);
+  await assert.doesNotReject(assertUnusedTag({ call: async route => route.startsWith("releases?") ? [] : null }, "1.2.3-beta.1"));
+});
+test("candidate preflight rejects a hidden draft even without a Git tag", async () => {
+  const api = draftLookupApi([[{ id: 1, tag_name: "v1.2.3-beta.1", draft: true }]]);
+  const call = api.call.bind(api);
+  api.call = (route, options) => route.startsWith("git/ref/tags/") ? Promise.resolve(null) : call(route, options);
+  await assert.rejects(assertUnusedTag(api, "1.2.3-beta.1"), /Release already exists/);
+  assert.equal(api.calls.some(call => call.method), false);
 });
 function channelsApi({ current = {}, race = false, unexpected = false } = {}) {
   let sha = Object.keys(current).length ? sourceSha : null, newTree;

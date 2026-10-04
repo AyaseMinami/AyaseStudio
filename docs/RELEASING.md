@@ -47,6 +47,8 @@ After acceptance, dispatch **Publish accepted candidate** from `main`, enter its
 
 GitHub can return 404 for a draft at the release-by-tag endpoint even when the authenticated release listing and release-by-ID endpoint can read it. Only after that 404, publication scans the authenticated paginated list for exactly one matching tag and reads its canonical ID; missing/ambiguous tags, malformed IDs/listings and non-404 API failures stop before publication. All existing candidate verification still runs. A publication-script repair can be merged after the candidate source because the candidate must be an ancestor of dispatched `main`; it does not require rebuilding or reaccepting unchanged installer bytes.
 
+Candidate preflight and draft creation reuse this lookup to reject an existing same-tag draft even if its Git tag is absent; an actually unused version requires both no Release and no Git tag.
+
 - A Beta release can advance only `beta.json`.
 - Before publishing a stable draft, the workflow reads GitHub Latest and `stable.json`. The candidate must be strictly newer than each existing stable version; equal or older candidates are rejected before any remote mutation. An absent GitHub Latest (404) is allowed, but unexpected Latest metadata, a non-`v` tag, a prerelease or a non-strict stable version blocks publication. A successful stable publication is marked GitHub Latest and advances `stable.json`, and also `beta.json` if newer than its current version. A newer upcoming Beta is retained. Beta publication is never marked GitHub Latest and does not need this stable-version gate.
 - A channel never moves to an older semver. Equal versions must contain the same manifest.
