@@ -13,6 +13,7 @@ import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
 import { readDrawingPromptPresetData, readDrawingSettingsData } from "../drawing/settingsData";
 import { isBrandId } from "../avatar/brandIds";
 import { getConnectionTemplate } from "../chat/providerPresets";
+import { readConnectionSettingsData } from "../chat/settings";
 
 export const managedReference = /^(attachments\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp|pdf|txt|md|docx|xlsx|pptx)|backgrounds\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|webp))$/;
 export type JsonRecord = Record<string, any>; // Untrusted values are checked before access at every boundary below.
@@ -79,6 +80,10 @@ export function validateConnections(value: unknown, credentials: boolean, drawin
     }
   }
   check(value.activeModelId === null || models.has(value.activeModelId));
+  // Use the same clone-based reader for nested group structure and membership as local data.
+  readConnectionSettingsData({ ...value, providers: value.providers.map((provider: JsonRecord) => ({ ...provider,
+    connections: provider.connections.map((connection: JsonRecord) => ({ ...connection, apiKey: credentials ? connection.apiKey : "" })),
+  })) });
 }
 export function checkDocumentBudget(raw: unknown): void {
   // This explicit visitor bounds recursion, aggregate object count, text and metadata before walking semantic data.

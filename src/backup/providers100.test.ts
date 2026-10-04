@@ -54,7 +54,7 @@ describe("Issue 100 conditional supplier image backup", () => {
   it.each([false, true])("exports only referenced snapshots when connections=%s, without copying shared logos or orphan images", async included => {
     const before = snapshot(), original = structuredClone(before), resources = files();
     const doc = await createBackupDocument(before, { connections: included, credentials: false }, resources);
-    expect(doc.compatibility?.modules.connections.version).toBe(5);
+    expect(doc.compatibility?.modules.connections.version).toBe(6);
     expect(doc.rows.providerAvatars?.map((row: any) => row.id) ?? []).toEqual(included ? ["supplier-image"] : []);
     if (!included) expect(doc.rows.providerAvatars).toBeUndefined();
     expect(doc.assets).toHaveLength(included ? 1 : 0);

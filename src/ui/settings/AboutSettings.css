@@ -3,6 +3,27 @@
 .about-brand { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 16px 0 32px; }
 .about-brand h2 { font-size: 26px; font-weight: 600; line-height: 1.25; letter-spacing: -.6px; margin: 20px 0 10px; }
 .about-brand > p { color: rgb(var(--color-muted)); font-size: inherit; margin: 0; }
+.about-update { padding: 18px 4px; border-top: 1px solid rgb(var(--color-border) / .6); }
+.about-update-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.about-update-heading h3 { margin: 0; font-size: inherit; font-weight: 500; }
+.about-update-heading > span { color: rgb(var(--color-accent-text)); overflow-wrap: anywhere; }
+.about-update-status, .about-install-warning { margin: 8px 0 12px; color: rgb(var(--color-muted)); font-size: var(--font-small); overflow-wrap: anywhere; }
+.about-update-status[role="alert"] { color: rgb(var(--color-error-text)); }
+.about-update-actions, .about-download-links, .about-mirror-code { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.about-update-actions:empty { display: none; }
+.about-update-actions .settings-button { min-height: 36px; padding: 6px 12px; border-radius: 6px; }
+.about-update-actions .about-update-primary { border-color: rgb(var(--color-accent)); background: rgb(var(--color-accent)); color: rgb(var(--color-on-accent)); }
+.about-update-actions .about-update-primary:hover:not(:disabled) { border-color: rgb(var(--color-accent-hover)); background: rgb(var(--color-accent-hover)); }
+.about-update-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.about-download-links { margin-top: 14px; font-size: var(--font-small); color: rgb(var(--color-muted)); }
+.about-download-links a { color: inherit; text-decoration: none; }
+.about-download-links a:hover { color: rgb(var(--color-accent-text)); }
+.about-mirror-code { user-select: text; }
+.about-update-progress { display: grid; gap: 6px; margin: 12px 0; color: rgb(var(--color-muted)); font-size: var(--font-small); font-variant-numeric: tabular-nums; }
+.about-update-progress progress { width: 100%; height: 8px; accent-color: rgb(var(--color-accent)); }
+.about-release-notes { margin: 12px 0; font-size: var(--font-small); }
+.about-release-notes summary { cursor: pointer; font-weight: 500; }
+.about-release-notes > div { max-height: 220px; margin-top: 8px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; user-select: text; color: rgb(var(--color-muted)); }
 .about-version { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: rgb(var(--color-muted)); font-size: var(--font-small); font-variant-numeric: tabular-nums; }
 .about-alpha { color: rgb(var(--color-accent-text)); background: rgb(var(--color-accent) / .09); padding: 2px 8px; border-radius: 5px; }
 .about-version button, .about-email button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 6px; cursor: pointer; border-radius: 6px; color: rgb(var(--color-muted)); background: rgb(var(--color-canvas)); }

@@ -1,7 +1,7 @@
 {
   "name": "ayase-studio",
   "private": true,
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "probe:live": "vitest run --config vitest.live.config.ts",
     "check:data-contracts": "node --test scripts/check-data-*.test.mjs && node scripts/check-data-contracts.mjs",
-    "check": "npm run check:data-contracts && npm run test && npm run build",
+    "check:release": "node --test scripts/release/*.test.mjs",
+    "check": "npm run check:release && npm run check:data-contracts && npm run test && npm run build",
     "preview": "vite preview",
     "tauri": "tauri"
   },

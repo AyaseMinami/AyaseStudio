@@ -227,7 +227,7 @@ describe("general settings interactions", () => {
   const saveAvatar = vi.fn();
   const avatar = { busy: false, value: undefined, url: "blob:current-avatar", error: undefined, save: saveAvatar };
   const general: GeneralSettingsState = {
-    preferences: { version: 1, backgroundResident: true, confirmBeforeExit: true },
+    preferences: { version: 2, backgroundResident: true, confirmBeforeExit: true, checkUpdatesOnStartup: true },
     error: null,
     setPreference,
   };
@@ -266,7 +266,7 @@ describe("general settings interactions", () => {
     await click("常规"); expect(onSectionChange).toHaveBeenCalledWith("general");
   });
 
-  it("shows only a compact current avatar until either library entry opens a modal, then restores focus", async () => {
+  it("opens avatar selection from a single entry, manages the library inside the modal, then restores focus", async () => {
     await mount();
     expect(host.querySelector('[aria-label="常规"]')?.getAttribute("aria-current")).toBe("page");
     const image = host.querySelector<HTMLImageElement>('img[alt="当前用户头像"]')!;
@@ -274,23 +274,29 @@ describe("general settings interactions", () => {
     expect(host.querySelector("dialog")).toBeNull();
     expect(host.querySelector('[aria-label="头像聊天效果预览"]')).toBeNull();
     expect(avatarLibrary.list).not.toHaveBeenCalled();
-    for (const label of ["更换头像", "管理头像库"]) {
-      const trigger = button(label); trigger.focus(); await click(label);
-      const dialog = host.querySelector<HTMLDialogElement>(`dialog[aria-label="${label}"]`)!;
-      expect(dialog.open).toBe(true);
-      expect(dialog.textContent).toContain("导入图片"); expect(dialog.textContent).toContain("管理");
-      expect(dialog.textContent).toContain(label === "管理头像库" ? "删除所选" : "用作用户头像");
-      expect(dialog.querySelector('[aria-pressed="true"]')?.textContent).toBe(label === "管理头像库" ? "完成管理" : undefined);
-      await click("关闭头像弹窗");
-      expect(host.querySelector("dialog")).toBeNull();
-      expect(document.activeElement).toBe(trigger);
-    }
+    expect(host.textContent).not.toContain("管理头像库");
+    expect(host.textContent).not.toContain("更换头像");
+    const trigger = button("管理头像"); trigger.focus(); await click("管理头像");
+    const dialog = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像"]')!;
+    expect(dialog.open).toBe(true);
+    expect(dialog.textContent).toContain("导入图片");
+    expect(dialog.textContent).toContain("用作用户头像");
+    expect(button("管理").getAttribute("aria-pressed")).toBe("false");
+    await click("管理");
+    expect(button("完成管理").getAttribute("aria-pressed")).toBe("true");
+    expect(dialog.textContent).toContain("删除所选");
+    expect(dialog.textContent).not.toContain("用作用户头像");
+    await click("完成管理");
+    expect(dialog.textContent).toContain("用作用户头像");
+    await click("关闭头像弹窗");
+    expect(host.querySelector("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("blocks modal close while the existing avatar library is loading", async () => {
     let finish!: (entries: Awaited<ReturnType<typeof avatarLibrary.list>>) => void;
     vi.mocked(avatarLibrary.list).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-    await mount(); button("管理头像库").focus(); await click("管理头像库");
+    await mount(); button("管理头像").focus(); await click("管理头像");
     expect(button("关闭头像弹窗").disabled).toBe(true);
     const dialog = host.querySelector("dialog")!;
     const cancel = new Event("cancel", { bubbles: true, cancelable: true });
@@ -300,7 +306,7 @@ describe("general settings interactions", () => {
     expect(button("关闭头像弹窗").disabled).toBe(false);
     await act(async () => dialog.dispatchEvent(new Event("cancel", { bubbles: true, cancelable: true })));
     expect(host.querySelector("dialog")).toBeNull();
-    expect(document.activeElement).toBe(button("管理头像库"));
+    expect(document.activeElement).toBe(button("管理头像"));
   });
 
   it("preserves current-avatar recrop and restore-default controls inside the modal", async () => {
@@ -308,9 +314,9 @@ describe("general settings interactions", () => {
     await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="general" general={general}
       avatar={{ ...avatar, value: { original, thumbnail: original, crop: centeredCrop } }} />));
     expect(host.textContent).not.toContain("重新裁切");
-    await click("更换头像");
+    await click("管理头像");
     expect(button("重新裁切").disabled).toBe(false);
-    const restoreAvatar = [...host.querySelectorAll<HTMLButtonElement>('dialog[aria-label="更换头像"] button')].find(node => node.textContent === "恢复默认")!;
+    const restoreAvatar = [...host.querySelectorAll<HTMLButtonElement>('dialog[aria-label="管理头像"] button')].find(node => node.textContent === "恢复默认")!;
     await act(async () => restoreAvatar.click()); expect(saveAvatar).toHaveBeenCalledWith();
   });
 
@@ -318,8 +324,8 @@ describe("general settings interactions", () => {
     const original = new Blob(["synthetic"], { type: "image/png" });
     await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="general" general={general}
       avatar={{ ...avatar, value: { original, thumbnail: original, crop: centeredCrop } }} />));
-    await click("更换头像"); await click("重新裁切");
-    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="更换头像"]')!;
+    await click("管理头像"); await click("重新裁切");
+    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像"]')!;
     const crop = host.querySelector<HTMLDialogElement>('dialog[aria-labelledby="avatar-crop-title"]')!;
     expect(library.open).toBe(true); expect(crop.open).toBe(true);
     return { library, crop };
@@ -355,8 +361,8 @@ describe("general settings interactions", () => {
   it("cancels only the nested library deletion and retains the outer library and management selection", async () => {
     const original = new Blob(["synthetic"], { type: "image/png" });
     vi.mocked(avatarLibrary.list).mockResolvedValue([{ id: "one", name: "雪", version: "v1", avatar: { original, thumbnail: original, crop: centeredCrop } }]);
-    await mount(); await click("管理头像库"); await click("勾选 雪"); await click("删除所选（1）");
-    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像库"]')!;
+    await mount(); await click("管理头像"); await click("管理"); await click("勾选 雪"); await click("删除所选（1）");
+    const library = host.querySelector<HTMLDialogElement>('dialog[aria-label="管理头像"]')!;
     const deletion = host.querySelector<HTMLDialogElement>('dialog[aria-label="删除头像"]')!;
     expect(deletion.open).toBe(true);
     const cancel = new Event("cancel", { bubbles: false, cancelable: true });
@@ -391,6 +397,39 @@ describe("general settings interactions", () => {
     expect([...host.querySelectorAll<HTMLInputElement>('[role="switch"]')].every((input) => !input.disabled)).toBe(true);
   });
 
+  it("routes startup update checking through its controlled preference and explains the startup boundary", async () => {
+    await mount();
+    const startup = host.querySelector<HTMLInputElement>("#general-startup-update")!;
+    expect(startup.getAttribute("role")).toBe("switch");
+    expect(startup.checked).toBe(true); expect(startup.disabled).toBe(false);
+    expect(host.querySelector('label[for="general-startup-update"]')?.textContent).toBe("启动时检查更新");
+    expect(host.querySelector("#general-update-title")?.textContent).toBe("应用更新");
+    await act(async () => startup.click());
+    expect(setPreference).toHaveBeenCalledExactlyOnceWith("checkUpdatesOnStartup", false);
+    expect(startup.checked).toBe(true);
+    await mount({ ...general, preferences: { ...general.preferences, checkUpdatesOnStartup: false } });
+    expect(startup.checked).toBe(false);
+    await act(async () => startup.click());
+    expect(setPreference).toHaveBeenLastCalledWith("checkUpdatesOnStartup", true);
+    await act(async () => button("启动时检查更新说明").focus());
+    const help = document.querySelector('[role="tooltip"]')?.textContent;
+    expect(help).toContain("约 10 秒后检查一次"); expect(help).toContain("托盘恢复不重复");
+    expect(help).toContain("仅显示提示"); expect(help).toContain("下载和安装仍需你确认");
+  });
+
+  it("disables the startup toggle during storage and restores it after a failed save", async () => {
+    let finish!: (saved: boolean) => void;
+    setPreference.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await mount();
+    const startup = host.querySelector<HTMLInputElement>("#general-startup-update")!;
+    await act(async () => { startup.click(); startup.click(); });
+    expect(setPreference).toHaveBeenCalledExactlyOnceWith("checkUpdatesOnStartup", false);
+    expect(startup.disabled).toBe(true); expect(startup.checked).toBe(true);
+    await act(async () => finish(false));
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("常规设置保存失败，请重试。");
+    expect(startup.disabled).toBe(false); expect(startup.checked).toBe(true);
+  });
+
   it("disables unavailable or unreadable settings and shows the supplied error", async () => {
     await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="general" />));
     expect([...host.querySelectorAll<HTMLInputElement>('[role="switch"]')].every((input) => input.disabled)).toBe(true);
@@ -399,7 +438,14 @@ describe("general settings interactions", () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toBe("常规设置无法读取，原数据已保留。");
     expect([...host.querySelectorAll<HTMLInputElement>('[role="switch"]')].every((input) => input.disabled)).toBe(true);
     await act(async () => host.querySelector<HTMLInputElement>("#general-background-resident")!.click());
+    await act(async () => host.querySelector<HTMLInputElement>("#general-startup-update")!.click());
     expect(setPreference).not.toHaveBeenCalled();
+  });
+  it("provides the maintained Baidu mirror with the extraction code in both URL and text", async () => {
+    await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="about" />));
+    expect(host.querySelector('a[href="https://pan.baidu.com/s/1nj359REFcGMwTbf7PWD4OQ?pwd=ayas"]')).not.toBeNull();
+    expect(host.textContent).toContain("提取码：ayas");
+    expect(host.querySelector('[aria-label="复制提取码"]')).not.toBeNull();
   });
 
   it("explains tray restoration and preserves drawing-risk prompts separately from ordinary exit confirmation", async () => {

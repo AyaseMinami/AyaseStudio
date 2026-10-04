@@ -9,7 +9,7 @@ import { readMessagesGenerationMetrics } from "./generationMetricsData";
 
 import type { ChatMessage } from "./types";
 import { defaultSessionConfig, restoreSessionConfig, readSessionConfigData, type SessionConfig } from "./sessionConfig";
-import { DEFAULT_ASSISTANT_ID, orderedConversations, placeItem, type AssistantPreset, type WorkspaceCommand, type WorkspaceSelection, type WorkspaceSnapshot } from "./workspace";
+import { DEFAULT_ASSISTANT_ID, orderedConversations, placeItem, workspaceDeletionFingerprint, type AssistantPreset, type WorkspaceCommand, type WorkspaceSelection, type WorkspaceSnapshot } from "./workspace";
 
 export type StoredMessageStatus =
   | "complete"
@@ -256,10 +256,16 @@ class DexieChatRepository implements WorkspaceRepository {
           if (next) for (let order = 0; order < next.length; order++) await db.conversations.update(next[order].id, { sortOrder: order });
           break;
         }
-        case "delete-assistant": {
-          if (action.id === DEFAULT_ASSISTANT_ID) throw new Error("默认助手不能删除。");
-          await requireAssistant(action.id);
-          const children = orderedConversations(await db.conversations.where("assistantId").equals(action.id).toArray());
+        case "delete-assistant":
+        case "delete-assistants": {
+          const ids = action.type === "delete-assistant" ? [action.id] : action.ids;
+          if (!ids.length || new Set(ids).size !== ids.length) throw new Error("请选择有效的助手。");
+          if (ids.includes(DEFAULT_ASSISTANT_ID)) throw new Error("默认助手不能删除。");
+          for (const id of ids) await requireAssistant(id);
+          if (action.type === "delete-assistants" && workspaceDeletionFingerprint(await this.snapshot(), "assistants", ids) !== action.expected)
+            throw new Error("删除范围已变化，请取消后重新选择并确认。");
+          const selected = new Set(ids);
+          const children = orderedConversations((await db.conversations.toArray()).filter(item => selected.has(item.assistantId)));
           const destination = orderedConversations(await db.conversations.where("assistantId").equals(DEFAULT_ASSISTANT_ID).toArray());
           for (const child of children) {
             if (action.mode === "move") {
@@ -272,10 +278,10 @@ class DexieChatRepository implements WorkspaceRepository {
             const combined = [...destination, ...children];
             for (let order = 0; order < combined.length; order++) await db.conversations.update(combined[order].id, { sortOrder: order });
           }
-          if (selection.activeAssistantId === action.id && action.mode === "move") {
-            selection.lastSelected[DEFAULT_ASSISTANT_ID] = selection.lastSelected[action.id] ?? null;
+          if (selected.has(selection.activeAssistantId) && action.mode === "move") {
+            selection.lastSelected[DEFAULT_ASSISTANT_ID] = selection.lastSelected[selection.activeAssistantId] ?? null;
           }
-          await db.assistants.delete(action.id);
+          await db.assistants.bulkDelete(ids);
           break;
         }
         case "create-conversation": {
@@ -375,16 +381,28 @@ class DexieChatRepository implements WorkspaceRepository {
           }
           break;
         }
-        case "delete-conversation": {
-          const item = await requireConversation(action.id);
-          const siblings = orderedConversations(await db.conversations.where("assistantId").equals(item.assistantId).toArray());
-          const index = siblings.findIndex((child) => child.id === item.id);
-          if (selection.lastSelected[item.assistantId] === item.id) {
-            selection.lastSelected[item.assistantId] = siblings[index + 1]?.id ?? siblings[index - 1]?.id ?? null;
+        case "delete-conversation":
+        case "delete-conversations": {
+          const ids = action.type === "delete-conversation" ? [action.id] : action.ids;
+          if (!ids.length || new Set(ids).size !== ids.length) throw new Error("请选择有效的对话。");
+          const items = await Promise.all(ids.map(requireConversation));
+          if (action.type === "delete-conversations") {
+            if (items.some(item => item.assistantId !== action.assistantId)) throw new Error("只能批量删除同一助手内的对话。");
+            if (workspaceDeletionFingerprint(await this.snapshot(), "conversations", ids) !== action.expected)
+              throw new Error("删除范围已变化，请取消后重新选择并确认。");
           }
-          await db.chats.delete(action.id);
-          await db.legacyConversationConfigs.delete(action.id);
-          await db.conversations.delete(action.id);
+          const selected = new Set(ids);
+          for (const assistantId of new Set(items.map(item => item.assistantId))) {
+            const siblings = orderedConversations(await db.conversations.where("assistantId").equals(assistantId).toArray());
+            const index = siblings.findIndex(item => item.id === selection.lastSelected[assistantId]);
+            if (index >= 0 && selected.has(siblings[index].id)) {
+              selection.lastSelected[assistantId] = siblings.slice(index + 1).find(item => !selected.has(item.id))?.id
+                ?? siblings.slice(0, index).reverse().find(item => !selected.has(item.id))?.id ?? null;
+            }
+          }
+          await db.chats.bulkDelete(ids);
+          await db.legacyConversationConfigs.bulkDelete(ids);
+          await db.conversations.bulkDelete(ids);
           break;
         }
         case "select": {

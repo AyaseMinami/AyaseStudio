@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowLeft,
   GripVertical,
+  ListChecks,
   ChevronDown,
   Eye,
   EyeOff,
@@ -19,8 +20,9 @@ import {
   X,
 } from "lucide-react";
 
-import { groupDiscoveredModels } from "../../chat/modelGrouping";
+import { groupConfiguredModels, groupDiscoveredModels } from "../../chat/modelGrouping";
 import { useConfirmation } from "../useConfirmation";
+import { BatchDeleteDialog, BatchManagementBar } from "../BatchManagement";
 import { getProtocolOption, isDrawingProtocol, protocolOptions } from "../../chat/protocolOptions";
 import {
   getActiveTarget,
@@ -30,6 +32,7 @@ import {
   type ConnectionProfile,
   type ConnectionSettingsState,
   type ModelField,
+  type ModelGroupCommand,
   type ProviderTemplateId,
   type ProviderGroup,
 } from "../../chat/settings";
@@ -59,6 +62,7 @@ import { BrandAvatar } from "../avatar/BrandAvatar";
 import { AvatarModal, AvatarLibraryPanel } from "../avatar/AvatarLibrary";
 import { SelectField } from "../SelectField";
 import { SearchSelectField } from "../SearchSelectField";
+import { ModelGroupManagement } from "./ModelGroupManagement";
 
 export interface ConnectionSettingsProps {
   canSelectModel?: boolean;
@@ -91,7 +95,10 @@ export interface ConnectionSettingsProps {
   onDeleteConnection(connectionId: string): void;
   onDeleteModel(modelId: string): void;
   onDeleteProvider(providerId: string): void;
+  onDeleteProviders?(providers: readonly ProviderGroup[]): boolean;
+  onDeleteConnections?(providerId: string, connections: readonly ConnectionProfile[]): boolean;
   onModelChange(modelId: string, field: ModelField, value: string): void;
+  onModelGroupCommand?(connectionId: string, command: ModelGroupCommand): boolean;
   onProviderRename(providerId: string, name: string): void;
   onProviderMove(providerId: string, targetId: string, placement: "before" | "after"): void;
   onConnectionMove(connectionId: string, targetId: string, placement: "before" | "after"): void;
@@ -147,6 +154,14 @@ type SettingsMenuTarget = (
   | { kind: "provider"; id: string }
   | { kind: "connection"; id: string; providerId: string }
 ) & { renaming?: boolean };
+
+type PendingBatchDelete = {
+  scope: { selectedProviderId: string | null; selectedConnectionId: string | null };
+  management: "providers" | "connections" | null;
+} & (
+  | { kind: "providers"; targets: readonly ProviderGroup[] }
+  | { kind: "connections"; provider: ProviderGroup; targets: readonly ConnectionProfile[] }
+);
 
 function connectionHost(baseUrl: string): string {
   if (!baseUrl.trim()) {
@@ -225,22 +240,6 @@ function modelTestSummary(test: ModelTestViewState | undefined): string | undefi
   return `不可用${status} · ${test.error.message}`;
 }
 
-function configuredModelGroups(models: ConfiguredModel[]) {
-  const byActualId = new Map(models.map((model) => [model.modelId, model]));
-  return groupDiscoveredModels(
-    models.map((model) => ({
-      id: model.modelId,
-      ...(model.displayName ? { displayName: model.displayName } : {}),
-    })),
-  ).map((group) => ({
-    label: group.label,
-    models: group.models.flatMap((model) => {
-      const configured = byActualId.get(model.id);
-      return configured ? [configured] : [];
-    }),
-  }));
-}
-
 function EntityActions({ kind, name, disabled, open, onOpen }: {
   kind: "供应商" | "连接";
   name: string;
@@ -309,7 +308,10 @@ export function ConnectionSettings({
   onDeleteConnection,
   onDeleteModel,
   onDeleteProvider,
+  onDeleteProviders,
+  onDeleteConnections,
   onModelChange,
+  onModelGroupCommand,
   onProviderRename,
   onProviderMove,
   onConnectionMove,
@@ -320,7 +322,7 @@ export function ConnectionSettings({
   const activeTarget = getActiveTarget(connectionSettings);
   const initialProviderId =
     activeTarget?.provider.id ?? connectionSettings.providers[0]?.id ?? null;
-  const [selectedProviderId, setSelectedProviderId] = useState(initialProviderId);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(initialProviderId);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(
     activeTarget?.connection.id ??
       connectionSettings.providers[0]?.connections[0]?.id ??
@@ -335,10 +337,16 @@ export function ConnectionSettings({
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [avatarPanelBusy, setAvatarPanelBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string>();
+  const [management, setManagement] = useState<"providers" | "connections" | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [batchDelete, setBatchDelete] = useState<PendingBatchDelete | null>(null);
+  const [batchStatus, setBatchStatus] = useState("");
+  const managementRef = useRef(management);
+  managementRef.current = management;
   const avatarLock = useRef(false);
   const mounted = useRef(false);
-  const currentScope = useRef({ connectionSettings, selectedProviderId, selectedConnectionId, isStreaming, modelTests });
-  currentScope.current = { connectionSettings, selectedProviderId, selectedConnectionId, isStreaming, modelTests };
+  const currentScope = useRef({ connectionSettings, selectedProviderId, selectedConnectionId, isStreaming, modelTests, modelCatalogs });
+  currentScope.current = { connectionSettings, selectedProviderId, selectedConnectionId, isStreaming, modelTests, modelCatalogs };
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const { confirm, dialog: confirmationDialog } = useConfirmation();
@@ -346,13 +354,15 @@ export function ConnectionSettings({
   editScope.current = { editingModelId, isAddingModel };
   const modelTestLock = useRef(new Set<string>());
   const [modelSearch, setModelSearch] = useState("");
+  const [groupManagementConnectionId, setGroupManagementConnectionId] = useState<string | null>(null);
+  useEffect(() => { setGroupManagementConnectionId(null); }, [selectedProviderId, selectedConnectionId, management]);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [formError, setFormError] = useState<string>();
   const [pendingFocus, setPendingFocus] = useState<PendingFocus | null>(null);
   const entityMenu = useActionMenu<SettingsMenuTarget>();
   const treeDrag = useConnectionTreeDrag({
-    disabled: isStreaming,
+    disabled: isStreaming || management !== null || batchDelete !== null,
     onStart: entityMenu.close,
     onMove: (item, targetId, placement) => {
       if (item.kind === "provider") onProviderMove(item.id, targetId, placement);
@@ -365,6 +375,18 @@ export function ConnectionSettings({
   const catalogDialogRef = useRef<HTMLElement>(null);
   const catalogTriggerRef = useRef<HTMLButtonElement>(null);
   const providerAddConnectionRef = useRef<HTMLButtonElement>(null);
+  const managementCompletionRef = useRef<HTMLButtonElement>(null);
+  const providerManagementEntryRef = useRef<HTMLButtonElement>(null);
+  const connectionManagementEntryRef = useRef<HTMLButtonElement>(null);
+  const previousManagement = useRef(management);
+  useEffect(() => {
+    if (management) managementCompletionRef.current?.focus({ preventScroll: true });
+    else if (previousManagement.current) {
+      const entry = previousManagement.current === "providers" ? providerManagementEntryRef.current : connectionManagementEntryRef.current;
+      (entry ?? providerManagementEntryRef.current ?? providerCreateButtonRef.current)?.focus({ preventScroll: true });
+    }
+    previousManagement.current = management;
+  }, [management]);
   const providerRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const connectionRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const overviewRowRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -378,6 +400,19 @@ export function ConnectionSettings({
   );
   const catalogOptions = presetCatalogOptions(selectedProvider, selectedConnection);
   const avatarProvider = connectionSettings.providers.find(provider => provider.id === avatarProviderId);
+
+  useEffect(() => {
+    if (!batchStatus) return;
+    const timer = window.setTimeout(() => setBatchStatus(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [batchStatus]);
+
+  useEffect(() => {
+    if (management === "connections") {
+      setSelectedIds(new Set());
+      setBatchDelete(null);
+    }
+  }, [selectedProviderId, management]);
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { if (isAddingProvider) providerDraftRef.current?.focus(); }, [isAddingProvider]);
@@ -509,20 +544,13 @@ export function ConnectionSettings({
       && scopeIsCurrent(scope, edit);
   }
 
-  const visibleModels = useMemo(() => {
+  const groupedModels = useMemo(() => {
     const query = modelSearch.trim().toLowerCase();
-    return (selectedConnection?.models ?? []).filter((model) =>
-      query
-        ? `${model.displayName ?? ""} ${model.modelId}`
-            .toLowerCase()
-            .includes(query)
-        : true,
-    );
-  }, [modelSearch, selectedConnection?.models]);
-  const groupedModels = useMemo(
-    () => configuredModelGroups(visibleModels),
-    [visibleModels],
-  );
+    return groupConfiguredModels(selectedConnection?.models ?? [], selectedConnection?.modelGroups)
+      .map(group => ({ ...group, models: group.models.filter(model => !query
+        || `${group.label} ${model.displayName ?? ""} ${model.modelId}`.toLowerCase().includes(query)) }))
+      .filter(group => group.models.length || group.groupId && (!query || group.label.toLowerCase().includes(query)));
+  }, [modelSearch, selectedConnection?.models, selectedConnection?.modelGroups]);
   const visibleCatalogModels = useMemo(() => {
     const query = catalogSearch.trim().toLowerCase();
     return catalog.models.filter((model) =>
@@ -543,6 +571,7 @@ export function ConnectionSettings({
   );
 
   async function selectProvider(providerId: string): Promise<boolean> {
+    if (management === "providers") return false;
     if (!await confirmDiscardModelEdit()
       || !currentScope.current.connectionSettings.providers.some(provider => provider.id === providerId)) return false;
     entityMenu.close();
@@ -619,6 +648,82 @@ export function ConnectionSettings({
     setSelectedConnectionId(adjacent?.connections[0]?.id ?? null);
     setIsAddingConnection(false);
     if (adjacent) setPendingFocus({ kind: "provider", id: adjacent.id });
+  }
+
+  async function enterManagement(kind: "providers" | "connections"): Promise<void> {
+    if (currentScope.current.isStreaming || batchDelete || !await confirmDiscardModelEdit()
+      || currentScope.current.isStreaming) return;
+    entityMenu.close();
+    if (providerCreateRef.current) providerCreateRef.current.open = false;
+    setEditingModelId(null);
+    setIsAddingModel(false);
+    setIsAddingProvider(false);
+    setIsAddingConnection(false);
+    setCatalogOpen(false);
+    setSelectedIds(new Set());
+    setBatchStatus("");
+    setManagement(kind);
+  }
+
+  function toggleBatchItem(id: string, checked: boolean): void {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  }
+
+  function openBatchDelete(): void {
+    if (isStreaming || batchDelete) return;
+    const common = { scope: currentScope.current, management };
+    if (management === "providers") {
+      setBatchDelete({ ...common, kind: "providers", targets: connectionSettings.providers.filter(provider => selectedIds.has(provider.id)) });
+    } else if (management === "connections" && selectedProvider) {
+      setBatchDelete({ ...common, kind: "connections", provider: selectedProvider,
+        targets: selectedProvider.connections.filter(connection => selectedIds.has(connection.id)) });
+    }
+  }
+
+  function batchBlockedReason(pending: PendingBatchDelete): string | undefined {
+    const current = currentScope.current;
+    if (current.isStreaming) return "生成期间无法删除连接配置。";
+    if (managementRef.current !== pending.management
+      || current.selectedProviderId !== pending.scope.selectedProviderId
+      || current.selectedConnectionId !== pending.scope.selectedConnectionId) return "管理范围已改变，请取消后重新确认。";
+    if (pending.kind === "providers"
+      ? pending.targets.some(provider => !current.connectionSettings.providers.includes(provider))
+      : !current.connectionSettings.providers.includes(pending.provider)
+        || pending.targets.some(connection => !pending.provider.connections.includes(connection))) {
+      return "所选配置已改变或移除，请取消后重新确认。";
+    }
+    if (!pending.targets.length) return "没有选择要删除的项目。";
+    return undefined;
+  }
+
+  function submitBatchDelete(pending: PendingBatchDelete): boolean {
+    if (batchBlockedReason(pending)) return false;
+    let saved: boolean;
+    if (pending.kind === "providers") {
+      if (!onDeleteProviders) return false;
+      saved = onDeleteProviders(pending.targets);
+    } else {
+      if (!onDeleteConnections) return false;
+      saved = onDeleteConnections(pending.provider.id, pending.targets);
+    }
+    if (!saved) return false;
+    setBatchDelete(null);
+    setSelectedIds(new Set());
+    setBatchStatus(`已删除 ${pending.targets.length} ${pending.kind === "providers" ? "个供应商" : "条连接"}。`);
+    setIsAddingConnection(false);
+    if (pending.kind === "providers" && pending.targets.some(provider => provider.id === selectedProviderId)) {
+      const next = currentScope.current.connectionSettings.providers.find(provider => !pending.targets.some(target => target.id === provider.id));
+      setSelectedProviderId(next?.id ?? null);
+      setSelectedConnectionId(null);
+    } else if (pending.kind === "connections" && pending.targets.some(connection => connection.id === selectedConnectionId)) {
+      const next = pending.provider.connections.find(connection => !pending.targets.some(target => target.id === connection.id));
+      setSelectedConnectionId(next?.id ?? null);
+    }
+    return true;
   }
 
   async function handleAddConnection(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -704,6 +809,7 @@ export function ConnectionSettings({
   }
 
   function openEntityMenu(target: SettingsMenuTarget, opener: HTMLElement, point?: { x: number; y: number }): void {
+    if (management || batchDelete) return;
     if (providerCreateRef.current) providerCreateRef.current.open = false;
     entityMenu.open(target, opener, point);
   }
@@ -899,6 +1005,19 @@ export function ConnectionSettings({
     );
   }
 
+  const batchConnections = batchDelete?.kind === "providers"
+    ? batchDelete.targets.flatMap(provider => provider.connections) : batchDelete?.targets ?? [];
+  const batchModelCount = batchConnections.reduce((total, connection) => total + connection.models.length, 0);
+  const batchEmpty = batchDelete?.kind === "providers" ? batchConnections.length === 0 : batchModelCount === 0;
+  const batchAction = batchDelete ? `删除 ${batchDelete.targets.length} ${batchDelete.kind === "providers" ? "个供应商" : "条连接"}` : "";
+  const batchImpact = batchDelete?.kind === "providers"
+    ? batchEmpty ? "所选供应商均无连接。" : `同时删除 ${batchConnections.length} 条连接、${batchModelCount} 个配置模型。`
+    : batchEmpty ? "所选连接均无配置模型。" : `同时删除 ${batchModelCount} 个配置模型。`;
+  const connectionManagementButton = selectedProvider && onDeleteConnections && <button ref={connectionManagementEntryRef} type="button" className="batch-manage-trigger connection-manage-trigger"
+    disabled={isStreaming} onClick={() => void enterManagement("connections")}><ListChecks size={15} aria-hidden="true" /><span>管理连接</span></button>;
+  const finishManagement = () => { setManagement(null); setSelectedIds(new Set()); setBatchDelete(null); };
+  const managedProviders = connectionSettings.providers.filter(provider => selectedIds.has(provider.id));
+
   return (
     <section
       className="settings-page settings-workspace-page connection-settings-page"
@@ -910,11 +1029,16 @@ export function ConnectionSettings({
       </div>
         <div className="connection-settings-workbench">
           <nav className="connection-tree" aria-label="供应商列表" onClickCapture={treeDrag.suppressClick}
+            data-managing={management || undefined}
             data-sorting={treeDrag.drag ? "true" : undefined}>
             <span className="sr-only" role="status" aria-live="polite">{treeDrag.announcement}</span>
             <div className="connection-tree-heading">
               <h3>供应商</h3>
-              <div className="provider-heading-actions">
+              {management === "providers" && <button ref={managementCompletionRef} type="button" className="batch-manage-trigger" data-active onClick={finishManagement}>
+                <Check size={15} aria-hidden="true" /><span>完成管理</span></button>}
+              <div className="provider-heading-actions" hidden={management !== null}>
+                {onDeleteProviders && <button ref={providerManagementEntryRef} type="button" className="batch-manage-trigger" disabled={isStreaming}
+                  onClick={() => void enterManagement("providers")}><ListChecks size={15} aria-hidden="true" /><span>管理供应商</span></button>}
                 <button ref={providerCreateButtonRef} type="button" className="icon-button" aria-label="添加供应商" title="添加供应商" disabled={isStreaming}
                   onClick={() => { if (!isStreaming) { entityMenu.close(); setIsAddingProvider(true); setProviderDraftError(undefined); if (providerCreateRef.current) providerCreateRef.current.open = false; providerDraftRef.current?.focus(); } }}><Plus size={18} /></button>
                 <details ref={providerCreateRef} className="provider-create-menu" onToggle={(event) => { if (event.currentTarget.open) entityMenu.close(); }}
@@ -943,6 +1067,10 @@ export function ConnectionSettings({
               <button type="button" className="icon-button" aria-label="取消新供应商" onClick={cancelProviderDraft}><X size={16} /></button>
               {providerDraftError && <p className="inline-error" role="alert">{providerDraftError}</p>}
             </form>}
+            {management === "providers" && <BatchManagementBar label="供应商" total={connectionSettings.providers.length}
+              selected={connectionSettings.providers.filter(provider => selectedIds.has(provider.id)).length} disabled={isStreaming}
+              onSelectAll={checked => setSelectedIds(new Set(checked ? connectionSettings.providers.map(provider => provider.id) : []))}
+              onDelete={openBatchDelete} />}
             {connectionSettings.providers.length === 0 && (
               <div className="pane-empty-state connection-tree-empty">
                 <span>还没有供应商，点击右上角加号添加。</span>
@@ -957,6 +1085,12 @@ export function ConnectionSettings({
                 <div className="connection-tree-row connection-provider-row"
                   onContextMenu={(event) => openRowMenu(event, { kind: "provider", id: provider.id }, providerRowRefs.current.get(provider.id))}
                   onKeyDown={(event) => openKeyboardMenu(event, { kind: "provider", id: provider.id })}>
+                  {management === "providers" ? <label className="connection-provider-select" data-selected={selectedIds.has(provider.id) || undefined}>
+                    <input className="ui-checkbox" type="checkbox"
+                    aria-label={`选择供应商 ${provider.name}`} checked={selectedIds.has(provider.id)} disabled={isStreaming}
+                    onChange={event => toggleBatchItem(provider.id, event.target.checked)} />
+                    <ProviderAvatar provider={provider} className="provider-tree-avatar" /><span title={provider.name}>{provider.name}</span><small>{provider.connections.length} 条连接</small>
+                  </label> : <>
                   <button type="button" className="provider-drag-handle" disabled={isStreaming}
                     aria-label={`拖动排序 ${provider.name}`} title="拖动排序，也可在菜单中上移或下移"
                     onPointerDown={(event) => treeDrag.begin(event, { kind: "provider", id: provider.id }, provider.name)}>
@@ -982,9 +1116,9 @@ export function ConnectionSettings({
                   </button>
                   <EntityActions kind="供应商" name={provider.name} disabled={isStreaming}
                     open={menuTarget?.kind === "provider" && menuTarget.id === provider.id}
-                    onOpen={(opener) => toggleEntityMenu({ kind: "provider", id: provider.id }, opener)} />
+                    onOpen={(opener) => toggleEntityMenu({ kind: "provider", id: provider.id }, opener)} /></>}
                 </div>
-                <div id={`provider-connections-${provider.id}`} className="connection-tree-children" hidden={!expanded}
+                <div id={`provider-connections-${provider.id}`} className="connection-tree-children" hidden={!expanded || management !== null}
                   role="group" aria-label={`${provider.name}的连接渠道列表`}>
                   {provider.connections.map((connection) => {
                     const connectionDrag = treeDrag.drag?.item.kind === "connection" ? treeDrag.drag : null;
@@ -1024,6 +1158,36 @@ export function ConnectionSettings({
             })}
           </nav>
           <section className="connection-detail" aria-label="连接详情">
+            {management ? <section className="connection-batch-panel" aria-label={management === "providers" ? "供应商批量管理" : "连接批量管理"}>
+              <header className="connection-batch-heading"><h3>{management === "providers" ? "所选供应商" : `${selectedProvider?.name ?? "当前供应商"}的连接`}</h3>
+                {management === "connections" && <button ref={managementCompletionRef} type="button" className="batch-manage-trigger" data-active onClick={finishManagement}>
+                  <Check size={15} aria-hidden="true" /><span>完成管理</span></button>}
+              </header>
+              {management === "providers" ? <>
+                <p className="muted-text connection-batch-hint">{managedProviders.length ? "删除供应商时，其连接和配置模型会一并移除。" : "在供应商列表中勾选要管理的项目。"}</p>
+                <ul className="connection-batch-summary">{managedProviders.map(provider => <li key={provider.id}>
+                  <ProviderAvatar provider={provider} className="provider-tree-avatar" /><span title={provider.name}>{provider.name}</span>
+                  <small>{provider.connections.length} 条连接 · {provider.connections.reduce((total, connection) => total + connection.models.length, 0)} 个模型</small>
+                </li>)}</ul>
+              </>
+                : selectedProvider && <>
+                  <BatchManagementBar label={`${selectedProvider.name}的连接`} total={selectedProvider.connections.length}
+                    selected={selectedProvider.connections.filter(connection => selectedIds.has(connection.id)).length} disabled={isStreaming}
+                    onSelectAll={checked => setSelectedIds(new Set(checked ? selectedProvider.connections.map(connection => connection.id) : []))}
+                    onDelete={openBatchDelete} />
+                  <ul className="connection-batch-list">
+                    {selectedProvider.connections.map(connection => <li key={connection.id}>
+                      <label data-selected={selectedIds.has(connection.id) || undefined}><input type="checkbox" className="ui-checkbox" aria-label={`选择连接 ${connection.name}`}
+                        checked={selectedIds.has(connection.id)} disabled={isStreaming}
+                        onChange={event => toggleBatchItem(connection.id, event.target.checked)} />
+                        <span><strong title={connection.name}>{connection.name}</strong><small>{getProtocolOption(connection.protocol).label}</small></span>
+                        <small className="connection-batch-model-count">{connection.models.length} 个模型</small>
+                      </label>
+                    </li>)}
+                  </ul>
+                  {!selectedProvider.connections.length && <p className="muted-text">此供应商还没有连接。</p>}
+                </>}
+            </section> : <>
             {formError && <p className="inline-error" role="alert">{formError}</p>}
             {isAddingConnection && selectedProvider ? (
                 <form className="connection-create-card" onSubmit={handleAddConnection}>
@@ -1075,6 +1239,7 @@ export function ConnectionSettings({
                   </button>
                   <h3 title={connection.name}>{connection.name}</h3>
                   <p className="muted-text" title={selectedProvider.name}>{selectedProvider.name}</p>
+                  {connectionManagementButton}
                 </header>
                 <details className="connection-interface" open>
                   <summary><strong>接口配置</strong><span className="connection-interface-summary">{protocol.label} · {connectionHost(connection.baseUrl)}</span><ChevronDown size={16} /></summary>
@@ -1124,20 +1289,32 @@ export function ConnectionSettings({
                   <header className="connection-model-heading"><h3>模型管理</h3><span className="count-badge">{connection.models.length}</span><SettingsHelp label="模型管理">{isDrawingProtocol(connection.protocol) ? "绘图模型仅用于绘图页，请生成图片验证；不会设为助手默认模型。" : canSelectModel
                     ? "选择模型用于助手的新对话。已有对话可在聊天顶部或对话设置中更换。"
                     : "请先加载或选择助手，再设置默认模型。"}</SettingsHelp>
+                  {onModelGroupCommand && <button type="button" className="settings-button model-group-management-toggle"
+                    aria-expanded={groupManagementConnectionId === connection.id}
+                    disabled={groupManagementConnectionId !== connection.id && (isStreaming || catalog.status === "loading")}
+                    onClick={async () => {
+                      if (groupManagementConnectionId === connection.id) { setGroupManagementConnectionId(null); return; }
+                      const scope = currentScope.current;
+                      if (scope.isStreaming || scope.modelCatalogs[connection.id]?.status === "loading"
+                        || !await confirmDiscardModelEdit() || !scopeIsCurrent(scope)
+                        || currentScope.current.isStreaming || currentScope.current.modelCatalogs[connection.id]?.status === "loading") return;
+                      setEditingModelId(null);
+                      setGroupManagementConnectionId(connection.id);
+                    }}>{groupManagementConnectionId === connection.id ? "完成分组" : "管理分组"}</button>}
                 </header>
                 {isDrawingProtocol(connection.protocol) && <p className="muted-text">绘图模型仅用于绘图页，请生成图片验证。</p>}
                 <div className="model-toolbar">
                   <label className="search-field">
                     <Search size={15} />
                     <span className="sr-only">搜索已添加模型</span>
-                    <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型 ID 或名称" />
+                    <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型 ID、名称或分组" />
                   </label>
                 <div className="connection-model-actions">
                   <button
                     ref={catalogTriggerRef}
                     type="button"
                     className="settings-button"
-                    disabled={isStreaming || connection.protocol === "seedream-images" || catalogOptions?.manualCatalog}
+                    disabled={isStreaming || groupManagementConnectionId === connection.id || connection.protocol === "seedream-images" || catalogOptions?.manualCatalog}
                     aria-describedby={connection.protocol === "seedream-images" ? "seedream-catalog-hint" : catalogOptions?.catalogHint ? "preset-catalog-hint" : undefined}
                     onClick={() => void openAndRefreshCatalog()}
                   >
@@ -1148,7 +1325,7 @@ export function ConnectionSettings({
                     type="button"
                     className="settings-button connection-add-model"
                     aria-label="手动添加模型"
-                    disabled={isStreaming}
+                    disabled={isStreaming || groupManagementConnectionId === connection.id}
                     onClick={toggleModelCreation}
                   >
                     <Plus size={16} />手动添加
@@ -1157,15 +1334,18 @@ export function ConnectionSettings({
                 </div>
                 {connection.protocol === "seedream-images" && <p id="seedream-catalog-hint" className="muted-text">Seedream 绘图未提供模型目录，请手动添加模型 ID。</p>}
                 {connection.protocol !== "seedream-images" && catalogOptions?.catalogHint && <p id="preset-catalog-hint" className="muted-text">{catalogOptions.catalogHint}</p>}
-                <div className="model-list" aria-label="模型列表">
+                {groupManagementConnectionId === connection.id && onModelGroupCommand ? <ModelGroupManagement
+                  key={connection.id} connection={connection} search={modelSearch}
+                  disabled={isStreaming || catalog.status === "loading"} onCommand={onModelGroupCommand} /> : <div className="model-list" aria-label="模型列表">
                   {groupedModels.length ? (
                     groupedModels.map((group) => (
-                      <section key={group.label} className="model-group">
+                      <section key={group.key} className="model-group">
                         <header>
                           <strong>{group.label}</strong>
                           <span>{group.models.length}</span>
                         </header>
                         {group.models.map(renderModelRow)}
+                        {!group.models.length && <p className="model-group-empty muted-text">此分组暂无模型</p>}
                       </section>
                     ))
                   ) : (
@@ -1174,7 +1354,7 @@ export function ConnectionSettings({
                       <span>手动添加模型 ID，或从远端目录中选择。</span>
                     </div>
                   )}
-                </div>
+                </div>}
                 </section>
               </div>;
             })() : selectedProvider && !isAddingConnection ? (
@@ -1184,8 +1364,9 @@ export function ConnectionSettings({
                   <EntityActions kind="供应商" name={selectedProvider.name} disabled={isStreaming}
                     open={menuTarget?.kind === "provider" && menuTarget.id === selectedProvider.id}
                     onOpen={(opener) => toggleEntityMenu({ kind: "provider", id: selectedProvider.id }, opener)} /></div>
-                <button ref={providerAddConnectionRef} className="settings-button settings-button-primary" type="button" disabled={isStreaming}
-                  onClick={() => setIsAddingConnection(true)}><Plus size={15} />添加连接</button>
+                <div className="provider-overview-actions">{connectionManagementButton}
+                  <button ref={providerAddConnectionRef} className="settings-button settings-button-primary" type="button" disabled={isStreaming}
+                    onClick={() => setIsAddingConnection(true)}><Plus size={15} />添加连接</button></div>
                 </header>
                 <p className="muted-text">管理此供应商下的连接渠道。连接独立拥有协议、地址、密钥和模型。</p>
                 {selectedProvider.connections.length > 0 ? (
@@ -1233,9 +1414,18 @@ export function ConnectionSettings({
             ) : !isAddingConnection && (
               <div className="pane-empty-state pane-empty-fill"><strong>{connectionSettings.providers.length ? "选择供应商" : "先添加供应商"}</strong><span>在供应商下添加连接，配置地址、密钥和模型。</span></div>
             )}
+            </>}
           </section>
         </div>
       {confirmationDialog}
+      {batchDelete && <BatchDeleteDialog title={`${batchAction}？`}
+        names={batchDelete.targets.map(target => target.name)} confirmLabel={batchAction} busy={isStreaming}
+        blockedReason={batchBlockedReason(batchDelete)}
+        impact={batchImpact}
+        warning={batchEmpty ? "此操作无法撤销。" : "此操作无法撤销。聊天历史和绘图成果会保留；受影响的模型需重新选择。"}
+        returnFocus={() => managementRef.current ? managementCompletionRef.current : null}
+        onConfirm={() => submitBatchDelete(batchDelete)} onCancel={() => setBatchDelete(null)} />}
+      {batchStatus && <div role="status" className="batch-result-notice">{batchStatus}</div>}
       {avatarError && !avatarProvider && <p className="inline-error" role="alert">{avatarError}</p>}
       {avatarProvider && <AvatarModal title={`为 ${avatarProvider.name} 选择头像`} busy={avatarSaving || avatarPanelBusy || isStreaming}
         onClose={() => { if (!avatarLock.current && !avatarPanelBusy) { setAvatarProviderId(undefined); setAvatarError(undefined); } }}>

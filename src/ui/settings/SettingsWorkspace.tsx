@@ -5,6 +5,7 @@ import { GeneralSettings } from "./GeneralSettings";
 import type { GeneralSettingsState } from "../../general/preferences";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
 import { AboutSettings } from "./AboutSettings";
+import type { UpdateActions } from "../../update/controller";
 import { WindowControls } from "../window/WindowControls";
 import "./DataManagementSettings.css";
 
@@ -28,6 +29,7 @@ export interface SettingsWorkspaceProps {
   dataImport?: DataImportSettingsProps;
   backupDisabled?: boolean;
   backupError?: string;
+  update?: UpdateActions;
   onBackup?(): void;
   onSectionChange(section: SettingsSection): void;
 }
@@ -41,6 +43,7 @@ export function SettingsWorkspace({
   dataImport,
   backupDisabled,
   backupError,
+  update,
   onBackup,
   onSectionChange,
 }: SettingsWorkspaceProps) {
@@ -138,7 +141,7 @@ export function SettingsWorkspace({
               {dataImport ? <DataImportSettings {...dataImport} /> : <p className="muted-text">请在桌面应用中导入聊天。</p>}
             </section>
           ) : (
-            <AboutSettings />
+            <AboutSettings update={update} downloadMirror={{ url: "https://pan.baidu.com/s/1nj359REFcGMwTbf7PWD4OQ?pwd=ayas", code: "ayas" }} />
           )}
         </div>
       </div>

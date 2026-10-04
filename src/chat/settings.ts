@@ -13,7 +13,16 @@ export interface ConfiguredModel {
   id: string;
   modelId: string;
   displayName?: string;
+  groupId?: string;
 }
+
+export interface ConfiguredModelGroup { id: string; name: string }
+
+export type ModelGroupCommand =
+  | { kind: "create"; id: string; name: string }
+  | { kind: "rename"; id: string; name: string }
+  | { kind: "delete"; id: string }
+  | { kind: "assign"; modelIds: readonly string[]; groupId: string | null };
 
 export interface ConnectionProfile {
   id: string;
@@ -22,6 +31,7 @@ export interface ConnectionProfile {
   baseUrl: string;
   apiKey: string;
   models: ConfiguredModel[];
+  modelGroups?: ConfiguredModelGroup[];
   presetProtocol?: ServiceProtocol;
 }
 
@@ -205,6 +215,7 @@ function sanitizeModel(
     id,
     modelId: normalizedModelId,
     ...(normalizedDisplayName ? { displayName: normalizedDisplayName } : {}),
+    ...(value.groupId !== undefined ? { groupId: value.groupId as string } : {}),
   };
 }
 
@@ -245,6 +256,7 @@ function sanitizeConnection(
     baseUrl,
     apiKey,
     models: sanitizedModels,
+    ...(value.modelGroups !== undefined ? { modelGroups: structuredClone(value.modelGroups) as ConfiguredModelGroup[] } : {}),
     ...(value.presetProtocol !== undefined ? { presetProtocol: value.presetProtocol as ServiceProtocol } : {}),
   };
 }
@@ -547,11 +559,25 @@ function assertConnectionStructure(raw: unknown, version: 2 | 3): void {
       if (version === 2) { dataCheck(typeof connection.model === "string"); continue; }
       dataCheck(typeof connection.name === "string" && connection.name.trim() && Array.isArray(connection.models));
       const actualIds = new Set<string>();
+      const groupIds = new Set<string>(), groupNames = new Set<string>();
+      if (connection.modelGroups !== undefined) {
+        dataCheck(Array.isArray(connection.modelGroups) && connection.modelGroups.length <= 5000);
+        for (const group of connection.modelGroups) {
+          record(group, backupFields(dataPolicies.modelGroup));
+          dataCheck(typeof group.id === "string" && !!group.id.trim() && !groupIds.has(group.id));
+          dataCheck(typeof group.name === "string" && !!group.name.trim() && group.name.length <= 4096);
+          const normalizedName = group.name.trim().toLowerCase();
+          dataCheck(!groupNames.has(normalizedName), "同一连接的模型分组名称不能重复。");
+          groupIds.add(group.id); groupNames.add(normalizedName);
+        }
+      }
       for (const model of connection.models) {
         record(model, backupFields(dataPolicies.model), ["id", "modelId"]); unique(model.id);
         dataCheck(typeof model.modelId === "string" && model.modelId.trim() && !actualIds.has(model.modelId.trim()));
         actualIds.add(model.modelId.trim());
         dataCheck(model.displayName === undefined || typeof model.displayName === "string");
+        dataCheck(model.groupId === undefined || typeof model.groupId === "string" && groupIds.has(model.groupId),
+          "模型分组引用无效；原数据未被修改。");
       }
     }
   }
@@ -682,6 +708,19 @@ export function deleteProvider(
   return providers.length === state.providers.length
     ? state
     : repairActiveModel(providers, state.activeModelId, state);
+}
+
+export function deleteProviders(state: ConnectionSettingsState, ids: readonly string[]): ConnectionSettingsState {
+  const selected = new Set(ids);
+  if (!selected.size || selected.size !== ids.length || ids.some(id => !state.providers.some(provider => provider.id === id))) return state;
+  return repairActiveModel(state.providers.filter(provider => !selected.has(provider.id)), state.activeModelId, state);
+}
+
+export function deleteConnections(state: ConnectionSettingsState, providerId: string, ids: readonly string[]): ConnectionSettingsState {
+  const selected = new Set(ids), provider = state.providers.find(item => item.id === providerId);
+  if (!provider || !selected.size || selected.size !== ids.length || ids.some(id => !provider.connections.some(connection => connection.id === id))) return state;
+  return repairActiveModel(state.providers.map(item => item.id === providerId
+    ? { ...item, connections: item.connections.filter(connection => !selected.has(connection.id)) } : item), state.activeModelId, state);
 }
 
 export function moveProvider(
@@ -907,6 +946,53 @@ export function updateModel(
     }),
   }));
   return changed ? { ...state, providers } : state;
+}
+
+/** Validate and apply the whole command before publishing or saving any changes. */
+export function applyModelGroupCommand(state: ConnectionSettingsState, connectionId: string, command: ModelGroupCommand): ConnectionSettingsState {
+  const current = readConnectionSettingsData(state);
+  const connection = getConnection(current, connectionId);
+  dataCheck(connection, "连接已不存在，请重新选择。");
+  const groups = connection.modelGroups ?? [];
+  let nextGroups = groups;
+  let nextModels = connection.models;
+  if (command.kind === "assign") {
+    dataCheck(command.modelIds.length > 0 && new Set(command.modelIds).size === command.modelIds.length
+      && command.modelIds.every(id => connection.models.some(model => model.id === id)), "所选模型已改变，请重新选择。");
+    dataCheck(command.groupId === null || groups.some(group => group.id === command.groupId), "目标分组已不存在。");
+    const selected = new Set(command.modelIds);
+    nextModels = connection.models.map(model => {
+      if (!selected.has(model.id)) return model;
+      const { groupId: _previous, ...rest } = model;
+      return command.groupId === null ? rest : { ...rest, groupId: command.groupId };
+    });
+  } else {
+    if (command.kind === "create" || command.kind === "rename") {
+      const name = command.name.trim();
+      dataCheck(name.length > 0 && name.length <= 4096, "请输入有效的分组名称。");
+      dataCheck(!groups.some(group => (command.kind === "create" || group.id !== command.id)
+        && group.name.trim().toLowerCase() === name.toLowerCase()), "同一连接的模型分组名称不能重复。");
+      if (command.kind === "create") {
+        dataCheck(typeof command.id === "string" && !!command.id.trim() && !groups.some(group => group.id === command.id), "分组身份无效或已存在。");
+        nextGroups = [...groups, { id: command.id, name }];
+      } else {
+        dataCheck(groups.some(group => group.id === command.id), "分组已不存在。");
+        nextGroups = groups.map(group => group.id === command.id ? { ...group, name } : group);
+      }
+    } else {
+      dataCheck(groups.some(group => group.id === command.id), "分组已不存在。");
+      nextGroups = groups.filter(group => group.id !== command.id);
+      nextModels = connection.models.map(model => {
+        if (model.groupId !== command.id) return model;
+        const { groupId: _previous, ...rest } = model;
+        return rest;
+      });
+    }
+  }
+  const next: ConnectionProfile = { ...connection, modelGroups: nextGroups, models: nextModels };
+  return readConnectionSettingsData({ ...current, providers: current.providers.map(provider => ({ ...provider,
+    connections: provider.connections.map(item => item.id === connectionId ? next : item),
+  })) });
 }
 
 export function deleteModel(

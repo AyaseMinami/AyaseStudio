@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.22.3'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, resolved 2026-10-04
+        with:
+          toolchain: stable
+      - run: npm.cmd ci
+      - run: node --test scripts/release/*.test.mjs
+      - run: npm.cmd run check
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features release-tools --bin verify-updater-signature
+      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - run: git diff --check

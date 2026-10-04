@@ -1,4 +1,21 @@
 import type { DiscoveredModel } from "./modelCatalog";
+import type { ConfiguredModel, ConfiguredModelGroup } from "./settings";
+
+/** Manual membership wins; remaining models use the existing automatic family rules. */
+export function groupConfiguredModels(models: readonly ConfiguredModel[], groups: readonly ConfiguredModelGroup[] = []): {
+  key: string; label: string; groupId: string | null; models: ConfiguredModel[];
+}[] {
+  const automatic = models.filter(model => model.groupId === undefined);
+  const byActualId = new Map(automatic.map(model => [model.modelId, model]));
+  return [
+    ...groups.map(group => ({ key: `custom:${group.id}`, label: group.name, groupId: group.id,
+      models: models.filter(model => model.groupId === group.id) })),
+    ...groupDiscoveredModels(automatic.map(model => ({ id: model.modelId }))).map(group => ({
+      key: `auto:${group.label}`, label: group.label, groupId: null,
+      models: group.models.map(model => byActualId.get(model.id)!),
+    })),
+  ];
+}
 
 export interface DiscoveredModelGroup {
   label: string;

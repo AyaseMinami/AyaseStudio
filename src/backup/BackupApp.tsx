@@ -18,7 +18,7 @@ export function BackupApp() {
   const general = useGeneralSettings();
   const settingsRequest = useTraySettingsRequest();
   const exitConfirmation = useConfirmation();
-  const registerExitGuard = useApplicationLifecycle(general, exitConfirmation.confirm,
+  const { registerExitGuard, installUpdate } = useApplicationLifecycle(general, exitConfirmation.confirm,
     () => (ready || error) && window.location.hash !== "#backup");
   useEffect(() => { let alive = true; void startup.then(() => { if (alive) setReady(true); }, () => { if (alive) setError(true); }); return () => { alive = false; }; }, []);
   async function retry() {
@@ -31,5 +31,5 @@ export function BackupApp() {
     {error && <><button type="button" className="settings-button" onClick={() => void retry()}>重试整理</button>
       <button type="button" className="settings-button" onClick={() => { window.location.hash = "backup"; window.location.reload(); }}>恢复 Ayase 备份</button></>}</main></>;
   if (window.location.hash === "#backup") return <>{exitConfirmation.dialog}<BackupWorkspace api={backupApi} onExit={() => { window.location.hash = "data"; window.location.reload(); }} /></>;
-  return <>{exitConfirmation.dialog}<App general={general} registerExitGuard={registerExitGuard} settingsRequest={settingsRequest} /></>;
+  return <>{exitConfirmation.dialog}<App general={general} registerExitGuard={registerExitGuard} installUpdate={installUpdate} settingsRequest={settingsRequest} /></>;
 }

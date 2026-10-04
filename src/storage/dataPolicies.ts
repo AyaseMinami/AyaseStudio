@@ -1,7 +1,7 @@
 import type { SessionConfig, NumericSetting } from "../chat/sessionConfig";
 import type { AssistantPreset, Conversation, WorkspaceSelection } from "../chat/workspace";
 import type { StoredChatMessage, ChatSnapshot } from "../chat/repository";
-import type { ConnectionSettingsState, ProviderGroup, ConnectionProfile, ConfiguredModel } from "../chat/settings";
+import type { ConnectionSettingsState, ProviderGroup, ConnectionProfile, ConfiguredModel, ConfiguredModelGroup } from "../chat/settings";
 import type { SearchSettings, SearchConfiguration, TavilySearchSettings, ZhipuSearchSettings } from "../search/settings";
 import type { SearchRecord, SearchSource, SearchCitation, ProviderReplay } from "../chat/nativeSearch";
 import type { ThinkingSettings } from "../chat/thinking";
@@ -30,7 +30,7 @@ type TableRow<T> = T extends Table<infer Row, infer _Key, infer _Insert> ? Row :
 // Exhaustive policies: a new declared field cannot compile until its disposition is chosen.
 // Nested persisted records have their own policies; resources still use their existing validators.
 export const dataPolicies = {
-  general: { version: "exclude", backgroundResident: "exclude", confirmBeforeExit: "exclude" } satisfies FieldPolicy<GeneralPreferences>,
+  general: { version: "exclude", backgroundResident: "exclude", confirmBeforeExit: "exclude", checkUpdatesOnStartup: "exclude" } satisfies FieldPolicy<GeneralPreferences>,
   session: {
     version: "backup", systemInstruction: "backup", temperature: "backup", topP: "backup", topK: "backup",
     contextBudget: "backup", maxOutput: "backup", stream: "backup", dualSamplingConfirmed: "backup", customJson: "backup",
@@ -62,8 +62,9 @@ export const dataPolicies = {
   backgroundFocus: { x: "backup", y: "backup", zoom: "backup" } satisfies FieldPolicy<BackgroundFocus>,
   connections: { version: "backup", providers: "backup", activeModelId: "backup", builtinsInitialized: "backup" } satisfies FieldPolicy<ConnectionSettingsState>,
   provider: { id: "backup", name: "backup", connections: "backup", presetId: "backup", avatar: "resource" } satisfies FieldPolicy<ProviderGroup>,
-  connection: { id: "backup", name: "backup", protocol: "backup", baseUrl: "backup", apiKey: "credential", models: "backup", presetProtocol: "backup" } satisfies FieldPolicy<ConnectionProfile>,
-  model: { id: "backup", modelId: "backup", displayName: "backup" } satisfies FieldPolicy<ConfiguredModel>,
+  connection: { id: "backup", name: "backup", protocol: "backup", baseUrl: "backup", apiKey: "credential", models: "backup", modelGroups: "backup", presetProtocol: "backup" } satisfies FieldPolicy<ConnectionProfile>,
+  model: { id: "backup", modelId: "backup", displayName: "backup", groupId: "backup" } satisfies FieldPolicy<ConfiguredModel>,
+  modelGroup: { id: "backup", name: "backup" } satisfies FieldPolicy<ConfiguredModelGroup>,
   search: { version: "backup", exaMcp: "backup", exaApi: "backup", tavily: "backup", zhipu: "backup" } satisfies FieldPolicy<SearchConfiguration>,
   searchProfile: { version: "backup", baseUrl: "backup", apiKey: "credential", numResults: "backup" } satisfies FieldPolicy<SearchSettings>,
   tavilyProfile: { version: "backup", baseUrl: "backup", apiKey: "credential", numResults: "backup", enabled: "backup", searchDepth: "backup" } satisfies FieldPolicy<TavilySearchSettings>,

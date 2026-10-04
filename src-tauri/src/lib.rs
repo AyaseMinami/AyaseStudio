@@ -1,4 +1,6 @@
 mod background;
+mod updater;
+mod update_signature;
 mod tray;
 mod drawing;
 mod attachments;
@@ -22,6 +24,8 @@ pub fn run() {
         }));
     }
     builder
+        .manage(updater::UpdateState::default())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
@@ -66,6 +70,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            updater::update_status,
+            updater::update_check,
+            updater::update_download,
+            updater::update_cancel,
+            updater::update_install,
             tray::hide_main_window,
             tray::tray_menu_action,
             drawing::save_drawing_result,

@@ -12,7 +12,7 @@ const report = vi.fn(), canExit = vi.fn();
 let guard: ExitGuard, owner: ApplicationLifecycle;
 beforeEach(() => {
   vi.resetAllMocks();
-  settings = { preferences: { version: 1, backgroundResident: true, confirmBeforeExit: true }, error: null, setPreference: vi.fn().mockResolvedValue(true) };
+  settings = { preferences: { version: 2, backgroundResident: true, confirmBeforeExit: true, checkUpdatesOnStartup: true }, error: null, setPreference: vi.fn().mockResolvedValue(true) };
   guard = { prepare: vi.fn().mockResolvedValue(true), cancel: vi.fn() };
   canExit.mockReturnValue(true); confirm.mockResolvedValue(true);
   runtime.onClose.mockImplementation(async handler => { closeHandler = handler; return vi.fn(); });
@@ -90,4 +90,33 @@ it("preserves unreadable settings while still allowing a confirmed explicit exit
   settings.error = "unsupported"; await owner.request(true);
   expect(confirm.mock.calls[0][0].checkbox).toBeUndefined(); expect(settings.setPreference).not.toHaveBeenCalled();
   expect(runtime.close).toHaveBeenCalledOnce();
+});
+
+it("update install has explicit confirmation even when ordinary reminders are off and runs the data guard first", async () => {
+  settings.preferences.confirmBeforeExit = false;
+  const order: string[] = [];
+  vi.mocked(guard.prepare).mockImplementation(async () => { order.push("guard"); return true; });
+  const install = vi.fn(async () => { order.push("install"); });
+  expect(await owner.runForUpdate(install)).toBe(true);
+  expect(confirm.mock.calls[0][0].title).toBe("安装更新并重启");
+  expect(order).toEqual(["guard", "install"]);
+  expect(runtime.hide).not.toHaveBeenCalled(); expect(runtime.close).not.toHaveBeenCalled();
+  expect(settings.setPreference).not.toHaveBeenCalled();
+});
+it("cancelled or failed update preparation never invokes the installer and releases the drawing guard", async () => {
+  const install = vi.fn(); confirm.mockResolvedValueOnce(false);
+  expect(await owner.runForUpdate(install)).toBe(false); expect(guard.prepare).not.toHaveBeenCalled();
+  vi.mocked(guard.prepare).mockResolvedValueOnce(false);
+  expect(await owner.runForUpdate(install)).toBe(false); expect(guard.cancel).toHaveBeenCalledOnce();
+  install.mockRejectedValueOnce(new Error("failed"));
+  await expect(owner.runForUpdate(install)).rejects.toThrow("failed");
+  expect(guard.cancel).toHaveBeenCalledTimes(2);
+});
+it("update confirmation shares the close/tray lock and rejects disposed or maintenance decisions", async () => {
+  const decision = (() => { let resolve!: (value: boolean) => void; const promise = new Promise<boolean>(r => { resolve = r; }); return { promise, resolve }; })();
+  confirm.mockReturnValueOnce(decision.promise); const install = vi.fn();
+  const pending = owner.runForUpdate(install); await owner.request(false); await owner.runForUpdate(install);
+  expect(runtime.hide).not.toHaveBeenCalled(); expect(confirm).toHaveBeenCalledOnce();
+  canExit.mockReturnValue(false); decision.resolve(true); expect(await pending).toBe(false); expect(install).not.toHaveBeenCalled();
+  canExit.mockReturnValue(true); owner.dispose(); expect(await owner.runForUpdate(install)).toBe(false);
 });

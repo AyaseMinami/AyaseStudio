@@ -66,7 +66,7 @@ export function useDrawingWorkspace(previewPageActive = true, confirmClose: Conf
   useEffect(() => {
     if (!isTauri()) return;
     let alive = true, release: (() => void) | undefined, approved = false, closing = false;
-    const prepare = async (): Promise<boolean> => {
+    const prepare = async (reason?: "update"): Promise<boolean> => {
       if (!alive || closing) return false;
       closing = true;
         let prepared = false;
@@ -78,7 +78,7 @@ export function useDrawingWorkspace(previewPageActive = true, confirmClose: Conf
             if (!alive || !accepted) return false;
           }
           prepared = true;
-          try { await controller.settleForClose(); }
+          try { await controller.settleForClose(reason === "update"); }
           catch (error) {
             if (!alive) return false;
             if (!(error instanceof UnsavedDrawingImagesError)) throw error;

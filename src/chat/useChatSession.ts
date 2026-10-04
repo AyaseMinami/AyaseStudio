@@ -58,6 +58,8 @@ import {
   deleteConnection,
   deleteModel,
   deleteProvider,
+  deleteProviders,
+  deleteConnections,
   getActiveTarget,
   getConnection,
   isChatConnection,
@@ -67,12 +69,17 @@ import {
   moveProvider,
   moveConnection,
   saveConnectionSettings,
+  applyModelGroupCommand,
+  type ModelGroupCommand,
   updateConnection,
   updateModel,
   type ConnectionField,
   type ModelField,
   type ProviderTemplateId,
   type ServiceProtocol,
+  type ProviderGroup,
+  type ConnectionProfile,
+  type ConnectionSettingsState,
 } from "./settings";
 import type { ChatProtocol } from "./types";
 import {
@@ -151,6 +158,7 @@ export function useChatSession({
     () => initializeProviderPresets(loadConnectionSettings()),
   );
   const connectionSettingsRef = useRef(connectionSettings);
+  const lastSavedConnectionSettings = useRef<ConnectionSettingsState | undefined>(undefined);
   connectionSettingsRef.current = connectionSettings;
   const providerAvatarPending = useRef(false);
   const [providerAvatarBusy, setProviderAvatarBusy] = useState(false);
@@ -241,7 +249,10 @@ export function useChatSession({
   }, [sessionConfig, activeConnection?.protocol, activeModel?.modelId, workspace.conversation?.id]);
 
   useEffect(() => {
-    if (connectionSettingsRef.current === connectionSettings) saveConnectionSettings(connectionSettings);
+    if (connectionSettingsRef.current === connectionSettings && lastSavedConnectionSettings.current !== connectionSettings) {
+      saveConnectionSettings(connectionSettings);
+      lastSavedConnectionSettings.current = connectionSettings;
+    }
   }, [connectionSettings]);
 
   useEffect(() => {
@@ -327,6 +338,7 @@ export function useChatSession({
       const next = setProviderAvatar(current, providerId, avatar);
       // Confirm both durable halves before reporting success or releasing maintenance.
       saveConnectionSettings(next);
+      lastSavedConnectionSettings.current = next;
       connectionSettingsRef.current = next;
       setConnectionSettings(next);
       return true;
@@ -494,6 +506,44 @@ export function useChatSession({
       }
     }
     setConnectionSettings((current) => deleteProvider(current, providerId));
+  }
+
+  function changeModelGroups(connectionId: string, command: ModelGroupCommand): boolean {
+    if (sharedSettingsBusy()) return false;
+    const next = applyModelGroupCommand(connectionSettingsRef.current, connectionId, command);
+    saveConnectionSettings(next);
+    lastSavedConnectionSettings.current = next;
+    connectionSettingsRef.current = next;
+    setConnectionSettings(next);
+    return true;
+  }
+
+  function commitConnectionDeletion(current: ConnectionSettingsState, next: ConnectionSettingsState, connections: readonly ConnectionProfile[]): boolean {
+    if (current === next) return false;
+    // Persist the entire batch before publishing success or cancelling related probes.
+    saveConnectionSettings(next);
+    lastSavedConnectionSettings.current = next;
+    connectionSettingsRef.current = next;
+    setConnectionSettings(next);
+    for (const connection of connections) {
+      invalidateCatalogRequest(connection.id);
+      for (const model of connection.models) invalidateModelTestRequest(model.id);
+    }
+    return true;
+  }
+
+  function removeProviders(providers: readonly ProviderGroup[]): boolean {
+    if (sharedSettingsBusy()) return false;
+    const current = connectionSettingsRef.current;
+    if (!providers.length || providers.some(provider => !current.providers.includes(provider))) return false;
+    return commitConnectionDeletion(current, deleteProviders(current, providers.map(provider => provider.id)), providers.flatMap(provider => provider.connections));
+  }
+
+  function removeConnections(providerId: string, connections: readonly ConnectionProfile[]): boolean {
+    if (sharedSettingsBusy()) return false;
+    const current = connectionSettingsRef.current, provider = current.providers.find(item => item.id === providerId);
+    if (!connections.length || !provider || connections.some(connection => !provider.connections.includes(connection))) return false;
+    return commitConnectionDeletion(current, deleteConnections(current, providerId, connections.map(connection => connection.id)), connections);
   }
 
   function updateProviderName(providerId: string, name: string): void {
@@ -1337,6 +1387,8 @@ export function useChatSession({
     deleteConnection: removeConnection,
     deleteModel: removeModel,
     deleteProvider: removeProvider,
+    deleteProviders: removeProviders,
+    deleteConnections: removeConnections,
     draft,
     draftAttachments,
     attachmentBusy,
@@ -1369,5 +1421,6 @@ export function useChatSession({
     stopGeneration,
     updateConnection: updateConnectionProfile,
     updateModel: updateConfiguredModel,
+    changeModelGroups,
   };
 }

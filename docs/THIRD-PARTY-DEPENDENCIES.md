@@ -6,10 +6,10 @@
 npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的全部目标/构建/开发依赖，均是保守清单，不是 Windows EXE 的实际链接清单。
 缺少本机许可文件与嵌套依赖需按 [许可说明](THIRD-PARTY-LICENSES.md) 继续核实；源码下载位置不等于品牌素材授权。
 
-- package-lock.json SHA-256: `ca47a162e8f3a4654fb9f32b37287d79091cb5a165b264386b325197c802418d`
-- src-tauri/Cargo.lock SHA-256: `63f58f8f02ad21f4bdb4feb30a9924a156af5eaebfd4cbbd3d78c81f58c62aff`
+- package-lock.json SHA-256: `1e10e40247cf9764459a6887528b82aef6421d833238a0e3dde31d394a905570`
+- src-tauri/Cargo.lock SHA-256: `095334e67c11e8fd87cb01cb3d492b4e65dffa7188bd2dfc78c7feeca8758520`
 - npm: 272 个锁定位置；其中 151 个非 dev 项。
-- Rust: 556 个外部包。
+- Rust: 575 个外部包。
 
 ## npm
 
@@ -410,6 +410,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [fastrand](https://crates.io/crates/fastrand/2.5.0) | 2.5.0 | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
 | [fdeflate](https://crates.io/crates/fdeflate/0.3.7) | 0.3.7 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [field-offset](https://crates.io/crates/field-offset/0.3.6) | 0.3.6 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [filetime](https://crates.io/crates/filetime/0.2.29) | 0.2.29 | MIT/Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [find-msvc-tools](https://crates.io/crates/find-msvc-tools/0.1.12) | 0.1.12 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [flate2](https://crates.io/crates/flate2/1.1.10) | 1.1.10 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [fnv](https://crates.io/crates/fnv/1.0.7) | 1.0.7 | Apache-2.0 / MIT | LICENSE-APACHE, LICENSE-MIT |
@@ -497,10 +498,12 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [jiff-tzdb-platform](https://crates.io/crates/jiff-tzdb-platform/0.1.3) | 0.1.3 | Unlicense OR MIT | COPYING, LICENSE-MIT |
 | [jiff-tzdb](https://crates.io/crates/jiff-tzdb/0.1.8) | 0.1.8 | Unlicense OR MIT | COPYING, LICENSE-MIT |
 | [jiff](https://crates.io/crates/jiff/0.2.37) | 0.2.37 | Unlicense OR MIT | COPYING, LICENSE-MIT |
+| [jni-macros](https://crates.io/crates/jni-macros/0.22.4) | 0.22.4 | MIT OR Apache-2.0 | 无顶层许可文件；需查上游/嵌套目录 |
 | [jni-sys-macros](https://crates.io/crates/jni-sys-macros/0.4.1) | 0.4.1 | MIT OR Apache-2.0 | 无顶层许可文件；需查上游/嵌套目录 |
 | [jni-sys](https://crates.io/crates/jni-sys/0.3.1) | 0.3.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [jni-sys](https://crates.io/crates/jni-sys/0.4.1) | 0.4.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [jni](https://crates.io/crates/jni/0.21.1) | 0.21.1 | MIT/Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [jni](https://crates.io/crates/jni/0.22.4) | 0.22.4 | MIT OR Apache-2.0 | 无顶层许可文件；需查上游/嵌套目录 |
 | [js-sys](https://crates.io/crates/js-sys/0.3.105) | 0.3.105 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [json-patch](https://crates.io/crates/json-patch/3.0.1) | 3.0.1 | MIT/Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [jsonptr](https://crates.io/crates/jsonptr/0.6.3) | 0.6.3 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
@@ -523,6 +526,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [memchr](https://crates.io/crates/memchr/2.8.3) | 2.8.3 | Unlicense OR MIT | COPYING, LICENSE-MIT |
 | [memoffset](https://crates.io/crates/memoffset/0.9.1) | 0.9.1 | MIT | LICENSE |
 | [mime](https://crates.io/crates/mime/0.3.17) | 0.3.17 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [minisign-verify](https://crates.io/crates/minisign-verify/0.2.5) | 0.2.5 | MIT | LICENSE |
 | [miniz_oxide](https://crates.io/crates/miniz_oxide/0.8.9) | 0.8.9 | MIT OR Zlib OR Apache-2.0 | LICENSE, LICENSE-APACHE.md, LICENSE-MIT.md, LICENSE-ZLIB.md |
 | [miniz_oxide](https://crates.io/crates/miniz_oxide/0.9.1) | 0.9.1 | MIT OR Zlib OR Apache-2.0 | LICENSE, LICENSE-APACHE.md, LICENSE-MIT.md, LICENSE-ZLIB.md |
 | [mio](https://crates.io/crates/mio/1.2.3) | 1.2.3 | MIT | LICENSE |
@@ -550,6 +554,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [objc2-exception-helper](https://crates.io/crates/objc2-exception-helper/0.1.1) | 0.1.1 | Zlib OR Apache-2.0 OR MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [objc2-foundation](https://crates.io/crates/objc2-foundation/0.3.2) | 0.3.2 | MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [objc2-io-surface](https://crates.io/crates/objc2-io-surface/0.3.2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT | 无顶层许可文件；需查上游/嵌套目录 |
+| [objc2-osa-kit](https://crates.io/crates/objc2-osa-kit/0.3.2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [objc2-quartz-core](https://crates.io/crates/objc2-quartz-core/0.3.2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [objc2-ui-kit](https://crates.io/crates/objc2-ui-kit/0.3.2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [objc2-user-notifications](https://crates.io/crates/objc2-user-notifications/0.3.2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT | 无顶层许可文件；需查上游/嵌套目录 |
@@ -557,8 +562,10 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [objc2](https://crates.io/crates/objc2/0.6.4) | 0.6.4 | MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [once_cell](https://crates.io/crates/once_cell/1.21.4) | 1.21.4 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [open](https://crates.io/crates/open/5.4.4) | 5.4.4 | MIT | LICENSE.md |
+| [openssl-probe](https://crates.io/crates/openssl-probe/0.2.1) | 0.2.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [option-ext](https://crates.io/crates/option-ext/0.2.0) | 0.2.0 | MPL-2.0 | LICENSE.txt |
 | [ordered-stream](https://crates.io/crates/ordered-stream/0.2.0) | 0.2.0 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [osakit](https://crates.io/crates/osakit/0.3.1) | 0.3.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [pango-sys](https://crates.io/crates/pango-sys/0.18.0) | 0.18.0 | MIT | LICENSE |
 | [pango](https://crates.io/crates/pango/0.18.3) | 0.18.3 | MIT | COPYRIGHT, LICENSE |
 | [parking](https://crates.io/crates/parking/2.2.1) | 2.2.1 | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT, LICENSE-THIRD-PARTY |
@@ -618,17 +625,23 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [rustc-hash](https://crates.io/crates/rustc-hash/2.1.3) | 2.1.3 | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
 | [rustc_version](https://crates.io/crates/rustc_version/0.4.1) | 0.4.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [rustix](https://crates.io/crates/rustix/1.1.4) | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | COPYRIGHT, LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT |
+| [rustls-native-certs](https://crates.io/crates/rustls-native-certs/0.8.4) | 0.8.4 | Apache-2.0 OR ISC OR MIT | LICENSE, LICENSE-APACHE, LICENSE-ISC, LICENSE-MIT |
 | [rustls-pki-types](https://crates.io/crates/rustls-pki-types/1.15.1) | 1.15.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [rustls-platform-verifier-android](https://crates.io/crates/rustls-platform-verifier-android/0.2.0) | 0.2.0 | MIT OR Apache-2.0 | 无顶层许可文件；需查上游/嵌套目录 |
+| [rustls-platform-verifier](https://crates.io/crates/rustls-platform-verifier/0.7.1) | 0.7.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [rustls-webpki](https://crates.io/crates/rustls-webpki/0.103.15) | 0.103.15 | ISC | LICENSE |
 | [rustls](https://crates.io/crates/rustls/0.23.44) | 0.23.44 | Apache-2.0 OR ISC OR MIT | LICENSE-APACHE, LICENSE-ISC, LICENSE-MIT |
 | [rustversion](https://crates.io/crates/rustversion/1.0.23) | 1.0.23 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [ryu](https://crates.io/crates/ryu/1.0.23) | 1.0.23 | Apache-2.0 OR BSL-1.0 | LICENSE-APACHE, LICENSE-BOOST |
 | [same-file](https://crates.io/crates/same-file/1.0.6) | 1.0.6 | Unlicense/MIT | COPYING, LICENSE-MIT |
+| [schannel](https://crates.io/crates/schannel/0.1.29) | 0.1.29 | MIT | LICENSE.md |
 | [schemars](https://crates.io/crates/schemars/0.8.22) | 0.8.22 | MIT | LICENSE |
 | [schemars](https://crates.io/crates/schemars/0.9.0) | 0.9.0 | MIT | LICENSE |
 | [schemars](https://crates.io/crates/schemars/1.2.2) | 1.2.2 | MIT | LICENSE |
 | [schemars_derive](https://crates.io/crates/schemars_derive/0.8.22) | 0.8.22 | MIT | LICENSE |
 | [scopeguard](https://crates.io/crates/scopeguard/1.2.0) | 1.2.0 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [security-framework-sys](https://crates.io/crates/security-framework-sys/2.17.0) | 2.17.0 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [security-framework](https://crates.io/crates/security-framework/3.7.0) | 3.7.0 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [selectors](https://crates.io/crates/selectors/0.36.1) | 0.36.1 | MPL-2.0 | 无顶层许可文件；需查上游/嵌套目录 |
 | [semver](https://crates.io/crates/semver/1.0.28) | 1.0.28 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [serde-untagged](https://crates.io/crates/serde-untagged/0.1.9) | 0.1.9 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
@@ -650,6 +663,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [shlex](https://crates.io/crates/shlex/2.0.1) | 2.0.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [signal-hook-registry](https://crates.io/crates/signal-hook-registry/1.4.8) | 1.4.8 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [simd-adler32](https://crates.io/crates/simd-adler32/0.3.10) | 0.3.10 | MIT | LICENSE.md |
+| [simd_cesu8](https://crates.io/crates/simd_cesu8/1.2.0) | 1.2.0 | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
 | [simdutf8](https://crates.io/crates/simdutf8/0.1.5) | 0.1.5 | MIT OR Apache-2.0 | LICENSE-Apache, LICENSE-MIT |
 | [siphasher](https://crates.io/crates/siphasher/1.0.3) | 1.0.3 | MIT/Apache-2.0 | COPYING |
 | [slab](https://crates.io/crates/slab/0.4.12) | 0.4.12 | MIT | LICENSE |
@@ -675,6 +689,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [system-deps](https://crates.io/crates/system-deps/6.2.2) | 6.2.2 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [tao-macros](https://crates.io/crates/tao-macros/0.1.4) | 0.1.4 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT, LICENSE.spdx |
 | [tao](https://crates.io/crates/tao/0.35.3) | 0.35.3 | Apache-2.0 | LICENSE, LICENSE.spdx |
+| [tar](https://crates.io/crates/tar/0.4.46) | 0.4.46 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [target-lexicon](https://crates.io/crates/target-lexicon/0.12.16) | 0.12.16 | Apache-2.0 WITH LLVM-exception | LICENSE |
 | [tauri-build](https://crates.io/crates/tauri-build/2.6.3) | 2.6.3 | Apache-2.0 OR MIT | LICENSE_APACHE-2.0, LICENSE_MIT |
 | [tauri-codegen](https://crates.io/crates/tauri-codegen/2.6.3) | 2.6.3 | Apache-2.0 OR MIT | LICENSE_APACHE-2.0, LICENSE_MIT |
@@ -684,6 +699,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [tauri-plugin-http](https://crates.io/crates/tauri-plugin-http/2.6.0) | 2.6.0 | Apache-2.0 OR MIT | LICENSE.spdx, LICENSE_APACHE-2.0, LICENSE_MIT |
 | [tauri-plugin-opener](https://crates.io/crates/tauri-plugin-opener/2.5.5) | 2.5.5 | Apache-2.0 OR MIT | LICENSE.spdx, LICENSE_APACHE-2.0, LICENSE_MIT |
 | [tauri-plugin-single-instance](https://crates.io/crates/tauri-plugin-single-instance/2.4.4) | 2.4.4 | Apache-2.0 OR MIT | LICENSE.spdx, LICENSE_APACHE-2.0, LICENSE_MIT |
+| [tauri-plugin-updater](https://crates.io/crates/tauri-plugin-updater/2.12.0) | 2.12.0 | Apache-2.0 OR MIT | LICENSE.spdx, LICENSE_APACHE-2.0, LICENSE_MIT |
 | [tauri-plugin-window-state](https://crates.io/crates/tauri-plugin-window-state/2.4.1) | 2.4.1 | Apache-2.0 OR MIT | LICENSE.spdx, LICENSE_APACHE-2.0, LICENSE_MIT |
 | [tauri-plugin](https://crates.io/crates/tauri-plugin/2.6.3) | 2.6.3 | Apache-2.0 OR MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [tauri-runtime-wry](https://crates.io/crates/tauri-runtime-wry/2.11.4) | 2.11.4 | Apache-2.0 OR MIT | LICENSE_APACHE-2.0, LICENSE_MIT |
@@ -761,6 +777,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [web_atoms](https://crates.io/crates/web_atoms/0.2.6) | 0.2.6 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [webkit2gtk-sys](https://crates.io/crates/webkit2gtk-sys/2.0.2) | 2.0.2 | MIT | LICENSE |
 | [webkit2gtk](https://crates.io/crates/webkit2gtk/2.0.2) | 2.0.2 | MIT | LICENSE |
+| [webpki-root-certs](https://crates.io/crates/webpki-root-certs/1.0.9) | 1.0.9 | CDLA-Permissive-2.0 | LICENSE |
 | [webpki-roots](https://crates.io/crates/webpki-roots/1.0.9) | 1.0.9 | CDLA-Permissive-2.0 | LICENSE |
 | [webview2-com-macros](https://crates.io/crates/webview2-com-macros/0.8.1) | 0.8.1 | MIT | 无顶层许可文件；需查上游/嵌套目录 |
 | [webview2-com-sys](https://crates.io/crates/webview2-com-sys/0.38.2) | 0.38.2 | MIT | 无顶层许可文件；需查上游/嵌套目录 |
@@ -827,6 +844,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [wry](https://crates.io/crates/wry/0.55.1) | 0.55.1 | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT, LICENSE.spdx |
 | [x11-dl](https://crates.io/crates/x11-dl/2.21.0) | 2.21.0 | MIT | LICENSE-MIT |
 | [x11](https://crates.io/crates/x11/2.21.0) | 2.21.0 | MIT | LICENSE-MIT |
+| [xattr](https://crates.io/crates/xattr/1.6.1) | 1.6.1 | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [yoke-derive](https://crates.io/crates/yoke-derive/0.8.2) | 0.8.2 | Unicode-3.0 | LICENSE |
 | [yoke](https://crates.io/crates/yoke/0.8.3) | 0.8.3 | Unicode-3.0 | LICENSE |
 | [zbus](https://crates.io/crates/zbus/5.19.0) | 5.19.0 | MIT | LICENSE |
@@ -840,6 +858,7 @@ npm 包括开发、可选及跨平台锁定项；Rust 包括 metadata 返回的�
 | [zerovec-derive](https://crates.io/crates/zerovec-derive/0.11.6) | 0.11.6 | Unicode-3.0 | LICENSE |
 | [zerovec](https://crates.io/crates/zerovec/0.11.8) | 0.11.8 | Unicode-3.0 | LICENSE |
 | [zip](https://crates.io/crates/zip/2.4.2) | 2.4.2 | MIT | LICENSE |
+| [zip](https://crates.io/crates/zip/4.6.1) | 4.6.1 | MIT | LICENSE |
 | [zlib-rs](https://crates.io/crates/zlib-rs/0.6.7) | 0.6.7 | Zlib | LICENSE |
 | [zmij](https://crates.io/crates/zmij/1.0.23) | 1.0.23 | MIT | LICENSE-MIT |
 | [zopfli](https://crates.io/crates/zopfli/0.8.3) | 0.8.3 | Apache-2.0 | COPYING |

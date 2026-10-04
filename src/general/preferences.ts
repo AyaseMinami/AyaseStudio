@@ -2,27 +2,37 @@ import { useState, useSyncExternalStore } from "react";
 import { dataCheck, dataRecord, migrateData } from "../storage/dataContract";
 
 export interface GeneralPreferences {
-  version: 1;
+  version: 2;
   backgroundResident: boolean;
   confirmBeforeExit: boolean;
+  checkUpdatesOnStartup: boolean;
 }
+export type GeneralPreferenceKey = {
+  [Key in keyof GeneralPreferences]: GeneralPreferences[Key] extends boolean ? Key : never;
+}[keyof GeneralPreferences];
+const preferenceKeys = ["backgroundResident", "confirmBeforeExit", "checkUpdatesOnStartup"] as const satisfies readonly GeneralPreferenceKey[];
 export interface GeneralSettingsState {
   preferences: GeneralPreferences;
   error: string | null;
-  setPreference(key: "backgroundResident" | "confirmBeforeExit", value: boolean): Promise<boolean>;
+  setPreference(key: GeneralPreferenceKey, value: boolean): Promise<boolean>;
 }
 export const generalPreferencesKey = "ayase-studio.general.v1";
-export const defaultGeneralPreferences: GeneralPreferences = { version: 1, backgroundResident: true, confirmBeforeExit: true };
+export const defaultGeneralPreferences: GeneralPreferences = { version: 2, backgroundResident: true, confirmBeforeExit: true, checkUpdatesOnStartup: true };
 
 /** Local reads share the clone-based migration seam. This device policy is not portable. */
 export function readGeneralPreferences(raw: unknown): GeneralPreferences {
   dataRecord(raw);
-  const value = migrateData(raw, { version: 1, oldestVersion: 1, migrations: {} });
-  dataCheck(Object.keys(value).every(key => ["version", "backgroundResident", "confirmBeforeExit"].includes(key)));
-  dataCheck(value.backgroundResident === undefined || typeof value.backgroundResident === "boolean");
-  dataCheck(value.confirmBeforeExit === undefined || typeof value.confirmBeforeExit === "boolean");
-  return { version: 1, backgroundResident: typeof value.backgroundResident === "boolean" ? value.backgroundResident : true,
-    confirmBeforeExit: typeof value.confirmBeforeExit === "boolean" ? value.confirmBeforeExit : true };
+  const value = migrateData(raw, { version: 2, oldestVersion: 1, migrations: {
+    1: previous => {
+      dataCheck(Object.keys(previous).every(key => ["version", "backgroundResident", "confirmBeforeExit"].includes(key)));
+      return { ...previous, version: 2, checkUpdatesOnStartup: true };
+    },
+  } });
+  dataCheck(Object.keys(value).every(key => ["version", ...preferenceKeys].includes(key)));
+  preferenceKeys.forEach(key => dataCheck(value[key] === undefined || typeof value[key] === "boolean"));
+  return { version: 2, backgroundResident: typeof value.backgroundResident === "boolean" ? value.backgroundResident : true,
+    confirmBeforeExit: typeof value.confirmBeforeExit === "boolean" ? value.confirmBeforeExit : true,
+    checkUpdatesOnStartup: typeof value.checkUpdatesOnStartup === "boolean" ? value.checkUpdatesOnStartup : true };
 }
 
 type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
@@ -40,10 +50,10 @@ export class GeneralPreferencesStore {
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   /** Revalidate the source before any write; a display fallback never authorizes replacement. */
-  setPreference = async (key: "backgroundResident" | "confirmBeforeExit", value: boolean): Promise<boolean> => {
+  setPreference = async (key: GeneralPreferenceKey, value: boolean): Promise<boolean> => {
     try {
       dataCheck(typeof value === "boolean");
-      dataCheck(key === "backgroundResident" || key === "confirmBeforeExit");
+      dataCheck(preferenceKeys.includes(key));
       const preferences = readGeneralPreferences({ ...this.read(), [key]: value });
       this.storage.setItem(generalPreferencesKey, JSON.stringify(preferences));
       this.snapshot = { preferences, error: null };
