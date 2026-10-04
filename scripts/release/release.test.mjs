@@ -56,7 +56,7 @@ test("actual installer ProductVersion must match declared release", () => {
   assert.throws(() => verifyInstallerVersion("candidate", names, "1.2.3-beta.1", () => ({ status: 1 })), /ProductVersion/);
   assert.throws(() => verifyInstallerVersion("candidate", names, "1.2.3-beta.1", () => ({ error: new Error("Unavailable"), status: null })), /ProductVersion/);
 });
-test("native verifier receives the intended version as a separate argument", () => {
+test("native verifier receives the intended version as a separate argument", async () => {
   const version = "1.2.3-beta.1", names = artifactNames(version);
   let calls = 0;
   const run = (command, args, options) => {
@@ -69,11 +69,28 @@ test("native verifier receives the intended version as a separate argument", () 
     assert.equal(options.shell, undefined);
     return { status: 0 };
   };
-  assert.doesNotThrow(() => verifyNativeSignature("candidate", names, publicKey, version, "source-root", run));
+  await assert.doesNotReject(() => verifyNativeSignature("candidate", names, publicKey, version, "source-root", run));
   assert.equal(calls, 1);
-  assert.throws(() => verifyNativeSignature("candidate", names, publicKey, undefined, "source-root", run), /Version/);
+  await assert.rejects(verifyNativeSignature("candidate", names, publicKey, undefined, "source-root", run), /Version/);
   assert.equal(calls, 1);
-  assert.throws(() => verifyNativeSignature("candidate", names, publicKey, version, ".", () => ({ status: 1 })), /signature verification failed/);
+  await assert.rejects(verifyNativeSignature("candidate", names, publicKey, version, ".", () => ({ status: 1 })), /signature verification failed/);
+});
+test("native verification stays pending until the async process has exited", async () => {
+  const version = "1.2.3-beta.1", names = artifactNames(version);
+  let finish, settled = false;
+  const verifying = verifyNativeSignature("candidate", names, publicKey, version, ".", () => new Promise(resolve => { finish = resolve; }));
+  verifying.then(() => { settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
+  finish({ status: 0 });
+  await verifying;
+  assert.equal(settled, true);
+});
+test("async native verification rejects process launch errors, failure and signals", async () => {
+  const version = "1.2.3-beta.1", names = artifactNames(version);
+  for (const result of [{ status: 1 }, { status: null }, { error: new Error("missing executable") }]) {
+    await assert.rejects(verifyNativeSignature("candidate", names, publicKey, version, ".", async () => result), /signature verification failed/);
+  }
 });
 test("manifest URL pins repository, exact version tag and installer", () => {
   const value = manifest();

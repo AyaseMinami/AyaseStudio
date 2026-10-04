@@ -14,6 +14,8 @@ Publication first resolves a Release by exact tag; only a 404 enables authentica
 
 The unused-version gate shares that lookup and independently checks Git tags, so an existing draft without a Git tag still prevents rebuilding its version.
 
+Release tooling awaits an asynchronous native signature subprocess before proceeding. Cargo compilation must not block Node's network event processing; unsuccessful or interrupted verification prevents upload/publication.
+
 ## Connection-scoped model groups (#119, 2026-10-04)
 
 `ConnectionProfile.modelGroups` optionally owns stable `{ id, name }` custom groups; `ConfiguredModel.groupId` optionally references a group within that exact connection. Absent fields retain automatic grouping. Group IDs are local to their connection, independently of provider/connection/configured-model IDs; copy restore keeps group IDs and membership together inside the newly identified connection. Merge keeps the complete local configuration for an existing connection, while replacement imports the source groups. Groups do not change API model IDs, target selection, credentials or generation parameters.

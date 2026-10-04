@@ -49,6 +49,8 @@ GitHub can return 404 for a draft at the release-by-tag endpoint even when the a
 
 Candidate preflight and draft creation reuse this lookup to reject an existing same-tag draft even if its Git tag is absent; an actually unused version requires both no Release and no Git tag.
 
+The native signature helper is spawned asynchronously and awaited before artifact upload or publication. Initial Cargo compilation may take several minutes; Node must keep servicing HTTP socket/timeout events during that wait. A launch failure, nonzero exit or signal still stops publication. This does not rebuild the accepted NSIS installer or add automatic retries to GitHub mutations.
+
 - A Beta release can advance only `beta.json`.
 - Before publishing a stable draft, the workflow reads GitHub Latest and `stable.json`. The candidate must be strictly newer than each existing stable version; equal or older candidates are rejected before any remote mutation. An absent GitHub Latest (404) is allowed, but unexpected Latest metadata, a non-`v` tag, a prerelease or a non-strict stable version blocks publication. A successful stable publication is marked GitHub Latest and advances `stable.json`, and also `beta.json` if newer than its current version. A newer upcoming Beta is retained. Beta publication is never marked GitHub Latest and does not need this stable-version gate.
 - A channel never moves to an older semver. Equal versions must contain the same manifest.

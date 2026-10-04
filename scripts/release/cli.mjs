@@ -24,14 +24,14 @@ if (command === "preflight") {
   const files = await loadArtifacts(directory, version);
   const verified = verifyArtifacts(files, { version, publicKey, sourceSha: process.env.GITHUB_SHA });
   verifyInstallerVersion(directory, verified.names, version);
-  verifyNativeSignature(directory, verified.names, publicKey, version);
+  await verifyNativeSignature(directory, verified.names, publicKey, version);
   const release = await createDraft(api, files, { version, publicKey, sourceSha: process.env.GITHUB_SHA });
   console.log(`Draft ready: ${release.html_url}`);
 } else if (command === "publish") {
   const inspected = await inspectRelease(api, process.env.RELEASE_TAG, publicKey, process.env.GITHUB_SHA);
   await saveArtifacts(directory, inspected.files);
   verifyInstallerVersion(directory, inspected.names, inspected.provenance.version);
-  verifyNativeSignature(directory, inspected.names, publicKey, inspected.provenance.version);
+  await verifyNativeSignature(directory, inspected.names, publicKey, inspected.provenance.version);
   await publishVerifiedRelease(api, inspected);
   // Re-download immutable published assets before advertising either channel.
   const published = await inspectRelease(api, process.env.RELEASE_TAG, publicKey, process.env.GITHUB_SHA);
