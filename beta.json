@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0-beta.4",
-  "notes": "Ayase Studio Beta 4 为公开招募测试建立统一的更新与发布流程。\n\n- 新增“关于”页面手动检查更新、下载进度、取消下载及确认安装重启。\n- 默认在主界面就绪约 10 秒后检查一次，可在“常规 → 应用更新”关闭；发现新版只提示，检查失败不打扰使用，不自动下载或安装。\n- GitHub Actions 构建带 Tauri updater 签名的 Windows x64 NSIS 安装包；候选验收后发布同一组产物并更新 Beta 清单。\n- 提供 GitHub 下载、问题反馈、百度网盘备用链接及提取码。\n- 包含助手、对话、连接等批量管理，以及连接内可编辑模型分组。\n\n使用说明：历史无应用内更新的版本需要先手动安装一次本版本。Windows Authenticode 尚未签名，系统可能显示 SmartScreen 提示；免费的 Tauri updater 签名用于校验后续更新包。\n\n本草稿等待 Windows 安装、重装、旧版覆盖升级及数据保留验收。应用内真实更新链路需在公开后从旧 updater 版本另行验证。\n",
-  "pub_date": "2026-10-04T08:03:42.119Z",
+  "version": "0.1.0-beta.5",
+  "notes": "临时自动更新测试版：仅将应用版本从 0.1.0-beta.4 升至 0.1.0-beta.5，功能和数据格式保持不变。用于验证 Beta 4 的真实检查、下载、签名验证、安装重启和版本显示。测试完成后将 Beta 更新清单恢复为 Beta 4；已安装 Beta 5 的客户端需手动安装 Beta 4 降级。",
+  "pub_date": "2026-10-04T15:46:19.840Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUVArTDVvUWpnbVpyS1BhdVZLcDJTdHduMGRKZ3BKZkFhbUJ1REQxT1orQk9aZDBsZGNrdUtSZExBa3UrRFM4OVA3RkViOFJ4Z2ZsOWhPY2JNUUh2eUE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTAxMDE5CWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuNF94NjQtc2V0dXAuZXhlCms4YWlrcEZQU3J5UXJvNHMvV3lrN0l3QWM2WDZVUGppN2Y5TnZQOFBENXNkZzFZbTFXKzBxaHIvRHgxellnNEtGazJvakU3ZFI4S3hGUldINVFpakJRPT0K",
-      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.4/Ayase.Studio_0.1.0-beta.4_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUU4wT0cyalhENFJLckozNzcvNnh1bDZ1azJIMnBSU2haRTB0bDVVeHd6S1hJK2lFamV6a0c2dEZzQVFpbXNFTUF1UUIvT1pQWGZVOExPZWEwZGk2SEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTI4Nzc2CWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuNV94NjQtc2V0dXAuZXhlCnZENlcxeStRamxTcGwrbmtZK2NxSWlRSHJMME1NNlJxZzhOL3Mza0FDUnlTeDJodi9Kbk4zWndwM3doZVYwbVQwM1JFT05BbU8zdHRyaGsrRFFpc0NBPT0K",
+      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.5/Ayase.Studio_0.1.0-beta.5_x64-setup.exe"
     }
   }
 }
