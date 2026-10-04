@@ -72,11 +72,29 @@ export async function createDraft(api, files, { version, publicKey, sourceSha })
   invariant(await tagSource(api, tag) === sourceSha, "Created tag does not match candidate source");
   return release;
 }
+async function releaseByTag(api, tag) {
+  const tagged = await api.call(`releases/tags/${encodeURIComponent(tag)}`, { allow404: true });
+  if (tagged) return tagged;
+  // Drafts can be absent from the by-tag endpoint even with write access.
+  // Resolve their exact tag through the authenticated listing, then read by ID.
+  const matches = [];
+  for (let page = 1; ; page++) {
+    const releases = await api.call(`releases?per_page=100&page=${page}`);
+    invariant(Array.isArray(releases), "Invalid release listing");
+    matches.push(...releases.filter(release => release?.tag_name === tag));
+    invariant(matches.length <= 1, "Ambiguous release tag; refusing publication");
+    if (releases.length < 100) break;
+  }
+  invariant(matches.length === 1, "Release not found for exact tag");
+  invariant(Number.isSafeInteger(matches[0].id) && matches[0].id > 0, "Invalid release ID");
+  return api.call(`releases/${matches[0].id}`);
+}
+
 export async function inspectRelease(api, tag, publicKey, mainSha, ancestry = assertMainAncestry) {
   invariant(typeof tag === "string" && tag.startsWith("v"), "Tag must start with v");
   const version = tag.slice(1);
   parseVersion(version);
-  const release = await api.call(`releases/tags/${encodeURIComponent(tag)}`);
+  const release = await releaseByTag(api, tag);
   invariant(release.tag_name === tag && typeof release.draft === "boolean" && release.prerelease === (parseVersion(version).beta !== null), "Release tag/channel mismatch");
   const files = await readReleaseArtifacts(api, release, version);
   const verified = verifyArtifacts(files, { version, publicKey });

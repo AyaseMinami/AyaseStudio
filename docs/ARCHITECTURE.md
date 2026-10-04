@@ -10,6 +10,8 @@ Installation first acquires the existing chat maintenance preparation (flushes p
 
 GitHub candidate and publish workflows share a serialized release group. They use a fixed main source commit, matching versions, signed canonical NSIS assets, hashes and provenance; publication reuses the accepted candidate, then advances the fixed channel manifests without moving them backwards. Detailed configuration, recovery and native acceptance are in [the release runbook](RELEASING.md). Local code/tests do not prove a GitHub workflow run or installed upgrade acceptance.
 
+Publication first resolves a Release by exact tag; only a 404 enables authenticated paginated draft lookup, requiring one matching tag and canonical ID readback. Missing/ambiguous releases and non-404 failures stop before mutation, and all candidate asset, signature, tag-source and main-ancestry checks still apply.
+
 ## Connection-scoped model groups (#119, 2026-10-04)
 
 `ConnectionProfile.modelGroups` optionally owns stable `{ id, name }` custom groups; `ConfiguredModel.groupId` optionally references a group within that exact connection. Absent fields retain automatic grouping. Group IDs are local to their connection, independently of provider/connection/configured-model IDs; copy restore keeps group IDs and membership together inside the newly identified connection. Merge keeps the complete local configuration for an existing connection, while replacement imports the source groups. Groups do not change API model IDs, target selection, credentials or generation parameters.

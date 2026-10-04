@@ -163,6 +163,7 @@ test("published retry verifies existing inventory and avoids publication mutatio
   assert.ok(checkedAncestry);
   await publishVerifiedRelease(api, inspected);
   assert.equal(api.calls.some(call => call.method), false);
+  assert.equal(api.calls.some(call => call.route.startsWith("releases?")), false);
   await assert.rejects(inspectRelease(releaseApi({ tagSha: mainSha }), "v1.2.3-beta.1", publicKey, mainSha, () => {}), /Tag commit/);
   await assert.rejects(inspectRelease(releaseApi(), "v1.2.3-beta.1", makeKey(2), mainSha, () => {}), /signing key/);
   const missing = artifacts(); delete missing["latest.json"];
@@ -173,6 +174,56 @@ test("draft publication only toggles visibility after candidate verification", a
   const inspected = await inspectRelease(api, "v1.2.3-beta.1", publicKey, mainSha, () => {});
   assert.equal((await publishVerifiedRelease(api, inspected)).draft, false);
   assert.deepEqual(api.calls.filter(call => call.method).map(call => call.body), [{ draft: false, prerelease: true, make_latest: "false" }]);
+});
+
+function draftLookupApi(pages, canonicalChanges = {}) {
+  const api = releaseApi({ draft: true });
+  const original = api.call.bind(api);
+  api.call = async (route, options = {}) => {
+    if (route === "releases/tags/v1.2.3-beta.1" || route.startsWith("releases?per_page=100&page=") || route === "releases/1" && !options.method) {
+      api.calls.push({ route, ...options });
+      if (route.startsWith("releases/tags/")) return null;
+      if (route === "releases/1") return { ...api.release, ...canonicalChanges };
+      return pages[Number(route.split("page=").at(-1)) - 1] ?? [];
+    }
+    return original(route, options);
+  };
+  return api;
+}
+
+test("draft tag 404 resolves the exact release through authenticated paginated listing", async () => {
+  const unrelated = Array.from({ length: 100 }, (_, index) => ({ id: index + 2, tag_name: `v9.0.${index}`, draft: true }));
+  const api = draftLookupApi([unrelated, [{ id: 1, tag_name: "v1.2.3-beta.1", draft: true }]]);
+  const inspected = await inspectRelease(api, "v1.2.3-beta.1", publicKey, mainSha, () => {});
+  assert.equal(inspected.release.id, 1);
+  assert.equal(inspected.release.draft, true);
+  assert.equal(api.calls[0].allow404, true);
+  assert.ok(api.calls.some(call => call.route === "releases?per_page=100&page=2"));
+  assert.ok(api.calls.some(call => call.route === "releases/1"));
+  assert.equal(api.calls.some(call => call.method), false);
+});
+
+test("draft lookup rejects missing, ambiguous and changed tag identities before mutations", async () => {
+  const match = { id: 1, tag_name: "v1.2.3-beta.1", draft: true };
+  for (const api of [draftLookupApi([[]]), draftLookupApi([[match, { ...match, id: 2 }]]), draftLookupApi([[match]], { tag_name: "v9.0.0" })]) {
+    await assert.rejects(inspectRelease(api, "v1.2.3-beta.1", publicKey, mainSha, () => {}));
+    assert.equal(api.calls.some(call => call.method), false);
+  }
+});
+
+test("draft lookup rejects malformed lists and invalid IDs", async () => {
+  for (const pages of [[{}], [[{ id: "1", tag_name: "v1.2.3-beta.1" }]], [[{ id: 0, tag_name: "v1.2.3-beta.1" }]]]) {
+    const api = draftLookupApi(pages);
+    await assert.rejects(inspectRelease(api, "v1.2.3-beta.1", publicKey, mainSha, () => {}));
+    assert.equal(api.calls.some(call => call.method), false);
+  }
+});
+
+test("non-404 API failure never falls back to draft lookup", async () => {
+  let requests = 0;
+  const api = new GitHub("synthetic-token", async () => { requests++; return new Response("unavailable", { status: 503 }); });
+  await assert.rejects(inspectRelease(api, "v1.2.3-beta.1", publicKey, mainSha, () => {}), /failed \(503\)/);
+  assert.equal(requests, 1);
 });
 test("stable publication is GitHub latest and Beta publication is never latest", async () => {
   const api = stablePublicationApi();
