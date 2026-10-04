@@ -1,0 +1,47 @@
+name: Publish accepted candidate
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing candidate tag (vX.Y.Z or vX.Y.Z-beta.N)
+        required: true
+        type: string
+      native_acceptance:
+        description: I accepted fresh install, reinstall, upgrade and retained data using this exact candidate
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: write
+concurrency:
+  group: ayase-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      NATIVE_ACCEPTANCE: ${{ inputs.native_acceptance }}
+    steps:
+      - name: Require manual main dispatch and native acceptance
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -or $env:GITHUB_REF -ne 'refs/heads/main') { throw 'Dispatch this workflow from main only' }
+          if ($env:NATIVE_ACCEPTANCE -ne 'true') { throw 'Confirm acceptance of this exact candidate first' }
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.22.3'
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, resolved 2026-10-04
+        with:
+          toolchain: stable
+      - run: node --test scripts/release/*.test.mjs
+      - name: Verify existing candidate, publish without rebuilding, then advance channels
+        run: node scripts/release/cli.mjs publish

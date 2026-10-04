@@ -30,7 +30,7 @@ type TableRow<T> = T extends Table<infer Row, infer _Key, infer _Insert> ? Row :
 // Exhaustive policies: a new declared field cannot compile until its disposition is chosen.
 // Nested persisted records have their own policies; resources still use their existing validators.
 export const dataPolicies = {
-  general: { version: "exclude", backgroundResident: "exclude", confirmBeforeExit: "exclude" } satisfies FieldPolicy<GeneralPreferences>,
+  general: { version: "exclude", backgroundResident: "exclude", confirmBeforeExit: "exclude", checkUpdatesOnStartup: "exclude" } satisfies FieldPolicy<GeneralPreferences>,
   session: {
     version: "backup", systemInstruction: "backup", temperature: "backup", topP: "backup", topK: "backup",
     contextBudget: "backup", maxOutput: "backup", stream: "backup", dualSamplingConfirmed: "backup", customJson: "backup",

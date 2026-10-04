@@ -1,8 +1,9 @@
 import type { GeneralSettingsState } from "./preferences";
 import type { ConfirmationOptions } from "../ui/useConfirmation";
 
-export interface ExitGuard { prepare(): Promise<boolean>; cancel(): void }
+export interface ExitGuard { prepare(reason?: "update"): Promise<boolean>; cancel(): void }
 export type RegisterExitGuard = (guard: ExitGuard) => () => void;
+export type InstallUpdate = (install: () => Promise<void>) => Promise<boolean>;
 export interface LifecycleRuntime {
   hide(): Promise<void>;
   close(): Promise<void>;
@@ -38,6 +39,25 @@ export class ApplicationLifecycle {
     })), attach(this.runtime.onExit(() => { void this.request(true); }))]);
   }
   dispose(): void { this.alive = false; this.releases.splice(0).forEach(release => release()); }
+  runForUpdate: InstallUpdate = async install => {
+    if (!this.alive || this.busy || this.approved || !this.canExit()) return false;
+    this.busy = true;
+    const guard = this.guard;
+    let prepared = false, installed = false;
+    try {
+      const accepted = await this.confirm({ title: "安装更新并重启", confirmLabel: "安装并重启",
+        message: "安装将退出并重启 Ayase Studio。请先保存未发送的内容，确定开始安装？" });
+      if (!accepted || !this.alive || !this.canExit() || this.guard !== guard) return false;
+      if (guard) { prepared = true; if (!await guard.prepare("update") || !this.alive) return false; }
+      if (!this.alive || !this.canExit()) return false;
+      await install();
+      installed = true;
+      return true;
+    } finally {
+      if (!installed && prepared) guard?.cancel();
+      this.busy = false;
+    }
+  };
   async request(explicitExit: boolean): Promise<void> {
     if (!this.alive || this.busy || this.approved) return;
     this.busy = true;

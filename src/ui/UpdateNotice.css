@@ -1,0 +1,10 @@
+.update-notice { position: fixed; right: 20px; bottom: 20px; z-index: 80; display: flex; align-items: center; gap: 10px; max-width: min(440px, calc(100vw - 40px)); padding: 10px 12px; border: 1px solid rgb(var(--color-border)); border-radius: 10px; background: rgb(var(--color-panel)); box-shadow: 0 3px 12px rgb(var(--color-shadow) / .1); color: rgb(var(--color-text)); font-size: var(--font-small); }
+.update-notice p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.update-notice button { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-height: 30px; border-radius: 6px; cursor: pointer; }
+.update-notice-open { padding: 4px 8px; background: rgb(var(--color-accent) / .1); color: rgb(var(--color-accent-text)); }
+.update-notice-open:hover { background: rgb(var(--color-accent) / .16); }
+.update-notice-dismiss { width: 30px; color: rgb(var(--color-muted)); }
+.update-notice-dismiss:hover { background: rgb(var(--color-hover)); color: rgb(var(--color-text)); }
+.update-notice button:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+@media (max-width: 480px) { .update-notice { right: 12px; bottom: 12px; max-width: calc(100vw - 24px); gap: 6px; } }
+@media (forced-colors: active) { .update-notice { border-color: CanvasText; box-shadow: none; } .update-notice button { border: 1px solid ButtonText; } }

@@ -351,6 +351,27 @@ describe("application drawing task controller", () => {
     expect(f.transport.generate).not.toHaveBeenCalled();
     expect(f.controller.getSnapshot().error).toContain("未发起");
   });
+  it.each([false, true])("restores original paused=%s when an update installation fails after settlement", async paused => {
+    const f = fixture(); await prepare(f);
+    if (paused) f.controller.pause();
+    await f.controller.settleForClose(true);
+    expect(f.controller.getSnapshot().closing).toBe(true);
+    f.controller.cancelClose();
+    expect(f.controller.getSnapshot()).toMatchObject({ closing: false, paused });
+    await f.controller.generate(settings);
+    if (paused) expect(f.transport.generate).not.toHaveBeenCalled();
+    else { await vi.waitFor(() => expect(f.transport.generate).toHaveBeenCalledOnce()); }
+  });
+  it("restores queue state when an update's unsaved-image protection is cancelled", async () => {
+    const f = fixture(); await prepare(f);
+    vi.mocked(f.files.save).mockRejectedValueOnce(new Error("disk"));
+    await f.controller.generate(settings);
+    const paused = f.controller.getSnapshot().paused;
+    await expect(f.controller.settleForClose(true)).rejects.toBeInstanceOf(UnsavedDrawingImagesError);
+    f.controller.cancelClose();
+    expect(f.controller.getSnapshot()).toMatchObject({ closing: false, paused });
+    expect(f.controller.hasUnsavedImages()).toBe(true);
+  });
   it("retains returned pixels after local save failure and retries only local saving", async () => {
     const f = fixture(); await prepare(f);
     vi.mocked(f.files.save).mockRejectedValueOnce(new Error("disk"));

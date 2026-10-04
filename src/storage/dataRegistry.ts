@@ -3,7 +3,7 @@ import type { DataVersion } from "./dataContract";
 
 /** Module data versions are independent of application, Dexie schema and backup envelope versions. */
 export const dataModules = {
-  general: { version: 1, capabilities: [], resources: "device-local residency and exit confirmation; intentionally excluded from portable backup" },
+  general: { version: 2, capabilities: [], resources: "device-local residency, exit confirmation and startup update checks; intentionally excluded from portable backup" },
   chat: { version: 3, capabilities: [], resources: "managed attachments; scoped provider replay; per-invocation generation metrics v1; exact requested API model snapshots; no runtime continuation" },
   session: { version: 1, capabilities: [], resources: "none; parameter compatibility only" },
   workspace: { version: 1, capabilities: [], resources: "model/assistant/conversation IDs remapped by restore plan" },

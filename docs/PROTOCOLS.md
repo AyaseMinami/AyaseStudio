@@ -1,5 +1,13 @@
 # Protocol Compatibility Contract
 
+## Application update transport (#76)
+
+The default-on device preference permits one startup check after workspace initialization plus a 10-second delay. An empty selection is valid readiness. Manual check cancels the pending startup timer; disabling the switch suppresses a late background offer, and failure stays quiet without retries. No automatic download/install or provider request is added. Tray restoration and settings navigation do not create another startup check.
+
+The native signature verifier also requires the authenticated minisign `file:` comment to match the original versioned installer filename. The public download filename uses a dot in the product name; it does not alter the signed original name. About provides the user-maintained Baidu mirror with `pwd=ayas` and a separate extraction-code copy control; this is an explicit external link, not an updater source or automatic fallback.
+
+Update traffic is separate from provider transport and never uses provider credentials. Explicit checks fetch `https://raw.githubusercontent.com/AyaseMinami/AyaseStudio/updates/beta.json` or `stable.json` through the native Tauri updater. Stable builds only accept stable versions; Beta builds accept later Beta or stable versions. Static manifests use `windows-x86_64` with exact versioned GitHub Release installer URLs and embedded updater signatures. HTTPS and normal TLS verification remain enabled; signed packages are verified before they can enter the install state. Requests have a 20-second check timeout and 300-second download timeout, with a 512 MiB download ceiling. Explicit cancellation settles the native future; failures do not automatically retry or switch to the optional manual download mirror. Browser/UI mocks do not test GitHub connectivity, redirect/download behavior, or Windows installer restart. See [release and upgrade acceptance](RELEASING.md).
+
 ## Official supplier presets (#100)
 
 Defaults cover documented contracts expressible by existing adapters, including #103 images. OpenRouter's Bearer Native API is excluded from x-api-key presets. Directory absence is distinct from generation support. Shared URL resolution preserves explicit catalog version prefixes and the exact HTTPS DeepSeek origin's Chat/Responses root; explicit paths and relays retain existing rules. Preset identities and avatars never choose actual protocols or authentication. See [matrix and limitations](ISSUE-100-IMPLEMENTATION.md).

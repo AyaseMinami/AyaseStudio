@@ -817,7 +817,9 @@ export class DrawingController {
     const paused = this.maintenancePaused; this.maintenancePaused = undefined;
     this.publish({ closing: false, paused }); this.pump();
   };
-  async settleForClose(): Promise<void> {
+  private updateClosePaused?: boolean;
+  async settleForClose(forUpdate = false): Promise<void> {
+    if (forUpdate) this.updateClosePaused ??= this.state.paused;
     this.publish({ closing: true, paused: true });
     // In-flight submission remains queued; closing never discards it.
     for (const active of this.active.values()) if (!active.saving) active.controller.abort();
@@ -825,7 +827,11 @@ export class DrawingController {
     await Promise.all([...this.operations]); await this.flush();
     if (this.hasUnsavedImages()) throw new UnsavedDrawingImagesError("有已返回但未保存的图片，退出会丢失原始响应。");
   }
-  cancelClose = (): void => { this.publish({ closing: false }); };
+  cancelClose = (): void => {
+    const paused = this.updateClosePaused; this.updateClosePaused = undefined;
+    this.publish({ closing: false, ...(paused === undefined ? {} : { paused }) });
+    if (paused === false) this.pump();
+  };
   /** Only after explicit user confirmation of losing unpersisted pixels. */
   async discardUnsavedForClose(): Promise<void> { await this.flush(); this.unsaved.clear(); }
   copyPrompt = async (id: string): Promise<void> => {

@@ -19,6 +19,7 @@ import { GeneralSettings } from "./ui/settings/GeneralSettings";
 import * as contextBudget from "./chat/contextBudget";
 import { createChatRepository, type ChatSnapshot } from "./chat/repository";
 import { defaultSessionConfig } from "./chat/sessionConfig";
+import { defaultGeneralPreferences } from "./general/preferences";
 import {
   loadConnectionSettings,
   saveConnectionSettings,
@@ -34,6 +35,8 @@ const runtimeMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./chat/runtime", () => runtimeMocks);
+const updateRuntimeMocks = vi.hoisted(() => ({ available: vi.fn(), check: vi.fn(), download: vi.fn(), cancel: vi.fn(), install: vi.fn() }));
+vi.mock("./update/runtime", () => ({ updateRuntime: updateRuntimeMocks }));
 
 const drawingRuntimeMocks = vi.hoisted(() => ({
   createRuntimeImageTransport: vi.fn(),
@@ -62,6 +65,11 @@ describe("App navigation", () => {
     database.close();
     runtimeMocks.createRuntimeChatTransport.mockReset();
     runtimeMocks.createRuntimeModelCatalogClient.mockReset();
+    Object.values(updateRuntimeMocks).forEach(mock => mock.mockReset());
+    updateRuntimeMocks.available.mockResolvedValue(false);
+    updateRuntimeMocks.cancel.mockResolvedValue(undefined);
+    updateRuntimeMocks.download.mockResolvedValue(undefined);
+    updateRuntimeMocks.install.mockResolvedValue(undefined);
     drawingRuntimeMocks.createRuntimeImageTransport.mockReset();
     Object.values(drawingRuntimeMocks.runtimeDrawingFiles).forEach((mock) => mock.mockReset());
     drawingRuntimeMocks.runtimeDrawingFiles.recover.mockResolvedValue(null);
@@ -77,7 +85,31 @@ describe("App navigation", () => {
       root.unmount();
     });
     container.remove();
+    vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+  it("checks on startup with an initialized empty assistant and opens About without downloading", async () => {
+    const repository = createChatRepository();
+    await repository.initializeWorkspace(null, []);
+    await repository.execute({ type: "create-assistant", id: "empty-startup", input: {
+      name: "Empty startup", icon: "", defaultModelId: null, defaultConfig: defaultSessionConfig(),
+    } });
+    let enable!: (value: boolean) => void;
+    updateRuntimeMocks.available.mockReturnValue(new Promise<boolean>(resolve => { enable = resolve; }));
+    updateRuntimeMocks.check.mockResolvedValue({ session: "synthetic-startup", version: "0.1.0-beta.4", notes: "测试更新" });
+    const general = { preferences: { ...defaultGeneralPreferences }, error: null, setPreference: vi.fn().mockResolvedValue(true) };
+    await act(async () => root.render(<App general={general} />));
+    await waitFor(() => !!container.querySelector('[aria-label="Empty startup"]'));
+    expect(container.querySelector("textarea")).toBeNull();
+    vi.useFakeTimers(); await act(async () => enable(true));
+    await act(async () => vi.advanceTimersByTimeAsync(9_999)); expect(updateRuntimeMocks.check).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(updateRuntimeMocks.check).toHaveBeenCalledOnce(); expect(container.textContent).toContain("发现新版本 v0.1.0-beta.4");
+    expect(updateRuntimeMocks.download).not.toHaveBeenCalled(); expect(updateRuntimeMocks.install).not.toHaveBeenCalled();
+    await act(async () => container.querySelector<HTMLButtonElement>(".update-notice-open")!.click());
+    expect(container.querySelector('[aria-label="关于 Ayase Studio"]')).not.toBeNull();
+    expect(container.querySelector(".update-notice")).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(20_000)); expect(updateRuntimeMocks.check).toHaveBeenCalledOnce();
   });
 
   async function renderApp(): Promise<void> {
@@ -651,7 +683,7 @@ describe("App navigation", () => {
   it("shows general preference save failure when the controller returns false without an error", async () => {
     const setPreference = vi.fn().mockResolvedValue(false);
     await act(async () => root.render(<GeneralSettings general={{
-      preferences: { version: 1, backgroundResident: true, confirmBeforeExit: true },
+      preferences: { version: 2, backgroundResident: true, confirmBeforeExit: true, checkUpdatesOnStartup: true },
       error: null, setPreference,
     }} />));
     const background = container.querySelector<HTMLInputElement>("#general-background-resident")!;

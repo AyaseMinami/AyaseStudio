@@ -227,7 +227,7 @@ describe("general settings interactions", () => {
   const saveAvatar = vi.fn();
   const avatar = { busy: false, value: undefined, url: "blob:current-avatar", error: undefined, save: saveAvatar };
   const general: GeneralSettingsState = {
-    preferences: { version: 1, backgroundResident: true, confirmBeforeExit: true },
+    preferences: { version: 2, backgroundResident: true, confirmBeforeExit: true, checkUpdatesOnStartup: true },
     error: null,
     setPreference,
   };
@@ -397,6 +397,39 @@ describe("general settings interactions", () => {
     expect([...host.querySelectorAll<HTMLInputElement>('[role="switch"]')].every((input) => !input.disabled)).toBe(true);
   });
 
+  it("routes startup update checking through its controlled preference and explains the startup boundary", async () => {
+    await mount();
+    const startup = host.querySelector<HTMLInputElement>("#general-startup-update")!;
+    expect(startup.getAttribute("role")).toBe("switch");
+    expect(startup.checked).toBe(true); expect(startup.disabled).toBe(false);
+    expect(host.querySelector('label[for="general-startup-update"]')?.textContent).toBe("启动时检查更新");
+    expect(host.querySelector("#general-update-title")?.textContent).toBe("应用更新");
+    await act(async () => startup.click());
+    expect(setPreference).toHaveBeenCalledExactlyOnceWith("checkUpdatesOnStartup", false);
+    expect(startup.checked).toBe(true);
+    await mount({ ...general, preferences: { ...general.preferences, checkUpdatesOnStartup: false } });
+    expect(startup.checked).toBe(false);
+    await act(async () => startup.click());
+    expect(setPreference).toHaveBeenLastCalledWith("checkUpdatesOnStartup", true);
+    await act(async () => button("启动时检查更新说明").focus());
+    const help = document.querySelector('[role="tooltip"]')?.textContent;
+    expect(help).toContain("约 10 秒后检查一次"); expect(help).toContain("托盘恢复不重复");
+    expect(help).toContain("仅显示提示"); expect(help).toContain("下载和安装仍需你确认");
+  });
+
+  it("disables the startup toggle during storage and restores it after a failed save", async () => {
+    let finish!: (saved: boolean) => void;
+    setPreference.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await mount();
+    const startup = host.querySelector<HTMLInputElement>("#general-startup-update")!;
+    await act(async () => { startup.click(); startup.click(); });
+    expect(setPreference).toHaveBeenCalledExactlyOnceWith("checkUpdatesOnStartup", false);
+    expect(startup.disabled).toBe(true); expect(startup.checked).toBe(true);
+    await act(async () => finish(false));
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("常规设置保存失败，请重试。");
+    expect(startup.disabled).toBe(false); expect(startup.checked).toBe(true);
+  });
+
   it("disables unavailable or unreadable settings and shows the supplied error", async () => {
     await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="general" />));
     expect([...host.querySelectorAll<HTMLInputElement>('[role="switch"]')].every((input) => input.disabled)).toBe(true);
@@ -405,7 +438,14 @@ describe("general settings interactions", () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toBe("常规设置无法读取，原数据已保留。");
     expect([...host.querySelectorAll<HTMLInputElement>('[role="switch"]')].every((input) => input.disabled)).toBe(true);
     await act(async () => host.querySelector<HTMLInputElement>("#general-background-resident")!.click());
+    await act(async () => host.querySelector<HTMLInputElement>("#general-startup-update")!.click());
     expect(setPreference).not.toHaveBeenCalled();
+  });
+  it("provides the maintained Baidu mirror with the extraction code in both URL and text", async () => {
+    await act(async () => root.render(<SettingsWorkspace {...sharedProps} activeSection="about" />));
+    expect(host.querySelector('a[href="https://pan.baidu.com/s/1nj359REFcGMwTbf7PWD4OQ?pwd=ayas"]')).not.toBeNull();
+    expect(host.textContent).toContain("提取码：ayas");
+    expect(host.querySelector('[aria-label="复制提取码"]')).not.toBeNull();
   });
 
   it("explains tray restoration and preserves drawing-risk prompts separately from ordinary exit confirmation", async () => {

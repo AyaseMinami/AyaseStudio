@@ -1,0 +1,77 @@
+name: Build release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: Release notes saved identically in the updater manifest and draft body
+        required: true
+        default: 本版本的功能和修复以仓库合并记录为准。提供 Windows x64 NSIS 安装包；Windows Authenticode 签名尚未提供。
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: ayase-release
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+    steps:
+      - name: Require manual main dispatch and x64 runner
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -or $env:GITHUB_REF -ne 'refs/heads/main') { throw 'Dispatch this workflow from main only' }
+          if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Windows x64 runner required' }
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.22.3'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, resolved 2026-10-04
+        with:
+          toolchain: stable
+      - name: Validate versions, key and unused tag; write temporary signed-build config
+        id: preflight
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: node scripts/release/cli.mjs preflight
+      - run: npm.cmd ci
+      - run: node --test scripts/release/*.test.mjs
+      - run: npm.cmd run check
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features release-tools --bin verify-updater-signature
+      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Build the candidate once with updater signatures
+        env:
+          RELEASE_CONFIG: ${{ steps.preflight.outputs.config }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm.cmd run tauri -- build --ci --bundles nsis --config "$env:RELEASE_CONFIG" -- --locked
+      - name: Verify actual NSIS upgrade policy after bundler cache exists
+        run: pwsh -NoProfile -File scripts/test-installer-policy.ps1
+      - name: Verify installer product version
+        env:
+          RELEASE_VERSION: ${{ steps.preflight.outputs.version }}
+        shell: pwsh
+        run: |
+          $installer = Join-Path 'src-tauri/target/release/bundle/nsis' "Ayase Studio_$($env:RELEASE_VERSION)_x64-setup.exe"
+          if ((Get-Item -LiteralPath $installer).VersionInfo.ProductVersion -ne $env:RELEASE_VERSION) { throw 'Built installer product version mismatch' }
+      - name: Prepare exact candidate inventory and verify signed bytes
+        run: node scripts/release/cli.mjs prepare
+      - run: git diff --check
+      - name: Preserve candidate for authenticated native acceptance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ayase-candidate-v${{ steps.preflight.outputs.version }}-${{ github.sha }}
+          path: ${{ steps.preflight.outputs.artifacts }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Create draft and read back uploaded asset hashes
+        run: node scripts/release/cli.mjs draft

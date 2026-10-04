@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { UserRound } from "lucide-react";
 import type { UserAvatarState } from "../../avatar/useUserAvatar";
-import type { GeneralSettingsState } from "../../general/preferences";
+import type { GeneralPreferenceKey, GeneralSettingsState } from "../../general/preferences";
 import { AvatarLibraryPanel, AvatarModal } from "../avatar/AvatarLibrary";
 import { SettingsHelp } from "./SettingsHelp";
 import { DrawingOutputSettings } from "./DrawingOutputSettings";
@@ -16,7 +16,7 @@ export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState;
   const avatarBusy = libraryBusy || !!avatar?.busy;
   const unavailable = !general || !!general.error || saving;
 
-  async function changePreference(key: "backgroundResident" | "confirmBeforeExit", value: boolean) {
+  async function changePreference(key: GeneralPreferenceKey, value: boolean) {
     if (!general || general.error || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
@@ -53,6 +53,14 @@ export function GeneralSettings({ avatar, general }: { avatar?: UserAvatarState;
         {avatar?.error && <p className="avatar-error" role="alert">{avatar.error}</p>}
       </section>
       <DrawingOutputSettings />
+      <section className="settings-card general-settings-group" aria-labelledby="general-update-title">
+        <h3 id="general-update-title">应用更新</h3>
+        <div className="general-preference-row">
+          <label htmlFor="general-startup-update">启动时检查更新</label>
+          <SettingsHelp label="启动时检查更新">主界面就绪约 10 秒后检查一次，托盘恢复不重复检查。发现新版本时仅显示提示，下载和安装仍需你确认。</SettingsHelp>
+          <input id="general-startup-update" className="ui-switch" type="checkbox" role="switch" checked={general?.preferences.checkUpdatesOnStartup ?? false} disabled={unavailable} onChange={(event) => void changePreference("checkUpdatesOnStartup", event.target.checked)} />
+        </div>
+      </section>
       <section className="settings-card general-settings-group" aria-labelledby="general-window-title">
         <h3 id="general-window-title">窗口与退出</h3>
         <div className="general-preference-row">

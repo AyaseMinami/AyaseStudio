@@ -14,7 +14,10 @@ import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
 import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
 import { useConfirmation } from "./ui/useConfirmation";
 import type { GeneralSettingsState } from "./general/preferences";
-import type { RegisterExitGuard } from "./general/lifecycle";
+import type { RegisterExitGuard, InstallUpdate } from "./general/lifecycle";
+import { useApplicationUpdate } from "./update/useApplicationUpdate";
+import { UpdateInstallBlocked } from "./update/controller";
+import { UpdateNotice } from "./ui/UpdateNotice";
 import { openDrawingOutputDirectory } from "./drawing/runtime";
 import { getDrawingModels } from "./chat/settings";
 import { ChatHeader } from "./ui/chat/ChatHeader";
@@ -26,8 +29,8 @@ import {
   type SettingsSection,
 } from "./ui/settings/SettingsWorkspace";
 
-function App({ general, registerExitGuard, settingsRequest = 0 }: {
-  general?: GeneralSettingsState; registerExitGuard?: RegisterExitGuard; settingsRequest?: number;
+function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }: {
+  general?: GeneralSettingsState; registerExitGuard?: RegisterExitGuard; installUpdate?: InstallUpdate; settingsRequest?: number;
 }) {
   const [activePage, setActivePage] = useState<AppPage>(window.location.hash === "#data" ? "settings" : "chat");
   const [activeSettingsSection, setActiveSettingsSection] =
@@ -47,6 +50,19 @@ function App({ general, registerExitGuard, settingsRequest = 0 }: {
       setActivePage("settings");
     },
   });
+  const [updateStartupReady, setUpdateStartupReady] = useState(false);
+  useEffect(() => {
+    if (chat.workspace.snapshot && !chat.workspace.busy && !chat.workspace.loadError) setUpdateStartupReady(true);
+  }, [chat.workspace.snapshot, chat.workspace.busy, chat.workspace.loadError]);
+  const update = useApplicationUpdate(async install => {
+    if (!installUpdate) throw new UpdateInstallBlocked("当前环境无法准备安装，请使用官方下载入口。");
+    if (chat.backupDisabled || drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued"))
+      throw new UpdateInstallBlocked("当前仍有聊天、绘图或维护任务，请等待任务结束后再次安装。");
+    if (!await chat.prepareBackup()) throw new UpdateInstallBlocked("暂时无法保存当前状态，请等待当前操作完成后再次安装。");
+    try { return await installUpdate(install); }
+    finally { chat.cancelBackupPreparation(); }
+  }, { enabled: !!general && !general.error && general.preferences.checkUpdatesOnStartup,
+    ready: updateStartupReady && !chat.workspace.loadError });
   useEffect(() => { drawing.controller.updateSettings(chat.connectionSettings); }, [drawing.controller, chat.connectionSettings]);
   const handledSettingsRequest = useRef(0);
   useEffect(() => {
@@ -63,6 +79,8 @@ function App({ general, registerExitGuard, settingsRequest = 0 }: {
     <AppShell activePage={activePage} onPageChange={setActivePage} interactionDisabled={chat.backupPreparing || drawing.closing}
       background={<div className="appearance-background-art"><BackgroundImage url={appearance.backgroundUrl} focus={appearance.backgroundFocus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur} /></div>}>
       {drawingCloseConfirmation.dialog}
+      {update.state.startupNotice && update.state.update && <UpdateNotice version={update.state.update.version}
+        onDismiss={update.dismissNotice} onOpen={() => { update.dismissNotice(); setActiveSettingsSection("about"); setActivePage("settings"); }} />}
       {appearance.backgroundDraft && <BackgroundFocusDialog
         url={appearance.backgroundDraft.url} focus={appearance.backgroundDraft.focus} fit={appearance.backgroundFit} blur={appearance.backgroundBlur}
         error={appearance.backgroundError}
@@ -255,6 +273,7 @@ function App({ general, registerExitGuard, settingsRequest = 0 }: {
             onRunModelTest: chat.runModelTest,
             onSelectModel: chat.setActiveModel,
           }}
+          update={update}
           onSectionChange={setActiveSettingsSection}
         />
       )}
