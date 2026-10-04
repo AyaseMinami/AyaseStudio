@@ -1,5 +1,9 @@
 # Ayase Studio Development Guide
 
+## Temporary Beta 5 updater test (2026-10-04)
+
+`0.1.0-beta.5` changes only the application version for a real Beta 4 check/download/install test; features, dependencies and persisted data formats remain unchanged. The maintainer authorized a temporary signed release and will report the manual update result before the Beta channel is restored to the original Beta 4 manifest. Restoring the manifest stops advertising Beta 5; installed Beta 5 clients still need manual Beta 4 installation to downgrade. Candidate build, native acceptance, publication and channel restoration must be recorded separately.
+
 ## Application updates and GitHub releases #76 (2026-10-04)
 
 The first updater-enabled candidate is prepared as `0.1.0-beta.4`; all npm, Cargo and Tauri version sources agree, and the third-party inventory hashes reflect the updated locks. `v0.1.0-beta.3` already exists and must not be reused. Candidate build, installer acceptance and publication remain separate steps in the release runbook.
