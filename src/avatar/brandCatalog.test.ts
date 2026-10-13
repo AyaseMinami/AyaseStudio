@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { automaticAvatar } from "./automaticAvatar";
 import { brandIds } from "./brandIds";
 import { brandAvatars, materializeBrandAvatar } from "./brandCatalog";
-import { decodeAvatar } from "./image";
-
-vi.mock("./image", async (original) => ({ ...await original<typeof import("./image")>(), decodeAvatar: vi.fn() }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+
+function bundledImage(width = 400, height = 200) {
+  const image = document.createElement("img");
+  Object.defineProperties(image, { naturalWidth: { value: width }, naturalHeight: { value: height } });
+  vi.spyOn(image, "decode").mockResolvedValue();
+  vi.stubGlobal("Image", vi.fn(function () { return image; }));
+  return image;
+}
 
 function canvasContext() {
   const drawnFilters: string[] = [];
@@ -27,36 +31,50 @@ it("exposes every stable brand once and only bundled asset URLs", () => {
   }
 });
 
+it("materializes Doubao artwork when the desktop CSP blocks fetch but permits bundled images", async () => {
+  const { context } = canvasContext();
+  const image = bundledImage(192, 192);
+  const fetch = vi.fn().mockRejectedValue(new TypeError("Blocked by connect-src"));
+  vi.stubGlobal("fetch", fetch);
+
+  await materializeBrandAvatar("doubao");
+
+  expect(context.drawImage).toHaveBeenCalledWith(image, 20, 20, 216, 216);
+  expect(context.fillText).not.toHaveBeenCalled();
+  expect(image.getAttribute("src")).toBe(brandAvatars.find(brand => brand.id === "doubao")?.src);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 it("rasterizes a contained official mark into a transparent source-free centered PNG snapshot", async () => {
   const { context, png } = canvasContext();
-  const image = document.createElement("img");
-  Object.defineProperties(image, { naturalWidth: { value: 400 }, naturalHeight: { value: 200 } });
-  vi.mocked(decodeAvatar).mockResolvedValue(image);
-  const fetch = vi.fn().mockResolvedValue(new Response(new Blob(["asset"])));
-  vi.stubGlobal("fetch", fetch);
+  const image = bundledImage();
   const result = await materializeBrandAvatar("openrouter");
-  expect(fetch).toHaveBeenCalledWith(brandAvatars.find((brand) => brand.id === "openrouter")?.src);
+  expect(image.getAttribute("src")).toBe(brandAvatars.find((brand) => brand.id === "openrouter")?.src);
+  expect(image.decode).toHaveBeenCalledOnce();
   expect(context.drawImage).toHaveBeenCalledWith(image, 20, 74, 216, 108);
   expect(context.fillRect).not.toHaveBeenCalled();
   expect(result).toEqual({ original: png, thumbnail: png, crop: { x: .5, y: .5, zoom: 1 } });
   expect(result.source).toBeUndefined();
 });
 
-it("uses the same automatic initial and identity colors when bundled artwork cannot load", async () => {
+it("reports unreadable artwork without saving the fallback initial as an image", async () => {
   const { context } = canvasContext();
-  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("missing local asset")));
-  const result = await materializeBrandAvatar("openrouter");
-  const automatic = automaticAvatar("OpenRouter", "openrouter");
-  expect(decodeAvatar).not.toHaveBeenCalled();
+  vi.mocked(bundledImage().decode).mockRejectedValue(new Error("invalid image"));
+  await expect(materializeBrandAvatar("doubao")).rejects.toThrow("原头像已保留");
   expect(context.drawImage).not.toHaveBeenCalled();
-  expect(context.fillText).toHaveBeenCalledWith(automatic.initial, 128, 128);
-  expect(context.fillStyle).toBe(automatic.color);
-  expect(result.thumbnail.type).toBe("image/png");
+  expect(context.fillText).not.toHaveBeenCalled();
+  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
+});
+
+it("rejects decoded artwork with empty dimensions before encoding a snapshot", async () => {
+  canvasContext(); bundledImage(0, 0);
+  await expect(materializeBrandAvatar("doubao")).rejects.toThrow("原头像已保留");
+  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
 });
 
 it("reports failed PNG materialization without returning an unusable avatar", async () => {
   canvasContext();
-  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("missing")));
+  bundledImage();
   vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(null));
   await expect(materializeBrandAvatar("openrouter")).rejects.toThrow("无法保存内置头像");
 });
@@ -65,10 +83,7 @@ it.each(["light", "dark"])("captures the displayed monochrome color without a ba
   const previousTheme = document.documentElement.getAttribute("data-theme");
   document.documentElement.setAttribute("data-theme", theme);
   const { context, png, drawnFilters } = canvasContext();
-  const image = document.createElement("img");
-  Object.defineProperties(image, { naturalWidth: { value: 400 }, naturalHeight: { value: 200 } });
-  vi.mocked(decodeAvatar).mockResolvedValue(image);
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(["synthetic-brand"]) }));
+  const image = bundledImage();
   try {
     for (const id of brandIds) {
       const result = await materializeBrandAvatar(id);
@@ -90,16 +105,14 @@ it.each(["openai", "zhipu"] as const)("keeps the selected light-theme color for 
   const previousTheme = document.documentElement.getAttribute("data-theme");
   document.documentElement.setAttribute("data-theme", "light");
   const { context, png, drawnFilters } = canvasContext();
-  const image = document.createElement("img");
-  Object.defineProperties(image, { naturalWidth: { value: 256 }, naturalHeight: { value: 256 } });
-  let finish!: (image: HTMLImageElement) => void;
-  vi.mocked(decodeAvatar).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(["synthetic-brand"]) }));
+  const image = bundledImage(256, 256);
+  let finish!: () => void;
+  vi.mocked(image.decode).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   try {
     const pending = materializeBrandAvatar(id);
-    await vi.waitFor(() => expect(decodeAvatar).toHaveBeenCalledOnce());
+    expect(image.decode).toHaveBeenCalledOnce();
     document.documentElement.setAttribute("data-theme", "dark");
-    finish(image);
+    finish();
     const result = await pending;
     expect(drawnFilters).toEqual([id === "zhipu" ? "invert(1)" : "none"]);
     expect(context.fillRect).not.toHaveBeenCalled();

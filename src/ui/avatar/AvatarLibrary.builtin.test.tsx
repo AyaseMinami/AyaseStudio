@@ -60,6 +60,18 @@ it("keeps builtins read-only during management and selects only user entries for
   expect(avatarLibrary.removeMany).not.toHaveBeenCalled(); expect(avatarLibrary.replace).not.toHaveBeenCalled();
 });
 
+it("retains the current assistant avatar and selection when bundled decoding fails, then allows retry", async () => {
+  vi.mocked(materializeBrandAvatar).mockRejectedValueOnce(new Error("无法读取内置头像，原头像已保留，请重试。"));
+  await act(async () => root.render(<AvatarLibraryPanel inline value={snapshot} assistantName="豆包" onApply={apply} />));
+  await click("选择 豆包"); await click("使用此头像");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("原头像已保留");
+  expect(host.querySelector('[aria-label="选择 豆包"]')?.getAttribute("aria-pressed")).toBe("true");
+  expect(apply).not.toHaveBeenCalled();
+  await click("使用此头像");
+  expect(materializeBrandAvatar).toHaveBeenLastCalledWith("doubao");
+  expect(apply).toHaveBeenCalledExactlyOnceWith(snapshot);
+});
+
 it("does not apply a materialized builtin after its selector unmounts", async () => {
   let resolve!: (avatar: UserAvatar) => void;
   vi.mocked(materializeBrandAvatar).mockImplementation(() => new Promise((done) => { resolve = done; }));

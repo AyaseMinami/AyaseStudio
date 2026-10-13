@@ -13,7 +13,7 @@ import { DrawingResultPreview } from "./DrawingResultPreview";
 import { drawingOutputError } from "../../drawing/outputDirectory";
 import { drawingAspectRatios, drawingResolutions } from "../../drawing/geminiImage";
 import { openAIImageQualities, openAIImageSizes } from "../../drawing/openaiImages";
-import { geminiSafetyThresholds } from "../../drawing/geminiOptions";
+import { geminiDrawingThinkingLevels, geminiSafetyThresholds } from "../../drawing/geminiOptions";
 import { grokAspectRatios, grokResolutions, grokQualities, initialGrokDrawingOptions } from "../../drawing/grokImages";
 import { initialSeedreamDrawingOptions, seedreamModelVersions, seedreamSizesByVersion } from "../../drawing/seedreamImages";
 import type { GeminiDrawingOptions } from "../../drawing/types";
@@ -132,7 +132,7 @@ function TaskParameters({ task }: { task: DrawingTask }) {
     <p className="drawing-muted">{parameterSummary(parameters)}
       {` · 参考图 ${parameters.references?.length ?? 0} 张`}</p>
     {parameters.protocol === "gemini-image" && parameters.gemini && <p className="drawing-muted">
-      {`温度：${parameters.gemini.temperature ?? "模型默认"} · 安全阈值：${parameters.gemini.safetyThreshold ?? "服务默认"} · 输出：${parameters.gemini.outputMode === "image" ? "仅图片" : "文字＋图片"}`}
+      {`思考强度：${parameters.gemini.thinkingLevel ?? "模型默认"} · 温度：${parameters.gemini.temperature ?? "模型默认"} · 安全阈值：${parameters.gemini.safetyThreshold ?? "服务默认"} · 输出：${parameters.gemini.outputMode === "image" ? "仅图片" : "文字＋图片"}`}
     </p>}
   </div>;
 }
@@ -537,7 +537,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                   ? "xhigh／max 需 GPT Image 2.5 或服务支持。自定义尺寸需 GPT Image 2／2.5：边长为 16 的倍数且不超过 3840，比例在 1:3 至 3:1，总像素 655360–8294400；高于 2560 × 1440 为实验性尺寸。旧模型和中转支持范围以服务为准。"
                   : grok ? "版本契约需手动选择，不根据模型 ID 推断。画质 low／medium 和 21:9／5:2 宽高比仅支持 2.0；自动选项跟随服务默认。"
                   : seedream ? "版本契约需手动选择，不根据模型 ID 推断。尺寸选项随版本变化，也可输入宽x高；输出格式仅支持 5.0 系列。自动选项跟随服务默认。"
-                  : "512 分辨率需 Gemini 3.1 Flash Image；1:4／4:1／1:8／8:1 需 3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。"}</SettingsHelp></span>
+                  : "Nano Banana 2.1 提供 1K／2K／4K，不支持 512；512 分辨率需 Gemini 3.1 Flash Image。1:4／4:1／1:8／8:1 需 Nano Banana 2.1、3.1 Flash 或 Flash Lite。Pro 提供 1K／2K／4K，Flash Lite 仅 1K，2.5 Flash Image 不提供分辨率选择。实际像素随比例和模型变化。"}</SettingsHelp></span>
               <label className="drawing-label drawing-sound">
                 <input className="ui-switch" type="checkbox" role="switch" checked={draft.completionSound ?? true} disabled={!ready || submitting}
                   onChange={event => onDraftChange({ ...draft, completionSound: event.target.checked })} /> 完成提示音
@@ -560,6 +560,13 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 </label>}
               </> : <>
               {protocol === "gemini-image" && advancedOpen && <div id="drawing-gemini-advanced" className="drawing-parameter-extra">
+                <div className="drawing-field drawing-advanced-inline">
+                  <label className="drawing-label" htmlFor="drawing-gemini-thinking">思考强度</label>
+                  <SettingsHelp label="绘图思考强度">默认跟随模型。Nano Banana 2.1 支持 minimal／medium／high，默认 medium；3.1 Flash Image 和 Flash Lite Image 支持 minimal／high，默认 minimal。更低档位侧重速度，更高档位侧重推理；minimal 仍会思考。其他模型与中转以服务支持为准。</SettingsHelp>
+                  <SelectField id="drawing-gemini-thinking" label="Gemini 绘图思考强度" value={draft.gemini?.thinkingLevel ?? "auto"} disabled={!ready || closing}
+                    options={[{ value: "auto", label: "模型默认" }, ...geminiDrawingThinkingLevels.map(value => ({ value, label: value }))]}
+                    onChange={value => { const thinkingLevel = geminiDrawingThinkingLevels.find(level => level === value); if (value === "auto" || thinkingLevel) setGemini({ thinkingLevel }); }} />
+                </div>
                 <div className="drawing-advanced-columns">
                 <div className="drawing-field">
                 <div className="drawing-temperature-row">

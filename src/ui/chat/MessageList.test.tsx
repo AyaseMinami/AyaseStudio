@@ -419,7 +419,7 @@ it("cancels an edit, then saves without a destructive confirmation", async () =>
     const edit = () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!;
     await act(async () => edit().click());
     expect(host.querySelector("textarea")?.value).toBe("**raw markdown**");
-    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor button")!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-actions button")!.click());
     expect(handlers.edit).not.toHaveBeenCalled();
     await act(async () => edit().click());
     await act(async () => {
@@ -429,7 +429,7 @@ it("cancels an edit, then saves without a destructive confirmation", async () =>
     });
     await act(async () => host.querySelector<HTMLButtonElement>(".message-editor .settings-button")!.click());
     expect(host.querySelector('[role="dialog"]')).toBeNull();
-    expect(handlers.edit).toHaveBeenCalledWith("user", "changed");
+    expect(handlers.edit).toHaveBeenCalledWith("user", "changed", { base: messages[0], attachments: [] });
     expect(handlers.editAndSend).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
@@ -472,7 +472,7 @@ it("keeps the edit draft open when saving reports no change", async () => {
     await act(async () => render());
     await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
     await act(async () => host.querySelector<HTMLButtonElement>(".message-editor .settings-button")!.click());
-    expect(edit).toHaveBeenCalledWith("user", "**raw markdown**");
+    expect(edit).toHaveBeenCalledWith("user", "**raw markdown**", { base: messages[0], attachments: [] });
     expect(host.querySelector("textarea")?.value).toBe("**raw markdown**");
     expect(host.querySelector('[role="dialog"]')).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
@@ -485,7 +485,7 @@ it("runs edit and send directly only for user messages", async () => {
     await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
     await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-send")!.click());
     expect(host.querySelector('[role="dialog"]')).toBeNull();
-    expect(handlers.editAndSend).toHaveBeenCalledWith("user", "**raw markdown**");
+    expect(handlers.editAndSend).toHaveBeenCalledWith("user", "**raw markdown**", { base: messages[0], attachments: [] });
     expect(handlers.edit).not.toHaveBeenCalled();
     await act(async () => host.querySelector<HTMLButtonElement>("article:nth-child(2) [aria-label='编辑']")!.click());
     expect(host.querySelector(".message-editor-send")).toBeNull();

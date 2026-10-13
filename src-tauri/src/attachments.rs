@@ -443,6 +443,29 @@ mod tests {
     }
 
     #[test]
+    fn runtime_retained_lease_protects_old_files_in_every_managed_location() {
+        let temp = tempfile::tempdir().unwrap();
+        let staging = save(temp.path(), "staging.txt".to_owned(), STANDARD.encode("staging")).unwrap();
+        let active = save(temp.path(), "active.txt".to_owned(), STANDARD.encode("active")).unwrap();
+        let quarantined = save(temp.path(), "quarantined.txt".to_owned(), STANDARD.encode("quarantined")).unwrap();
+        cleanup(temp.path(), &[active.reference.clone(), quarantined.reference.clone()], std::slice::from_ref(&staging.reference)).unwrap();
+        cleanup(temp.path(), std::slice::from_ref(&active.reference), std::slice::from_ref(&staging.reference)).unwrap();
+        let name = managed_name(&quarantined.reference).unwrap();
+        let file = temp.path().join("attachments/quarantine").join(name);
+        OpenOptions::new().write(true).open(&file).unwrap()
+            .set_times(FileTimes::new().set_modified(SystemTime::now() - QUARANTINE_AGE - Duration::from_secs(120))).unwrap();
+        cleanup(temp.path(), std::slice::from_ref(&active.reference), std::slice::from_ref(&staging.reference)).unwrap();
+        let scan = file.with_file_name(format!("{name}.scan"));
+        OpenOptions::new().write(true).open(&scan).unwrap()
+            .set_times(FileTimes::new().set_modified(SystemTime::now() - SECOND_SCAN_AGE - Duration::from_secs(120))).unwrap();
+        // DB no longer owns these files; a frontend rollback lease joins native retained, never pending.
+        let lease = vec![staging.reference.clone(), active.reference.clone(), quarantined.reference.clone()];
+        cleanup(temp.path(), &lease, &[]).unwrap();
+        for reference in lease { assert!(read_saved(temp.path(), &reference).is_ok()); }
+        assert!(!scan.exists());
+    }
+
+    #[test]
     fn quarantine_requires_grace_and_two_unowned_scans_before_final_removal() {
         let temp = tempfile::tempdir().unwrap();
         let sent = save(temp.path(), "draft.txt".to_owned(), STANDARD.encode("hello")).unwrap();

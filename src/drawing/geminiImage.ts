@@ -75,6 +75,7 @@ export function createGeminiImageTransport(fetcher: FetchLike): ImageGenerationT
             category, threshold: parameters.gemini!.safetyThreshold,
           })) } : {}),
           generationConfig: { candidateCount: 1, responseModalities: parameters.gemini?.outputMode === "image" ? ["IMAGE"] : ["TEXT", "IMAGE"],
+            ...(parameters.gemini?.thinkingLevel !== undefined ? { thinkingConfig: { thinkingLevel: parameters.gemini.thinkingLevel.toUpperCase() } } : {}),
             ...(parameters.gemini?.temperature !== undefined ? { temperature: parameters.gemini.temperature } : {}),
             ...(Object.keys(imageConfig).length ? { imageConfig } : {}) } }),
       });

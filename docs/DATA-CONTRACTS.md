@@ -1,5 +1,21 @@
 # 持久数据契约
 
+## 历史消息附件编辑 #128（2026-10-13）
+
+复用 `StoredChatMessage.attachments`／`SentAttachment` 和既有 roundVersions；无新增表、索引、偏好键、持久编辑状态、资源类别、凭据或权限。核对当前 Dexie schema v9、chat 模块 v3／最低读者 3、备份文档 v5／信封 v1，均不因 #128 升级，无新增必需能力或语义迁移。缺失附件仍为空；显式保存空列表省略 attachments，不批量改写旧记录。原引用及元数据不变，新增 File 只产生受管不可变副本，不存用户源路径或编辑草稿。
+
+`messageData.ts` 提供编辑事务与备份共用的纯克隆结构校验，覆盖附件元数据／受管引用、候选、来源、搜索、供应商回放和既有本地续传结构；续传配置复用 readSessionConfigData，嵌套消息不接受未知字段／引用。完整编辑 transcript 拒绝重复身份及指向后文的回复；基础变化／非法原数据先于编辑替换拒绝并保留原记录。普通仓库 load/save 的既有指标读取职责保持，不能把本次编辑预检报告成任意本机写入的全面结构审核。
+
+注册表和真实备份投影继续使用已有 messages／attachment／roundVersions 字段策略；为原已排除的 continuation／continuationMessage 补穷尽类型策略，仍整体排除 portable backup。File、操作身份、移除标记、lease 和结果仅在内存中，不进入注册表或导出。租约按身份共享，引用整理扫描所有对话／分支及非活动候选；只有 confirmed durable 或 confirmed rollback 才释放运行时保护。维护在提交与恢复核对完成前拒绝替换资源；正常退出不因已 settle 的恢复错误永久锁住。
+
+真实导出／merge、copy、replace／重映射／再次导出／私有失败回滚及旧无附件记录的确定性证据见 [#128 实施记录](ISSUE-128-IMPLEMENTATION.md)。运行时跨 DB／文件系统没有整体原子耐久事务；进程崩溃后不自动恢复未提交 File 草稿或旧 before 快照，启动仍依持久引用与既有附件围栏。原生文件窗口、关闭重启及安装版接受单独记录。
+
+## Gemini 绘图思考强度 #127（2026-10-07）
+
+`GeminiDrawingOptions.thinkingLevel` 为可选枚举 minimal／medium／high。缺失代表模型默认，纯读取不补写档位；旧草稿、任务与成果保持缺失。新值经现有共享克隆读入口严格校验；未知字段／非法值保留原文并在任务恢复、持久写入或请求前拒绝。字段策略注册为 backup，真实绘图设置投影包含它；任务／成果快照仍排除可移植备份。无新表、索引、偏好键、凭据、资源或必需能力，Dexie schema、备份文档 v5／信封 v1 保持。
+
+绘图设置模块升为 v4／最低读者 4。旧模块 v1–v3 无此字段继续读取，无语义迁移步骤；原始模块声明小于 v4 却携带 thinkingLevel 时在重标版本／过滤和任何恢复写入前拒绝。最低读者超过 v4 的包拒绝；未来可读模块仍按已有规则过滤未知可选参数并保留再导出警告。旧客户端不支持降级读取新设置，不能静默丢弃档位。恢复／再导出保留显式值，替换旧设置清除新本机档位，私有日志失败回滚保留原本值。PNG 显式参数导出使用 Gemini 专属 thinking_level，普通 PNG 无元数据；不导出模型推测的默认值。
+
 ## 启动检查更新偏好（#76，2026-10-04）
 
 本机常规偏好结构升为 v2，新增 `checkUpdatesOnStartup: boolean`，默认 true。保留 `ayase-studio.general.v1` 存储键，以同一纯克隆读入口执行 v1→v2：保留后台驻留／退出确认的显式选择，补上启动检查默认值；读取与重复迁移不写回，用户保存偏好时才持久化 v2。v2 缺失字段同样补 true，显式 false 跨重启保持。v1 携带新字段、未知版本／字段、非法类型及损坏 JSON 拒绝，保留原文并禁用编辑及自动更新检查；保存前重新严格读取，不能以显示默认覆盖原文。最低常规偏好读者为 v2，旧客户端拒绝 v2，不保证降级。
@@ -102,7 +118,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v3（最低读者 3）、绘图设置模块 v3（最低读者 3），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v3（最低读者 3）、绘图设置模块 v4（最低读者 4），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 
@@ -124,7 +140,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 
 嵌套持久对象有自己的类型和策略；新增嵌套字段同步更新对应策略、投影和读取校验。凭据不得进入普通消息／偏好；资源字段仍必须经过受管路径、字节预算、MIME、摘要、所有权和引用重映射校验。协议映射、模型／助手／对话 ID、版本和能力是结构，不是可丢弃参数。动态 JSON、供应商回放和用户自定义参数仍遵循各自既有边界；类型策略不提供自动语义验证。
 
-绘图设置／预设使用 `projected` 策略，`src/backup/types.ts` 中 `projectedBackupTables` 是独立于原始可移植 `backupTables` 的静态清单；真实设置及嵌套 OpenAI 投影、预设读取均使用字段策略。设置仅包含比例、分辨率、模型 ID、OpenAI 尺寸／画质、可选 Gemini temperature／safetyThreshold／outputMode、Grok／Seedream 明确版本参数组、数量、并发、提示音和可选复用协议；预设仅包含 id、name、content、createdAt、updatedAt。同名不同 ID 独立保存，正文空白不规范化。自动草稿提示词、参考图、任务／结果历史和图片排除；原始当前草稿／预设仅参与私有日志与回滚，不加入可移植 rows。#93 维护协调取代旧广泛绘图禁用规则，本地代码门禁、定向回归及独立 Sol/high 审查已完成；不得按旧 #83 整图库提案扩大实现。
+绘图设置／预设使用 `projected` 策略，`src/backup/types.ts` 中 `projectedBackupTables` 是独立于原始可移植 `backupTables` 的静态清单；真实设置及嵌套 OpenAI 投影、预设读取均使用字段策略。设置仅包含比例、分辨率、模型 ID、OpenAI 尺寸／画质、可选 Gemini temperature／safetyThreshold／outputMode／thinkingLevel、Grok／Seedream 明确版本参数组、数量、并发、提示音和可选复用协议；预设仅包含 id、name、content、createdAt、updatedAt。同名不同 ID 独立保存，正文空白不规范化。自动草稿提示词、参考图、任务／结果历史和图片排除；原始当前草稿／预设仅参与私有日志与回滚，不加入可移植 rows。#93 维护协调取代旧广泛绘图禁用规则，本地代码门禁、定向回归及独立 Sol/high 审查已完成；不得按旧 #83 整图库提案扩大实现。
 
 ## 迁移、默认值与失败
 

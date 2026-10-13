@@ -32,6 +32,13 @@ export class GenerationTasks {
   }
 
   stop(id: string): void { this.tasks.get(id)?.controller.abort(); }
+  async settleForClose(): Promise<void> {
+    this.dispose();
+    if (!this.tasks.size) return;
+    await new Promise<void>(resolve => {
+      const release = this.subscribe(() => { if (!this.tasks.size) { release(); resolve(); } });
+    });
+  }
   activate(): void { this.accepting = true; }
   dispose(): void {
     this.accepting = false;

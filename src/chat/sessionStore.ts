@@ -43,6 +43,11 @@ export class SessionStore {
 
   get current(): SessionState { return this.state; }
 
+  /** Adopt a transcript already durably committed and verified by the edit coordinator. */
+  adoptConfirmed(messages: StoredChatMessage[]): void {
+    this.state = { messages: readMessagesGenerationMetrics(messages) };
+  }
+
   async updateMessages(messages: StoredChatMessage[]): Promise<void> {
     this.state = { ...this.state, messages: readMessagesGenerationMetrics(messages) };
     return this.enqueueSave();

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { base64ToBytes, isOfficeAttachment, safeTextAttachment, type RequestAttachment, type SentAttachment } from "../../chat/attachments";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
+import { PreviewImage } from "./PreviewImage";
 
 function PdfPreview({ data }: { data: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -65,10 +66,26 @@ export function SentAttachmentPreview({ item, read, images = [], onNavigate, ret
   const dialog = useRef<HTMLDivElement>(null);
   const infoOnly = isOfficeAttachment(item);
   const imageIndex = images.findIndex((image) => image.reference === item.reference);
+  const isImage = item.mimeType.startsWith("image/");
+  useEffect(() => {
+    if (!isImage) return;
+    const backdrop = dialog.current!.parentElement!;
+    const preventScroll = (event: WheelEvent) => event.preventDefault();
+    backdrop.addEventListener("wheel", preventScroll, { passive: false });
+    return () => backdrop.removeEventListener("wheel", preventScroll);
+  }, [isImage]);
   useEffect(() => {
     dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => { if (returnFocus.isConnected) returnFocus.focus({ preventScroll: true }); };
   }, []);
+  // Loading/switching or decode errors can remove the focused canvas. Keep focus
+  // on a stable modal control so Escape and the Tab loop still reach the dialog.
+  useLayoutEffect(() => {
+    const element = dialog.current;
+    if (element && !element.contains(document.activeElement)) {
+      element.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    }
+  }, [loaded, error]);
   useEffect(() => {
     let alive = true;
     setLoaded(undefined);
@@ -80,7 +97,7 @@ export function SentAttachmentPreview({ item, read, images = [], onNavigate, ret
   return <div className="attachment-preview-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose();
   }}>
-    <div ref={dialog} className="attachment-preview-dialog" role="dialog" aria-modal="true"
+    <div ref={dialog} className={`attachment-preview-dialog${item.mimeType.startsWith("image/") ? " attachment-preview-dialog-image" : ""}`} role="dialog" aria-modal="true"
       aria-label={`预览 ${item.name}`} onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); return; }
         if (imageIndex >= 0 && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
@@ -88,8 +105,8 @@ export function SentAttachmentPreview({ item, read, images = [], onNavigate, ret
           if (next) { event.preventDefault(); onNavigate?.(next); }
         }
         if (event.key !== "Tab") return;
-        const fields = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
-        const index = fields.indexOf(document.activeElement as HTMLButtonElement);
+        const fields = [...(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"]') ?? [])];
+        const index = fields.indexOf(document.activeElement as HTMLElement);
         if (event.shiftKey && index <= 0) { event.preventDefault(); fields[fields.length - 1]?.focus(); }
         else if (!event.shiftKey && index === fields.length - 1) { event.preventDefault(); fields[0]?.focus(); }
       }}>
@@ -109,9 +126,8 @@ export function SentAttachmentPreview({ item, read, images = [], onNavigate, ret
         <p>{item.mimeType}</p><p>原文件已保存在本地。本应用不解析或预览 Office 正文，发送时由 Responses 服务端处理。</p></div>}
       {!infoOnly && !loaded && !error && <p role="status">正在读取附件…</p>}
       {!error && loaded?.mimeType.startsWith("image/") &&
-        <img className="attachment-preview-image" alt={loaded.name}
-          onError={() => setError("图片加载失败，无法预览。附件记录仍保持不变。")}
-          src={`data:${loaded.mimeType};base64,${loaded.data}`} />}
+        <PreviewImage key={item.reference} item={loaded}
+          onError={() => setError("图片加载失败，无法预览。附件记录仍保持不变。")} />}
       {loaded?.mimeType === "application/pdf" && <PdfPreview data={loaded.data} />}
       {loaded?.mimeType === "text/plain" && <pre className="attachment-preview-text">{safeTextAttachment(loaded.data)}</pre>}
       {loaded?.mimeType === "text/markdown" && <div className="attachment-preview-text markdown">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronRight, GripVertical, ListChecks, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, GripVertical, ListChecks, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { AssistantAvatar } from "./AssistantAvatar";
 import { AssistantAvatarEditor } from "./AssistantAvatarEditor";
 import { useNavigationDocking } from "./useNavigationDocking";
@@ -329,6 +329,14 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       <span className="navigation-space-probe" aria-hidden="true" />
       <aside id="assistant-navigation" className="chat-navigation-pane" aria-label="助手列表" data-open={navigationOpen} inert={!navigationOpen} aria-hidden={!navigationOpen}>
         <div className="assistant-pane-tools" data-managing={manageAssistants || undefined}>
+        <button type="button" className="assistant-collapse-button" aria-label={assistantExpanded ? "收起助手栏" : "展开助手栏"}
+          title={assistantExpanded ? "收起助手栏" : "展开助手栏"} aria-expanded={assistantExpanded} aria-controls="assistant-navigation"
+          disabled={!!dialog || !!deletePlan} onClick={() => {
+            navigationDrag.cancel(); menu.close(); setPendingDelete(undefined);
+            navigation.toggleAssistant();
+          }}>
+          {assistantExpanded ? <ChevronLeft size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
+        </button>
         <div className="chat-navigation-heading assistant-pane-heading" inert={!assistantExpanded} aria-hidden={!assistantExpanded}><h2>助手</h2>
           <button ref={assistantManagementRef} type="button" className="batch-manage-trigger" aria-label={manageAssistants ? "完成助手管理" : "批量管理助手"} disabled={busy || !!dialog || !!deletePlan || !snapshot}
             data-active={manageAssistants || undefined} onClick={() => beginManagement(manageAssistants ? undefined : { kind: "assistants" })}>

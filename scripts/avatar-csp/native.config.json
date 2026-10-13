@@ -1,0 +1,4 @@
+{
+  "identifier": "io.github.ayaseminami.ayasestudio.avatarcspprobe",
+  "build": { "beforeDevCommand": "", "devUrl": "http://127.0.0.1:1536/scripts/avatar-csp/index.html?native=1" }
+}

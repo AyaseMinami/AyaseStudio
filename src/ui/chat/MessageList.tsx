@@ -11,10 +11,12 @@ import { SentAttachmentPreview } from "./SentAttachmentPreview";
 import { SentImageAttachment } from "./SentImageAttachment";
 import { ThinkingSummary } from "./ThinkingSummary";
 import { SearchResults } from "./SearchResults";
+import { MessageEditor } from "./MessageEditor";
+import type { MessageEditDraft, MessageEditResult } from "../../chat/messageEditTypes";
 
 export interface MessageActions {
-  edit(id: string, content: string): Promise<boolean>;
-  editAndSend(id: string, content: string): Promise<boolean>;
+  edit(id: string, content: string, edit?: MessageEditDraft): Promise<boolean | MessageEditResult>;
+  editAndSend(id: string, content: string, edit?: MessageEditDraft): Promise<boolean | MessageEditResult>;
   delete(id: string): Promise<boolean>;
   retry(id: string): Promise<void>;
   branch(id: string): Promise<boolean>;
@@ -79,7 +81,8 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
   const previousUserIdsRef = useRef(new Set<string>());
   const previousScrollTopRef = useRef(0);
   const [preview, setPreview] = useState<{ messageId: string; item: SentAttachment; opener: HTMLElement }>();
-  const [editing, setEditing] = useState<{ id: string; content: string }>();
+  const [editing, setEditing] = useState<{ id: string; base: StoredChatMessage }>();
+  const [editorSubmitting, setEditorSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation>();
   const [pending, setPending] = useState<string>();
   const pendingRef = useRef<string | undefined>(undefined);
@@ -118,7 +121,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
   }, [messages, pending]);
 
   const run = async (key: string, operation: () => Promise<unknown>) => {
-    if (pendingRef.current || actionsDisabled) return;
+    if (pendingRef.current || actionsDisabled || editorSubmitting) return;
     pendingRef.current = key; setPending(key);
     try { await operation(); } finally { pendingRef.current = undefined; setPending(undefined); }
   };
@@ -159,41 +162,19 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
     </div> : <div className="message-thread">{messages.map((message, index) => {
       const isEditing = editing?.id === message.id;
       const retryTarget = retryUser(messages, message.id);
-      const disabled = actionsDisabled || !actions;
+      const disabled = actionsDisabled || !actions || editorSubmitting;
       const busyOnly = actionsTemporarilyDisabled && actionsDisabled && !!actions && !pending;
       const versions = message.role === "assistant" && index === messages.length - 1 && messages[index - 1]?.role === "user"
         ? messages[index - 1].roundVersions : undefined;
       const versionCount = versions?.pairs.length ?? 0;
       const canPage = !disabled && !pending && !editing && !confirmation && !!actions?.selectVersion;
-      const save = () => void run(actionKey("edit", message.id), async () => {
-        if (await actions!.edit(message.id, editing!.content)) setEditing(undefined);
-      });
-      const editAndSend = () => void run(actionKey("edit", message.id), async () => {
-        if (await actions!.editAndSend(message.id, editing!.content)) setEditing(undefined);
-      });
       const body = <>
           {message.role === "assistant" && <ThinkingSummary message={message} />}
-          {isEditing ? <div className="message-editor"><label htmlFor={`message-edit-${message.id}`}>编辑消息</label>
-            <textarea id={`message-edit-${message.id}`} value={editing.content} disabled={actionsDisabled || !!pending}
-              onChange={(event) => setEditing({ ...editing, content: event.target.value })}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat || event.altKey) return;
-                if (event.key === "Escape" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-                  event.preventDefault(); event.stopPropagation(); setEditing(undefined);
-                } else if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
-                  event.preventDefault(); event.stopPropagation(); if (!actionsDisabled && !pending) save();
-                } else if (event.key === "Enter" && event.ctrlKey && !event.metaKey && !event.shiftKey && message.role === "user") {
-                  event.preventDefault(); event.stopPropagation(); if (!actionsDisabled && !pending) editAndSend();
-                }
-              }} />
-            <p className="message-editor-hint">Enter 仅保存 · Shift+Enter 换行 · Esc 取消。{message.role === "user" && (index >= messages.length - 2
-              ? "Ctrl+Enter 保存并发送，保留本轮问答版本。" : "Ctrl+Enter 保存并发送，会移除后续历史并生成新回复。")}</p>
-            <div><button type="button" disabled={!!pending} onClick={() => setEditing(undefined)}>取消</button>
-              <button type="button" className="settings-button" disabled={actionsDisabled || !!pending} data-busy-only={busyOnly}
-                onClick={save}>保存</button>
-              {message.role === "user" && <button type="button" className="settings-button message-editor-send" disabled={actionsDisabled || !!pending} data-busy-only={busyOnly}
-                onClick={editAndSend}>保存并发送</button>}</div>
-          </div> : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
+          {isEditing ? <MessageEditor key={editing.id} base={editing.base} latestRound={index >= messages.length - 2}
+            disabled={actionsDisabled || !!pending} busyOnly={busyOnly} onReadAttachment={onReadAttachment}
+            onCancel={() => setEditing(undefined)} onSubmittingChange={setEditorSubmitting}
+            onSave={(content, draft, send) => send ? actions!.editAndSend(message.id, content, draft) : actions!.edit(message.id, content, draft)} />
+            : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
               : <span className="subtle-text">（无文本输出）</span>) : message.content ? <SafeMarkdown>{message.content}</SafeMarkdown> : null}</>}
           {message.role === "assistant" && message.search && <SearchResults search={message.search} showCitationNotice={message.status !== "streaming"} />}
@@ -201,7 +182,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
           {!!message.source?.unavailableAttachments?.length && <ul className="subtle-text" aria-label="未恢复的附件">
             {message.source.unavailableAttachments.map((name, index) => <li key={index}>附件未恢复：{name}</li>)}
           </ul>}
-          {!!message.attachments?.length && <>
+          {!!message.attachments?.length && (!isEditing || message.role !== "user") && <>
             {message.attachments.some((item) => item.mimeType.startsWith("image/")) && onReadAttachment &&
               <div className={`sent-image-list ${message.attachments.filter((item) => item.mimeType.startsWith("image/")).length > 1 ? "sent-image-list-multiple" : ""}`}>
                 {message.attachments.filter((item) => item.mimeType.startsWith("image/")).map((item) =>
@@ -225,7 +206,8 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
       const controls = <>
           <div className="message-actions" aria-label="消息操作">
             <MessageActionButton label="复制" busy={copyingId === message.id} onClick={() => void copy(message)}><Copy size={15} /></MessageActionButton>
-            <MessageActionButton label="编辑" disabled={disabled || !!pending} busyOnly={busyOnly} busy={pending === actionKey("edit", message.id)} onClick={() => setEditing({ id: message.id, content: message.content })}><Pencil size={15} /></MessageActionButton>
+            {(message.role === "user" || message.role === "assistant") && <MessageActionButton label="编辑" disabled={disabled || !!pending || isEditing} busyOnly={busyOnly && !isEditing} busy={editorSubmitting && isEditing}
+              onClick={() => setEditing({ id: message.id, base: structuredClone(message) })}><Pencil size={15} /></MessageActionButton>}
             <MessageActionButton label="删除" disabled={disabled || !!pending} busyOnly={busyOnly} busy={pending === actionKey("delete", message.id)} onClick={() => setConfirmation({ kind: "delete", message })}><Trash2 size={15} /></MessageActionButton>
             <MessageActionButton label="重新生成" disabled={disabled || !!pending || !retryTarget} busyOnly={busyOnly && !!retryTarget} busy={pending === actionKey("retry", message.id)} title={retryTarget ? "重新生成这轮回复" : "此消息没有可重新生成的用户提问"}
               onClick={() => retryTarget && void run(actionKey("retry", message.id), () => actions!.retry(retryTarget.id))}><RefreshCw size={15} /></MessageActionButton>

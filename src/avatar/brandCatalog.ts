@@ -1,6 +1,5 @@
-import { automaticAvatar } from "./automaticAvatar";
 import { brandIds, type BrandId } from "./brandIds";
-import { centeredCrop, decodeAvatar } from "./image";
+import { centeredCrop } from "./image";
 import type { UserAvatar } from "./repository";
 
 const assets = import.meta.glob<string>("./brands/*.{svg,png,webp,jpg,ico}", { eager: true, query: "?url", import: "default" });
@@ -16,7 +15,7 @@ export const brandAvatars: readonly { id: BrandId; label: string; src?: string }
 /** Snapshot only bundled artwork into the existing local user/assistant image format. */
 export async function materializeBrandAvatar(id: BrandId): Promise<UserAvatar> {
   const brand = brandAvatars.find((item) => item.id === id);
-  if (!brand) throw new Error("未找到此内置头像。");
+  if (!brand?.src) throw new Error("未找到此内置头像。");
   const theme = document.documentElement.dataset.theme;
   const invert = theme === "dark" ? ["openai", "anthropic", "xai"].includes(id)
     : theme === "light" && ["zhipu", "moonshot"].includes(id);
@@ -24,29 +23,18 @@ export async function materializeBrandAvatar(id: BrandId): Promise<UserAvatar> {
   canvas.width = canvas.height = 256;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("无法创建头像图片，请重试。");
-  let image: HTMLImageElement | undefined;
-  if (brand.src) {
-    try {
-      const response = await fetch(brand.src);
-      if (response.ok) image = await decodeAvatar(await response.blob());
-      if (image && (!image.naturalWidth || !image.naturalHeight)) image = undefined;
-    } catch { /* Missing or unreadable bundled artwork uses the same display fallback. */ }
-  }
-  if (image) {
-    context.filter = invert ? "invert(1)" : "none";
-    const scale = 216 / Math.max(image.naturalWidth, image.naturalHeight);
-    const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
-    context.drawImage(image, (256 - width) / 2, (256 - height) / 2, width, height);
-  } else {
-    const automatic = automaticAvatar(brand.label, brand.id);
-    context.fillStyle = automatic.background;
-    context.fillRect(0, 0, 256, 256);
-    context.fillStyle = automatic.color;
-    context.font = "600 128px sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText(automatic.initial, 128, 128);
-  }
+  // Bundled artwork is allowed by img-src. Desktop connect-src intentionally
+  // excludes same-origin fetch, so decode the image directly like BrandAvatar.
+  const image = new Image();
+  image.src = brand.src;
+  try { await image.decode(); }
+  catch { throw new Error("无法读取内置头像，原头像已保留，请重试。"); }
+  if (!image.naturalWidth || !image.naturalHeight)
+    throw new Error("无法读取内置头像，原头像已保留，请重试。");
+  context.filter = invert ? "invert(1)" : "none";
+  const scale = 216 / Math.max(image.naturalWidth, image.naturalHeight);
+  const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
+  context.drawImage(image, (256 - width) / 2, (256 - height) / 2, width, height);
   const png = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
     (blob) => blob ? resolve(blob) : reject(new Error("无法保存内置头像，请重试。")), "image/png"));
   return { original: png, thumbnail: png, crop: { ...centeredCrop } };

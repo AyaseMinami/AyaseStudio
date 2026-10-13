@@ -32,7 +32,7 @@ function deferred() { let resolve!: () => void; const promise = new Promise<void
 
 describe("pure-text presets and history reuse #90", () => {
   it("reuses advanced Gemini controls and resets absent historical controls without touching OpenAI or presets", async () => {
-    const f = fixture(), advanced = { ...parameters, gemini: { temperature: 0, safetyThreshold: "OFF" as const, outputMode: "image" as const } };
+    const f = fixture(), advanced = { ...parameters, gemini: { temperature: 0, safetyThreshold: "OFF" as const, outputMode: "image" as const, thinkingLevel: "high" as const } };
     await f.repository.enqueue([task("advanced", advanced), task("historical", parameters), task("openai", openai)]);
     await f.controller.initialize(); f.controller.updateSettings(settings);
     f.controller.setDraft({ ...initialDrawingDraft, modelId: "gm", openai: { size: "auto", quality: "low" } });

@@ -6,6 +6,19 @@ import type { DrawingParameters, DrawingReference, DrawingResult, DrawingTask } 
 import { DrawingWorkspace, initialDrawingDraft, type DrawingDraft } from "./DrawingWorkspace";
 
 let host: HTMLDivElement;
+it("changes drawing thinking without generating and clears it for model default", async () => {
+  const options = props();
+  await act(async () => root.render(<DrawingWorkspace {...options} />));
+  await act(async () => button("Gemini 高级参数").click());
+  await choose("Gemini 绘图思考强度", "medium");
+  expect(options.onDraftChange).toHaveBeenLastCalledWith({ ...initialDrawingDraft, gemini: { thinkingLevel: "medium" } });
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={{ ...initialDrawingDraft, gemini: { thinkingLevel: "medium" } }} />));
+  await choose("Gemini 绘图思考强度", "模型默认");
+  expect(options.onDraftChange).toHaveBeenLastCalledWith({ ...initialDrawingDraft, gemini: {} });
+  expect(options.onGenerate).not.toHaveBeenCalled();
+  await act(async () => root.render(<DrawingWorkspace {...options} ready={false} />));
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="Gemini 绘图思考强度"]')!.disabled).toBe(true);
+});
 let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

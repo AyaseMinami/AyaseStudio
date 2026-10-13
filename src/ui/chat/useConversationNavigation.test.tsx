@@ -22,6 +22,21 @@ afterEach(async () => {
 });
 
 describe("conversation navigation subscriptions", () => {
+  it.each([false, true])("manually toggles only assistant expansion with conversationsOpen=%s", conversationsOpen => {
+    const controller = createConversationNavigationController(1200);
+    if (!conversationsOpen) controller.closeConversations();
+    const listener = vi.fn();
+    controller.subscribe(listener);
+    controller.toggleAssistant();
+    expect(controller.getSnapshot()).toEqual({ open: true, assistantExpanded: true, conversationsOpen });
+    controller.toggleAssistant();
+    expect(controller.getSnapshot()).toEqual({ open: true, assistantExpanded: false, conversationsOpen });
+    expect(listener).toHaveBeenCalledTimes(2);
+    controller.toggleAssistant();
+    controller.activateDraft();
+    expect(controller.getSnapshot().assistantExpanded).toBe(false);
+  });
+
   it.each([false, true])("opens only conversations with assistantExpanded=%s", assistantExpanded => {
     const controller = createConversationNavigationController(1200);
     if (assistantExpanded) controller.expandAssistant();

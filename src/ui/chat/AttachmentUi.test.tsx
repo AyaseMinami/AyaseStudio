@@ -175,7 +175,9 @@ describe("attachment UI", () => {
     await act(async () => next.click());
     expect(read).toHaveBeenCalledTimes(2);
     expect(document.activeElement).toBe(next);
-    await act(async () => next.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
+    const stage = container.querySelector<HTMLElement>('.attachment-preview-stage')!;
+    stage.focus();
+    await act(async () => stage.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
     expect(document.activeElement).toBe(container.querySelector<HTMLButtonElement>('[aria-label="关闭预览"]'));
   });
   it("keeps Office selectable and blocks sending after switching protocol without losing the draft", async () => {

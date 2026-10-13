@@ -3,7 +3,8 @@ import type { AssistantPreset, Conversation, WorkspaceSelection } from "../chat/
 import type { StoredChatMessage, ChatSnapshot } from "../chat/repository";
 import type { ConnectionSettingsState, ProviderGroup, ConnectionProfile, ConfiguredModel, ConfiguredModelGroup } from "../chat/settings";
 import type { SearchSettings, SearchConfiguration, TavilySearchSettings, ZhipuSearchSettings } from "../search/settings";
-import type { SearchRecord, SearchSource, SearchCitation, ProviderReplay } from "../chat/nativeSearch";
+import type { SearchRecord, SearchSource, SearchCitation, ProviderReplay, SearchContinuation } from "../chat/nativeSearch";
+import type { ChatMessage } from "../chat/types";
 import type { ThinkingSettings } from "../chat/thinking";
 import type { GeminiThinkingSettings } from "../chat/geminiThinking";
 import type { SentAttachment } from "../chat/attachments";
@@ -73,6 +74,9 @@ export const dataPolicies = {
   searchSource: { id: "backup", url: "backup", title: "backup", excerpt: "backup" } satisfies FieldPolicy<SearchSource>,
   citation: { start: "backup", end: "backup", sourceIds: "backup" } satisfies FieldPolicy<SearchCitation>,
   replay: { protocol: "backup", scope: "backup", content: "backup", responses: "backup" } satisfies FieldPolicy<ProviderReplay>,
+  // Existing local continuation stays excluded from portable backups; edit reads check its full structure.
+  continuation: { config: "exclude", model: "exclude", baseUrl: "exclude", scope: "exclude", messages: "exclude" } satisfies FieldPolicy<SearchContinuation>,
+  continuationMessage: { role: "exclude", content: "exclude", search: "exclude", providerReplay: "exclude", attachments: "exclude" } satisfies FieldPolicy<ChatMessage>,
   attachment: { reference: "resource", name: "backup", size: "backup", mimeType: "backup" } satisfies FieldPolicy<SentAttachment>,
   appearance: {
     colorPreset: "backup", themeMode: "backup", accentColor: "backup", userBubbleColor: "backup", unifiedThemeColor: "backup",
@@ -87,7 +91,7 @@ export const dataPolicies = {
   drawingGrok: { modelVersion: "backup", aspectRatio: "backup", resolution: "backup", quality: "backup" } satisfies FieldPolicy<NonNullable<DrawingDraft["grok"]>>,
   drawingSeedream: { modelVersion: "backup", size: "backup", outputFormat: "backup", watermark: "backup" } satisfies FieldPolicy<NonNullable<DrawingDraft["seedream"]>>,
   drawingOpenai: { size: "backup", quality: "backup" } satisfies FieldPolicy<NonNullable<DrawingDraft["openai"]>>,
-  drawingGemini: { temperature: "backup", safetyThreshold: "backup", outputMode: "backup" } satisfies FieldPolicy<GeminiDrawingOptions>,
+  drawingGemini: { temperature: "backup", safetyThreshold: "backup", outputMode: "backup", thinkingLevel: "backup" } satisfies FieldPolicy<GeminiDrawingOptions>,
   drawingPresets: { id: "backup", name: "backup", content: "backup", createdAt: "backup", updatedAt: "backup" } satisfies FieldPolicy<DrawingPromptPreset>,
   drawingTasks: { id: "exclude", createdAt: "exclude", updatedAt: "exclude", status: "exclude", parameters: "exclude", error: "exclude", batchId: "exclude", queueOrder: "exclude", startedAt: "exclude", finishedAt: "exclude", sourceTaskId: "exclude", diagnostic: "exclude", recovery: "exclude" } satisfies FieldPolicy<DrawingTask>,
   drawingResults: { id: "exclude", taskId: "exclude", createdAt: "exclude", parameters: "exclude", reference: "exclude", mime: "exclude", size: "exclude", width: "exclude", height: "exclude" } satisfies FieldPolicy<DrawingResult>,

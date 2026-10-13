@@ -116,6 +116,12 @@ export function ChatWorkspace({
   return (
     <div className={`chat-attachment-surface${dragging ? " chat-attachment-over" : ""}`}
       data-chat-layout={layout}
+      onDragOverCapture={(event) => {
+        if ((event.target as Element).closest?.(".message-editor") && event.dataTransfer.types.includes("Files")) setDragging(false);
+      }}
+      onDropCapture={(event) => {
+        if ((event.target as Element).closest?.(".message-editor")) setDragging(false);
+      }}
       onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
       onDrop={(event) => {

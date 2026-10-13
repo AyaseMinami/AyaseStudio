@@ -5,7 +5,7 @@ import { retryUser, withReplyLinks } from "./messageOperations";
 import { planContextBudget } from "./contextBudget";
 import { defaultSessionConfig } from "./sessionConfig";
 
-const attachment = { name: "note.txt", reference: "attachments/shared.txt", size: 4, mimeType: "text/plain" as const };
+const attachment = { name: "note.txt", reference: "attachments/123e4567-e89b-42d3-a456-426614174000.txt", size: 4, mimeType: "text/plain" as const };
 const history: StoredChatMessage[] = [
   { id: "u1", role: "user", content: "first", status: "complete", attachments: [attachment] },
   { id: "a1", role: "assistant", content: "reply one", status: "complete" },

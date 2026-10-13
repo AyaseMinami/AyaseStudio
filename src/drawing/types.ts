@@ -40,6 +40,7 @@ export interface GrokDrawingOptions { modelVersion: "legacy" | "2.0"; aspectRati
 export interface SeedreamDrawingOptions { modelVersion: "4.0" | "4.5" | "5.0-lite" | "5.0-pro" | "5.0-flash"; size: string; outputFormat: "auto" | "png" | "jpeg"; watermark: "auto" | "on" | "off" }
 export type GeminiSafetyThreshold = "BLOCK_NONE" | "BLOCK_ONLY_HIGH" | "BLOCK_MEDIUM_AND_ABOVE" | "BLOCK_LOW_AND_ABOVE" | "OFF";
 export interface GeminiDrawingOptions {
+  thinkingLevel?: "minimal" | "medium" | "high";
   temperature?: number;
   safetyThreshold?: GeminiSafetyThreshold;
   outputMode?: "text-image" | "image";
@@ -112,6 +113,7 @@ export interface DrawingExportParameters {
   quality?: string;
   temperature?: number;
   safety_threshold?: GeminiSafetyThreshold;
+  thinking_level?: GeminiDrawingOptions["thinkingLevel"];
   response_modalities?: ("TEXT" | "IMAGE")[];
 }
 

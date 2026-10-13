@@ -22,7 +22,8 @@ function emptyView(): ConversationView {
 }
 
 export function useConversationWorkspace(repository: WorkspaceRepository, legacyModelId: string | null,
-  validModelIds: string[], isGenerating: (id: string) => boolean, cleanupAttachments?: () => Promise<void>, maintenanceLocked: () => boolean = () => false) {
+  validModelIds: string[], isGenerating: (id: string) => boolean, cleanupAttachments?: () => Promise<void>, maintenanceLocked: () => boolean = () => false,
+  isEditing: (id: string) => boolean = () => false, editCommitBlocked: () => boolean = maintenanceLocked) {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot>();
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string>();
@@ -32,6 +33,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   const snapshotRef = useRef<WorkspaceSnapshot | undefined>(undefined);
   const stores = useRef(new Map<string, SessionStore>());
   const views = useRef(new Map<string, ConversationView>());
+  const unavailable = useRef(new Set<string>());
   const fallback = useRef(emptyView());
   const queue = useRef(Promise.resolve());
   const pending = useRef(0);
@@ -43,6 +45,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
   function changed() { if (alive.current) render((version) => version + 1); }
 
   async function loadView(id: string): Promise<void> {
+    if (unavailable.current.has(id)) return;
     if (stores.current.has(id)) return;
     const store = new SessionStore(repository, id);
     const state = await store.hydrate();
@@ -82,6 +85,50 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     });
   }
 
+  // Only the coordinator uses this seam. File/network waits stay outside this short DB queue.
+  async function editQueue<T>(operation: () => Promise<T>): Promise<T> {
+    pending.current++; if (alive.current) setBusy(true);
+    const next = queue.current.catch(() => undefined).then(operation);
+    queue.current = next.then(() => undefined, () => undefined);
+    try { return await next; }
+    finally { pending.current--; if (alive.current) setBusy(pending.current > 0); }
+  }
+  async function readForEdit(id: string, flush: boolean): Promise<StoredChatMessage[]> {
+    return editQueue(async () => {
+      if (flush) await stores.current.get(id)?.flush();
+      const chat = await repository.load(id);
+      if (!chat) throw new Error("对话记录不存在。");
+      return chat.messages;
+    });
+  }
+  async function replaceForEdit(id: string, expected: StoredChatMessage[], messages: StoredChatMessage[]): Promise<void> {
+    return editQueue(async () => {
+      // Close blocks admission, but must drain already accepted commits and rollback.
+      if (editCommitBlocked()) throw new Error("数据维护中，无法保存消息。");
+      const committed = await repository.execute({ type: "replace-transcript", conversationId: id, expected, messages });
+      // Editing a background transcript cannot retarget the live navigation selection.
+      const updated = { ...committed, selection: snapshotRef.current!.selection };
+      snapshotRef.current = updated; if (alive.current) setSnapshot(updated);
+      changed();
+    });
+  }
+  function detachForEdit(id: string): void {
+    stores.current.delete(id); unavailable.current.add(id); changed();
+  }
+  async function reloadForEdit(id: string, confirmed?: StoredChatMessage[]): Promise<void> {
+    return editQueue(async () => {
+      const store = new SessionStore(repository, id);
+      if (confirmed) store.adoptConfirmed(confirmed); else await store.hydrate();
+      stores.current.set(id, store); unavailable.current.delete(id);
+      views.current.set(id, { ...(views.current.get(id) ?? emptyView()), messages: store.current.messages, contextPlan: undefined, error: undefined });
+      changed();
+    });
+  }
+  function editOutcome(id: string, result: import("./messageEditTypes").MessageEditResult): void {
+    const current = views.current.get(id) ?? emptyView();
+    views.current.set(id, { ...current, error: result.error ?? result.warning }); changed();
+  }
+
   useEffect(() => {
     alive.current = true;
     initialize();
@@ -98,7 +145,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     const next = queue.current.catch(() => undefined).then(async () => {
       try {
         const current = snapshotRef.current!;
-        const messageAction = action.type === "edit-message" || action.type === "delete-message" || action.type === "fork-conversation" || action.type === "select-round-version";
+        const messageAction = action.type === "edit-message" || action.type === "replace-transcript" || action.type === "delete-message" || action.type === "fork-conversation" || action.type === "select-round-version";
         const assistantIds = action.type === "delete-assistant" ? [action.id] : action.type === "delete-assistants" ? action.ids : [];
         const conversationIds = action.type === "delete-conversation" ? [action.id] : action.type === "delete-conversations" ? action.ids : [];
         const affected = assistantIds.length
@@ -189,11 +236,21 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
 
   return {
     snapshot, conversation, assistant, effective, view, busy, loadError, operationError, execute, updateAutomaticTitle, retry: initialize,
+    readForEdit, replaceForEdit, detachForEdit, reloadForEdit, editOutcome,
+    canEditAt: (target: string) => !maintenanceLocked() && pending.current === 0 && stores.current.has(target),
+    getStore: (target: string) => stores.current.get(target),
+    setMessagesAt: (target: string, messages: StoredChatMessage[]) => {
+      const current = views.current.get(target); if (current) views.current.set(target, { ...current, messages }); changed();
+    },
+    setErrorAt: (target: string, value: SetStateAction<string | undefined>) => {
+      const current = views.current.get(target); if (!current) return;
+      views.current.set(target, { ...current, error: typeof value === "function" ? value(current.error) : value }); changed();
+    },
     // Presentation only: the first transcript load remains visibly unavailable.
     isTemporarilyBusy: busy && hasHydratedView.current,
     isReady: !!snapshot && !busy && !!id && stores.current.has(id),
-    isSettled: () => pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
-    canSend: () => !maintenanceLocked() && pending.current === 0 && !!id && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
+    isSettled: () => pending.current === 0 && unavailable.current.size === 0 && (!id || stores.current.has(id)) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
+    canSend: () => !maintenanceLocked() && pending.current === 0 && !!id && !isEditing(id) && stores.current.has(id) && snapshotRef.current === snapshot && !!snapshot && selectedConversation(snapshot)?.id === id,
     canImport: () => !maintenanceLocked() && pending.current === 0 && !!snapshot && snapshotRef.current === snapshot &&
       (!id || stores.current.has(id)) && selectedConversation(snapshot)?.id === id,
     store: id ? stores.current.get(id) : undefined,

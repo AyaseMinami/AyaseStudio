@@ -59,7 +59,11 @@ export type WorkspaceCommand =
   | { type: "start-conversation-title"; id: string; messageId: string }
   | { type: "finish-conversation-title"; id: string; messageId: string; title?: string }
   | { type: "configure-conversation"; id: string; settings: import("./conversationConfig").ConversationConfig; title?: string }
-  | { type: "edit-message"; conversationId: string; messageId: string; content: string }
+  | { type: "edit-message"; conversationId: string; messageId: string; content: string;
+      attachments?: import("./attachments").SentAttachment[]; base?: import("./repository").StoredChatMessage }
+  // Internal conditional transcript replacement and rollback; never receives editor File objects.
+  | { type: "replace-transcript"; conversationId: string; expected: import("./repository").StoredChatMessage[];
+      messages: import("./repository").StoredChatMessage[] }
   | { type: "select-round-version"; conversationId: string; index: number }
   | { type: "delete-message"; conversationId: string; messageId: string }
   | { type: "fork-conversation"; id: string; conversationId: string; messageId: string;

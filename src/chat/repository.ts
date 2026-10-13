@@ -6,6 +6,7 @@ import { titleFromText } from "./conversationTitle";
 import { copyAssistantConfig, resolveConversationConfig, assertLegacyOverrides, readConversationConfigData } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
 import { readMessagesGenerationMetrics } from "./generationMetricsData";
+import { editedMessage, readEditTranscript, sameTranscriptValue } from "./messageData";
 
 import type { ChatMessage } from "./types";
 import { defaultSessionConfig, restoreSessionConfig, readSessionConfigData, type SessionConfig } from "./sessionConfig";
@@ -344,6 +345,18 @@ class DexieChatRepository implements WorkspaceRepository {
           await db.conversations.update(source.id, { updatedAt: now });
           break;
         }
+        case "replace-transcript": {
+          const source = await requireConversation(action.conversationId);
+          const chat = await this.load(source.id);
+          const before = readEditTranscript(chat?.messages ?? []);
+          if (!sameTranscriptValue(before, action.expected)) throw new Error("消息已变化，请重新打开编辑。");
+          const messages = readEditTranscript(action.messages);
+          const now = Date.now();
+          await db.chats.put({ ...chat, id: source.id, updatedAt: now, messages });
+          // Rollback touches transcript activity only, never title/order/settings.
+          await db.conversations.update(source.id, { updatedAt: now });
+          break;
+        }
         case "edit-message":
         case "delete-message":
         case "fork-conversation": {
@@ -369,10 +382,9 @@ class DexieChatRepository implements WorkspaceRepository {
             let next: StoredChatMessage[];
             if (action.type === "edit-message") {
               const message = messages[index];
-              if (!action.content.trim() && !message.attachments?.length) throw new Error("消息正文不能为空。");
-              next = [...messages.slice(0, index), { ...message, content: action.content, editedAt: now,
-                search: undefined, providerReplay: undefined, continuation: undefined,
-                status: message.status === "paused" ? "incomplete" : message.status }, ...messages.slice(index + 1)];
+              readEditTranscript(messages);
+              if (action.base && !sameTranscriptValue(message, action.base)) throw new Error("消息已变化，请重新打开编辑。");
+              next = [...messages.slice(0, index), editedMessage(message, action.content, action.attachments, now), ...messages.slice(index + 1)];
             } else next = messages.filter((message) => message.id !== action.messageId).map((message) =>
               message.status === "paused" ? { ...message, status: "incomplete" as const, continuation: undefined } : message);
             if (action.type === "delete-message" && index >= messages.length - 2) next = next.map(withoutVersions);

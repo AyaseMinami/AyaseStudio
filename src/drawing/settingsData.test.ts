@@ -12,7 +12,7 @@ const preset = { id: "preset", name: "Landscape", content: "  mountains\n\ncloud
 
 describe("drawing settings data boundary", () => {
   it("clones and projects Gemini controls with exact finite defaults and no private nested fields", () => {
-    const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const };
+    const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const, thinkingLevel: "medium" as const };
     const draft = { ...initialDrawingDraft, gemini: { ...gemini, apiKey: "synthetic" } };
     const projected = projectDrawingSettings(draft);
     expect(projected).toEqual({ ...defaults, gemini });
@@ -24,7 +24,7 @@ describe("drawing settings data boundary", () => {
   });
   it.each([null, [], { temperature: NaN }, { temperature: Infinity }, { temperature: -0.1 }, { temperature: 2.1 },
     { temperature: "1" }, { temperature: undefined }, { safetyThreshold: "UNKNOWN" }, { outputMode: "TEXT" },
-    { apiKey: "synthetic" }, { futureSafety: true }])("rejects invalid Gemini options %j without changing source", gemini => {
+    { apiKey: "synthetic" }, { futureSafety: true }, { thinkingLevel: "low" }, { thinkingLevel: "auto" }, { thinkingLevel: null }, { thinkingLevel: undefined }])("rejects invalid Gemini options %j without changing source", gemini => {
     const raw = { gemini }, before = structuredClone(raw);
     expect(() => readDrawingSettingsData(raw)).toThrow(DataContractError);
     expect(raw).toEqual(before);

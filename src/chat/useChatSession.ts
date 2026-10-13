@@ -28,6 +28,8 @@ import { addDraftAttachments, attachmentCapabilityFailure, materializeDraftAttac
   type DraftAttachment, type RequestAttachment, type SentAttachment } from "./attachments";
 import { createTauriAttachmentStore } from "./attachmentResources";
 import { AttachmentLifecycle } from "./attachmentLifecycle";
+import { MessageEdits, type MessageEditAccess } from "./messageEdits";
+import type { MessageEditDraft, MessageEditResult } from "./messageEditTypes";
 import { retryUser, withReplyLinks } from "./messageOperations";
 import {
   testModelAvailability,
@@ -169,26 +171,46 @@ export function useChatSession({
   const [backupPreparing, setBackupPreparing] = useState(false);
   const [titleBusy, setTitleBusy] = useState(false);
   const backupPreparingRef = useRef(false);
+  const closingRef = useRef(false);
+  const editOwner = useRef<MessageEdits | null>(null);
+  const editAccess = useRef<MessageEditAccess | null>(null);
+  const [, editRender] = useState(0);
+  const imports = useRef(new Map<string, number>());
   const [backupPreparationError, setBackupPreparationError] = useState<string>();
   const cherryBusyRef = useRef(false);
   const cherryToken = useRef<string | undefined>(undefined);
   const generatingConversationIds = useSyncExternalStore(generationTasks.subscribe, generationTasks.getSnapshot);
   const externalBusyRef = useRef(externalBusy);
   externalBusyRef.current = externalBusy;
-  const sharedSettingsBusy = () => providerAvatarPending.current || backupPreparingRef.current || externalBusyRef.current || generationTasks.getSnapshot().size > 0;
+  const sharedSettingsBusy = () => providerAvatarPending.current || backupPreparingRef.current || closingRef.current || editOwner.current?.isPending() || externalBusyRef.current || generationTasks.getSnapshot().size > 0;
   const externalMaintenanceBusyRef = useRef(externalMaintenanceBusy);
   externalMaintenanceBusyRef.current = externalMaintenanceBusy;
   const maintenanceExternalBusy = () => externalMaintenanceBusyRef.current?.() ?? externalBusyRef.current;
   const workspace = useConversationWorkspace(chatRepository, connectionSettings.activeModelId,
-    connectionSettings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => model.id))), generationTasks.has, cleanupAttachments, () => backupPreparingRef.current);
+    connectionSettings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => model.id))),
+    id => generationTasks.has(id) || !!editOwner.current?.has(id) || imports.current.has(id), cleanupAttachments,
+    () => backupPreparingRef.current || closingRef.current, id => !!editOwner.current?.has(id), () => backupPreparingRef.current);
   const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
   const sessionConfig = workspace.effective.config;
   const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
-  const imports = useRef(new Map<string, number>());
+  editAccess.current = {
+    canBegin: id => sessionActive.current && !closingRef.current && !backupPreparingRef.current && !cherryBusyRef.current
+      && workspace.canEditAt(id) && !generationTasks.has(id) && !imports.current.has(id),
+    read: workspace.readForEdit, replace: workspace.replaceForEdit, detach: workspace.detachForEdit,
+    reload: workspace.reloadForEdit, outcome: workspace.editOutcome,
+  };
+  if (!editOwner.current) editOwner.current = new MessageEdits({
+    canBegin: id => editAccess.current!.canBegin(id),
+    read: (id, flush) => editAccess.current!.read(id, flush),
+    replace: (id, before, after) => editAccess.current!.replace(id, before, after),
+    detach: id => editAccess.current!.detach(id), reload: (id, confirmed) => editAccess.current!.reload(id, confirmed),
+    outcome: (id, result) => editAccess.current!.outcome(id, result),
+  }, attachmentLifecycle, attachmentStore, () => { if (sessionActive.current) editRender(version => version + 1); });
+  const edits = editOwner.current;
   // This per-render binding is captured by a request; navigation never retargets it.
   const sessionStore = workspace.store;
   const isGenerating = !!sessionStore && generatingConversationIds.has(sessionStore.id);
-  const isHydrated = workspace.isReady;
+  const isHydrated = workspace.isReady && !(sessionStore && edits.has(sessionStore.id));
   const catalogAbortControllers = useRef(
     new Map<string, AbortController>(),
   );
@@ -776,14 +798,12 @@ export function useChatSession({
     testAbortControllers.current.get(modelId)?.abort();
   }
 
-  async function sendMessage(retryMessageId?: string, resumeMessageId?: string, editedContent?: string): Promise<true | undefined> {
+  async function sendMessage(retryMessageId?: string, resumeMessageId?: string): Promise<true | undefined> {
     if (cherryBusyRef.current) return;
     const resume = resumeMessageId ? messages.find((message) => message.id === resumeMessageId && message.status === "paused") : undefined;
     if (resumeMessageId && (!resume?.continuation || !resume.providerReplay || messages[messages.length - 1]?.id !== resume.id)) return;
     const originalUser = retryMessageId || resumeMessageId ? retryUser(messages, (retryMessageId ?? resumeMessageId)!) : undefined;
-    if (editedContent !== undefined && originalUser?.id !== retryMessageId) return;
-    const targetUser = originalUser && editedContent !== undefined
-      ? { ...originalUser, content: editedContent, editedAt: Date.now() } : originalUser;
+    const targetUser = originalUser;
     const content = targetUser ? targetUser.content : draft.trim();
     const frozenAttachments = retryMessageId || resumeMessageId ? [] : [...draftAttachments];
     const existingAttachments = targetUser?.attachments ?? [];
@@ -867,6 +887,7 @@ export function useChatSession({
       setError(Object.values(errors)[0]);
       return;
     }
+    if (edits.has(requestStore.id) || closingRef.current) return;
     const task = generationTasks.begin(requestStore.id);
     if (!task) return;
     const { controller } = task;
@@ -1059,193 +1080,212 @@ export function useChatSession({
         })();
       }
 
-      let persistChain = Promise.resolve();
-      let persistenceFailed = false;
-      let measurement: GenerationMeasurement | undefined;
-      const earlierMetrics = resume?.generationMetrics ?? [];
-      function updateGenerationMetrics(status: StoredMessageStatus): void {
-        if (!measurement) return;
-        const metrics = measurement.snapshot(status);
-        workingMessages = workingMessages.map(message => message.id === assistantId
-          ? { ...message, generationMetrics: [...earlierMetrics, metrics] } : message);
-      }
-      function queuePersist(snapshotMessages: StoredChatMessage[]) {
-        persistChain = persistChain
-          .then(() =>
-            requestStore.updateMessages(snapshotMessages),
-          )
-          .catch(() => {
-            persistenceFailed = true;
-          });
-      }
-      queuePersist(workingMessages);
+      await streamReply({ requestStore, controller, requestConnection, frozenConfig, requestModelId, requestMessages,
+        workingMessages, resume, externalSearch, searchSettings, searchQuery, searchMode, requestHistory, content, planned,
+        replayScope, userMessage, assistantId, startTitleNaming, setMessages, setError, setContextPlan });
+      return true;
+    } finally {
+      generationTasks.finish(task);
+    }
+  }
 
-      let assistantText = resume?.content ?? "";
-      const resumeOffset = assistantText.length;
-      let lastPaint = 0;
-      let lastPersist = 0;
-      let terminalSeen = false;
-      try {
-        if (externalSearch && !resume) {
-          const result = await searchExa(searchSettings!, searchQuery!, controller.signal, searchMode as ExternalSearchProvider);
-          if (controller.signal.aborted) throw new Error("检索已停止。");
-          // Preserve successful retrieval independently of budget/model failures.
-          workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
-            search: { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "completed", sources: result.sources,
-              queries: [searchQuery!], ...(result.warning ? { warning: result.warning } : {}) } } : message);
-          setMessages(workingMessages); queuePersist(workingMessages);
-          const latestAttachments = requestMessages[requestMessages.length - 1]?.attachments ?? [];
-          const prepared = await prepareSearchContext(requestHistory, content, frozenConfig, requestConnection.protocol,
-            requestModelId, result.sources, latestAttachments as RequestAttachment[]);
-          if (controller.signal.aborted) throw new Error("检索已停止。");
-          planned = prepared.plan;
-          // Materialize any historical attachment newly retained after data budgeting.
-          requestMessages = [];
-          for (const message of planned.messages) {
-            const loaded: RequestAttachment[] = [];
-            for (const attachment of message.attachments ?? []) {
-              if (controller.signal.aborted) throw new Error("检索已停止。");
-              loaded.push("data" in attachment ? attachment : await attachmentStore.read(attachment));
-            }
-            requestMessages.push({ ...message, ...(loaded.length ? { attachments: loaded } : {}) });
-          }
-          buildProtocolBody(requestConnection.protocol, { baseUrl: requestConnection.baseUrl, apiKey: "", model: requestModelId,
-            messages: requestMessages, config: frozenConfig, replayScope });
-          if (controller.signal.aborted) throw new Error("检索已停止。");
-          workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
-            search: { ...message.search!, sources: prepared.sources },
-            ...(message.continuation ? { continuation: { ...message.continuation,
-              messages: planned.messages.map((item, index) => index === planned.messages.length - 1
-                ? { ...item, attachments: userMessage.attachments } : item) } } : {}) } : message);
-          setContextPlan(summarizeContextPlan(planned));
-          setMessages(workingMessages); queuePersist(workingMessages);
-          startTitleNaming();
-        }
-        if (controller.signal.aborted) throw new Error("生成已停止。");
-        const transport = await createRuntimeChatTransport(
-          requestConnection.protocol,
-        );
-        if (controller.signal.aborted) throw new Error("生成已停止。");
-        measurement = new GenerationMeasurement(requestConnection.protocol, frozenConfig.stream);
-        updateGenerationMetrics("streaming");
+  async function streamReply(input: {
+    requestStore: import("./sessionStore").SessionStore; controller: AbortController;
+    requestConnection: ConnectionProfile & { protocol: ChatProtocol }; frozenConfig: import("./sessionConfig").SessionConfig;
+    requestModelId: string; requestMessages: import("./types").ChatMessage[]; workingMessages: StoredChatMessage[];
+    resume?: StoredChatMessage; externalSearch: boolean; searchSettings?: SearchProfile; searchQuery?: string;
+    searchMode: SearchMode; requestHistory: StoredChatMessage[]; content: string; planned: ContextPlan;
+    replayScope: string; userMessage: StoredChatMessage; assistantId: string; startTitleNaming(): void;
+    setMessages(value: StoredChatMessage[]): void; setError(value: import("react").SetStateAction<string | undefined>): void;
+    setContextPlan(value: import("./contextBudget").ContextSummary): void;
+  }): Promise<void> {
+    const { requestStore, controller, requestConnection, frozenConfig, requestModelId, resume, externalSearch,
+      searchSettings, searchQuery, searchMode, requestHistory, content, replayScope, userMessage, assistantId,
+      startTitleNaming, setMessages, setError, setContextPlan } = input;
+    let { requestMessages, workingMessages, planned } = input;
+    let persistChain = Promise.resolve();
+    let persistenceFailed = false;
+    let measurement: GenerationMeasurement | undefined;
+    const earlierMetrics = resume?.generationMetrics ?? [];
+    function updateGenerationMetrics(status: StoredMessageStatus): void {
+      if (!measurement) return;
+      const metrics = measurement.snapshot(status);
+      workingMessages = workingMessages.map(message => message.id === assistantId
+        ? { ...message, generationMetrics: [...earlierMetrics, metrics] } : message);
+    }
+    function queuePersist(snapshotMessages: StoredChatMessage[]) {
+      persistChain = persistChain
+        .then(() =>
+          requestStore.updateMessages(snapshotMessages),
+        )
+        .catch(() => {
+          persistenceFailed = true;
+        });
+    }
+    queuePersist(workingMessages);
+
+    let assistantText = resume?.content ?? "";
+    const resumeOffset = assistantText.length;
+    let lastPaint = 0;
+    let lastPersist = 0;
+    let terminalSeen = false;
+    try {
+      if (externalSearch && !resume) {
+        const result = await searchExa(searchSettings!, searchQuery!, controller.signal, searchMode as ExternalSearchProvider);
+        if (controller.signal.aborted) throw new Error("检索已停止。");
+        // Preserve successful retrieval independently of budget/model failures.
+        workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
+          search: { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "completed", sources: result.sources,
+            queries: [searchQuery!], ...(result.warning ? { warning: result.warning } : {}) } } : message);
         setMessages(workingMessages); queuePersist(workingMessages);
-        for await (const event of transport.stream({
-          baseUrl: requestConnection.baseUrl,
-          apiKey: requestConnection.apiKey,
-          model: requestModelId,
-          messages: requestMessages,
-          config: frozenConfig,
-          signal: controller.signal,
-          replayScope,
-        })) {
-          if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
-          measurement.observe(event);
-          if (event.type === "usage-update") {
-            updateGenerationMetrics("streaming");
-            setMessages(workingMessages); queuePersist(workingMessages); continue;
+        const latestAttachments = requestMessages[requestMessages.length - 1]?.attachments ?? [];
+        const prepared = await prepareSearchContext(requestHistory, content, frozenConfig, requestConnection.protocol,
+          requestModelId, result.sources, latestAttachments as RequestAttachment[]);
+        if (controller.signal.aborted) throw new Error("检索已停止。");
+        planned = prepared.plan;
+        // Materialize any historical attachment newly retained after data budgeting.
+        requestMessages = [];
+        for (const message of planned.messages) {
+          const loaded: RequestAttachment[] = [];
+          for (const attachment of message.attachments ?? []) {
+            if (controller.signal.aborted) throw new Error("检索已停止。");
+            loaded.push("data" in attachment ? attachment : await attachmentStore.read(attachment));
           }
-          if (event.type === "search-update") {
-            if (externalSearch) continue;
-            workingMessages = workingMessages.map((message) => message.id === assistantId
-              ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
-            setMessages(workingMessages); queuePersist(workingMessages); continue;
-          }
-          if (event.type === "provider-replay") {
-            const earlier = resume?.providerReplay;
-            const replay = earlier ? { ...event.replay, content: [...earlier.content, ...event.replay.content],
-              responses: [...(earlier.responses ?? [earlier.content]), event.replay.content] } : event.replay;
-            workingMessages = workingMessages.map((message) => message.id === assistantId ? { ...message, providerReplay: replay } : message);
-            continue;
-          }
-          if (event.type === "text-delta" || event.type === "thinking-delta") {
-            if (event.type === "text-delta") assistantText += event.text;
-            else workingMessages = workingMessages.map((message) => message.id === assistantId
-              ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
-            workingMessages = replaceAssistant(
-              workingMessages,
-              assistantId,
-              assistantText,
-              "streaming",
-            );
-            if (externalSearch && event.type === "text-delta") workingMessages = workingMessages.map(message => message.id === assistantId
-              ? { ...message, search: { ...message.search!, citations: externalCitations(assistantText, message.search!.sources) } } : message);
-            updateGenerationMetrics("streaming");
-            const now = performance.now();
-            if (now - lastPaint >= 32) {
-              setMessages(workingMessages);
-              lastPaint = now;
-            }
-            if (now - lastPersist >= 500) {
-              queuePersist(workingMessages);
-              lastPersist = now;
-            }
-            continue;
-          }
-
-          if (event.type === "completed") {
-            terminalSeen = true;
-            workingMessages = replaceAssistant(
-              workingMessages,
-              assistantId,
-              assistantText,
-              completionStatus(requestConnection.protocol, event.finishReason),
-            );
-          } else if (event.type === "aborted") {
-            terminalSeen = true;
-            workingMessages = replaceAssistant(
-              workingMessages,
-              assistantId,
-              assistantText,
-              "aborted",
-            );
-          } else {
-            terminalSeen = true;
-            workingMessages = replaceAssistant(
-              workingMessages,
-              assistantId,
-              assistantText,
-              "failed",
-            );
-            const status = event.error.status ? ` (${event.error.status})` : "";
-            setError(`${event.error.message}${status}`);
-          }
-          updateGenerationMetrics(workingMessages.find(message => message.id === assistantId)!.status);
-          setMessages(workingMessages);
-          queuePersist(workingMessages);
+          requestMessages.push({ ...message, ...(loaded.length ? { attachments: loaded } : {}) });
         }
-        if (!terminalSeen) {
+        buildProtocolBody(requestConnection.protocol, { baseUrl: requestConnection.baseUrl, apiKey: "", model: requestModelId,
+          messages: requestMessages, config: frozenConfig, replayScope });
+        if (controller.signal.aborted) throw new Error("检索已停止。");
+        workingMessages = workingMessages.map(message => message.id === assistantId ? { ...message,
+          search: { ...message.search!, sources: prepared.sources },
+          ...(message.continuation ? { continuation: { ...message.continuation,
+            messages: planned.messages.map((item, index) => index === planned.messages.length - 1
+              ? { ...item, attachments: userMessage.attachments } : item) } } : {}) } : message);
+        setContextPlan(summarizeContextPlan(planned));
+        setMessages(workingMessages); queuePersist(workingMessages);
+        startTitleNaming();
+      }
+      if (controller.signal.aborted) throw new Error("生成已停止。");
+      const transport = await createRuntimeChatTransport(
+        requestConnection.protocol,
+      );
+      if (controller.signal.aborted) throw new Error("生成已停止。");
+      measurement = new GenerationMeasurement(requestConnection.protocol, frozenConfig.stream);
+      updateGenerationMetrics("streaming");
+      setMessages(workingMessages); queuePersist(workingMessages);
+      for await (const event of transport.stream({
+        baseUrl: requestConnection.baseUrl,
+        apiKey: requestConnection.apiKey,
+        model: requestModelId,
+        messages: requestMessages,
+        config: frozenConfig,
+        signal: controller.signal,
+        replayScope,
+      })) {
+        if (event.type === "thinking-delta" && !includeThinkingSummary(frozenConfig, requestConnection.protocol)) continue;
+        measurement.observe(event);
+        if (event.type === "usage-update") {
+          updateGenerationMetrics("streaming");
+          setMessages(workingMessages); queuePersist(workingMessages); continue;
+        }
+        if (event.type === "search-update") {
+          if (externalSearch) continue;
+          workingMessages = workingMessages.map((message) => message.id === assistantId
+            ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
+          setMessages(workingMessages); queuePersist(workingMessages); continue;
+        }
+        if (event.type === "provider-replay") {
+          const earlier = resume?.providerReplay;
+          const replay = earlier ? { ...event.replay, content: [...earlier.content, ...event.replay.content],
+            responses: [...(earlier.responses ?? [earlier.content]), event.replay.content] } : event.replay;
+          workingMessages = workingMessages.map((message) => message.id === assistantId ? { ...message, providerReplay: replay } : message);
+          continue;
+        }
+        if (event.type === "text-delta" || event.type === "thinking-delta") {
+          if (event.type === "text-delta") assistantText += event.text;
+          else workingMessages = workingMessages.map((message) => message.id === assistantId
+            ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
           workingMessages = replaceAssistant(
-            workingMessages, assistantId, assistantText,
-            controller.signal.aborted ? "aborted" : "failed",
+            workingMessages,
+            assistantId,
+            assistantText,
+            "streaming",
           );
-          updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
-          setMessages(workingMessages);
-          queuePersist(workingMessages);
-          if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
+          if (externalSearch && event.type === "text-delta") workingMessages = workingMessages.map(message => message.id === assistantId
+            ? { ...message, search: { ...message.search!, citations: externalCitations(assistantText, message.search!.sources) } } : message);
+          updateGenerationMetrics("streaming");
+          const now = performance.now();
+          if (now - lastPaint >= 32) {
+            setMessages(workingMessages);
+            lastPaint = now;
+          }
+          if (now - lastPersist >= 500) {
+            queuePersist(workingMessages);
+            lastPersist = now;
+          }
+          continue;
         }
-      } catch (caught) {
+
+        if (event.type === "completed") {
+          terminalSeen = true;
+          workingMessages = replaceAssistant(
+            workingMessages,
+            assistantId,
+            assistantText,
+            completionStatus(requestConnection.protocol, event.finishReason),
+          );
+        } else if (event.type === "aborted") {
+          terminalSeen = true;
+          workingMessages = replaceAssistant(
+            workingMessages,
+            assistantId,
+            assistantText,
+            "aborted",
+          );
+        } else {
+          terminalSeen = true;
+          workingMessages = replaceAssistant(
+            workingMessages,
+            assistantId,
+            assistantText,
+            "failed",
+          );
+          const status = event.error.status ? ` (${event.error.status})` : "";
+          setError(`${event.error.message}${status}`);
+        }
+        updateGenerationMetrics(workingMessages.find(message => message.id === assistantId)!.status);
+        setMessages(workingMessages);
+        queuePersist(workingMessages);
+      }
+      if (!terminalSeen) {
         workingMessages = replaceAssistant(
-          workingMessages,
-          assistantId,
-          assistantText,
+          workingMessages, assistantId, assistantText,
           controller.signal.aborted ? "aborted" : "failed",
         );
         updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
         setMessages(workingMessages);
         queuePersist(workingMessages);
-        if (!controller.signal.aborted) {
-          setError(caught instanceof Error ? caught.message : "无法启动请求");
-        }
-      } finally {
-        await persistChain;
-        if (persistenceFailed) {
-          setError((current) => current ?? "回复已生成，但保存本地记录失败。");
-        }
-        await cleanupAttachments().catch(() => setError((current) => current ?? "消息已保存，但附件副本整理失败；下次启动将重试。"));
+        if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
       }
-      return true;
+    } catch (caught) {
+      workingMessages = replaceAssistant(
+        workingMessages,
+        assistantId,
+        assistantText,
+        controller.signal.aborted ? "aborted" : "failed",
+      );
+      updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
+      setMessages(workingMessages);
+      queuePersist(workingMessages);
+      if (!controller.signal.aborted) {
+        setError(caught instanceof Error ? caught.message : "无法启动请求");
+      }
     } finally {
-      generationTasks.finish(task);
+      await persistChain;
+      if (persistenceFailed) {
+        setError((current) => current ?? "回复已生成，但保存本地记录失败。");
+      }
+      await cleanupAttachments().catch(() => setError((current) => current ?? "消息已保存，但附件副本整理失败；下次启动将重试。"));
     }
   }
 
@@ -1253,9 +1293,88 @@ export function useChatSession({
     if (sessionStore) generationTasks.stop(sessionStore.id);
   }
 
-  async function editMessage(id: string, content: string): Promise<boolean> {
-    if (!workspace.canSend() || !sessionStore) return false;
-    return workspace.execute({ type: "edit-message", conversationId: sessionStore.id, messageId: id, content });
+  async function editMessage(id: string, content: string, draft?: MessageEditDraft): Promise<MessageEditResult> {
+    if (!sessionStore) return { status: "notSaved", error: "当前对话尚未加载。" };
+    return edits.submit(sessionStore.id, id, content, draft);
+  }
+
+  async function editAndSendMessage(id: string, content: string, draft?: MessageEditDraft): Promise<MessageEditResult> {
+    if (!sessionStore) return { status: "notSaved", error: "当前对话尚未加载。" };
+    const conversationId = sessionStore.id;
+    const frozenTarget = activeTarget && structuredClone(activeTarget);
+    const config = structuredClone(sessionConfig);
+    let task: import("./generationTasks").GenerationTask | undefined;
+    return edits.submit(conversationId, id, content, draft, async (before, user) => {
+      if (user.role !== "user") throw new Error("仅用户消息可以保存并发送。");
+      if (!frozenTarget) throw new Error("当前会话的模型未选择或已失效，请先选择模型。");
+      const requestConnection = frozenTarget.connection;
+      const requestModelId = frozenTarget.model.modelId;
+      if (!requestConnection.baseUrl || !requestConnection.apiKey) throw new Error("请先填写当前模型所属连接的 Base URL 和 API Key。");
+      resolveGenerationEndpoint(requestConnection.protocol, requestConnection.baseUrl, requestModelId);
+      const capability = attachmentCapabilityFailure(requestConnection.protocol, requestModelId, user.attachments ?? []);
+      if (capability) throw new Error(capability);
+      const frozenConfig = config;
+      const searchMode = resolveSearchMode(frozenConfig);
+      const externalSearch = isExternalSearch(searchMode);
+      frozenConfig.webSearch = searchMode === "native";
+      const errors = validateRequestConfig(frozenConfig, requestConnection.protocol, requestModelId);
+      if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
+      let searchSettings: SearchProfile | undefined, searchQuery: string | undefined;
+      if (externalSearch) {
+        searchSettings = structuredClone(loadSearchSettings(undefined, searchMode as ExternalSearchProvider));
+        assertSearchEnabled(searchMode as ExternalSearchProvider, searchSettings);
+        if (searchMode === "exa-api") searchSettings = validateExaApiSettings(searchSettings);
+        if (searchMode === "tavily") searchSettings = validateTavilyApiSettings(searchSettings as import("../search/settings").TavilySearchSettings);
+        if (searchMode === "zhipu") searchSettings = validateZhipuApiSettings(searchSettings as import("../search/settings").ZhipuSearchSettings);
+        searchQuery = searchMode === "zhipu" ? validateZhipuSearchQuery(content) : validateSearchQuery(content);
+      }
+      const replayScope = `${requestConnection.id}|${requestConnection.baseUrl}`;
+      const index = before.findIndex(message => message.id === id);
+      const history = withReplyLinks(before.slice(0, index)).map(withoutVersions);
+      const requestHistory = projectSearchHistory(history).map(message => message.providerReplay?.scope === replayScope
+        ? message : { ...message, providerReplay: undefined });
+      const attachments = user.attachments ?? [];
+      const planned = await planContextBudget(requestHistory, content, frozenConfig, requestConnection.protocol, requestModelId,
+        undefined, attachments.map(item => ({ ...item, data: "" })));
+      const requestMessages: import("./types").ChatMessage[] = [];
+      for (const [position, message] of planned.messages.entries()) {
+        const source = position === planned.messages.length - 1 ? attachments : message.attachments ?? [];
+        const loaded: RequestAttachment[] = [];
+        for (const item of source) loaded.push("data" in item ? item : await attachmentStore.read(item));
+        requestMessages.push({ ...message, ...(loaded.length ? { attachments: loaded } : {}) });
+      }
+      buildProtocolBody(requestConnection.protocol, { baseUrl: requestConnection.baseUrl, apiKey: "", model: requestModelId,
+        messages: requestMessages, config: frozenConfig, replayScope });
+      const assistantId = newId();
+      const answer: StoredChatMessage = { id: assistantId, role: "assistant", content: "", replyToId: user.id,
+        generationModel: requestModelId, status: "streaming", search: externalSearch
+          ? { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "searching", queries: [searchQuery!] }
+          : frozenConfig.webSearch ? initialSearch(true) : undefined,
+        ...(requestConnection.protocol === "anthropic-native" ? { continuation: { config: frozenConfig, model: requestModelId,
+          baseUrl: requestConnection.baseUrl, scope: replayScope, messages: planned.messages.map((message, position) =>
+            position === planned.messages.length - 1 ? { role: "user" as const, content, ...(attachments.length ? { attachments } : {}) } : message) } } : {}) };
+      const userMessage = appendRoundVersion(withReplyLinks(before), user, answer);
+      const workingMessages = [...history, userMessage, answer];
+      return {
+        messages: workingMessages,
+        claim: () => { task = generationTasks.begin(conversationId); return !!task; },
+        cancel: () => { if (task) generationTasks.finish(task); },
+        committed: () => {
+          const requestStore = workspace.getStore(conversationId)!;
+          workspace.setMessagesAt(conversationId, workingMessages);
+          // The accepted generation outlives navigation and does not consume the Composer draft.
+          void streamReply({ requestStore, controller: task!.controller, requestConnection, frozenConfig, requestModelId,
+            requestMessages, workingMessages, externalSearch, searchSettings, searchQuery, searchMode, requestHistory,
+            content, planned, replayScope, userMessage, assistantId, startTitleNaming: () => undefined,
+            setMessages: value => workspace.setMessagesAt(conversationId, value),
+            setError: value => workspace.setErrorAt(conversationId, value), setContextPlan: value => {
+              // This setter is already bound to the originating view.
+              setContextPlan(value);
+            } }).catch(() => workspace.setErrorAt(conversationId, "消息已保存，但请求终态保存失败。"))
+            .finally(() => generationTasks.finish(task!));
+        },
+      };
+    });
   }
 
   async function deleteMessage(id: string): Promise<boolean> {
@@ -1301,10 +1420,10 @@ export function useChatSession({
 
   async function prepareBackup(): Promise<boolean> {
     if (backupPreparingRef.current) return false;
-    const canPrepare = () => !maintenanceExternalBusy() && workspace.isSettled() && generationTasks.getSnapshot().size === 0 &&
+    const canPrepare = () => !closingRef.current && !edits.isPending() && !edits.needsAttention() && !maintenanceExternalBusy() && workspace.isSettled() && generationTasks.getSnapshot().size === 0 &&
       !providerAvatarPending.current && !cherryBusyRef.current && imports.current.size === 0 && testAbortControllers.current.size === 0 && catalogAbortControllers.current.size === 0 && titleAbortControllers.current.size === 0;
     if (!canPrepare()) {
-      setBackupPreparationError("请等待当前对话操作完成后再进入备份。");
+      setBackupPreparationError(edits.needsAttention() ? "消息保存状态需核对，请进入原对话重新加载并核对后再备份。" : "请等待当前对话操作完成后再进入备份。");
       return false;
     }
     backupPreparingRef.current = true;
@@ -1323,17 +1442,42 @@ export function useChatSession({
   }
   function cancelBackupPreparation(): void { backupPreparingRef.current = false; setBackupPreparing(false); }
 
+  async function prepareForClose(): Promise<boolean> {
+    closingRef.current = true; edits.stopAccepting();
+    try {
+      // Recovery outcomes retain resources but are no longer pending operations: exit stays possible.
+      await edits.settle();
+      await generationTasks.settleForClose();
+      await workspace.flushSessionWrites();
+      return true;
+    } catch {
+      cancelClose(); return false;
+    }
+  }
+  function cancelClose(): void { closingRef.current = false; edits.activate(); generationTasks.activate(); }
+  const selectedEditResult = workspace.conversation && edits.resultFor(workspace.conversation.id);
+  const presentedWorkspace = { ...workspace,
+    loadError: selectedEditResult?.error && (selectedEditResult.status === "savedNeedsReload" || selectedEditResult.status === "recoveryRequired")
+      ? selectedEditResult.error : workspace.loadError,
+    retry: () => {
+      const id = workspace.conversation?.id;
+      if (id && edits.resultFor(id)) void edits.recover(id);
+      else workspace.retry();
+    },
+  };
+
   return {
-    maintenanceBusy: backupPreparing || cherryBusy || workspace.busy || providerAvatarBusy,
+    maintenanceBusy: backupPreparing || cherryBusy || workspace.busy || providerAvatarBusy || edits.isPending(),
+    prepareForClose, cancelClose,
     backupPreparing,
-    backupDisabled: providerAvatarBusy || maintenanceExternalBusy() || !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing || titleBusy,
+    backupDisabled: edits.isPending() || edits.needsAttention() || providerAvatarBusy || maintenanceExternalBusy() || !workspace.snapshot || workspace.busy || generatingConversationIds.size > 0 || cherryBusy || imports.current.size > 0 || backupPreparing || titleBusy,
     backupPreparationError,
     prepareBackup,
     cancelBackupPreparation,
     dataImport: {
-      disabled: providerAvatarBusy || externalBusy || !workspace.canImport() || generatingConversationIds.size > 0 || cherryBusy || backupPreparing,
+      disabled: edits.isPending() || edits.needsAttention() || providerAvatarBusy || externalBusy || !workspace.canImport() || generatingConversationIds.size > 0 || cherryBusy || backupPreparing,
       async selectBackup(): Promise<CherryBackup | null> {
-        if (!isTauri() || providerAvatarPending.current || externalBusyRef.current || !workspace.canImport() || generationTasks.getSnapshot().size > 0 || cherryBusyRef.current || backupPreparingRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
+        if (!isTauri() || edits.isPending() || edits.needsAttention() || providerAvatarPending.current || externalBusyRef.current || !workspace.canImport() || generationTasks.getSnapshot().size > 0 || cherryBusyRef.current || backupPreparingRef.current) throw new Error("请在桌面应用中导入。请先等待当前操作完成。");
         const backup = await invoke<CherryBackup | null>("select_cherry_backup");
         if (backup) cherryToken.current = backup.token;
         return backup;
@@ -1344,7 +1488,7 @@ export function useChatSession({
       },
       existingSourceKeys: (keys: string[]) => cherryRepository.existingSourceKeys(keys),
       async importPlan(plan: CherryImportPlan, mode: "skip" | "copy") {
-        if (providerAvatarPending.current || externalBusyRef.current || cherryBusyRef.current || backupPreparingRef.current || !workspace.canImport() || generationTasks.getSnapshot().size || !cherryToken.current) {
+        if (edits.isPending() || edits.needsAttention() || providerAvatarPending.current || externalBusyRef.current || cherryBusyRef.current || backupPreparingRef.current || !workspace.canImport() || generationTasks.getSnapshot().size || !cherryToken.current) {
           throw new Error("请先等待当前操作完成，再导入聊天。");
         }
         cherryBusyRef.current = true; setCherryBusy(true);
@@ -1359,7 +1503,7 @@ export function useChatSession({
         } finally { cherryBusyRef.current = false; setCherryBusy(false); }
       },
     },
-    workspace,
+    workspace: presentedWorkspace,
     generatingConversationIds,
     isAnyGenerating: generatingConversationIds.size > 0,
     activeConnection,
@@ -1379,7 +1523,7 @@ export function useChatSession({
       return workspace.execute({ type: "select-round-version", conversationId: sessionStore.id, index });
     },
     retryMessage: async (id: string): Promise<void> => { await sendMessage(id); },
-    editAndSendMessage: async (id: string, content: string): Promise<boolean> => !!(await sendMessage(id, undefined, content)),
+    editAndSendMessage,
     continueMessage: async (id: string): Promise<void> => { await sendMessage(undefined, id); },
     connectionSettings: { ...connectionSettings, activeModelId: workspace.assistant?.defaultModelId ?? null },
     configErrors,

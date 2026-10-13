@@ -10,6 +10,7 @@ import { dataPolicies } from "../storage/dataPolicies";
 import { backupFields } from "../storage/dataContract";
 import { validateBackupCompatibility, validateGenerationMetricsCompatibility } from "./compatibility";
 import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
+import { readMessageData } from "../chat/messageData";
 import { readDrawingPromptPresetData, readDrawingSettingsData } from "../drawing/settingsData";
 import { isBrandId } from "../avatar/brandIds";
 import { getConnectionTemplate } from "../chat/providerPresets";
@@ -176,6 +177,7 @@ export async function validateDocument(raw: unknown): Promise<void> {
   function message(v: unknown, pair = false) {
     fields(v, backupFields(dataPolicies.messages).filter(key => !pair || key !== "roundVersions"), ["id", "role", "content", "status"]);
     readMessageGenerationMetrics(v);
+    readMessageData(v, pair);
     id(v.id); check(++messageCount <= 100000 && ["system", "user", "assistant"].includes(v.role)); text(v.content);
     check(["complete", "incomplete", "aborted", "failed"].includes(v.status)); optional(v, "replyToId", model); optional(v, "editedAt", time); optional(v, "thinkingSummary", text);
     if (v.source) { fields(v.source, backupFields(dataPolicies.messageSource), ["source", "id", "createdAt"]); check(v.source.source === "cherry"); id(v.source.id); time(v.source.createdAt);

@@ -17,13 +17,14 @@ vi.mock("./attachmentResources", () => ({ createTauriAttachmentStore: () => ({
   read: runtime.read, cleanup: runtime.cleanup, save: runtime.save, verify: runtime.verify,
 }) }));
 
-const attachment = { name: "note.txt", reference: "attachments/retained.txt", mimeType: "text/plain" as const, size: 4 };
+const attachment = { name: "note.txt", reference: "attachments/123e4567-e89b-42d3-a456-426614174000.txt", mimeType: "text/plain" as const, size: 4 };
+const truncatedReference = "attachments/123e4567-e89b-42d3-a456-426614174001.txt";
 const history: StoredChatMessage[] = [
   { id: "u1", role: "user", content: "one", status: "complete" },
   { id: "a1", role: "assistant", content: "old one", status: "complete" },
   { id: "u2", role: "user", content: "two", status: "complete", attachments: [attachment] },
   { id: "a2", role: "assistant", content: "old two", status: "complete" },
-  { id: "u3", role: "user", content: "three", status: "complete", attachments: [{ ...attachment, reference: "attachments/truncated.txt" }] },
+  { id: "u3", role: "user", content: "three", status: "complete", attachments: [{ ...attachment, reference: truncatedReference }] },
   { id: "a3", role: "assistant", content: "old three", status: "complete" },
 ];
 
@@ -97,7 +98,8 @@ describe("message actions through the session", () => {
 
   it("switches latest paired versions, persists selection and discards alternatives on the next turn", async () => {
     respond();
-    await act(async () => { await session.editAndSendMessage("u3", "three revised"); });
+    await act(async () => { expect((await session.editAndSendMessage("u3", "three revised")).status).toBe("saved"); });
+    await wait(() => !session.isAnyGenerating);
     expect(session.messages[session.messages.length - 2]?.roundVersions?.pairs).toHaveLength(2);
     await act(async () => { expect(await session.selectRoundVersion(0)).toBe(true); });
     expect(session.messages.slice(-2).map((item) => item.content)).toEqual(["three", "old three"]);
@@ -134,20 +136,20 @@ describe("message actions through the session", () => {
 
   it("sends the original math source from restored history", async () => {
     const source = String.raw`设 $A^2=I$，求 \(A\)。`;
-    await act(async () => { await session.editMessage("u3", source); });
+    await act(async () => { expect((await session.editMessage("u3", source)).status).toBe("saved"); });
     let sent: ChatRequest | undefined;
     respond((request) => { sent = request; });
     await act(async () => { await session.retryMessage("u3"); });
     expect(sent?.messages[sent.messages.length - 1]?.content).toBe(source);
   });
 
-  it("saves an edit without generating or cleaning attachments and preserves later messages", async () => {
+  it("saves an edit without generating, cleans by global references and preserves later messages", async () => {
     const original = session.messages;
     runtime.cleanup.mockClear();
-    await act(async () => { expect(await session.editMessage("u2", "edited")).toBe(true); });
+    await act(async () => { expect((await session.editMessage("u2", "edited")).status).toBe("saved"); });
     expect(session.messages.slice(3)).toEqual(original.slice(3));
     expect(session.messages[2]).toMatchObject({ content: "edited", editedAt: expect.any(Number), attachments: [attachment] });
-    expect(runtime.cleanup).not.toHaveBeenCalled();
+    expect(runtime.cleanup).toHaveBeenLastCalledWith([attachment.reference, truncatedReference], []);
     expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
     const persisted = (await repo.load("current"))!.messages;
     expect(persisted.slice(3)).toEqual(history.slice(3));
@@ -160,13 +162,14 @@ describe("message actions through the session", () => {
     let request: ChatRequest | undefined;
     respond((value) => { request = value; });
     await act(async () => session.setDraft("unsent"));
-    await act(async () => { expect(await session.editAndSendMessage("u2", "changed")).toBe(true); });
+    await act(async () => { expect((await session.editAndSendMessage("u2", "changed")).status).toBe("saved"); });
+    await wait(() => !session.isAnyGenerating);
     expect(request?.messages.map((item) => item.content)).toEqual(["one", "old one", "changed"]);
     expect(session.messages.map((item) => item.content)).toEqual(["one", "old one", "changed", "new answer"]);
     expect(session.messages[2]).toMatchObject({ id: "u2", editedAt: expect.any(Number), attachments: [attachment] });
     expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
     expect(session.draft).toBe("unsent");
-    expect(runtime.cleanup).toHaveBeenLastCalledWith(expect.arrayContaining([attachment.reference, "attachments/truncated.txt"]), []);
+    expect(runtime.cleanup).toHaveBeenLastCalledWith(expect.arrayContaining([attachment.reference, truncatedReference]), []);
     expect((await repo.load("current"))?.messages).toEqual(session.messages);
   });
 
@@ -258,7 +261,7 @@ describe("message actions through the session", () => {
     await act(async () => session.retryMessage("a2"));
     const answer = session.messages[3];
     expect((await repo.load("current"))?.messages[3].search).toEqual(search);
-    await act(async () => { await session.editMessage(answer.id, "edited"); });
+    await act(async () => { expect((await session.editMessage(answer.id, "edited")).status).toBe("saved"); });
     expect(session.messages[3].search).toBeUndefined();
     expect(runtime.createRuntimeChatTransport).toHaveBeenCalledTimes(1);
   });
@@ -313,13 +316,14 @@ describe("message actions through the session", () => {
   it("preserves the original transcript on failed preflight, then persists a provider failure without retry", async () => {
     const original = session.messages;
     runtime.read.mockRejectedValueOnce(new Error("missing attachment"));
-    await act(async () => session.editAndSendMessage("u2", "changed"));
+    await act(async () => { expect((await session.editAndSendMessage("u2", "changed")).status).toBe("notSaved"); });
     expect(session.messages).toEqual(original);
     expect(runtime.createRuntimeChatTransport).not.toHaveBeenCalled();
     runtime.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
       yield { type: "failed", error: { kind: "network", message: "ambiguous failure", retryable: true } };
     } } satisfies ChatTransport);
-    await act(async () => session.editAndSendMessage("u2", "changed"));
+    await act(async () => { expect((await session.editAndSendMessage("u2", "changed")).status).toBe("saved"); });
+    await wait(() => !session.isAnyGenerating);
     expect(session.messages).toHaveLength(4);
     expect(session.messages[2]).toMatchObject({ content: "changed", editedAt: expect.any(Number) });
     expect(session.messages.slice(-1)[0]?.status).toBe("failed");
@@ -340,10 +344,10 @@ describe("message actions through the session", () => {
     await wait(() => !!request);
     await act(async () => {
       expect(await session.deleteMessage("u1")).toBe(false);
-      expect(await session.editMessage("u1", "changed")).toBe(false);
+      expect((await session.editMessage("u1", "changed")).status).toBe("notSaved");
       expect(await session.branchMessage("u1")).toBe(false);
       await session.retryMessage("u2");
-      expect(await session.editAndSendMessage("u2", "duplicate")).toBe(false);
+      expect((await session.editAndSendMessage("u2", "duplicate")).status).toBe("notSaved");
     });
     await act(async () => session.workspace.execute({ type: "create-conversation", id: "elsewhere", assistantId: "default" }));
     await act(async () => session.setActiveModel("m2"));
@@ -352,6 +356,7 @@ describe("message actions through the session", () => {
     expect(request?.signal?.aborted).toBe(false);
     await act(async () => session.workspace.execute({ type: "select", assistantId: "default", conversationId: "current" }));
     await act(async () => { session.stopGeneration(); await sending; });
+    await wait(() => !session.isAnyGenerating);
     expect(session.messages.slice(-1)[0]?.status).toBe("aborted");
     expect((await repo.load("current"))?.messages.slice(-1)[0]).toMatchObject({ content: "partial", status: "aborted" });
     expect((await repo.load("current"))?.messages[2]).toMatchObject({ content: "changed", editedAt: expect.any(Number) });
@@ -374,7 +379,7 @@ describe("message actions through the session", () => {
     await act(async () => session.retryMessage(session.messages[3].id));
     expect(request?.model).toBe("other-model");
     expect(session.workspace.conversation?.creationConfig?.modelId).toBe("m");
-    await act(async () => { expect(await session.editMessage(session.messages[0].id, "changed")).toBe(true); });
+    await act(async () => { expect((await session.editMessage(session.messages[0].id, "changed")).status).toBe("saved"); });
     expect(session.messages).toHaveLength(4);
     expect((await repo.load("current"))?.messages).toHaveLength(6);
     expect(await repo.attachmentReferences()).toContain(attachment.reference);

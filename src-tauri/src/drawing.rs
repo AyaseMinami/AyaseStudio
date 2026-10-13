@@ -90,7 +90,17 @@ pub struct DrawingExportParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
     safety_threshold: Option<DrawingSafetyThreshold>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    thinking_level: Option<DrawingThinkingLevel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     response_modalities: Option<Vec<DrawingResponseModality>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum DrawingThinkingLevel {
+    Minimal,
+    Medium,
+    High,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -161,6 +171,7 @@ impl DrawingExportParameters {
                     && self.resolution.is_none()
                     && self.temperature.is_none()
                     && self.safety_threshold.is_none()
+                    && self.thinking_level.is_none()
                     && self.response_modalities.is_none()
                     && self.model_version.is_none()
                     && self.output_format.is_none()
@@ -205,6 +216,7 @@ impl DrawingExportParameters {
                     && self.api_type.is_none()
                     && self.temperature.is_none()
                     && self.safety_threshold.is_none()
+                    && self.thinking_level.is_none()
                     && self.response_modalities.is_none() =>
             {
                 Ok(())
@@ -224,6 +236,7 @@ impl DrawingExportParameters {
                     && self.api_type.is_none()
                     && self.temperature.is_none()
                     && self.safety_threshold.is_none()
+                    && self.thinking_level.is_none()
                     && self.response_modalities.is_none() =>
             {
                 Ok(())
@@ -3039,6 +3052,105 @@ mod tests {
     }
 
     #[test]
+    fn gemini_thinking_level_png_preserves_explicit_values_and_omission() {
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let files = save(
+            root.path(),
+            &Uuid::new_v4().to_string(),
+            &[input(20, ImageFormat::Png)],
+        )
+        .unwrap();
+        let original = std::fs::read(result_path(root.path(), &files[0].reference).unwrap()).unwrap();
+        for level in [None, Some("minimal"), Some("medium"), Some("high")] {
+            let mut value = serde_json::json!({
+                "prompt": "test", "model": "synthetic", "protocol": "gemini-image"
+            });
+            if let Some(level) = level {
+                value["thinking_level"] = level.into();
+            }
+            let parameters: DrawingExportParameters = serde_json::from_value(value.clone()).unwrap();
+            value["api_type"] = "gemini".into();
+            let destination = output.path().join("thinking-parameters.png");
+            export_png_with_parameters(
+                root.path(),
+                &files[0].reference,
+                &destination,
+                Some(&parameters),
+            )
+            .unwrap();
+            let bytes = std::fs::read(&destination).unwrap();
+            assert_eq!(exported_parameters(&bytes), Some(value));
+            assert_eq!(
+                decode_image(&bytes, "image/png").unwrap().to_rgba8(),
+                decode_image(&original, "image/png").unwrap().to_rgba8()
+            );
+        }
+    }
+
+    #[test]
+    fn thinking_level_rejects_invalid_values_and_non_gemini_exports() {
+        let base = serde_json::json!({
+            "prompt": "test", "model": "synthetic", "protocol": "gemini-image"
+        });
+        for invalid in [
+            serde_json::json!("low"),
+            serde_json::json!("MINIMAL"),
+            serde_json::json!("auto"),
+            serde_json::json!(""),
+            serde_json::json!(0),
+            serde_json::json!(true),
+            serde_json::json!(["high"]),
+            serde_json::json!({"level": "high"}),
+        ] {
+            let mut value = base.clone();
+            value["thinking_level"] = invalid.clone();
+            assert!(
+                serde_json::from_value::<DrawingExportParameters>(value).is_err(),
+                "{invalid}"
+            );
+        }
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let files = save(
+            root.path(),
+            &Uuid::new_v4().to_string(),
+            &[input(20, ImageFormat::Png)],
+        )
+        .unwrap();
+        for (protocol, version) in [
+            ("openai-images", None),
+            ("grok-images", Some("2.0")),
+            ("seedream-images", Some("5.0-lite")),
+        ] {
+            let mut value = base.clone();
+            value["protocol"] = protocol.into();
+            if let Some(version) = version {
+                value["model_version"] = version.into();
+            }
+            let parameters: DrawingExportParameters = serde_json::from_value(value.clone()).unwrap();
+            assert!(parameters.json().is_ok(), "{protocol}");
+            for level in ["minimal", "medium", "high"] {
+                value["thinking_level"] = level.into();
+                let parameters: DrawingExportParameters =
+                    serde_json::from_value(value.clone()).unwrap();
+                assert_eq!(parameters.json(), Err(Error::InvalidParameters));
+                let destination = output.path().join("refused.png");
+                assert_eq!(
+                    export_png_with_parameters(
+                        root.path(),
+                        &files[0].reference,
+                        &destination,
+                        Some(&parameters)
+                    ),
+                    Err(Error::InvalidParameters)
+                );
+                assert!(!destination.exists());
+            }
+        }
+    }
+
+    #[test]
     fn gemini_export_parameters_preserve_explicit_advanced_options() {
         for threshold in [
             "BLOCK_NONE",
@@ -3076,7 +3188,8 @@ mod tests {
         for protocol in ["gemini-image", "openai-images"] {
             let parameters: DrawingExportParameters = serde_json::from_value(serde_json::json!({
                 "prompt": "test", "model": "synthetic", "protocol": protocol,
-                "temperature": null, "safety_threshold": null, "response_modalities": null
+                "temperature": null, "safety_threshold": null, "thinking_level": null,
+                "response_modalities": null
             }))
             .unwrap();
             let value: serde_json::Value =

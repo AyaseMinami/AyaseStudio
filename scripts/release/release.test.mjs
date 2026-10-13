@@ -133,6 +133,19 @@ test("manual main dispatch and explicit native acceptance are enforced", () => {
   assert.throws(() => assertDispatch(env, true), /acceptance/);
   assert.doesNotThrow(() => assertDispatch({ ...env, NATIVE_ACCEPTANCE: "true" }, true));
 });
+test("test publication requires explicit opt-in and a strict Beta tag while retaining dispatch gates", () => {
+  const env = { GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main", GITHUB_REPOSITORY: REPOSITORY, GITHUB_SHA: sourceSha, RELEASE_TAG: "v0.1.0-beta.7", NATIVE_ACCEPTANCE: "false", BETA_TEST_RELEASE: "true" };
+  assert.doesNotThrow(() => assertDispatch(env, true));
+  for (const value of [undefined, "false", "True", "1"]) assert.throws(() => assertDispatch({ ...env, BETA_TEST_RELEASE: value }, true), /acceptance/);
+  for (const tag of [undefined, "0.1.0-beta.7", "v0.1.0", "v0.1.0-beta.07", "v0.1.0-rc.1", "v0.1.0-beta.7+test", "v0.1.0-beta.7\n"]) {
+    assert.throws(() => assertDispatch({ ...env, RELEASE_TAG: tag }, true));
+    assert.throws(() => assertDispatch({ ...env, RELEASE_TAG: tag, NATIVE_ACCEPTANCE: "true" }, true));
+  }
+  for (const changes of [{ GITHUB_EVENT_NAME: "push" }, { GITHUB_REF: "refs/heads/dev" }, { GITHUB_REPOSITORY: "fork/repo" }, { GITHUB_SHA: "HEAD" }]) assert.throws(() => assertDispatch({ ...env, ...changes }, true));
+  assert.throws(() => assertDispatch({ ...env, BETA_TEST_RELEASE: "false", RELEASE_TAG: "v0.1.0" }, true), /acceptance/);
+  assert.doesNotThrow(() => assertDispatch({ ...env, BETA_TEST_RELEASE: "false", RELEASE_TAG: "v0.1.0", NATIVE_ACCEPTANCE: "true" }, true));
+});
+
 test("aligned npm/Cargo/Tauri versions and signed override leave sources untouched", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "ayase-release-"));
   try {

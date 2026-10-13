@@ -4,12 +4,14 @@ import type { DrawingParameters } from "./types";
 
 it("exports explicit Gemini controls only and excludes them for OpenAI and historical defaults", () => {
   const common = { prompt: "text", modelId: "model", modelName: "model", providerId: "p", connectionId: "c", configuredModelId: "m", baseUrl: "https://example.test" };
-  const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const, apiKey: "synthetic" };
+  const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const, thinkingLevel: "high" as const, apiKey: "synthetic" };
   expect(drawingExportParameters({ ...common, protocol: "gemini-image", aspectRatio: "auto", resolution: "auto", gemini }))
     .toEqual({ prompt: "text", model: "model", protocol: "gemini-image", api_type: "gemini", temperature: 0,
-      safety_threshold: "BLOCK_NONE", response_modalities: ["IMAGE"] });
+      safety_threshold: "BLOCK_NONE", response_modalities: ["IMAGE"], thinking_level: "high" });
   expect(drawingExportParameters({ ...common, protocol: "gemini-image", aspectRatio: "auto", resolution: "auto" }))
     .not.toHaveProperty("temperature");
+  expect(drawingExportParameters({ ...common, protocol: "gemini-image", aspectRatio: "auto", resolution: "auto" }))
+    .not.toHaveProperty("thinking_level");
   const openai = { ...common, protocol: "openai-images" as const, size: "auto", quality: "auto", gemini };
   expect(drawingExportParameters(openai)).toEqual({ prompt: "text", model: "model", protocol: "openai-images", api_type: "gpt" });
 });

@@ -611,7 +611,7 @@ describe("parallel conversation generation", () => {
     // Let queued workspace metadata and the React snapshot settle before the user action.
     await wait(() => session.workspace.canSend());
     await act(async () => {
-      expect(await session.editMessage("editable", "after")).toBe(true);
+      expect((await session.editMessage("editable", "after")).status).toBe("saved");
     });
     await select("temporary-conversation", "temporary");
     await act(async () => session.setDraft("B"));

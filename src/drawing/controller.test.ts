@@ -60,16 +60,16 @@ describe("application drawing task controller", () => {
   });
   it("freezes Gemini controls per submitted task, persists independent edits and restores them after reload", async () => {
     const f = fixture(); await prepare(f);
-    const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const };
+    const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const, thinkingLevel: "medium" as const };
     f.controller.setDraft({ ...f.controller.getSnapshot().draft, gemini });
     gemini.temperature = 2;
     await f.controller.generate(settings);
-    expect(f.saved().tasks[0].parameters).toMatchObject({ gemini: { temperature: 0, safetyThreshold: "BLOCK_NONE", outputMode: "image" } });
-    f.controller.setDraft({ ...f.controller.getSnapshot().draft, gemini: { temperature: 1, outputMode: "text-image" } });
+    expect(f.saved().tasks[0].parameters).toMatchObject({ gemini: { temperature: 0, safetyThreshold: "BLOCK_NONE", outputMode: "image", thinkingLevel: "medium" } });
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, gemini: { temperature: 1, outputMode: "text-image", thinkingLevel: "high" } });
     await f.controller.flush();
-    expect(f.saved().tasks[0].parameters).toMatchObject({ gemini: { temperature: 0 } });
+    expect(f.saved().tasks[0].parameters).toMatchObject({ gemini: { temperature: 0, thinkingLevel: "medium" } });
     const reopened = fixture(f.saved()); await reopened.controller.initialize();
-    expect(reopened.controller.getSnapshot().draft.gemini).toEqual({ temperature: 1, outputMode: "text-image" });
+    expect(reopened.controller.getSnapshot().draft.gemini).toEqual({ temperature: 1, outputMode: "text-image", thinkingLevel: "high" });
     expect(reopened.transport.generate).not.toHaveBeenCalled();
   });
   it("rejects invalid Gemini edits before persistent writes or dispatch", async () => {

@@ -28,6 +28,7 @@ if (command === "preflight") {
   const release = await createDraft(api, files, { version, publicKey, sourceSha: process.env.GITHUB_SHA });
   console.log(`Draft ready: ${release.html_url}`);
 } else if (command === "publish") {
+  if (process.env.BETA_TEST_RELEASE === "true") console.log("Beta test publication: native installation and upgrade acceptance remains pending.");
   const inspected = await inspectRelease(api, process.env.RELEASE_TAG, publicKey, process.env.GITHUB_SHA);
   await saveArtifacts(directory, inspected.files);
   verifyInstallerVersion(directory, inspected.names, inspected.provenance.version);

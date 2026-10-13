@@ -15,6 +15,7 @@ export function drawingExportParameters(parameters: DrawingParameters): DrawingE
     ? { ...common, api_type: "gemini",
       ...(parameters.aspectRatio !== "auto" ? { aspect_ratio: parameters.aspectRatio } : {}),
       ...(parameters.gemini?.temperature !== undefined ? { temperature: parameters.gemini.temperature } : {}),
+      ...(parameters.gemini?.thinkingLevel !== undefined ? { thinking_level: parameters.gemini.thinkingLevel } : {}),
       ...(parameters.gemini?.safetyThreshold !== undefined ? { safety_threshold: parameters.gemini.safetyThreshold } : {}),
       ...(parameters.gemini?.outputMode !== undefined ? { response_modalities: parameters.gemini.outputMode === "image"
         ? ["IMAGE" as const] : ["TEXT" as const, "IMAGE" as const] } : {}),

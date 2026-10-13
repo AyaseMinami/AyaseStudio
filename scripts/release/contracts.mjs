@@ -97,7 +97,14 @@ export function assertDispatch(env, requireAcceptance = false) {
   invariant(env.GITHUB_EVENT_NAME === "workflow_dispatch" && env.GITHUB_REF === "refs/heads/main", "Releases require manual workflow_dispatch from main");
   invariant(env.GITHUB_REPOSITORY === REPOSITORY, "Unexpected release repository");
   invariant(/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? ""), "Invalid workflow source SHA");
-  if (requireAcceptance) invariant(env.NATIVE_ACCEPTANCE === "true", "Native installation and upgrade acceptance must be confirmed");
+  if (requireAcceptance) {
+    if (env.BETA_TEST_RELEASE === "true") {
+      const version = /^v(.+)$/.exec(env.RELEASE_TAG ?? "")?.[1];
+      invariant(version !== undefined && parseVersion(version).beta !== null, "Beta test publication requires an exact vX.Y.Z-beta.N tag");
+    } else {
+      invariant(env.NATIVE_ACCEPTANCE === "true", "Native installation and upgrade acceptance must be confirmed");
+    }
+  }
 }
 export function channelChanges(current, candidate) {
   validateManifest(candidate);

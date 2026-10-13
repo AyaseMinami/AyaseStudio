@@ -1,5 +1,15 @@
 # Protocol Compatibility Contract
 
+## Edited historical user attachments (#128)
+
+Only user messages gain attachment addition/removal. Save-only requires no connection, key or provider call. Edited sending validates the frozen protocol/config, final ordered current-user and retained history attachments, context budget and final mapped body before replacing the durable transcript. Removed attachments and inactive candidates are excluded from requests; the existing adapter rules still reject unsupported Office/image inputs without conversion, fallback or retry. Generation takes ownership while edit admission is held; confirmed durable references, native verification and a fresh SessionStore precede any model or external search request. Provider failure/Stop after this point keeps the submitted message and candidate, with no rollback or automatic replay. Assistant history projection and attachment sending capabilities are unchanged. See [#128 implementation](ISSUE-128-IMPLEMENTATION.md).
+
+## Gemini drawing thinking (#127, 2026-10-07)
+
+Drawing exposes model default / minimal / medium / high independently of chat thinking. Explicit values map to `generationConfig.thinkingConfig.thinkingLevel` using REST enums MINIMAL / MEDIUM / HIGH; default omits thinkingConfig. No includeThoughts, thought/signature persistence, model substitution, parameter removal or retry. Nano Banana 2.1 supports all three levels and defaults to medium; 3.1 Flash Image / Flash Lite Image support minimal and high and default to minimal. The client does not infer capability from model IDs; unsupported explicit values remain service errors. [Official thinking guidance](https://ai.google.dev/gemini-api/docs/generate-content/image-generation#controlling_thinking_levels), [REST ThinkingConfig](https://ai.google.dev/api/generate-content#ThinkingConfig).
+
+Existing GenerateContent/imageConfig and ordered inlineData inputs remain. Nano Banana 2.1 supports 1K/2K/4K and the existing 14 aspect ratios; 512 is not supported. This is documentation-backed mapping, without a live provider probe. Explicit PNG parameters include Gemini-only thinking_level; ordinary exports remain metadata-free.
+
 ## Application update transport (#76)
 
 The default-on device preference permits one startup check after workspace initialization plus a 10-second delay. An empty selection is valid readiness. Manual check cancels the pending startup timer; disabling the switch suppresses a late background offer, and failure stays quiet without retries. No automatic download/install or provider request is added. Tray restoration and settings navigation do not create another startup check.

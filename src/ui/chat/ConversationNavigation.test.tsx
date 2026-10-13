@@ -115,6 +115,32 @@ async function mount({ width = 1200, generating = false, controlled = true, mode
 }
 
 describe("conversation navigation runtime layout", () => {
+  it("toggles assistants through a persistent arrow without changing conversations, drafts or focus", async () => {
+    const ui = await mount();
+    const arrow = ui.button("展开助手栏");
+    arrow.focus();
+    const textarea = ui.host.querySelector("textarea")!;
+    const conversationId = ui.workspace().conversation?.id;
+    await click(arrow, 0);
+    expect(ui.layout()).toEqual({ open: "true", conversations: "true", expanded: "true" });
+    expect(ui.button("收起助手栏")).toBe(arrow);
+    expect(arrow.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(arrow);
+    await click(ui.button("收起对话栏"));
+    await click(arrow);
+    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "false" });
+    await click(arrow);
+    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "true" });
+    expect(ui.host.querySelector("textarea")).toBe(textarea);
+    expect(ui.workspace().conversation?.id).toBe(conversationId);
+    await click(textarea);
+    expect(ui.layout().expanded).toBe("false");
+    await click(arrow);
+    await click(ui.button("切换测试页面"));
+    await click(ui.button("切换测试页面"));
+    expect(ui.layout()).toEqual({ open: "true", conversations: "false", expanded: "true" });
+  });
+
   it.each([false, true])("keeps busy-only navigation controls visually stable without enabling actions (generating=%s)", async generating => {
     const ui = await mount({ generating });
     await click(ui.button("默认助手"));

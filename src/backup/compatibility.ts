@@ -223,6 +223,10 @@ export function normalizeCompatibleParameters(raw: unknown): void {
       let settings: unknown = raw.drawing.settings;
       dataRecord(settings);
       dataCheck(stamp.version !== 1 || !("gemini" in settings), "Gemini 高级参数与绘图模块版本不匹配，请升级应用。");
+      if (settings.gemini !== undefined) {
+        dataRecord(settings.gemini);
+        dataCheck(stamp.version >= 4 || !("thinkingLevel" in settings.gemini), "Gemini 思考强度与绘图模块版本不匹配，请升级应用。");
+      }
       dataCheck(stamp.version >= 3 || (!("grok" in settings) && !("seedream" in settings)
         && settings.reusedProtocol !== "grok-images" && settings.reusedProtocol !== "seedream-images"), "新绘图协议参数与模块版本不匹配，请升级应用。");
       if (stamp.version > dataModules.drawingSettings.version) {

@@ -1,0 +1,1 @@
+{ "extends": "../../tsconfig.json", "include": ["*.tsx", "files.ts", "repository.ts", "runtime.ts", "../../src/vite-env.d.ts"], "references": [] }

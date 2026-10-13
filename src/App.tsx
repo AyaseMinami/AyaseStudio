@@ -1,6 +1,6 @@
 import "./App.css";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUserAvatar } from "./avatar/useUserAvatar";
 
 import { useAppearance } from "./appearance/useAppearance";
@@ -14,7 +14,7 @@ import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
 import { useDrawingWorkspace } from "./drawing/useDrawingWorkspace";
 import { useConfirmation } from "./ui/useConfirmation";
 import type { GeneralSettingsState } from "./general/preferences";
-import type { RegisterExitGuard, InstallUpdate } from "./general/lifecycle";
+import type { RegisterExitGuard, InstallUpdate, ExitGuard } from "./general/lifecycle";
 import { useApplicationUpdate } from "./update/useApplicationUpdate";
 import { UpdateInstallBlocked } from "./update/controller";
 import { UpdateNotice } from "./ui/UpdateNotice";
@@ -40,7 +40,19 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
   const chatLayout = useChatLayout();
   const navigation = useConversationNavigation();
   const drawingCloseConfirmation = useConfirmation();
-  const drawing = useDrawingWorkspace(activePage === "drawing", drawingCloseConfirmation.confirm, registerExitGuard);
+  const chatExit = useRef<Pick<ExitGuard, "prepare" | "cancel"> | null>(null);
+  const registerCombinedGuard = useCallback<RegisterExitGuard>(guard => registerExitGuard!({
+    prepare: async reason => {
+      if (chatExit.current && !await chatExit.current.prepare(reason)) return false;
+      try {
+        const accepted = await guard.prepare(reason);
+        if (!accepted) chatExit.current?.cancel();
+        return accepted;
+      } catch (error) { chatExit.current?.cancel(); throw error; }
+    },
+    cancel: () => { chatExit.current?.cancel(); guard.cancel(); },
+  }), [registerExitGuard]);
+  const drawing = useDrawingWorkspace(activePage === "drawing", drawingCloseConfirmation.confirm, registerExitGuard ? registerCombinedGuard : undefined);
   const [backupError, setBackupError] = useState<string>();
   const chat = useChatSession({
     externalBusy: drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued") || drawing.closing,
@@ -50,6 +62,7 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
       setActivePage("settings");
     },
   });
+  chatExit.current = { prepare: chat.prepareForClose, cancel: chat.cancelClose };
   const [updateStartupReady, setUpdateStartupReady] = useState(false);
   useEffect(() => {
     if (chat.workspace.snapshot && !chat.workspace.busy && !chat.workspace.loadError) setUpdateStartupReady(true);

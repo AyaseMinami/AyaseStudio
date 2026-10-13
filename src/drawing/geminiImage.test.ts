@@ -9,6 +9,14 @@ const parameters: DrawingParameters = { prompt: "A synthetic square", aspectRati
 const image = { mimeType: "image/png", data: "AQID" };
 const body = { candidates: [{ finishReason: "STOP", content: { parts: [{ text: "done" }, { inlineData: image }] } }] };
 describe("Gemini image protocol", () => {
+  it.each(["minimal", "medium", "high"] as const)("maps explicit drawing thinking %s without requesting thoughts", async thinkingLevel => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(body)));
+    await createGeminiImageTransport(fetcher).generate({ ...parameters, modelId: "gemini-nano-banana-2.1", gemini: { thinkingLevel } }, "test", new AbortController().signal);
+    expect(fetcher.mock.calls[0][0]).toBe("https://example.test/v1beta/models/gemini-nano-banana-2.1:generateContent");
+    const request = JSON.parse(fetcher.mock.calls[0][1].body);
+    expect(request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: thinkingLevel.toUpperCase() });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it.each(geminiSafetyThresholds)("maps explicit threshold %s uniformly with temperature and IMAGE output", async safetyThreshold => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(body)));
     await createGeminiImageTransport(fetcher).generate({ ...parameters,
@@ -26,6 +34,7 @@ describe("Gemini image protocol", () => {
     const request = JSON.parse(fetcher.mock.calls[0][1].body);
     expect(request).not.toHaveProperty("safetySettings");
     expect(request.generationConfig).not.toHaveProperty("temperature");
+    expect(request.generationConfig).not.toHaveProperty("thinkingConfig");
     expect(request.generationConfig.responseModalities).toEqual(["TEXT", "IMAGE"]);
   });
   it.each([0, 1, 2])("forwards explicit valid temperature %s", async temperature => {
@@ -34,7 +43,8 @@ describe("Gemini image protocol", () => {
     expect(JSON.parse(fetcher.mock.calls[0][1].body).generationConfig.temperature).toBe(temperature);
   });
   it.each([null, [], { temperature: -0.1 }, { temperature: 2.1 }, { temperature: Infinity }, { temperature: NaN },
-    { temperature: "1" }, { temperature: undefined }, { safetyThreshold: "automatic" }, { outputMode: "TEXT" }, { unknown: true }])
+    { temperature: "1" }, { temperature: undefined }, { safetyThreshold: "automatic" }, { outputMode: "TEXT" }, { unknown: true },
+    { thinkingLevel: "low" }, { thinkingLevel: "HIGH" }, { thinkingLevel: null }, { thinkingLevel: undefined }, { thinkingLevel: 1 }])
     ("rejects invalid Gemini settings before dispatch: %j", async gemini => {
       const fetcher = vi.fn();
       await expect(createGeminiImageTransport(fetcher).generate({ ...parameters, gemini } as DrawingParameters,

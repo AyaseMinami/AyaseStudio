@@ -5,6 +5,7 @@ import type { ChatProtocol } from "../../chat/types";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
 import { isTextareaVisualBoundary, type TextareaCaretAffinity } from "./textareaVisualLine";
 import type { ChatLayout } from "./useChatLayout";
+import { namePastedImages } from "./attachmentInput";
 
 function DraftImagePreview({ item, opener, onClose }: {
   item: DraftAttachment; opener: HTMLElement; onClose(): void;
@@ -228,22 +229,7 @@ export function Composer({
               const images = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
               if (!images.length) return;
               event.preventDefault();
-              const now = new Date();
-              const pad = (value: number) => String(value).padStart(2, "0");
-              const stamp = `${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-              if (pasteSequence.current.stamp !== stamp) pasteSequence.current = { stamp, count: 0 };
-              const names = new Set([...draftAttachments.map((item) => item.name), ...images.map((image) => image.name)]);
-              onFiles?.(images.map((image) => {
-                if (image.name.trim() && !/^image(?:\.[a-z0-9]+)?$/i.test(image.name)) return image;
-                const extension = image.type === "image/jpeg" ? "jpg" : image.type === "image/webp" ? "webp" : "png";
-                let name: string;
-                do {
-                  const count = ++pasteSequence.current.count;
-                  name = `粘贴图片-${stamp}${count > 1 ? `-${count}` : ""}.${extension}`;
-                } while (names.has(name));
-                names.add(name);
-                return new File([image], name, { type: image.type, lastModified: image.lastModified });
-              }));
+              onFiles?.(namePastedImages(images, draftAttachments.map((item) => item.name), pasteSequence.current));
             }}
             placeholder={`输入消息，Enter / Ctrl+Enter 发送，Shift+Enter 换行${onBrowseHistory ? "；首行 ↑ / 末行 ↓ 浏览历史" : ""}`}
             title={onBrowseHistory ? "首行按 ↑ 浏览历史输入，末行按 ↓ 返回较新输入或草稿" : undefined}
