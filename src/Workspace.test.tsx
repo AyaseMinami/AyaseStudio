@@ -55,7 +55,7 @@ describe("assistant workspace public behavior", () => {
       }
       await click(`管理助手 ${assistantAction[1]}`);
     }
-    const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text);
+    const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text && !item.classList.contains("workspace-conversation-title"));
     expect(button, text).toBeTruthy(); expect(button!.disabled, text).toBe(false);
     await act(async () => button!.click());
   }

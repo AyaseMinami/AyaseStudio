@@ -2163,6 +2163,10 @@ textarea:disabled {
 .assistant-message-group { align-items: stretch; }
 .message-identity :is(.message-assistant-avatar, .message-user-avatar) { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; grid-column: 1; grid-row: 1 / span 2; }
 .message-assistant-avatar .assistant-avatar-legacy { font-size: 20px; }
+.message-assistant-config { grid-column: 1; grid-row: 1 / span 2; align-self: start; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.message-assistant-config:hover:not(:disabled) { outline: 2px solid rgb(var(--color-border)); outline-offset: 2px; }
+.message-assistant-config:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
+.message-assistant-config:disabled { cursor: default; }
 .assistant-message-group:has(.message-editor) { width: 100%; }
 
 .user-message-group {
@@ -2900,6 +2904,10 @@ textarea:disabled {
 .workspace-sidebar-toggle:hover { background: rgb(var(--color-hover)); color: rgb(var(--color-text)); }
 .workspace-sidebar-toggle:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
 .workspace-breadcrumb { position: absolute; left: 50%; transform: translateX(-50%); width: min(28rem, max(0px, calc(100% - 31rem))); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: inherit; font-weight: 600; color: rgb(var(--color-text)); }
+.workspace-conversation-title { display: block; width: 100%; min-height: 2rem; padding: 0.25rem 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 6px; font: inherit; color: inherit; cursor: pointer; }
+.workspace-conversation-title:hover:not(:disabled) { background: rgb(var(--color-hover)); }
+.workspace-conversation-title:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: -2px; }
+.workspace-conversation-title:disabled { cursor: default; }
 @media (max-width: 600px) { .workspace-breadcrumb { width: min(8rem, max(0px, calc(100% - 31rem))); } .conversation-navigation-toolbar { gap: 0.35rem; } .conversation-navigation-toolbar, .settings-header, .drawing-header { padding-left: 0.5rem; } }
 @media (prefers-reduced-motion: reduce) { .workspace-sidebar-toggle { transition: none; } }
 .conversation-workspace-body { --assistant-pane-width: 4rem; --conversation-pane-width: 15rem; --navigation-gap: 0.25rem; position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }

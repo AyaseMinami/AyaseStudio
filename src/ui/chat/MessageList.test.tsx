@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 
 import type { StoredChatMessage } from "../../chat/repository";
 import { MessageList, type MessageActions } from "./MessageList";
+import { ConversationSettingsAction } from "./ConversationSettingsAction";
 import "fake-indexeddb/auto";
 import { createChatRepository } from "../../chat/repository";
 import { defaultSessionConfig } from "../../chat/sessionConfig";
@@ -14,6 +15,30 @@ const messages: StoredChatMessage[] = [
   { id: "user", role: "user", content: "**raw markdown**", status: "complete", replyToId: null },
   { id: "answer", role: "assistant", content: "Answer", status: "complete", replyToId: "user" },
 ];
+
+it("uses the scoped conversation action only for assistant avatars and respects its busy state", async () => {
+  const { host, root } = setup();
+  const open = vi.fn();
+  try {
+    const render = (disabled: boolean) => root.render(<ConversationSettingsAction.Provider value={{ open, disabled }}>
+      <MessageList messages={messages} />
+    </ConversationSettingsAction.Provider>);
+    await act(async () => render(false));
+    const avatar = host.querySelector<HTMLButtonElement>(".message-assistant-config")!;
+    expect(avatar.querySelector(".message-assistant-avatar")).not.toBeNull();
+    expect(avatar.getAttribute("aria-label")).toBe("打开对话配置");
+    expect(host.querySelector(".message-identity-user button")).toBeNull();
+    await act(async () => avatar.click());
+    expect(open).toHaveBeenCalledOnce();
+    await act(async () => render(true));
+    expect(avatar.disabled).toBe(true);
+    await act(async () => avatar.click());
+    expect(open).toHaveBeenCalledOnce();
+    await act(async () => root.render(<MessageList messages={messages} />));
+    expect(host.querySelector(".message-assistant-config")).toBeNull();
+    expect(host.querySelector(".message-assistant-avatar")).not.toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 it("shows each reply's frozen model independently of the current assistant model and leaves legacy messages unlabeled", async () => {
   const { host, root } = setup();

@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
 import { AssistantAvatar } from "./AssistantAvatar";
+import { ConversationSettingsAction } from "./ConversationSettingsAction";
 import { retryUser } from "../../chat/messageOperations";
 import { SafeMarkdown } from "../../chat/SafeMarkdown";
 import { readableSearchAnswer } from "../../search/citations";
@@ -76,6 +77,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
   actionsTemporarilyDisabled?: boolean;
   actionError?: string;
 }) {
+  const conversationSettingsAction = useContext(ConversationSettingsAction);
   const scrollRegionRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const previousUserIdsRef = useRef(new Set<string>());
@@ -233,7 +235,10 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
           {controls}
         </div> : <div className="assistant-message-group message-surface">
           <div className="message-identity">
-            <AssistantAvatar className="message-assistant-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} assistantName={assistant?.name} assistantId={assistant?.id} />
+            {conversationSettingsAction ? <button type="button" className="message-assistant-config" aria-label="打开对话配置" title="打开对话配置"
+              aria-haspopup="dialog" disabled={conversationSettingsAction.disabled} onClick={conversationSettingsAction.open}>
+              <AssistantAvatar className="message-assistant-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} assistantName={assistant?.name} assistantId={assistant?.id} />
+            </button> : <AssistantAvatar className="message-assistant-avatar" avatar={assistant?.avatar} defaultAvatar={assistant?.defaultAvatar} legacyIcon={assistant?.icon} assistantName={assistant?.name} assistantId={assistant?.id} />}
             <span className="message-author" title={[assistant?.name ?? "助手", message.generationModel].filter(Boolean).join(" · ")}>{assistant?.name ?? "助手"}{message.generationModel && <span className="message-model"> · {message.generationModel}</span>}</span>
           </div>
           <div className="assistant-message message-body markdown">{body}</div>

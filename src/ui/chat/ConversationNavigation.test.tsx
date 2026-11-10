@@ -4,7 +4,7 @@ import Dexie from "dexie";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createChatRepository } from "../../chat/repository";
+import { createChatRepository, type StoredChatMessage } from "../../chat/repository";
 import { defaultSessionConfig } from "../../chat/sessionConfig";
 import { emptyConnectionSettings } from "../../chat/settings";
 import { useConversationWorkspace } from "../../chat/useConversationWorkspace";
@@ -52,7 +52,7 @@ async function input(element: HTMLInputElement, value: string) {
   });
 }
 
-async function mount({ width = 1200, generating = false, controlled = true, modelPicker = false } = {}) {
+async function mount({ width = 1200, generating = false, controlled = true, modelPicker = false, messages = [] as StoredChatMessage[] } = {}) {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
   const databaseName = `ConversationNavigation-test-${crypto.randomUUID()}`;
   const repository = createChatRepository(databaseName);
@@ -90,7 +90,7 @@ async function mount({ width = 1200, generating = false, controlled = true, mode
           isWorkspaceBusy={workspace.isTemporarilyBusy}
           onSearchModeChange={() => {}} protocol="openai-chat" onThinkingChange={() => {}}
           isGenerating={!!workspace.conversation && generatingIds.has(workspace.conversation.id)}
-          messages={workspace.view.messages} onClear={() => {}} onSend={onSend} onStop={onStop} />
+          messages={messages.length ? messages : workspace.view.messages} onClear={() => {}} onSend={onSend} onStop={onStop} />
       </ConversationNavigation>}
     </>;
   }
@@ -102,7 +102,7 @@ async function mount({ width = 1200, generating = false, controlled = true, mode
   await waitFor(() => workspace.isReady);
   const button = (label: string, scope: ParentNode = host) => {
     const element = [...scope.querySelectorAll<HTMLButtonElement>("button")]
-      .find(item => item.getAttribute("aria-label") === label || item.textContent === label);
+      .find(item => item.getAttribute("aria-label") === label || item.textContent === label && !item.classList.contains("workspace-conversation-title"));
     expect(element, `button ${label}`).toBeDefined();
     return element!;
   };
@@ -115,6 +115,54 @@ async function mount({ width = 1200, generating = false, controlled = true, mode
 }
 
 describe("conversation navigation runtime layout", () => {
+  it.each(["配置对话 对话一", "打开对话配置"])("opens the current conversation from %s and restores focus on cancel", async label => {
+    const ui = await mount({ messages: [
+      { id: "user", role: "user", content: "合成问题", status: "complete" },
+      { id: "reply", role: "assistant", content: "合成回答", status: "complete" },
+    ] });
+    const execute = vi.spyOn(ui.repository, "execute");
+    const opener = ui.button(label);
+    expect(opener.hasAttribute("data-tauri-drag-region")).toBe(false);
+    expect(opener.getAttribute("aria-haspopup")).toBe("dialog");
+    opener.focus();
+    await click(opener);
+    expect(ui.host.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe("编辑对话");
+    expect(ui.host.querySelector<HTMLInputElement>("#conversation-title")?.value).toBe("对话一");
+    await input(ui.host.querySelector<HTMLInputElement>("#conversation-title")!, "取消的草稿");
+    await click(ui.button("取消", ui.host.querySelector('[role="dialog"]')!));
+    expect(ui.host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+    expect(ui.workspace().conversation?.title).toBe("对话一");
+    expect(execute).not.toHaveBeenCalled();
+    expect(ui.host.querySelector(".message-identity-user button")).toBeNull();
+  });
+
+  it("saves title-opened configuration and targets the next selected conversation", async () => {
+    const ui = await mount();
+    await click(ui.button("配置对话 对话一"));
+    await input(ui.host.querySelector<HTMLInputElement>("#conversation-title")!, "修改后的对话");
+    await click(ui.button("保存对话"));
+    await ui.settled();
+    expect(ui.button("配置对话 修改后的对话").textContent).toBe("修改后的对话");
+    await click(ui.button("对话二"));
+    await ui.settled();
+    await click(ui.button("配置对话 对话二"));
+    expect(ui.host.querySelector<HTMLInputElement>("#conversation-title")?.value).toBe("对话二");
+    await key(ui.host.querySelector('[role="dialog"]')!, "Escape");
+    expect(ui.host.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("allows configuration through an assistant avatar during generation without sending or stopping", async () => {
+    const ui = await mount({ generating: true, messages: [{ id: "reply", role: "assistant", content: "合成输出", status: "streaming" }] });
+    const avatar = ui.button("打开对话配置");
+    expect(avatar.disabled).toBe(false);
+    await click(avatar);
+    expect(ui.host.querySelector("#conversation-title")).not.toBeNull();
+    await click(ui.button("取消", ui.host.querySelector('[role="dialog"]')!));
+    expect(ui.onSend).not.toHaveBeenCalled();
+    expect(ui.onStop).not.toHaveBeenCalled();
+  });
+
   it("toggles assistants through a persistent arrow without changing conversations, drafts or focus", async () => {
     const ui = await mount();
     const arrow = ui.button("展开助手栏");
@@ -153,6 +201,10 @@ describe("conversation navigation runtime layout", () => {
     });
     await click(ui.button("对话二"));
     expect(ui.workspace().busy).toBe(true);
+    const title = ui.host.querySelector<HTMLButtonElement>(".workspace-conversation-title")!;
+    expect(title.disabled).toBe(true);
+    await click(title);
+    expect(ui.host.querySelector('[role="dialog"]')).toBeNull();
     const controls = [ui.button("新建助手"), ui.button("新建对话"), ui.button("编辑对话 对话一"), ui.button("删除对话 对话二"), ui.button("拖动助手 默认助手")];
     try {
       for (const label of ["添加附件", "思考设置", "联网搜索：关闭"]) {

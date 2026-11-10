@@ -1,5 +1,19 @@
 # Ayase Studio Development Guide
 
+## Beta 9 test publication preparation (2026-11-10)
+
+The user requested packaging and publication of the verified drawing layout and conversation-configuration entry points. All version sources are aligned to `0.1.0-beta.9`; the dependency inventory is regenerated for the updated locks. The existing signed Actions candidate and explicit Beta test-publication mode apply. Installed upgrade, data retention and real native window interaction remain pending manual acceptance. The implementation, isolated browser evidence and independent review are recorded below.
+
+The Beta 9 local gate passed `npm.cmd run check` (183 files / 3146 tests, release/data-contract checks, TypeScript and production build), locked Cargo tests (175 passed, one existing ignored), the signature-helper test and locked Cargo check. Independent release preparation review confirmed aligned versions, matching inventory hashes, complete staged scope and the testing-publication acceptance boundary.
+
+## Drawing parameter layout and conversation configuration shortcuts (2026-11-10)
+
+Drawing image controls now share a regular grid, followed by full-width format details and a separate count/concurrency group. The current conversation title and assistant-message avatars open the existing conversation editor through a navigation-scoped action. Regression tests cover both entry points, cancel/focus restoration, saving and selecting another conversation, generation-time opening and busy guards. Navigation-selection test helpers distinguish the new title action from same-named conversation rows.
+
+`npm.cmd run check` passed all 183 frontend files / 3146 tests, release/data-contract checks, TypeScript and production build. Locked Cargo check, independent review and the layout detector passed. The reviewer also exercised the locked Tauri drag handler with title/button-child and toolbar-blank targets. An isolated `tauri dev` instance compiled and started using the existing dedicated smoke identifier and fixture URL, then its verified debug process was deliberately terminated. Its resulting nonzero process exit records that intentional shutdown.
+
+The isolated in-app browser checked light/dark views, wide three-column parameters, intermediate two-column parameters with full-row quality, a 291-pixel single-column configuration panel and a 720×520 GIF view with a reachable generate footer. Gemini/Grok/Seedream retained their protocol fields and execution controls. Avatar click/Space and title Enter opened the same current editor; cancel returned focus, and saving updated the isolated conversation. The final 1280×800 lossy WebP Q90 preview is `.svg-gif.local/drawing-layout-final-model.webp` (VP8, 39,390 bytes). Fixtures and screenshots stay isolated in the ignored local directory. Installed window interaction remains pending manual acceptance.
+
 ## Beta 8 test publication preparation (2026-11-10)
 
 The user requested packaging and publication to test the real updater. Version sources are aligned to `0.1.0-beta.8`. This candidate includes the existing #129 settings/drawing UI adjustments, OpenAI SVG/GIF outputs and attachment-image copying. Publication uses the existing signed Actions candidate and explicit Beta test-publication mode. Native installation, upgrade, retained-data checks and installed cross-application image pasting remain pending user acceptance. Provider generation has deterministic coverage and has not been probed live for this release.

@@ -250,6 +250,74 @@ it("keeps one generate action outside configuration scrolling with artwork befor
   expect(options.onDraftChange).not.toHaveBeenCalled();
 });
 
+it.each([
+  { protocol: "openai-images" as const, fields: ["输出格式", "尺寸", "画质"] },
+  { protocol: "grok-images" as const, fields: ["Grok 版本契约", "宽高比", "分辨率", "画质"] },
+  { protocol: "seedream-images" as const, fields: ["Seedream 版本契约", "尺寸", "输出格式", "水印"] },
+  { protocol: "gemini-image" as const, fields: ["宽高比", "分辨率"] },
+])("keeps $protocol output fields in one flat group before the quantity and concurrency row", async ({ protocol, fields }) => {
+  const options = props();
+  const draft = { ...initialDrawingDraft, modelId: "configured-image-model", prompt: "synthetic", count: 3, concurrency: 2 };
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft}
+    models={[{ id: "configured-image-model", label: "relay", protocol }]} />));
+  const compact = host.querySelector(".drawing-compact-parameters")!;
+  const output = compact.querySelector('[role="group"][aria-label="图像参数"]')!;
+  const execution = compact.querySelector('[role="group"][aria-label="执行参数"]')!;
+  expect(output.parentElement).toBe(compact); expect(execution.parentElement).toBe(compact);
+  expect(output.querySelector(".drawing-parameters")).toBeNull();
+  expect([...output.children].map(field => field.querySelector(".drawing-label")?.textContent)).toEqual(fields);
+  expect(output.querySelectorAll(".select-field")).toHaveLength(fields.length);
+  expect([...execution.children].map(field => field.querySelector(".drawing-label")?.textContent)).toEqual(["数量", "并发"]);
+  expect([...execution.querySelectorAll("input")].map(input => input.value)).toEqual(["3", "2"]);
+  expect(output.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(compact.querySelector(".drawing-parameter-tools")?.parentElement).toBe(compact);
+  expect(host.querySelector(".drawing-submit")?.parentElement).toBe(compact.closest(".drawing-form"));
+  expect(options.onDraftChange).not.toHaveBeenCalled(); expect(options.onGenerate).not.toHaveBeenCalled();
+});
+
+it.each(["svg", "gif"] as const)("keeps OpenAI %s controls, explanations, conflicts and custom size on complete rows", async outputFormat => {
+  const options = props();
+  const draft: DrawingDraft = { ...initialDrawingDraft, modelId: "configured-image-model", prompt: "synthetic",
+    openai: { size: "2048x", quality: "high", outputFormat } };
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft}
+    references={[{ ...result, name: "reference.png" }]}
+    models={[{ id: "configured-image-model", label: "relay", protocol: "openai-images" }]} />));
+  const compact = host.querySelector(".drawing-compact-parameters")!;
+  const output = compact.querySelector(".drawing-output-parameters")!;
+  const execution = compact.querySelector(".drawing-execution-parameters")!;
+  const controls = compact.querySelector(".drawing-format-controls")!;
+  expect(controls.parentElement).toBe(compact);
+  expect(output.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(controls.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect([...controls.querySelectorAll("input")].map(input => input.getAttribute("aria-label"))).toEqual(
+    outputFormat === "svg" ? ["SVG 作者模型"] : ["GIF 帧数", "GIF 帧时长"],
+  );
+  const explanation = [...compact.children].find(child => child.textContent?.startsWith("SVG／GIF 仅支持文生图，需要"))!;
+  expect(explanation.parentElement).toBe(compact);
+  const conflict = compact.querySelector('[role="alert"]')!;
+  expect(conflict.parentElement).toBe(compact); expect(conflict.textContent).toContain("先移除参考图");
+  const customSize = compact.querySelector<HTMLInputElement>('input[placeholder="1536x864"]')!;
+  expect(customSize.value).toBe("2048x"); expect(customSize.closest("label")?.parentElement).toBe(compact);
+  expect(customSize.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(button("生成图片").disabled).toBe(true); expect(options.onGenerate).not.toHaveBeenCalled();
+});
+
+it("keeps Seedream custom dimensions and profile errors between output and execution groups", async () => {
+  const options = props();
+  const draft: DrawingDraft = { ...initialDrawingDraft, modelId: "configured-image-model", prompt: "synthetic",
+    seedream: { modelVersion: "4.5", size: "2048x", outputFormat: "png", watermark: "auto" } };
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft}
+    models={[{ id: "configured-image-model", label: "relay", protocol: "seedream-images" }]} />));
+  const compact = host.querySelector(".drawing-compact-parameters")!;
+  const execution = compact.querySelector(".drawing-execution-parameters")!;
+  const customSize = compact.querySelector<HTMLInputElement>('[aria-label="Seedream 自定义尺寸"]')!;
+  const error = compact.querySelector('[role="alert"]')!;
+  expect(customSize.value).toBe("2048x"); expect(customSize.closest("label")?.parentElement).toBe(compact);
+  expect(error.parentElement).toBe(compact); expect(error.textContent).toContain("输出格式仅支持 5.0 系列");
+  expect(customSize.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(error.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it("keeps the form and preview mounted while task tabs activate and focus from the keyboard", async () => {
   const options = { ...props(), onPreviewActive: vi.fn() };
   await act(async () => root.render(<DrawingWorkspace {...options} tasks={[task]} results={[result]}

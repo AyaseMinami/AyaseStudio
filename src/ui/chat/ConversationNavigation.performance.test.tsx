@@ -72,7 +72,7 @@ async function mount() {
   await waitFor(() => workspace.isReady);
   const button = (label: string) => {
     const result = [...host.querySelectorAll<HTMLButtonElement>("button")]
-      .find(item => item.getAttribute("aria-label") === label || item.textContent === label);
+      .find(item => item.getAttribute("aria-label") === label || item.textContent === label && !item.classList.contains("workspace-conversation-title"));
     expect(result, `button ${label}`).toBeDefined();
     return result!;
   };

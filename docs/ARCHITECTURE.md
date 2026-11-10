@@ -1,5 +1,9 @@
 # Ayase Studio Architecture
 
+## Conversation configuration entry points (2026-11-10)
+
+`ConversationNavigation` owns the existing configuration dialog and provides a scoped, memoized `ConversationSettingsAction` to its chat content. The toolbar title and assistant-message avatar invoke the same current-conversation action, guarded by workspace busy state and conversation identity. Navigation expansion keeps the action value stable. Standalone message previews retain their static avatar presentation. The dialog continues to resolve its captured conversation ID from the current snapshot and uses the existing save, cancel and focus-restoration paths.
+
 ## SVG and GIF drawing outputs (2026-11-09)
 
 OpenAI Images freezes explicit PNG/SVG/GIF output and matching author-model/frame controls per task. The native store preserves verified original bytes through publication, recovery, reads and original-format export. PNG export derives pixels, using the first GIF frame. SVG preview uses an image source. Original export shares the existing atomic destination guard.

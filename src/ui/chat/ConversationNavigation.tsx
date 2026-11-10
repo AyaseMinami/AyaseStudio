@@ -6,6 +6,7 @@ import { useNavigationDocking } from "./useNavigationDocking";
 import { useConversationNavigation, useConversationNavigationSnapshot, type ConversationNavigationController } from "./useConversationNavigation";
 import { ActionMenu, isContextMenuKey, isEditableContextTarget, useActionMenu, type ActionMenuItem } from "../ActionMenu";
 import { ConversationSettings } from "./ConversationSettings";
+import { ConversationSettingsAction } from "./ConversationSettingsAction";
 import type { useConversationWorkspace } from "../../chat/useConversationWorkspace";
 import { defaultSessionConfig, validateSessionConfig } from "../../chat/sessionConfig";
 import { validateRequestConfig } from "../../chat/requestMapping";
@@ -66,6 +67,13 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     navigation.closeConversations();
   }
   const { snapshot, conversation, busy, execute } = workspace;
+  const conversationId = conversation?.id;
+  const openConversationSettings = useCallback(() => {
+    if (!busy && conversationId) setDialog({ type: "conversation", id: conversationId });
+  }, [busy, conversationId]);
+  const conversationSettingsAction = useMemo(() => ({
+    open: openConversationSettings, disabled: busy || !conversationId,
+  }), [openConversationSettings, busy, conversationId]);
   async function saveOrder(command: WorkspaceCommand, label: string) {
     setSortAnnouncement("");
     if (await execute(command)) setSortAnnouncement(`${label}的顺序已保存。`);
@@ -303,8 +311,11 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       <button ref={toggleRef} className="workspace-sidebar-toggle" type="button" aria-label="助手与对话" aria-expanded={navigationOpen} aria-controls="assistant-navigation" title={navigationOpen ? "收起助手与对话侧栏" : "展开助手与对话侧栏"} onClick={() => navigationOpen ? closeNavigation() : navigation.setOpen(true)}>
         {navigationOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
       </button>
-      <span className="workspace-breadcrumb" data-tauri-drag-region title={`${selectedAssistant?.name ?? ""} / ${conversation?.title ?? ""}`}>
-        <span className="workspace-conversation-title" data-tauri-drag-region>{conversation?.title ?? "尚无对话"}</span>
+      <span className="workspace-breadcrumb">
+        <button type="button" className="workspace-conversation-title" title={`${selectedAssistant?.name ?? ""} / ${conversation?.title ?? "尚无对话"} · 打开对话配置`} aria-label={`配置对话 ${conversation?.title ?? "尚无对话"}`}
+          aria-haspopup="dialog" disabled={conversationSettingsAction.disabled} onClick={openConversationSettings}>
+          {conversation?.title ?? "尚无对话"}
+        </button>
       </span>
       {toolbar}
     </div>
@@ -410,7 +421,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
           <button className="settings-button" type="button" disabled={busy} onClick={() => selectedAssistant && void execute({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}>创建第一个对话</button>
           <button className="settings-button" type="button" disabled={busy} onClick={() => editAssistant(selectedAssistant)}>编辑助手设置</button>
         </div> : <>
-          {children}
+          <ConversationSettingsAction.Provider value={conversationSettingsAction}>{children}</ConversationSettingsAction.Provider>
         </>}
       </section>
     </div>

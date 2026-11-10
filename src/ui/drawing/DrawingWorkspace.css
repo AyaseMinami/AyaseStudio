@@ -119,10 +119,16 @@
 .drawing-submit .drawing-generation-help { max-height: 8rem; overflow-y: auto; }
 .drawing-sound { display: flex; align-items: center; gap: 0.35rem; }
 .drawing-generation-help { grid-column: 1 / -1; }
-.drawing-compact-parameters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; min-width: 0; align-content: start; }
-.drawing-compact-parameters > .drawing-parameters { grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 0.65rem; }
-.drawing-parameter-extra { grid-column: 1 / -1; }
-.drawing-compact-parameters > .drawing-format-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.drawing-compact-parameters { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.drawing-compact-parameters > .drawing-parameters { min-width: 0; }
+.drawing-output-parameters-openai > .drawing-field:last-child { grid-column: 1 / -1; }
+@container (min-width: 460px) {
+  .drawing-output-parameters-openai { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .drawing-output-parameters-openai > .drawing-field:last-child { grid-column: auto; }
+}
+@container (max-width: 300px) {
+  .drawing-compact-parameters > .drawing-parameters { grid-template-columns: minmax(0, 1fr); }
+}
 .drawing-parameter-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .drawing-parameter-tools .drawing-sound { margin-left: auto; white-space: nowrap; }
 .drawing-parameter-tools > button { flex-shrink: 0; }

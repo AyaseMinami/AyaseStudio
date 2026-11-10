@@ -470,18 +470,32 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
               <div className="drawing-compact-parameters">
               {openai ? <>
-                <label className="drawing-field">
-                  <span className="drawing-label">输出格式</span>
-                  <SelectField label="OpenAI 输出格式" value={outputFormat}
-                    options={[{ value: "png", label: "PNG" }, { value: "svg", label: "SVG" }, { value: "gif", label: "GIF" }]}
-                    onChange={value => { if (value === "png" || value === "svg" || value === "gif") setOpenAI({ outputFormat: value }); }} />
-                </label>
-                {outputFormat === "svg" && <label className="drawing-field">
+                <div className="drawing-parameters drawing-output-parameters drawing-output-parameters-openai" role="group" aria-label="图像参数">
+                  <label className="drawing-field">
+                    <span className="drawing-label">输出格式</span>
+                    <SelectField label="OpenAI 输出格式" value={outputFormat}
+                      options={[{ value: "png", label: "PNG" }, { value: "svg", label: "SVG" }, { value: "gif", label: "GIF" }]}
+                      onChange={value => { if (value === "png" || value === "svg" || value === "gif") setOpenAI({ outputFormat: value }); }} />
+                  </label>
+                  <label className="drawing-field">
+                    <span className="drawing-label">尺寸</span>
+                    <SelectField label="尺寸" value={presetSize ? size : "custom"}
+                      options={[...openAIImageSizes.map(value => ({ value, label: value === "auto" ? "自动" : value.replace("x", " × ") })), { value: "custom", label: "自定义尺寸" }]}
+                      onChange={value => setOpenAI({ size: value === "custom" ? "1536x864" : value })} />
+                  </label>
+                  <label className="drawing-field">
+                    <span className="drawing-label">画质</span>
+                    <SelectField label="画质" value={quality}
+                      options={openAIImageQualities.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
+                      onChange={value => setOpenAI({ quality: value })} />
+                  </label>
+                </div>
+                {outputFormat === "svg" && <label className="drawing-field drawing-format-controls">
                   <span className="drawing-label">SVG 作者模型</span>
                   <input aria-label="SVG 作者模型" type="text" value={draft.openai?.svgModel ?? ""} placeholder="留空使用服务默认"
                     onChange={event => setOpenAI({ svgModel: event.target.value })} />
                 </label>}
-                {outputFormat === "gif" && <div className="drawing-parameters drawing-parameter-extra drawing-format-controls">
+                {outputFormat === "gif" && <div className="drawing-parameters drawing-format-controls" role="group" aria-label="GIF 参数">
                   <label className="drawing-field"><span className="drawing-label">帧数</span>
                     <input aria-label="GIF 帧数" type="number" min={2} max={16} step={1} value={frameCountText} placeholder="模型默认（9）"
                       aria-invalid={!validFrameCount} onChange={event => {
@@ -497,29 +511,15 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                       }} />
                   </label>
                 </div>}
-                {outputFormat !== "png" && <p className="drawing-muted drawing-parameter-extra">SVG／GIF 仅支持文生图，需要所选服务和模型支持。SVG 作者模型留空跟随服务默认；GIF 帧数／时长留空跟随模型默认（9 帧／200 毫秒）。</p>}
-                {outputFormat === "svg" && <p className="drawing-muted drawing-parameter-extra">SVG 支持静态路径、文字、渐变、箭头、裁切和蒙版，暂不支持滤镜与图案填充。</p>}
-                <div className="drawing-parameters">
-                  <label className="drawing-field">
-                    <span className="drawing-label">尺寸</span>
-                    <SelectField label="尺寸" value={presetSize ? size : "custom"}
-                      options={[...openAIImageSizes.map(value => ({ value, label: value === "auto" ? "自动" : value.replace("x", " × ") })), { value: "custom", label: "自定义尺寸" }]}
-                      onChange={value => setOpenAI({ size: value === "custom" ? "1536x864" : value })} />
-                  </label>
-                  <label className="drawing-field">
-                    <span className="drawing-label">画质</span>
-                    <SelectField label="画质" value={quality}
-                      options={openAIImageQualities.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
-                      onChange={value => setOpenAI({ quality: value })} />
-                  </label>
-                </div>
+                {outputFormat !== "png" && <p className="drawing-muted">SVG／GIF 仅支持文生图，需要所选服务和模型支持。SVG 作者模型留空跟随服务默认；GIF 帧数／时长留空跟随模型默认（9 帧／200 毫秒）。</p>}
+                {outputFormat === "svg" && <p className="drawing-muted">SVG 支持静态路径、文字、渐变、箭头、裁切和蒙版，暂不支持滤镜与图案填充。</p>}
               </> : grok ? <>
+                <div className="drawing-parameters drawing-output-parameters" role="group" aria-label="图像参数">
                 <label className="drawing-field"><span className="drawing-label">Grok 版本契约</span>
                   <SelectField label="Grok 版本契约" value={grokOptions.modelVersion}
                     options={[{ value: "legacy", label: "legacy" }, { value: "2.0", label: "2.0" }]}
                     onChange={value => { if (value === "legacy" || value === "2.0") setGrok({ modelVersion: value }); }} />
                 </label>
-                <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">宽高比</span>
                     <SelectField label="Grok 宽高比" value={grokOptions.aspectRatio}
                       options={grokAspectRatios.map(value => ({ value, label: value === "auto" ? "自动" : value, disabled: grokOptions.modelVersion === "legacy" && ["21:9", "5:2"].includes(value) }))}
@@ -530,14 +530,14 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                       options={grokResolutions.map(value => ({ value, label: value === "auto" ? "自动" : value }))}
                       onChange={value => setGrok({ resolution: value })} />
                   </label>
-                </div>
                 <label className="drawing-field"><span className="drawing-label">画质</span>
                   <SelectField label="Grok 画质" value={grokOptions.quality}
                     options={grokQualities.map(value => ({ value, label: value === "auto" ? "自动" : value, disabled: value !== "auto" && grokOptions.modelVersion !== "2.0" }))}
                     onChange={value => setGrok({ quality: value })} />
                 </label>
+                </div>
               </> : seedream ? <>
-                <div className="drawing-parameters">
+                <div className="drawing-parameters drawing-output-parameters" role="group" aria-label="图像参数">
                   <label className="drawing-field"><span className="drawing-label">Seedream 版本契约</span>
                     <SelectField label="Seedream 版本契约" value={seedreamOptions.modelVersion}
                       options={seedreamModelVersions.map(value => ({ value, label: value }))}
@@ -548,8 +548,6 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                       options={[...seedreamSizes.map(value => ({ value, label: value === "auto" ? "自动" : value })), { value: "custom", label: "自定义尺寸" }]}
                       onChange={value => setSeedream({ size: value === "custom" ? "" : value })} />
                   </label>
-                </div>
-                <div className="drawing-parameters">
                   <label className="drawing-field"><span className="drawing-label">输出格式</span>
                     <SelectField label="Seedream 输出格式" value={seedreamOptions.outputFormat}
                       options={[{ value: "auto", label: "自动" }, { value: "png", label: "PNG", disabled: !seedreamOptions.modelVersion.startsWith("5.0") }, { value: "jpeg", label: "JPEG", disabled: !seedreamOptions.modelVersion.startsWith("5.0") }]}
@@ -561,7 +559,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                       onChange={value => { if (value === "auto" || value === "on" || value === "off") setSeedream({ watermark: value }); }} />
                   </label>
                 </div>
-              </> : <><div className="drawing-parameters">
+              </> : <><div className="drawing-parameters drawing-output-parameters" role="group" aria-label="图像参数">
                 <label className="drawing-field">
                   <span className="drawing-label">宽高比</span>
                   <SelectField label="宽高比" value={draft.aspectRatio}
@@ -576,7 +574,17 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 </label>
               </div>
               </>}
-              <div className="drawing-parameters">
+              {profileError && <p className="drawing-error" role="alert">{profileError}</p>}
+              {formatError && <p className="drawing-error" role="alert">{formatError}</p>}
+              {seedream && !seedreamPreset && <label className="drawing-field">
+                <span className="drawing-label">自定义尺寸（宽x高）</span>
+                <input aria-label="Seedream 自定义尺寸" type="text" value={seedreamOptions.size} placeholder="例如：2048x2048" onChange={event => setSeedream({ size: event.target.value })} />
+              </label>}
+              {openai && !presetSize && <label className="drawing-field">
+                <span className="drawing-label">自定义尺寸（宽x高）</span>
+                <input type="text" value={size} placeholder="1536x864" onChange={event => setOpenAI({ size: event.target.value })} />
+              </label>}
+              <div className="drawing-parameters drawing-execution-parameters" role="group" aria-label="执行参数">
                 <label className="drawing-field">
                   <span className="drawing-label">数量</span>
                   <input type="number" min={1} max={99} step={1} value={count} disabled={!ready || submitting}
@@ -588,7 +596,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     onChange={event => onDraftChange({ ...draft, concurrency: Math.min(4, Math.max(1, Math.trunc(Number(event.target.value)) || 1)) })} />
                 </label>
               </div>
-              <div className="drawing-parameter-extra drawing-parameter-tools">
+              <div className="drawing-parameter-tools">
                 {protocol === "gemini-image" && <button type="button" className="drawing-button" aria-expanded={advancedOpen}
                   aria-controls="drawing-gemini-advanced" onClick={() => setAdvancedOpen(!advancedOpen)}>Gemini 高级参数</button>}
                 <span className="drawing-parameter-help-label">参数说明<SettingsHelp label="参数">{openai
@@ -602,19 +610,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               </label>
               </div>
               </div>
-              {profileError && <p className="drawing-error" role="alert">{profileError}</p>}
-              {formatError && <p className="drawing-error" role="alert">{formatError}</p>}
-              {seedream && !seedreamPreset && <label className="drawing-field drawing-parameter-extra">
-                <span className="drawing-label">自定义尺寸（宽x高）</span>
-                <input aria-label="Seedream 自定义尺寸" type="text" value={seedreamOptions.size} placeholder="例如：2048x2048" onChange={event => setSeedream({ size: event.target.value })} />
-              </label>}
-              {openai ? <>
-                {!presetSize && <label className="drawing-field drawing-parameter-extra">
-                  <span className="drawing-label">自定义尺寸（宽x高）</span>
-                  <input type="text" value={size} placeholder="1536x864" onChange={event => setOpenAI({ size: event.target.value })} />
-                </label>}
-              </> : <>
-              {protocol === "gemini-image" && advancedOpen && <div id="drawing-gemini-advanced" className="drawing-parameter-extra">
+              {protocol === "gemini-image" && advancedOpen && <div id="drawing-gemini-advanced">
                 <div className="drawing-field drawing-advanced-inline">
                   <label className="drawing-label" htmlFor="drawing-gemini-thinking">思考强度</label>
                   <SettingsHelp label="绘图思考强度">默认跟随模型。Nano Banana 2.1 支持 minimal／medium／high，默认 medium；3.1 Flash Image 和 Flash Lite Image 支持 minimal／high，默认 minimal。更低档位侧重速度，更高档位侧重推理；minimal 仍会思考。其他模型与中转以服务支持为准。</SettingsHelp>
@@ -660,7 +656,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     options={[{ value: "text-image", label: "文字＋图片" }, { value: "image", label: "仅图片" }]}
                     onChange={value => { if (value === "text-image" || value === "image") setGemini({ outputMode: value }); }} />
                 </label>
-              </div>}</>}
+              </div>}
               </div>
               <div className="drawing-submit">
                 {preparation && <>
