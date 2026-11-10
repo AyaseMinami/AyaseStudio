@@ -29,7 +29,13 @@ const protocolNames: Record<DrawingProtocol, string> = {
 };
 function parameterSummary(parameters: DrawingParameters): string {
   if (parameters.protocol === "seedream-images") return `版本：${parameters.modelVersion} · 尺寸：${parameters.size} · 输出格式：${parameters.outputFormat} · 水印：${parameters.watermark}`;
-  if (parameters.protocol === "openai-images") return `尺寸：${parameters.size} · 画质：${parameters.quality}`;
+  if (parameters.protocol === "openai-images") {
+    const format = (parameters.outputFormat ?? "png").toUpperCase();
+    const author = parameters.outputFormat === "svg" && parameters.svgModel ? ` · SVG 作者模型：${parameters.svgModel}` : "";
+    const animation = parameters.outputFormat === "gif"
+      ? ` · 帧数：${parameters.frameCount ?? "模型默认"} · 帧时长：${parameters.frameDurationMs !== undefined ? `${parameters.frameDurationMs} ms` : "模型默认"}` : "";
+    return `尺寸：${parameters.size} · 画质：${parameters.quality} · 格式：${format}${author}${animation}`;
+  }
   const dimensions = `宽高比：${parameters.aspectRatio} · 分辨率：${parameters.resolution}`;
   return parameters.protocol === "grok-images" ? `版本：${parameters.modelVersion} · ${dimensions} · 画质：${parameters.quality}` : dimensions;
 }
@@ -215,7 +221,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
   onClearReferences?(): void;
   readThumbnail?(reference: string): Promise<DrawingImageInput>;
   onDeleteResults?(ids: string[]): void;
-  onExportResults?(ids: string[], withParameters: boolean): void;
+  onExportResults?(ids: string[], withParameters: boolean, original?: boolean): void;
   onCopyPrompt?(id: string): void;
   onPreviewActive?(active: boolean): void;
   presets?: DrawingPromptPreset[];
@@ -288,15 +294,32 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
       ? "Seedream 输出格式仅支持 5.0 系列，请选择自动或 5.0 版本。"
       : seedream && knownSeedreamSize && !seedreamPreset ? "当前 Seedream 版本不支持此尺寸，请重新选择尺寸。" : undefined;
   const size = draft.openai?.size ?? "auto", quality = draft.openai?.quality ?? "auto";
+  const outputFormat = draft.openai?.outputFormat ?? "png";
+  const [frameCountText, setFrameCountText] = useState(String(draft.openai?.frameCount ?? ""));
+  const [frameDurationText, setFrameDurationText] = useState(String(draft.openai?.frameDurationMs ?? ""));
+  useEffect(() => {
+    setFrameCountText(String(draft.openai?.frameCount ?? ""));
+    setFrameDurationText(String(draft.openai?.frameDurationMs ?? ""));
+  }, [draft.openai]);
+  const validFrameCount = frameCountText === "" || Number.isInteger(Number(frameCountText)) && Number(frameCountText) >= 2 && Number(frameCountText) <= 16;
+  const validFrameDuration = frameDurationText === "" || Number.isInteger(Number(frameDurationText)) && Number(frameDurationText) >= 20 && Number(frameDurationText) <= 655350;
+  const formatError = openai && outputFormat !== "png" && references.length
+    ? "SVG／GIF 仅支持文生图，请先移除参考图。"
+    : openai && outputFormat === "gif" && (!validFrameCount || !validFrameDuration)
+      ? "GIF 帧数须为 2–16 的整数，帧时长须为 20–655350 毫秒的整数。" : undefined;
   const presetSize = (openAIImageSizes as readonly string[]).includes(size);
-  const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => onDraftChange({ ...draft, openai: { size, quality, ...patch } });
+  const setOpenAI = (patch: Partial<NonNullable<DrawingDraft["openai"]>>) => {
+    const next = { size, quality, ...draft.openai, ...patch };
+    for (const key of Object.keys(next) as (keyof typeof next)[]) if (next[key] === undefined) delete next[key];
+    onDraftChange({ ...draft, openai: next });
+  };
   const setGemini = (patch: Partial<GeminiDrawingOptions>) => {
     const next = { ...draft.gemini, ...patch };
     for (const key of Object.keys(next) as (keyof GeminiDrawingOptions)[]) if (next[key] === undefined) delete next[key];
     onDraftChange({ ...draft, gemini: next });
   };
   const resultNumber = (id: string) => resultNumbers.get(id) ?? 0;
-  const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy && !profileError && (protocol !== "gemini-image" || !temperatureError);
+  const canGenerate = ready && !closing && !presetDialogOpen && models.some(model => model.id === draft.modelId) && Boolean(draft.prompt.trim()) && !submitting && !referencesBusy && !profileError && !formatError && (protocol !== "gemini-image" || !temperatureError);
   const canEditReferences = ready && !closing && !referencesBusy && !managementBusy && !confirmation && !presetDialogOpen;
   const managementAllowed = ready && !closing && !submitting && !managementBusy;
   const canManage = managementAllowed && !confirmation && !presetDialogOpen;
@@ -358,16 +381,20 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
 
   function resultActions(result: DrawingResult) {
     return <>
-      <button type="button" className="drawing-button" disabled={!canManage} onClick={() => onExport(result.id)}>导出图片</button>
+      <button type="button" className="drawing-button" disabled={!canManage} onClick={() => onExport(result.id)}>{result.mime === "image/gif" ? "导出首帧 PNG" : result.mime === "image/svg+xml" ? "导出 PNG" : "导出图片"}</button>
+      {onExportResults && (result.mime === "image/svg+xml" || result.mime === "image/gif") && <button type="button" className="drawing-button" disabled={!canManage}
+        onClick={() => onExportResults([result.id], false, true)}>原格式导出</button>}
       <button type="button" className="drawing-button" disabled={!canManage || referencesBusy}
         onClick={() => reuseResult(result.id)}>复用参数</button>
-      <button type="button" className="drawing-button" disabled={!canEditReferences}
+      <button type="button" className="drawing-button" disabled={!canEditReferences || result.mime === "image/svg+xml" || result.mime === "image/gif"}
+        title={result.mime === "image/svg+xml" || result.mime === "image/gif" ? "SVG／GIF 成果无法作为参考图" : undefined}
         onClick={() => onUseAsReference(result.id)}>作为参考图</button>
+      {(result.mime === "image/svg+xml" || result.mime === "image/gif") && <span className="drawing-muted">SVG／GIF 成果无法作为参考图</span>}
       {(onExportResults || onCopyPrompt || onDeleteResults) && <details key={result.id} className="drawing-result-more">
         <summary className="drawing-button">更多<ChevronDown size={14} aria-hidden="true" /></summary>
         <div className="drawing-result-more-content">
       {onExportResults && <button type="button" className="drawing-button" disabled={!canManage}
-        onClick={() => onExportResults([result.id], true)}>导出带参数 PNG</button>}
+        onClick={() => onExportResults([result.id], true)}>{result.mime === "image/gif" ? "导出带参数首帧 PNG" : "导出带参数 PNG"}</button>}
       {onExportResults && <p className="drawing-muted">带参数 PNG 含提示词等生成参数，不含参考图原件，不保证可确定复现；分享前请确认内容。</p>}
       {onCopyPrompt && <button type="button" className="drawing-button" disabled={!canManage}
         onClick={() => onCopyPrompt(result.id)}>复制提示词</button>}
@@ -409,8 +436,8 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
         </p>}
 
           <div className="drawing-layout">
-            <div className="drawing-left-column">
             <section className="drawing-panel drawing-form" aria-label="绘图草稿">
+              <div className="drawing-form-content" role="region" aria-label="绘图配置" tabIndex={0}>
               <div className="drawing-field">
                 <label className="drawing-label" htmlFor="drawing-model">绘图模型</label>
                 <div className="drawing-model">
@@ -438,9 +465,40 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 presets={presets} prompt={draft.prompt} disabled={!ready || closing || presetsBusy || Boolean(confirmation)}
                 onApply={onApplyPreset} onCreate={onCreatePreset} onUpdate={onUpdatePreset} onDelete={onDeletePreset}
                 onDialogChange={setPresetDialogOpen} />}
-              <div className="drawing-input-layout">
+              <DrawingReferences references={references} disabled={!canEditReferences}
+                busy={referencesBusy} read={readReference} readThumbnail={readThumbnail} onAdd={onAddReferences}
+                onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
               <div className="drawing-compact-parameters">
               {openai ? <>
+                <label className="drawing-field">
+                  <span className="drawing-label">输出格式</span>
+                  <SelectField label="OpenAI 输出格式" value={outputFormat}
+                    options={[{ value: "png", label: "PNG" }, { value: "svg", label: "SVG" }, { value: "gif", label: "GIF" }]}
+                    onChange={value => { if (value === "png" || value === "svg" || value === "gif") setOpenAI({ outputFormat: value }); }} />
+                </label>
+                {outputFormat === "svg" && <label className="drawing-field">
+                  <span className="drawing-label">SVG 作者模型</span>
+                  <input aria-label="SVG 作者模型" type="text" value={draft.openai?.svgModel ?? ""} placeholder="留空使用服务默认"
+                    onChange={event => setOpenAI({ svgModel: event.target.value })} />
+                </label>}
+                {outputFormat === "gif" && <div className="drawing-parameters drawing-parameter-extra drawing-format-controls">
+                  <label className="drawing-field"><span className="drawing-label">帧数</span>
+                    <input aria-label="GIF 帧数" type="number" min={2} max={16} step={1} value={frameCountText} placeholder="模型默认（9）"
+                      aria-invalid={!validFrameCount} onChange={event => {
+                        const text = event.target.value, number = Number(text); setFrameCountText(text);
+                        if (text === "" || Number.isInteger(number) && number >= 2 && number <= 16) setOpenAI({ frameCount: text === "" ? undefined : number });
+                      }} />
+                  </label>
+                  <label className="drawing-field"><span className="drawing-label">帧时长（毫秒）</span>
+                    <input aria-label="GIF 帧时长" type="number" min={20} max={655350} step={1} value={frameDurationText} placeholder="模型默认（200）"
+                      aria-invalid={!validFrameDuration} onChange={event => {
+                        const text = event.target.value, number = Number(text); setFrameDurationText(text);
+                        if (text === "" || Number.isInteger(number) && number >= 20 && number <= 655350) setOpenAI({ frameDurationMs: text === "" ? undefined : number });
+                      }} />
+                  </label>
+                </div>}
+                {outputFormat !== "png" && <p className="drawing-muted drawing-parameter-extra">SVG／GIF 仅支持文生图，需要所选服务和模型支持。SVG 作者模型留空跟随服务默认；GIF 帧数／时长留空跟随模型默认（9 帧／200 毫秒）。</p>}
+                {outputFormat === "svg" && <p className="drawing-muted drawing-parameter-extra">SVG 支持静态路径、文字、渐变、箭头、裁切和蒙版，暂不支持滤镜与图案填充。</p>}
                 <div className="drawing-parameters">
                   <label className="drawing-field">
                     <span className="drawing-label">尺寸</span>
@@ -544,11 +602,8 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               </label>
               </div>
               </div>
-              <DrawingReferences references={references} disabled={!canEditReferences}
-                busy={referencesBusy} read={readReference} readThumbnail={readThumbnail} onAdd={onAddReferences}
-                onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
-              </div>
               {profileError && <p className="drawing-error" role="alert">{profileError}</p>}
+              {formatError && <p className="drawing-error" role="alert">{formatError}</p>}
               {seedream && !seedreamPreset && <label className="drawing-field drawing-parameter-extra">
                 <span className="drawing-label">自定义尺寸（宽x高）</span>
                 <input aria-label="Seedream 自定义尺寸" type="text" value={seedreamOptions.size} placeholder="例如：2048x2048" onChange={event => setSeedream({ size: event.target.value })} />
@@ -606,6 +661,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     onChange={value => { if (value === "text-image" || value === "image") setGemini({ outputMode: value }); }} />
                 </label>
               </div>}</>}
+              </div>
               <div className="drawing-submit">
                 {preparation && <>
                   <p className="drawing-muted" role="status">正在准备参考图 {preparation.completed}/{preparation.total}…</p>
@@ -617,6 +673,52 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                   {submitting ? "正在加入队列…" : count > 1 ? `加入 ${count} 个任务` : busy || paused ? "加入队列" : "生成图片"}
                 </button>
                 <details className="drawing-generation-help drawing-parameter-help"><summary>队列说明</summary><p id="drawing-generation-note" className="drawing-muted">数量为独立单图请求数，同一批使用提交时的草稿快照。暂停只阻止新任务开始，正在执行的任务继续完成。</p></details>
+              </div>
+            </section>
+
+            <section className="drawing-panel drawing-preview-panel" aria-labelledby="drawing-preview-title">
+              <div className="drawing-section-heading drawing-preview-heading">
+                <h2 id="drawing-preview-title">图像预览</h2>
+                <div className="drawing-preview-heading-actions">
+                <span className="drawing-muted">{selectedResult ? `成果 ${resultNumber(selectedResult.id)}` : "等待生成"}</span>
+                </div>
+              </div>
+              <DrawingResultPreview id={selectedResult?.id ?? null} url={selectedResult ? previewUrl : null} error={previewError}
+                width={selectedResult?.width} height={selectedResult?.height}>
+                <div className="drawing-actions">
+                {onOpenOutputDirectory && <button type="button" className="drawing-button drawing-folder-action" disabled={!ready || closing || openingDirectory}
+                  onClick={async event => {
+                    if (event.detail > 1 || !ready || closing || openingDirectoryRef.current) return;
+                    openingDirectoryRef.current = true;
+                    setOpeningDirectory(true);
+                    setDirectoryError(null);
+                    try { await onOpenOutputDirectory(); }
+                    catch (error) { setDirectoryError(drawingOutputError(error)); }
+                    finally { openingDirectoryRef.current = false; setOpeningDirectory(false); }
+                  }}><FolderOpen size={16} aria-hidden="true" />打开输出文件夹</button>}
+                {onOutputSettings && <button type="button" className="drawing-button" disabled={closing} onClick={onOutputSettings}>更改输出目录</button>}
+                {selectedResult && resultActions(selectedResult)}
+                </div>
+              </DrawingResultPreview>
+              {directoryError && <p className="drawing-error" role="alert">{directoryError}</p>}
+              {selectedResult && <details key={selectedResult.id} className="drawing-result-disclosure">
+                <summary><span className="drawing-result-summary" title={selectedResult.parameters.prompt}>{selectedResult.parameters.prompt}</span>
+                  <span className="drawing-muted">详细信息</span></summary>
+                <ResultDetails result={selectedResult} />
+              </details>}
+              <div className="drawing-section-heading drawing-history-heading">
+                <h2>生成历史</h2>
+                {onDeleteResults && <button type="button" className="drawing-button drawing-clear-history"
+                  disabled={!canManage || !results.length}
+                  onClick={event => { if (event.detail <= 1) deleteResults(results.map(result => result.id), event.currentTarget, true); }}>
+                  <Trash2 size={15} aria-hidden="true" />清空历史
+                </button>}
+              </div>
+              <RecordPagination page={activeHistoryPage} count={results.length} onPage={setHistoryPage} label="生成历史" />
+              <div className="drawing-history" aria-label="生成历史">
+                {results.length ? results.slice(activeHistoryPage * recordsPerPage, (activeHistoryPage + 1) * recordsPerPage).map((result) => <HistoryItem key={result.id} result={result} number={resultNumber(result.id)}
+                  selected={result.id === selectedResultId} onSelect={onSelectResult} read={readThumbnail} />)
+                  : <p className="drawing-muted">暂无生成历史</p>}
               </div>
             </section>
 
@@ -744,52 +846,6 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     </Fragment>;
                   })}</tbody>
                 </table> : <div className="drawing-empty"><p>{taskSubview === "list" ? "暂无绘图任务" : "暂无任务日志"}</p></div>}
-              </div>
-            </section>
-            </div>
-            <section className="drawing-panel drawing-preview-panel" aria-labelledby="drawing-preview-title">
-              <div className="drawing-section-heading drawing-preview-heading">
-                <h2 id="drawing-preview-title">图像预览</h2>
-                <div className="drawing-preview-heading-actions">
-                <span className="drawing-muted">{selectedResult ? `成果 ${resultNumber(selectedResult.id)}` : "等待生成"}</span>
-                </div>
-              </div>
-              <DrawingResultPreview id={selectedResult?.id ?? null} url={selectedResult ? previewUrl : null} error={previewError}
-                width={selectedResult?.width} height={selectedResult?.height}>
-                <div className="drawing-actions">
-                {onOpenOutputDirectory && <button type="button" className="drawing-button drawing-folder-action" disabled={!ready || closing || openingDirectory}
-                  onClick={async event => {
-                    if (event.detail > 1 || !ready || closing || openingDirectoryRef.current) return;
-                    openingDirectoryRef.current = true;
-                    setOpeningDirectory(true);
-                    setDirectoryError(null);
-                    try { await onOpenOutputDirectory(); }
-                    catch (error) { setDirectoryError(drawingOutputError(error)); }
-                    finally { openingDirectoryRef.current = false; setOpeningDirectory(false); }
-                  }}><FolderOpen size={16} aria-hidden="true" />打开输出文件夹</button>}
-                {onOutputSettings && <button type="button" className="drawing-button" disabled={closing} onClick={onOutputSettings}>更改输出目录</button>}
-                {selectedResult && resultActions(selectedResult)}
-                </div>
-              </DrawingResultPreview>
-              {directoryError && <p className="drawing-error" role="alert">{directoryError}</p>}
-              {selectedResult && <details key={selectedResult.id} className="drawing-result-disclosure">
-                <summary><span className="drawing-result-summary" title={selectedResult.parameters.prompt}>{selectedResult.parameters.prompt}</span>
-                  <span className="drawing-muted">详细信息</span></summary>
-                <ResultDetails result={selectedResult} />
-              </details>}
-              <div className="drawing-section-heading drawing-history-heading">
-                <h2>生成历史</h2>
-                {onDeleteResults && <button type="button" className="drawing-button drawing-clear-history"
-                  disabled={!canManage || !results.length}
-                  onClick={event => { if (event.detail <= 1) deleteResults(results.map(result => result.id), event.currentTarget, true); }}>
-                  <Trash2 size={15} aria-hidden="true" />清空历史
-                </button>}
-              </div>
-              <RecordPagination page={activeHistoryPage} count={results.length} onPage={setHistoryPage} label="生成历史" />
-              <div className="drawing-history" aria-label="生成历史">
-                {results.length ? results.slice(activeHistoryPage * recordsPerPage, (activeHistoryPage + 1) * recordsPerPage).map((result) => <HistoryItem key={result.id} result={result} number={resultNumber(result.id)}
-                  selected={result.id === selectedResultId} onSelect={onSelectResult} read={readThumbnail} />)
-                  : <p className="drawing-muted">暂无生成历史</p>}
               </div>
             </section>
           </div>

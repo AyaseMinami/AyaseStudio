@@ -11,6 +11,22 @@ const preset = { id: "preset", name: "Landscape", content: "  mountains\n\ncloud
   createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T01:00:00.000Z" };
 
 describe("drawing settings data boundary", () => {
+  it("clones current OpenAI format controls while preserving omitted historical defaults", () => {
+    const openai = { size: "auto", quality: "auto", outputFormat: "gif" as const, svgModel: "custom-author", frameCount: 16, frameDurationMs: 655350 };
+    const raw = { openai }, before = structuredClone(raw);
+    expect(readDrawingSettingsData(raw).openai).toEqual(openai);
+    expect(projectDrawingSettings({ ...initialDrawingDraft, openai }).openai).toEqual(openai);
+    expect(readDrawingSettingsData(readDrawingSettingsData(raw))).toEqual(readDrawingSettingsData(raw));
+    const read = readDrawingSettingsData(raw); read.openai.frameCount = 2;
+    expect(raw).toEqual(before);
+    expect(readDrawingSettingsData({}).openai).not.toHaveProperty("outputFormat");
+  });
+  it.each([{ outputFormat: "jpeg" }, { outputFormat: undefined }, { svgModel: null }, { frameCount: 1 }, { frameCount: 17 },
+    { frameCount: 2.1 }, { frameDurationMs: 19 }, { frameDurationMs: 655351 }, { frameDurationMs: NaN }, { frameCount: "9" }, { futureFormat: "svg" }])("preserves and rejects malformed OpenAI settings %j", options => {
+    const raw = { openai: { size: "auto", quality: "auto", ...options } }, source = structuredClone(raw);
+    expect(() => readDrawingSettingsData(raw)).toThrow(DataContractError);
+    expect(raw).toEqual(source);
+  });
   it("clones and projects Gemini controls with exact finite defaults and no private nested fields", () => {
     const gemini = { temperature: 0, safetyThreshold: "BLOCK_NONE" as const, outputMode: "image" as const, thinkingLevel: "medium" as const };
     const draft = { ...initialDrawingDraft, gemini: { ...gemini, apiKey: "synthetic" } };

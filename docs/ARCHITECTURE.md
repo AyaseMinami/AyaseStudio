@@ -1,5 +1,13 @@
 # Ayase Studio Architecture
 
+## SVG and GIF drawing outputs (2026-11-09)
+
+OpenAI Images freezes explicit PNG/SVG/GIF output and matching author-model/frame controls per task. The native store preserves verified original bytes through publication, recovery, reads and original-format export. PNG export derives pixels, using the first GIF frame. SVG preview uses an image source. Original export shares the existing atomic destination guard.
+
+`drawing_formats.rs` validates static SVG using XML and allowlisted elements, attributes and presentation CSS. Scripts, event attributes, animation, foreign content, images, external references, DTDs, processing instructions, CSS escapes/directives and recursive expansion fail before publication. Resvg has disabled image resolvers and a shared system-font database. SVG budgets are 4 MiB, 20,000 XML elements and 50,000 expanded work units including geometry/text payload. URL references participate in expansion counting. Dual href variants, stylesheet URLs, inherited paint/marker URLs and marker-mid are rejected. Direct start/end markers count path subpaths. Filters and patterns are unsupported. Before raster allocation, a 256 MiB cumulative budget covers the canvas, final pixels, transformed isolation layers, clip surfaces and masks, including resource-owner transforms and linked chains. Static paths, text, gradients, direct arrow markers, clipping and masks remain supported within these budgets.
+
+GIF validates all frames with budgets of 64 frames, 128 million cumulative canvas pixels and 256 MiB decoder allocation. Existing 32 MiB/output, 64 MiB/response and 32 million canvas-pixel limits also apply. These output budgets do not change reference-input limits. See [data contracts](DATA-CONTRACTS.md) and [protocols](PROTOCOLS.md).
+
 ## Historical message attachments (#128, 2026-10-13)
 
 `MessageEditor` owns a frozen base message and ordered retained/added attachment draft, independent of Composer. Only user messages can add/remove attachments; assistant body editing and existing previews remain. Head reads are ordered by input operation and invalidated on cancel/navigation; accepted submissions belong to `MessageEdits` under the chat hook and survive editor unmount.
@@ -323,6 +331,8 @@ Each `AssistantPreset` may contain an `avatar` (original Blob, cropped 256×256 
 编辑发送和重新生成的按钮/快捷键均直接执行，不再弹窗；单条删除仍确认。该用户修订优先于此前截断确认合同。
 
 ## Message image previews (#62)
+
+2026-11-09 附件复制复用 `PreviewImage` 已加载的图片元素。用户显式点击后，以原始宽高绘制临时 canvas 并编码 PNG，通过 `ClipboardItem`／`navigator.clipboard.write` 写入系统剪贴板。Promise 图片数据让写入在点击激活范围内开始；组件只在成功履约后提示已复制，失败可再次点击，单次在途写入有同步防重保护。关闭或切图后，旧操作完成不更新新预览。复制状态仅在组件内存中，使用附件只读像素，不新增持久字段、备份模块、原生命令或权限。
 
 #124（2026-10-05）在 `SentAttachmentPreview` 中加入局部 `PreviewImage` 画布。缩放按初始等比适配尺寸的 25%–400% 限制，小图初始不放大；滚轮围绕指针缩放，按钮围绕中心缩放，拖动／方向键位移按实际溢出区域限制，调整窗口后重新适配并约束位移。图片裁切仅发生于画布，标题、切图和关闭入口在画布外；“适配窗口”恢复居中及 100%，切图／重新打开重置。聚焦画布时方向键移动、+／− 缩放、0 恢复；其他位置左右键仍切图。焦点环包含画布，Escape 关闭后以 `preventScroll` 返回原入口，图片弹层内滚轮不传给对话。所有视图状态仅在组件内存中；不修改附件读取、原图、引用、持久数据或发送合同，草稿图片因复用相同预览同步获得此能力。
 

@@ -1,5 +1,37 @@
 # Ayase Studio Development Guide
 
+## Beta 8 test publication preparation (2026-11-10)
+
+The user requested packaging and publication to test the real updater. Version sources are aligned to `0.1.0-beta.8`. This candidate includes the existing #129 settings/drawing UI adjustments, OpenAI SVG/GIF outputs and attachment-image copying. Publication uses the existing signed Actions candidate and explicit Beta test-publication mode. Native installation, upgrade, retained-data checks and installed cross-application image pasting remain pending user acceptance. Provider generation has deterministic coverage and has not been probed live for this release.
+
+The earlier background-library loss diagnosis remains deferred by user decision. Historical implementation records below retain their original dates and verification scopes.
+
+The Beta 8 local gate passed `npm.cmd run check` (183 files / 3134 tests, release and data-contract checks, TypeScript and production build), locked Cargo tests (175 passed, one existing ignored), the signature-helper test and locked Cargo check. Independent review found stale dependency-inventory lockfile hashes after the version bump; regenerating the inventory corrected both. The rest of the inspected release scope had no actionable finding. Actions candidate generation, signing, publication and channel verification follow these local gates.
+
+## Attachment image copy (2026-11-09)
+
+The preview toolbar now has a visible Copy Image action shared by draft, sent and message-editor images. It copies original-size pixels as PNG through the browser Clipboard API. Zoom/pan state stays local to display. Loading, duplicate in-flight writes, clipboard rejection, unsupported APIs, encoding failure and image switches have deterministic coverage. Existing preview focus, Escape and attachment lifecycle tests remain active.
+
+`npm.cmd run check` passed all 183 frontend files / 3134 tests, 30 release tests, 16 data-contract checker tests and registry checks, TypeScript and production build. Locked Cargo check and diff checks passed. The focused preview/attachment/editor suites passed 45 tests. No persistence version change is required for this action.
+
+The isolated in-app browser used the real Composer and image preview with a synthetic 320×240 RGBA image. Copy resolved successfully, and a test-only user-triggered Clipboard API readback decoded PNG at 320×240 with the expected alpha value 128. The browser automation's virtual Ctrl+V clipboard did not contain page-written data, so a cross-application paste was not established by this check. Light 1280×800 and dark 720×520 views showed reachable copy/close controls, copy feedback and no horizontal overflow. Fixtures remain in ignored `.attachment-copy.local/`; screenshots used the browser's native image route. Actual installed WebView copying and pasting into other native applications remain pending manual acceptance.
+
+## OpenAI SVG／GIF output (2026-11-09)
+
+The current user request adds SVG and GIF to independent OpenAI drawing. Format-specific controls persist through settings backup, freeze per task and restore on reuse. Originals remain SVG vectors or animated GIF bytes, with original-format export and existing static PNG/parameter-PNG exports. SVG/GIF reference inputs are blocked explicitly. The static SVG subset and output budgets are specified in [architecture](ARCHITECTURE.md) and [protocols](PROTOCOLS.md).
+
+`npm.cmd run check` passed 30 release tests, 16 data-contract checker tests and registry checks, all 183 frontend files / 3129 tests, TypeScript and production build. The final help/grid-only adjustment passed the drawing UI and App suites, 5 files / 113 tests, plus TypeScript. Locked native library tests passed 175 with one existing ignored test, and locked Cargo check passed. Independent Sol/high review identified SVG resource-allocation and GIF same-value reuse defects; both were fixed and re-reviewed with no remaining actionable finding. New native tests validate static content, reference amplification, cumulative raster budgets including scaled masks, malformed later GIF frames, exact original bytes, recovery and export guards. Huge-resource fixtures are tested through preflight only.
+
+The isolated in-app browser at `127.0.0.1:4173/.svg-gif.local/review.html` checked 1280×800 light and 720×520 dark views, SVG loading, GIF controls, invalid-value blocking, original-export callback, disabled reference action and no horizontal overflow. The mock export callback is separate from native exporter tests. The screenshot converter produced no usable local file, so visual inspection used the browser's native image route. Isolated fixture/evidence inputs remain in ignored `.svg-gif.local/`. The mechanical UI detector reported no findings before the final help/grid adjustment.
+
+`npm.cmd run tauri dev -- --no-watch --config .svg-gif.local/smoke.json` compiled and started using a dedicated application identifier and the isolated fixture URL. Existing libpng iCCP warnings appeared. Native OS dialogs/interactions, a paid provider generation, installed upgrade and formal release remain pending. Build version is still Beta 7. This local slice does not establish #93/#94 closure or published availability.
+
+## Unified workspace UI #129 (2026-10-25)
+
+User native preview rejected the initial search flattening and appearance preview sizing. The follow-up restores service cards and opaque settings surfaces, gives the appearance preview the remaining width after a bounded control column, and restores independent desktop column scrolling. See the user-correction section in the construction plan for targeted tests and measured browser scroll evidence. The original review below does not establish user visual acceptance.
+
+Local implementation and browser evidence are recorded in [the #129 construction plan](ISSUE-129-UI-PLAN.md). Six settings pages share visual rules; appearance has controls-first responsive preview and a keyboard-scrollable reading sample; drawing separates the scrollable configuration from the generate footer. Existing Composer/navigation, request/save/queue semantics and persisted records are unchanged. `npm.cmd run check` passed all 3059 tests and production build, Cargo check passed, and the final focus-only adjustment passed all 24 appearance tests. Independent review found no actionable defect in the inspected scope. Browser captures are under `.impeccable/review/129/`; native interaction and final user visual acceptance are not implied. No commit or release was performed.
+
 ## Authorized Beta test publication (2026-10-13)
 
 The user requested publishing Beta 7 before testing the real updater, then explicitly authorized committing, pushing and integrating the verified dev changes into main for the signed Actions build. Publication now offers an explicit `beta_test_release` input, default false, requiring a strict Beta tag and preserving all artifact/signature/source/channel gates. Native acceptance stays false/pending for this mode; stable publication still requires completed native acceptance. This resolves the ordering requirement without claiming that the locally built unsigned package or dev style acceptance established installed signed-candidate acceptance. See [the release runbook](RELEASING.md).

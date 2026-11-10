@@ -58,6 +58,29 @@ function changeRange(input: HTMLInputElement, value: string) {
 }
 
 describe("AppearanceSettings", () => {
+  it("places all controls before the overview and keeps a separate actual-size reading sample", async () => {
+    await render({ backgroundError: "背景读取失败，请重新选择", readabilityWarnings: ["当前配色对比度较低"] });
+    const layout = host!.querySelector(".appearance-layout")!;
+    expect([...layout.children].map((element) => element.className)).toEqual(["appearance-controls", "appearance-preview-column"]);
+    const preview = layout.querySelector<HTMLElement>("aside.appearance-preview-column")!;
+    expect(preview.tabIndex).toBe(0);
+    expect(document.getElementById(preview.getAttribute("aria-labelledby")!)?.textContent).toBe("实时预览");
+    preview.focus();
+    expect(document.activeElement).toBe(preview);
+    const controls = layout.firstElementChild!;
+    expect(controls.querySelector('[aria-label="背景遮罩强度"]')).not.toBeNull();
+    expect(controls.querySelector('[aria-label="背景模糊程度"]')).not.toBeNull();
+    expect(controls.querySelector('[role="alert"]')?.textContent).toBe("背景读取失败，请重新选择");
+    expect(controls.textContent).toContain("当前配色对比度较低");
+    const reading = host!.querySelector(".appearance-reading-preview")!;
+    expect(reading.closest(".appearance-preview-stage")).toBeNull();
+    expect(reading.querySelector(".user-message-group.message-surface .message-body")?.textContent).toBe("帮我整理一下今天的阅读笔记。");
+    expect(reading.querySelector(".assistant-message-group.message-surface .message-body")?.textContent).toContain("先记录核心观点");
+    expect(reading.querySelector(".message-assistant-avatar")).not.toBeNull();
+    expect(host!.querySelectorAll(".appearance-preview-stage")).toHaveLength(1);
+    expect(host!.querySelector(".appearance-preview-caption")?.textContent).toContain("1920 × 1080");
+  });
+
   it("adjusts and resets the shared titlebar/rail background independently", async () => {
     const { handlers } = await render({ chromeTransparency: 53, sidebarTransparency: 53, composerTransparency: 53,
       assistantBubbleTransparency: 53, unifiedTransparency: 53 });

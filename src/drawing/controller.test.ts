@@ -47,6 +47,55 @@ async function prepare(f: ReturnType<typeof fixture>) {
   f.controller.setDraft({ ...f.controller.getSnapshot().draft, modelId: "image-model", prompt: "synthetic prompt", aspectRatio: "1:1", resolution: "2K" });
 }
 describe("application drawing task controller", () => {
+  it.each(["svg", "gif"] as const)("freezes only %s controls and reuses them after reload without dispatch", async outputFormat => {
+    const f = fixture(); await prepare(f);
+    const openaiSettings = structuredClone(settings); openaiSettings.providers[0].connections[0].protocol = "openai-images";
+    const openai = { size: "auto", quality: "high", outputFormat, svgModel: "author", frameCount: 9, frameDurationMs: 200 };
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, openai });
+    await f.controller.generate(openaiSettings);
+    const frozen = { protocol: "openai-images", size: "auto", quality: "high", outputFormat,
+      ...(outputFormat === "svg" ? { svgModel: "author" } : { frameCount: 9, frameDurationMs: 200 }) };
+    expect(f.saved().tasks[0].parameters).toMatchObject(frozen);
+    expect(f.saved().tasks[0].parameters).not.toHaveProperty(outputFormat === "svg" ? "frameCount" : "svgModel");
+    expect(f.saved().draft?.openai).toEqual(openai);
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, openai: { ...openai, outputFormat: "png" } });
+    await f.controller.flush();
+    expect(f.saved().tasks[0].parameters).toMatchObject(frozen);
+    const reopened = fixture(f.saved()); await reopened.controller.initialize(); reopened.controller.updateSettings(openaiSettings);
+    await reopened.controller.reuse("file-1"); await reopened.controller.flush();
+    expect(reopened.saved().draft?.openai).toEqual({ size: "auto", quality: "high", outputFormat,
+      ...(outputFormat === "svg" ? { svgModel: "author" } : { frameCount: 9, frameDurationMs: 200 }) });
+    expect(reopened.transport.generate).not.toHaveBeenCalled();
+  });
+  it.each(["svg", "gif"] as const)("blocks %s references before import, queue writes or dispatch", async outputFormat => {
+    const f = fixture(); await prepare(f);
+    const openaiSettings = structuredClone(settings); openaiSettings.providers[0].connections[0].protocol = "openai-images";
+    await f.controller.addReferences([new File(["synthetic"], "input.png", { type: "image/png" })]);
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, openai: { size: "auto", quality: "auto", outputFormat } });
+    await f.controller.flush(); const before = structuredClone(f.saved());
+    await f.controller.generate(openaiSettings);
+    expect(f.saved()).toEqual(before); expect(f.controller.getSnapshot().references).toHaveLength(1);
+    expect(f.controller.getSnapshot().error).toContain("先移除参考图");
+    expect(f.files.importReference).not.toHaveBeenCalled(); expect(f.repository.enqueue).not.toHaveBeenCalled(); expect(f.transport.generate).not.toHaveBeenCalled();
+  });
+  it.each(["image/svg+xml", "image/gif"])("keeps %s originals separate from PNG exports and reference inputs", async mime => {
+    const f = fixture(); await prepare(f); await f.controller.generate(settings);
+    const result = { ...f.saved().results[0], mime };
+    const restored = fixture({ tasks: [], results: [result] }); await restored.controller.initialize();
+    await restored.controller.useAsReference(result.id);
+    expect(restored.controller.getSnapshot().references).toEqual([]); expect(restored.controller.getSnapshot().error).toContain("无法作为参考图");
+    await restored.controller.exportResults([result.id], false, true);
+    expect(restored.files.export).toHaveBeenLastCalledWith(result.reference, undefined, true);
+    await restored.controller.exportResults([result.id], false);
+    expect(vi.mocked(restored.files.export).mock.calls.slice(-1)[0]).toEqual([result.reference]);
+  });
+  it.each([{ outputFormat: "unknown" }, { frameCount: 1 }, { frameDurationMs: 19 }, { futureFormat: "svg" }])("rejects malformed OpenAI draft edits before persistence %j", async options => {
+    const f = fixture(); await prepare(f); await f.controller.flush();
+    const before = structuredClone(f.saved()); vi.mocked(f.repository.saveDraft).mockClear();
+    f.controller.setDraft({ ...f.controller.getSnapshot().draft, openai: { size: "auto", quality: "auto", ...options } } as Parameters<typeof f.controller.setDraft>[0]);
+    await f.controller.flush(); expect(f.saved()).toEqual(before); expect(f.repository.saveDraft).not.toHaveBeenCalled();
+    expect(f.controller.getSnapshot().error).toContain("参数无效");
+  });
   it.each(["task", "result"])("rejects invalid persisted Gemini %s options before any restart recovery write", async source => {
     const valid: DrawingTask = { id: "old-task", status: "preparing", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
       parameters: { protocol: "gemini-image", prompt: "old", aspectRatio: "auto", resolution: "auto", providerId: "p", connectionId: "image", configuredModelId: "image-model", modelId: "test-image", modelName: "test", baseUrl: "https://example.test" } };
@@ -57,6 +106,15 @@ describe("application drawing task controller", () => {
     expect(f.controller.getSnapshot().ready).toBe(false); expect(f.saved()).toEqual(snapshot);
     expect(f.repository.saveTask).not.toHaveBeenCalled(); expect(f.repository.complete).not.toHaveBeenCalled();
     expect(f.files.recover).not.toHaveBeenCalled(); expect(f.transport.generate).not.toHaveBeenCalled();
+  });
+  it.each([{ outputFormat: "unknown" }, { outputFormat: "gif", frameCount: 17 }, { outputFormat: "gif", frameDurationMs: 19 },
+    { outputFormat: "svg", frameCount: 9 }, { outputFormat: "gif", svgModel: "author" }, { outputFormat: "svg", unknown: true }])("preserves invalid frozen OpenAI history before recovery writes %j", async options => {
+    const parameters = { protocol: "openai-images", prompt: "old", size: "auto", quality: "auto", providerId: "p", connectionId: "image",
+      configuredModelId: "image-model", modelId: "test-image", modelName: "test", baseUrl: "https://example.test", ...options } as DrawingTask["parameters"];
+    const snapshot: DrawingSnapshot = { tasks: [{ id: "old", status: "preparing", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", parameters }], results: [] };
+    const f = fixture(snapshot); await f.controller.initialize();
+    expect(f.controller.getSnapshot().ready).toBe(false); expect(f.saved()).toEqual(snapshot);
+    expect(f.repository.saveTask).not.toHaveBeenCalled(); expect(f.files.recover).not.toHaveBeenCalled(); expect(f.transport.generate).not.toHaveBeenCalled();
   });
   it("freezes Gemini controls per submitted task, persists independent edits and restores them after reload", async () => {
     const f = fixture(); await prepare(f);

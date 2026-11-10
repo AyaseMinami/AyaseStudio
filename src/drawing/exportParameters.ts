@@ -21,6 +21,10 @@ export function drawingExportParameters(parameters: DrawingParameters): DrawingE
         ? ["IMAGE" as const] : ["TEXT" as const, "IMAGE" as const] } : {}),
       ...(parameters.resolution !== "auto" ? { resolution: parameters.resolution } : {}) }
     : { ...common, api_type: "gpt",
+      ...(parameters.outputFormat !== undefined ? { output_format: parameters.outputFormat } : {}),
+      ...(parameters.outputFormat === "svg" && parameters.svgModel?.trim() ? { svg_model: parameters.svgModel.trim() } : {}),
+      ...(parameters.outputFormat === "gif" && parameters.frameCount !== undefined ? { frame_count: parameters.frameCount } : {}),
+      ...(parameters.outputFormat === "gif" && parameters.frameDurationMs !== undefined ? { frame_duration_ms: parameters.frameDurationMs } : {}),
       ...(parameters.size !== "auto" ? { size: parameters.size } : {}),
       ...(parameters.quality !== "auto" ? { quality: parameters.quality } : {}) };
 }

@@ -1,5 +1,15 @@
 # Protocol Compatibility Contract
 
+## OpenAI Images SVG and GIF output (2026-11-09)
+
+The user requested SVG and GIF support. The [official Images API](https://developers.openai.com/api/reference/resources/images/methods/generate) and [image guide](https://developers.openai.com/api/docs/guides/image-generation) specify `output_format: svg|gif` on `/images/generations`, `n: 1` and Base64 bytes. The edits endpoint cannot produce SVG/GIF. Ayase rejects references before enqueue and dispatch for these formats, retaining the input selection.
+
+SVG sends `svg: { model }` only for an explicitly configured author model. Blank omits the object for the service default. Some accounts require this model when SVG model selection is enabled. GIF sends optional top-level `frame_count` (integer 2–16) and `frame_duration_ms` (integer 20–655350). Omitted values use service defaults of 9 frames and 200 ms. The API rounds delay to 10 ms. Size and quality retain their existing explicit/automatic mapping. Model IDs and relay aliases remain user-selected. Service availability and GIF size restrictions use the existing failure path without parameter removal or retry.
+
+PNG is the missing-field default. The OpenAI parser additionally accepts `image/svg+xml` and `image/gif` with bounded, MIME-matching Base64 normalization. Native validation precedes durable publication. SVG retains vectors and GIF retains animation, with static derived thumbnails. Original-format export copies verified bytes. PNG export rasterizes SVG or the first GIF frame. Stream, SVG reasoning and markup editing remain outside this slice.
+
+The native SVG contract accepts a bounded static subset. Filters, patterns, stylesheet resource URLs and inherited paint/marker resources are rejected, alongside active or external content. This can reject SVG returned by a service even when it is valid XML. It is never silently rewritten, stripped or retried. The [architecture](ARCHITECTURE.md) documents the expansion and cumulative raster-allocation budgets.
+
 ## Edited historical user attachments (#128)
 
 Only user messages gain attachment addition/removal. Save-only requires no connection, key or provider call. Edited sending validates the frozen protocol/config, final ordered current-user and retained history attachments, context budget and final mapped body before replacing the durable transcript. Removed attachments and inactive candidates are excluded from requests; the existing adapter rules still reject unsupported Office/image inputs without conversion, fallback or retry. Generation takes ownership while edit admission is held; confirmed durable references, native verification and a fresh SessionStore precede any model or external search request. Provider failure/Stop after this point keeps the submitted message and candidate, with no rollback or automatic replay. Assistant history projection and attachment sending capabilities are unchanged. See [#128 implementation](ISSUE-128-IMPLEMENTATION.md).

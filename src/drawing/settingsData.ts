@@ -1,7 +1,7 @@
 import { backupFields, dataCheck, dataRecord, migrateData } from "../storage/dataContract";
 import { dataPolicies } from "../storage/dataPolicies";
 import { drawingAspectRatios, drawingResolutions } from "./geminiImage";
-import { openAIImageQualities } from "./openaiImages";
+import { openAIImageQualities, validOpenAIDrawingOptions } from "./openaiImages";
 import type { DrawingPromptPreset } from "./presets";
 import type { DrawingDraft, DrawingReference } from "./types";
 import { validGeminiDrawingOptions } from "./geminiOptions";
@@ -62,7 +62,9 @@ export function readDrawingSettingsData(raw: unknown): DrawingSettingsData {
   const size = "size" in openai ? openai.size : "auto";
   const quality = "quality" in openai ? openai.quality : "auto";
   openaiSize(size); option(quality, openAIImageQualities);
-  const result: DrawingSettingsData = { aspectRatio, resolution, modelId, openai: { size, quality }, count, concurrency, completionSound };
+  const openaiOptions = { ...openai, size, quality };
+  dataCheck(validOpenAIDrawingOptions(openaiOptions));
+  const result: DrawingSettingsData = { aspectRatio, resolution, modelId, openai: openaiOptions, count, concurrency, completionSound };
   if ("gemini" in value) {
     fields(value.gemini, backupFields(dataPolicies.drawingGemini));
     dataCheck(validGeminiDrawingOptions(value.gemini));

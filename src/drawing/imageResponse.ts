@@ -12,13 +12,13 @@ const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123
 
 /** Normalize only the pinned relay's CR/LF and image data-URL wrappers, before native byte validation. */
 export function normalizeImageResponseData(raw: unknown, mime: unknown): { data: string; bytes: number } {
-  if (typeof mime !== "string" || !["image/png", "image/jpeg", "image/webp"].includes(mime)
-    || typeof raw !== "string" || !raw.length || raw.length > maxEncodedImageLength * 2 + 23) {
+  if (typeof mime !== "string" || !["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif"].includes(mime)
+    || typeof raw !== "string" || !raw.length || raw.length > maxEncodedImageLength * 2 + Math.max(23, mime.length + 13)) {
     throw new ImageGenerationError("绘图服务返回了无效或过大的图片。");
   }
   let encoded = raw;
   if (raw.startsWith("data:")) {
-    const wrapper = /^data:(image\/(?:png|jpeg|webp));base64,/.exec(raw);
+    const wrapper = /^data:(image\/(?:png|jpeg|webp|svg\+xml|gif));base64,/.exec(raw);
     if (!wrapper || wrapper[1] !== mime) throw new ImageGenerationError("绘图服务返回了无效或不匹配的图片格式。");
     encoded = raw.slice(wrapper[0].length);
   }

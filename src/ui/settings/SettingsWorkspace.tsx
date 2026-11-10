@@ -17,6 +17,7 @@ import {
   ConnectionSettings,
   type ConnectionSettingsProps,
 } from "./ConnectionSettings";
+import "./SettingsDesign.css";
 
 export type SettingsSection = "general" | "connections" | "search" | "appearance" | "data" | "about";
 

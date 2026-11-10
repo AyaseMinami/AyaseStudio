@@ -70,7 +70,7 @@ it("clamps drag movement, ignores other pointers, stops on cancellation and keep
   expect(transform()).toContain("translate(50px, 37.5px)");
   await key("ArrowRight"); expect(transform()).toContain("translate(10px, 37.5px)"); expect(navigate).not.toHaveBeenCalled();
   await key("ArrowRight", host.querySelector('[role="dialog"]')!); expect(navigate).toHaveBeenCalledWith(images[1]);
-  await act(async () => host.querySelector<HTMLButtonElement>(".attachment-preview-zoom button:last-child")!.click());
+  await act(async () => [...host.querySelectorAll<HTMLButtonElement>(".attachment-preview-zoom button")].find(button => button.textContent === "适配窗口")!.click());
   expect(transform()).toContain("translate(0px, 0px) scale(1)");
 });
 
@@ -117,4 +117,98 @@ it("keeps modal focus when an externally changed image removes a focused canvas 
   const { render } = await mount(); stage().focus();
   await act(async () => render(images[1])); await decode();
   expect(document.activeElement).toBe(host.querySelector('[aria-label="关闭预览"]'));
+});
+
+function mockImageClipboard() {
+  const drawImage = vi.fn();
+  const encoded: { width: number; height: number; type?: string }[] = [];
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+  const toBlob = vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (this: HTMLCanvasElement, callback, type) {
+    encoded.push({ width: this.width, height: this.height, type });
+    callback(new Blob(["synthetic PNG pixels"], { type }));
+  });
+  class ImageClipboardItem {
+    constructor(public data: Record<string, Promise<Blob>>) {}
+  }
+  vi.stubGlobal("ClipboardItem", ImageClipboardItem);
+  const write = vi.fn(async (items: ImageClipboardItem[]) => { await items[0].data["image/png"]; });
+  vi.stubGlobal("navigator", { clipboard: { write } });
+  return { drawImage, encoded, write, toBlob };
+}
+
+it("copies original-size image pixels as PNG after zooming and keeps the preview and focus", async () => {
+  const clipboard = mockImageClipboard();
+  await mount();
+  await click("放大图片");
+  const before = transform();
+  const button = host.querySelector<HTMLButtonElement>('[aria-label="复制图片"]')!;
+  button.focus();
+  await click("复制图片");
+  expect(clipboard.encoded).toEqual([{ width: 800, height: 600, type: "image/png" }]);
+  expect(clipboard.drawImage).toHaveBeenCalledWith(host.querySelector(".attachment-preview-image"), 0, 0);
+  expect(clipboard.write).toHaveBeenCalledTimes(1);
+  expect((await clipboard.write.mock.calls[0][0][0].data["image/png"]).type).toBe("image/png");
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("图片已复制");
+  expect(transform()).toBe(before);
+  expect(document.activeElement).toBe(button);
+});
+
+it("does not copy before image decode and allows only one pending clipboard write", async () => {
+  const clipboard = mockImageClipboard();
+  const { render } = await mount();
+  await act(async () => render(images[1]));
+  await click("复制图片");
+  expect(clipboard.write).not.toHaveBeenCalled();
+  await decode();
+  let finish!: () => void;
+  clipboard.write.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  await click("复制图片");
+  expect(host.querySelector('[aria-label="复制图片"]')?.getAttribute("aria-busy")).toBe("true");
+  await click("复制图片");
+  expect(clipboard.write).toHaveBeenCalledTimes(1);
+  await act(async () => finish());
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("图片已复制");
+});
+
+it("reports clipboard rejection and can retry without rereading or removing the attachment", async () => {
+  const clipboard = mockImageClipboard();
+  const { close } = await mount();
+  const reads = read.mock.calls.length;
+  clipboard.write.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"));
+  await click("复制图片");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("复制图片失败");
+  expect(host.querySelector(".attachment-preview-image")).not.toBeNull();
+  expect(close).not.toHaveBeenCalled();
+  await click("复制图片");
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("图片已复制");
+  expect(read.mock.calls.length).toBe(reads);
+});
+
+it("reports unsupported image clipboard and PNG encoding failures without a success notice", async () => {
+  const clipboard = mockImageClipboard();
+  await mount();
+  vi.stubGlobal("ClipboardItem", undefined);
+  await click("复制图片");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("暂不支持复制图片");
+  expect(clipboard.toBlob).not.toHaveBeenCalled();
+  vi.stubGlobal("ClipboardItem", class { constructor(public data: Record<string, Promise<Blob>>) {} });
+  clipboard.toBlob.mockImplementationOnce(callback => callback(null));
+  await click("复制图片");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("复制图片失败");
+  expect(host.querySelector('[role="status"]')).toBeNull();
+});
+
+it("clears copy feedback on navigation and ignores completion after closing the preview", async () => {
+  const clipboard = mockImageClipboard();
+  const { render } = await mount();
+  await click("复制图片");
+  expect(host.textContent).toContain("图片已复制");
+  await act(async () => render(images[1])); await decode();
+  expect(host.textContent).not.toContain("图片已复制");
+  let finish!: () => void;
+  clipboard.write.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  await click("复制图片");
+  await act(async () => root.unmount());
+  await act(async () => finish());
+  expect(host.textContent).toBe("");
 });

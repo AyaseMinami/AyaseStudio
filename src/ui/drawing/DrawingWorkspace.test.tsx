@@ -6,6 +6,79 @@ import type { DrawingParameters, DrawingReference, DrawingResult, DrawingTask } 
 import { DrawingWorkspace, initialDrawingDraft, type DrawingDraft } from "./DrawingWorkspace";
 
 let host: HTMLDivElement;
+it.each([
+  { label: "GIF 帧数", invalid: "1", expected: "9", options: { frameCount: 9 } },
+  { label: "GIF 帧时长", invalid: "19", expected: "200", options: { frameDurationMs: 200 } },
+  { label: "GIF 帧时长", invalid: "19", expected: "", options: {} },
+])("resets invalid $label text when reused options replace the draft with unchanged scalars", async ({ label, invalid, expected, options: controls }) => {
+  const options = props();
+  const draft: DrawingDraft = { ...initialDrawingDraft, prompt: "synthetic", modelId: "configured-image-model",
+    openai: { size: "auto", quality: "auto", outputFormat: "gif", ...controls } };
+  const models = [{ id: "configured-image-model", label: "relay", protocol: "openai-images" as const }];
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft} models={models} />));
+  const input = host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, invalid);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(input.value).toBe(invalid); expect(button("生成图片").disabled).toBe(true);
+  expect(options.onDraftChange).not.toHaveBeenCalled();
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft} models={models} />));
+  expect(input.value).toBe(invalid);
+  const reused = { ...draft, openai: { ...draft.openai! } };
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={reused} models={models} />));
+  expect(input.value).toBe(expected); expect(input.getAttribute("aria-invalid")).toBe("false");
+  expect(button("生成图片").disabled).toBe(false);
+  expect(options.onGenerate).not.toHaveBeenCalled();
+});
+it("changes OpenAI formats while retaining hidden draft controls and validating editable GIF numbers", async () => {
+  const options = props();
+  const initial: DrawingDraft = { ...initialDrawingDraft, prompt: "synthetic", modelId: "configured-image-model",
+    openai: { size: "auto", quality: "auto", outputFormat: "svg", svgModel: "author", frameCount: 9 } };
+  const onDraftChange = vi.fn();
+  function Harness() {
+    const [draft, setDraft] = useState(initial);
+    return <DrawingWorkspace {...options} models={[{ id: "configured-image-model", label: "relay", protocol: "openai-images" }]}
+      draft={draft} onDraftChange={next => { onDraftChange(next); setDraft(next); }} />;
+  }
+  await act(async () => root.render(<Harness />));
+  expect(host.querySelector<HTMLInputElement>('[aria-label="SVG 作者模型"]')?.value).toBe("author");
+  await choose("OpenAI 输出格式", "GIF");
+  expect(host.querySelector('[aria-label="SVG 作者模型"]')).toBeNull();
+  expect(host.querySelector<HTMLInputElement>('[aria-label="GIF 帧数"]')?.value).toBe("9");
+  const edit = async (label: string, text: string) => act(async () => {
+    const input = host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await edit("GIF 帧数", "1");
+  expect(button("生成图片").disabled).toBe(true);
+  expect(host.textContent).toContain("帧数须为 2–16");
+  expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({ openai: expect.objectContaining({ frameCount: 9, svgModel: "author" }) }));
+  await edit("GIF 帧数", "16"); await edit("GIF 帧时长", "655350");
+  expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({ openai: expect.objectContaining({ outputFormat: "gif", frameCount: 16, frameDurationMs: 655350, svgModel: "author" }) }));
+  expect(button("生成图片").disabled).toBe(false);
+  await edit("GIF 帧数", ""); await edit("GIF 帧时长", "");
+  const openai = onDraftChange.mock.calls[onDraftChange.mock.calls.length - 1][0].openai;
+  expect(openai).not.toHaveProperty("frameCount"); expect(openai).not.toHaveProperty("frameDurationMs");
+  await choose("OpenAI 输出格式", "SVG");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="SVG 作者模型"]')?.value).toBe("author");
+  expect(options.onGenerate).not.toHaveBeenCalled();
+});
+it.each(["svg", "gif"] as const)("shows a visible %s reference conflict and explicit original export", async outputFormat => {
+  const options = { ...props(), onExportResults: vi.fn() };
+  const draft: DrawingDraft = { ...initialDrawingDraft, prompt: "synthetic", modelId: "configured-image-model", openai: { size: "auto", quality: "auto", outputFormat } };
+  const image: DrawingResult = { ...result, mime: outputFormat === "svg" ? "image/svg+xml" : "image/gif" };
+  await act(async () => root.render(<DrawingWorkspace {...options} draft={draft}
+    models={[{ id: "configured-image-model", label: "relay", protocol: "openai-images" }]}
+    references={[{ ...result, name: "input.png" }]} results={[image]} selectedResultId={image.id} previewUrl="blob:synthetic" />));
+  expect(host.textContent).toContain("SVG／GIF 仅支持文生图，请先移除参考图。");
+  expect(button("生成图片").disabled).toBe(true); expect(button("作为参考图").disabled).toBe(true);
+  await act(async () => button("原格式导出").click());
+  expect(options.onExportResults).toHaveBeenCalledExactlyOnceWith([image.id], false, true);
+  await act(async () => button(outputFormat === "gif" ? "导出首帧 PNG" : "导出 PNG").click());
+  expect(options.onExport).toHaveBeenCalledExactlyOnceWith(image.id);
+});
 it("changes drawing thinking without generating and clears it for model default", async () => {
   const options = props();
   await act(async () => root.render(<DrawingWorkspace {...options} />));
@@ -151,6 +224,30 @@ it("uses full task identity for actions and confirmations even when short UUID l
   expect(button("确认删除历史").disabled).toBe(false);
   await act(async () => button("确认删除历史").click());
   expect(options.onDeleteTasks).toHaveBeenCalledExactlyOnceWith([first.id]);
+});
+
+it("keeps one generate action outside configuration scrolling with artwork before secondary tasks", async () => {
+  const options = props();
+  await act(async () => root.render(<DrawingWorkspace {...options}
+    draft={{ ...initialDrawingDraft, modelId: options.models[0].id, prompt: "山谷湖泊" }} />));
+  const configuration = host.querySelector<HTMLElement>('[role="region"][aria-label="绘图配置"]')!;
+  const form = configuration.closest(".drawing-form")!;
+  const generate = host.querySelector<HTMLButtonElement>("#drawing-generate")!;
+  expect(configuration.tabIndex).toBe(0);
+  expect(host.querySelectorAll("#drawing-generate")).toHaveLength(1);
+  expect(configuration.contains(generate)).toBe(false);
+  expect(form.querySelector(".drawing-submit")?.parentElement).toBe(form);
+  expect([...host.querySelector(".drawing-layout")!.children].map(panel => panel.className)).toEqual([
+    "drawing-panel drawing-form", "drawing-panel drawing-preview-panel", "drawing-panel drawing-task-panel",
+  ]);
+  const prompt = configuration.querySelector("#drawing-prompt")!;
+  const references = configuration.querySelector(".drawing-references")!;
+  const parameters = configuration.querySelector(".drawing-compact-parameters")!;
+  expect(prompt.compareDocumentPosition(references) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(references.compareDocumentPosition(parameters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await act(async () => generate.click());
+  expect(options.onGenerate).toHaveBeenCalledExactlyOnceWith();
+  expect(options.onDraftChange).not.toHaveBeenCalled();
 });
 
 it("keeps the form and preview mounted while task tabs activate and focus from the keyboard", async () => {

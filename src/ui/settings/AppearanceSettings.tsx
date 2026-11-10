@@ -1,4 +1,4 @@
-import { BookOpen, Check, CircleAlert, ImagePlus, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { BookOpen, Check, CircleAlert, ImagePlus, Monitor, Moon, RotateCcw, Sun, UserRound } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { BackgroundFocus } from "../../appearance/backgroundFocus";
 import type { BackgroundFit, BackgroundLibraryEdit, BackgroundLibraryEntry, BackgroundResource, ColorPreset, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
@@ -9,6 +9,7 @@ import { BackgroundLibraryDialog } from "./BackgroundLibraryDialog";
 import { BackgroundDisplayControls, RangeControl } from "./BackgroundDisplayControls";
 import "./AppearanceSettings.css";
 import { SettingsHelp } from "./SettingsHelp";
+import { AssistantAvatar } from "../chat/AssistantAvatar";
 
 const themeOptions: readonly { value: ThemeMode; label: string; description: string; icon: ReactNode }[] = [
   { value: "system", label: "跟随系统", description: "自动匹配 Windows 当前的浅色或深色设置。", icon: <Monitor size={16} /> },
@@ -79,14 +80,9 @@ export function AppearanceSettings({
     <div className="settings-page-heading"><h2 id="appearance-title">外观</h2><p className="muted-text">调整应用的界面风格与显示效果。</p></div>
 
     <div className="appearance-layout">
-    <div className="appearance-preview-column">
-    <div className="appearance-group-card appearance-preview-card">
-    <p className="appearance-preview-caption">1920 × 1080 · 16:9 等比预览 · {backgroundEnabled && backgroundUrl ? "本地背景已应用" : "当前使用纯色画布"}</p>
-    <AppearanceChatPreview url={backgroundUrl} focus={backgroundFocus} fit={backgroundFit} mask={backgroundMask} blur={backgroundBlur} />
-    </div>
-    </div>
     <div className="appearance-controls">
-    <div className="appearance-group appearance-group-card">
+    <section className="appearance-group appearance-group-card" aria-labelledby="appearance-theme-title">
+    <GroupHeading id="appearance-theme-title" title="主题与配色">选择主题模式与配色方案，修改后立即应用。自定义颜色可在下方分别调整。</GroupHeading>
     <fieldset className="appearance-theme-group">
       <legend>主题模式</legend>
       <div className="appearance-theme-options">
@@ -117,7 +113,7 @@ export function AppearanceSettings({
         })}
       </div>
     </fieldset>
-    </div>
+    </section>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-colors-title">
       <GroupHeading id="appearance-colors-title" title="自定义配色">统一主题色仅覆盖组件和用户消息气泡；助手气泡与画布背景独立设置。</GroupHeading>
@@ -164,6 +160,24 @@ export function AppearanceSettings({
       <button className="settings-button" disabled={backgroundBusy} onClick={() => void onResetCustomAppearance()} type="button"><RotateCcw size={15} />恢复当前主题默认外观</button>
     </section>
     </div>
+    <aside className="appearance-preview-column" aria-labelledby="appearance-preview-title" tabIndex={0}>
+      <section className="appearance-group-card appearance-preview-card">
+        <div className="appearance-preview-heading"><h3 id="appearance-preview-title">实时预览</h3><span>更改即时应用</span></div>
+        <p className="appearance-preview-caption">1920 × 1080 · 16:9 等比预览 · {backgroundEnabled && backgroundUrl ? "本地背景已应用" : "当前使用纯色画布"}</p>
+        <AppearanceChatPreview url={backgroundUrl} focus={backgroundFocus} fit={backgroundFit} mask={backgroundMask} blur={backgroundBlur} />
+        <div className="appearance-reading-preview" aria-labelledby="appearance-reading-title">
+          <div className="appearance-reading-heading"><h4 id="appearance-reading-title">实际字号阅读效果</h4><p>以下文字按聊天中的实际字号显示。</p></div>
+          <div className="user-message-group message-surface appearance-reading-user">
+            <div className="message-identity message-identity-user"><span className="message-user-avatar message-avatar-fallback" aria-hidden="true"><UserRound size={20} /></span></div>
+            <div className="user-message message-body">帮我整理一下今天的阅读笔记。</div>
+          </div>
+          <div className="assistant-message-group message-surface appearance-reading-assistant">
+            <div className="message-identity"><AssistantAvatar className="message-assistant-avatar" assistantName="默认助手" assistantId="appearance-reading" /><span className="message-author">默认助手<span className="message-model"> · 示例回复</span></span></div>
+            <div className="assistant-message message-body"><strong>让重点更清晰</strong><p>先记录核心观点，再补充支持它的证据。留一点空间，写下值得继续思考的问题。</p></div>
+          </div>
+        </div>
+      </section>
+    </aside>
     </div>
     {libraryOpen && <BackgroundLibraryDialog entries={backgroundLibrary} currentReference={backgroundReference} busy={backgroundBusy}
       onPrepare={onPrepareLibraryBackground} onSave={onSaveLibraryBackground} onDiscard={onDiscardLibraryBackground} onResolve={onResolveLibraryBackground}

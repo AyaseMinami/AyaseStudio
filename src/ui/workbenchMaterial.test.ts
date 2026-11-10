@@ -26,9 +26,14 @@ describe("workbench material stylesheet contract", () => {
     expect(stage).not.toContain("backdrop-filter");
   });
 
-  it("uses 8px drawing gaps and provides a high contrast group boundary", () => {
-    expect(drawingCss.match(/\.drawing-layout\s*\{([^}]+)\}/)?.[1]).toContain("gap: 8px");
-    expect(drawingCss.match(/\.drawing-left-column\s*\{([^}]+)\}/)?.[1]).toContain("gap: 8px");
+  it("keeps drawing configuration and tasks beside artwork with 8px gaps and high contrast boundaries", () => {
+    const layout = drawingCss.match(/\.drawing-layout\s*\{([^}]+)\}/)?.[1];
+    expect(layout).toContain("gap: 8px");
+    expect(layout).toContain('grid-template-areas: "configuration preview" "tasks preview"');
+    for (const [panel, area] of [["form", "configuration"], ["task-panel", "tasks"], ["preview-panel", "preview"]]) {
+      const rule = drawingCss.match(new RegExp(`\\.drawing-${panel}\\s*\\{([^}]+)\\}`))?.[1];
+      expect(rule).toContain(`grid-area: ${area}`);
+    }
     expect(appCss).toContain("--workbench-border: CanvasText");
     expect(drawingCss).toContain("border: 1px dashed CanvasText");
     expect(drawingCss).toContain(".drawing-workspace .drawing-references { border: 1px dashed CanvasText");

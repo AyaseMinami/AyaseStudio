@@ -1037,8 +1037,8 @@ export function ConnectionSettings({
               {management === "providers" && <button ref={managementCompletionRef} type="button" className="batch-manage-trigger" data-active onClick={finishManagement}>
                 <Check size={15} aria-hidden="true" /><span>完成管理</span></button>}
               <div className="provider-heading-actions" hidden={management !== null}>
-                {onDeleteProviders && <button ref={providerManagementEntryRef} type="button" className="batch-manage-trigger" disabled={isStreaming}
-                  onClick={() => void enterManagement("providers")}><ListChecks size={15} aria-hidden="true" /><span>管理供应商</span></button>}
+                {onDeleteProviders && <button ref={providerManagementEntryRef} type="button" className="batch-manage-trigger" aria-label="管理供应商" disabled={isStreaming}
+                  onClick={() => void enterManagement("providers")}><ListChecks size={15} aria-hidden="true" /><span>管理</span></button>}
                 <button ref={providerCreateButtonRef} type="button" className="icon-button" aria-label="添加供应商" title="添加供应商" disabled={isStreaming}
                   onClick={() => { if (!isStreaming) { entityMenu.close(); setIsAddingProvider(true); setProviderDraftError(undefined); if (providerCreateRef.current) providerCreateRef.current.open = false; providerDraftRef.current?.focus(); } }}><Plus size={18} /></button>
                 <details ref={providerCreateRef} className="provider-create-menu" onToggle={(event) => { if (event.currentTarget.open) entityMenu.close(); }}

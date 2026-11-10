@@ -57,6 +57,10 @@ export function useDrawingWorkspace(previewPageActive = true, confirmClose: Conf
     let alive = true, url: string | undefined;
     void runtimeDrawingFiles.read(result.reference).then(image => {
       if (!alive) return;
+      if (image.mime === "image/svg+xml") {
+        setPreview({ id: result.id, url: `data:image/svg+xml;base64,${image.data}`, error: null });
+        return;
+      }
       const bytes = Uint8Array.from(atob(image.data), char => char.charCodeAt(0));
       url = URL.createObjectURL(new Blob([bytes], { type: image.mime }));
       setPreview({ id: result.id, url, error: null });

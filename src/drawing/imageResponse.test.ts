@@ -5,7 +5,7 @@ const maxBytes = 32 * 1024 * 1024;
 const maxEncoded = Math.ceil(maxBytes / 3) * 4;
 
 describe("bounded image response normalization", () => {
-  it.each(["image/png", "image/jpeg", "image/webp"])("normalizes matching %s wrappers and CR/LF without decoding", mime => {
+  it.each(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif"])("normalizes matching %s wrappers and CR/LF without decoding", mime => {
     expect(normalizeImageResponseData(`data:${mime};base64,\rAQ\nID\r\n`, mime)).toEqual({ data: "AQID", bytes: 3 });
     expect(normalizeImageResponseData("AQ\r\nI=", mime)).toEqual({ data: "AQI=", bytes: 2 });
     expect(normalizeImageResponseData("AQ==", mime)).toEqual({ data: "AQ==", bytes: 1 });
@@ -16,7 +16,7 @@ describe("bounded image response normalization", () => {
     "A", "AA", "AAA", "AB==", "AAF=", "////=", "", "\r\n"])("rejects malformed/noncanonical data: %j", raw => {
     expect(() => normalizeImageResponseData(raw, "image/png")).toThrow(ImageGenerationError);
   });
-  it.each([null, 5, undefined, "image/gif", "IMAGE/PNG"])("rejects invalid declared MIME %j", mime => {
+  it.each([null, 5, undefined, "image/avif", "IMAGE/PNG"])("rejects invalid declared MIME %j", mime => {
     expect(() => normalizeImageResponseData("AQID", mime)).toThrow(ImageGenerationError);
   });
   it("rejects excessive raw input before allocating a normalized replacement", () => {

@@ -42,6 +42,7 @@ export function parseGeminiImages(value: unknown): DrawingImageInput[] {
     if (inline === undefined) continue;
     if (!record(inline)) throw new ImageGenerationError("绘图服务返回了无效图片字段。");
     const mime = inline.mimeType ?? inline.mime_type;
+    if (typeof mime !== "string" || !["image/png", "image/jpeg", "image/webp"].includes(mime)) throw new ImageGenerationError("绘图服务返回了无效图片格式。");
     const { data, bytes } = normalizeImageResponseData(inline.data, mime);
     totalBytes += bytes;
     if (totalBytes > 64 * 1024 * 1024 || images.length >= 8) throw new ImageGenerationError("绘图结果超出本地保存限制。");

@@ -5,7 +5,7 @@ export interface DrawingDraft {
   resolution: string;
   modelId: string | null;
   /** Absent in #84 drafts; defaults to automatic without rewriting old records. */
-  openai?: { size: string; quality: string };
+  openai?: OpenAIDrawingOptions;
   /** Missing old fields preserve service defaults and TEXT+IMAGE output. */
   gemini?: GeminiDrawingOptions;
   grok?: GrokDrawingOptions;
@@ -36,6 +36,14 @@ interface DrawingParameterBase {
 }
 
 export type DrawingProtocol = "gemini-image" | "openai-images" | "grok-images" | "seedream-images";
+export type OpenAIDrawingOptions = {
+  size: string;
+  quality: string;
+  outputFormat?: "png" | "svg" | "gif";
+  svgModel?: string;
+  frameCount?: number;
+  frameDurationMs?: number;
+};
 export interface GrokDrawingOptions { modelVersion: "legacy" | "2.0"; aspectRatio: string; resolution: string; quality: string }
 export interface SeedreamDrawingOptions { modelVersion: "4.0" | "4.5" | "5.0-lite" | "5.0-pro" | "5.0-flash"; size: string; outputFormat: "auto" | "png" | "jpeg"; watermark: "auto" | "on" | "off" }
 export type GeminiSafetyThreshold = "BLOCK_NONE" | "BLOCK_ONLY_HIGH" | "BLOCK_MEDIUM_AND_ABOVE" | "BLOCK_LOW_AND_ABOVE" | "OFF";
@@ -47,7 +55,7 @@ export interface GeminiDrawingOptions {
 }
 export type DrawingParameters = DrawingParameterBase & (
   | { protocol: "gemini-image"; aspectRatio: string; resolution: string; gemini?: GeminiDrawingOptions }
-  | { protocol: "openai-images"; size: string; quality: string }
+  | ({ protocol: "openai-images" } & OpenAIDrawingOptions)
   | ({ protocol: "grok-images" } & GrokDrawingOptions)
   | ({ protocol: "seedream-images" } & SeedreamDrawingOptions)
 );
@@ -106,6 +114,9 @@ export interface DrawingExportParameters {
   api_type?: "gemini" | "gpt";
   model_version?: string;
   output_format?: string;
+  svg_model?: string;
+  frame_count?: number;
+  frame_duration_ms?: number;
   watermark?: boolean;
   aspect_ratio?: string;
   resolution?: string;
@@ -131,7 +142,7 @@ export interface DrawingFiles {
   discardRecovery?(taskId: string, completedOnly?: boolean): Promise<void>;
   read(reference: string): Promise<DrawingImageInput>;
   thumbnail?(reference: string): Promise<DrawingImageInput>;
-  export(reference: string, parameters?: DrawingExportParameters): Promise<boolean>;
+  export(reference: string, parameters?: DrawingExportParameters, original?: boolean): Promise<boolean>;
 }
 
 export interface ImageGenerationTransport {

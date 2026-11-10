@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T13:50:39+08:00",
+  "title": "Design System: Ayase Studio",
+  "extensions": {
+    "colorMeta": {
+      "accent": { "role": "primary", "displayName": "主题强调色" },
+      "workbench-surface": { "role": "neutral", "displayName": "安静工作面" },
+      "text": { "role": "neutral", "displayName": "正文" },
+      "muted": { "role": "neutral", "displayName": "辅助文字" }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "页面标题", "purpose": "设置页标题。" },
+      "section": { "displayName": "分组标题", "purpose": "设置分组与绘图面板标题。" },
+      "message": { "displayName": "消息正文", "purpose": "聊天与外观页实际字号阅读样本。" }
+    },
+    "shadows": [
+      { "name": "static-workbench", "value": "none", "purpose": "静态设置与外观分组面板。" },
+      { "name": "confirmation-dialog", "value": "0 16px 48px rgb(0 0 0 / 20%)", "purpose": "确认弹窗；来源 src/ui/ConfirmationDialog.css。" },
+      { "name": "drawing-operation-notice", "value": "0 4px 16px rgb(0 0 0 / 0.12)", "purpose": "绘图操作结果浮层；来源 src/ui/drawing/DrawingWorkspace.css。" }
+    ],
+    "motion": [
+      { "name": "drawing-state-transition", "value": "background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 140ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "绘图按钮和任务标签；减少动态效果时取消。" },
+      { "name": "confirmation-state-transition", "value": "background-color 120ms ease", "purpose": "确认按钮；减少动态效果时取消。" }
+    ],
+    "breakpoints": [
+      { "name": "search-page-container-service-stack-max-width", "value": "1040px" },
+      { "name": "search-card-container-fields-side-by-side-min-width", "value": "560px" },
+      { "name": "settings-and-drawing-stack-max-width", "value": "760px" },
+      { "name": "appearance-page-container-side-by-side-min-width", "value": "900px" },
+      { "name": "appearance-independent-columns-viewport-min-width", "value": "1440px" },
+      { "name": "appearance-independent-columns-viewport-min-height", "value": "700px" },
+      { "name": "appearance-controls-container-stack-max-width", "value": "380px" },
+      { "name": "drawing-task-container-cards-max-width", "value": "480px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "设置主按钮",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "设置页面需要明确提交的主要行动。",
+      "html": "<button class=\"ds-primary\">保存</button>",
+      "css": ".ds-primary { display:inline-flex; min-height:36px; align-items:center; justify-content:center; gap:0.4rem; border:1px solid rgb(var(--color-accent)); border-radius:8px; padding:0.45rem 0.7rem; background:rgb(var(--color-accent)); color:rgb(var(--color-on-accent)); font-size:var(--font-small); font-weight:500; cursor:pointer; } .ds-primary:hover:not(:disabled) { border-color:rgb(var(--color-accent-hover)); background:rgb(var(--color-accent-hover)); } .ds-primary:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; } .ds-primary:disabled { color:rgb(var(--color-disabled-text)); opacity:0.65; }"
+    },
+    {
+      "name": "设置普通按钮",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "与主行动相邻的普通操作。",
+      "html": "<button class=\"ds-secondary\">取消</button>",
+      "css": ".ds-secondary { display:inline-flex; min-height:36px; align-items:center; justify-content:center; gap:0.4rem; border:1px solid rgb(var(--color-border)); border-radius:8px; padding:0.45rem 0.7rem; background:transparent; color:rgb(var(--color-text-soft)); font-size:var(--font-small); font-weight:500; cursor:pointer; } .ds-secondary:hover:not(:disabled) { border-color:rgb(var(--color-border-strong)); background:rgb(var(--color-hover)); } .ds-secondary:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; } .ds-secondary:disabled { color:rgb(var(--color-disabled-text)); opacity:0.65; }"
+    },
+    {
+      "name": "设置危险操作",
+      "kind": "button",
+      "description": "沿用现有确认流程的危险动作入口。",
+      "html": "<button class=\"ds-danger\">删除</button>",
+      "css": ".ds-danger { display:inline-flex; min-height:36px; align-items:center; justify-content:center; border:1px solid rgb(var(--color-error-border)); border-radius:8px; padding:0.45rem 0.7rem; background:transparent; color:rgb(var(--color-error-text)); font-size:var(--font-small); font-weight:500; cursor:pointer; } .ds-danger:hover:not(:disabled) { border-color:rgb(var(--color-border-strong)); background:rgb(var(--color-error-surface)); } .ds-danger:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; } .ds-danger:disabled { color:rgb(var(--color-disabled-text)); opacity:0.65; }"
+    },
+    {
+      "name": "通用设置输入框",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "通用字段；连接紧凑字段等保留各自覆盖。",
+      "html": "<input class=\"ds-field\" aria-label=\"名称\" value=\"我的连接\" />",
+      "css": ".ds-field { width:100%; border:1px solid rgb(var(--color-border)); border-radius:0.7rem; background:rgb(var(--color-input)); padding:0.65rem 0.75rem; color:rgb(var(--color-text)); font-size:var(--font-ui); outline:none; } .ds-field:hover:not(:disabled) { border-color:rgb(var(--color-border-strong)); } .ds-field:focus { border-color:rgb(var(--color-accent)); } .ds-field:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; } .ds-field:disabled { background:rgb(var(--color-disabled)); color:rgb(var(--color-disabled-text)); opacity:0.8; }"
+    },
+    {
+      "name": "设置分类导航",
+      "kind": "nav",
+      "description": "设置分类的当前页状态与轻量悬停。",
+      "html": "<nav aria-label=\"设置\"><button class=\"ds-navigation\" aria-current=\"page\"><strong>外观</strong></button></nav>",
+      "css": ".ds-navigation { display:flex; width:100%; align-items:flex-start; gap:0.7rem; border:1px solid transparent; border-radius:0.375rem; padding:0.65rem; background:transparent; color:rgb(var(--color-muted)); text-align:left; cursor:pointer; } .ds-navigation strong { color:rgb(var(--color-text-soft)); font-size:var(--font-ui); font-weight:500; } .ds-navigation:hover { background:rgb(var(--color-hover)); color:rgb(var(--color-text)); } .ds-navigation[aria-current=page] { background:rgb(var(--color-accent) / 0.12); color:rgb(var(--color-text)); } .ds-navigation[aria-current=page] strong { color:rgb(var(--color-text)); } .ds-navigation:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; }"
+    },
+    {
+      "name": "实体工作面",
+      "kind": "card",
+      "refersTo": "workbench-card",
+      "description": "常规、数据与外观分组使用实体工作面和一层边界，无面板投影；关于页内边距为 24px。",
+      "html": "<section class=\"ds-surface\"><h3>阅读预览</h3><p>查看实际字号与主题效果。</p></section>",
+      "css": ".ds-surface { padding:20px; border:1px solid var(--workbench-border); border-radius:12px; background:var(--workbench-surface); color:rgb(var(--color-text)); box-shadow:none; } .ds-surface h3 { margin:0; font-size:var(--font-section); font-weight:600; line-height:1.5; } .ds-surface p { margin:4px 0 0; color:rgb(var(--color-muted)); font-size:var(--font-small); line-height:1.5; }"
+    },
+    {
+      "name": "搜索紧凑服务卡片",
+      "kind": "card",
+      "refersTo": "workbench-card",
+      "description": "沿用原有紧凑服务卡片；全宽页面在 1040px 容器断点切换为单列。",
+      "html": "<section class=\"ds-search-card\"><h3>搜索服务</h3><p>独立配置地址与密钥。</p><input class=\"ds-search-field\" aria-label=\"服务地址\" value=\"https://example.test\" /><button class=\"ds-search-save\">保存</button></section>",
+      "css": ".ds-search-card { display:grid; gap:16px; min-width:0; padding:20px; border:1px solid var(--workbench-border); border-radius:12px; background:var(--workbench-surface); color:rgb(var(--color-text)); box-shadow:none; } .ds-search-card h3 { margin:0; font-size:var(--font-section); font-weight:600; line-height:1.4; } .ds-search-card p { margin:0; color:rgb(var(--color-muted)); font-size:var(--font-small); line-height:1.6; } .ds-search-field { min-width:0; height:36px; border:1px solid rgb(var(--color-border)); border-radius:6px; padding:0 10px; background:color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas))); color:rgb(var(--color-text)); font-size:var(--font-small); } .ds-search-field:hover { border-color:rgb(var(--color-border-strong)); } .ds-search-field:focus { border-color:rgb(var(--color-accent)); } .ds-search-field:focus-visible, .ds-search-save:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; } .ds-search-save { justify-self:start; min-height:36px; padding:6px 10px; border:1px solid rgb(var(--color-accent)); border-radius:8px; background:rgb(var(--color-accent)); color:rgb(var(--color-on-accent)); font-size:var(--font-small); font-weight:500; cursor:pointer; transition:background-color 120ms, color 120ms, transform 140ms cubic-bezier(.16, 1, .3, 1); } .ds-search-save:hover { background:rgb(var(--color-accent-hover)); border-color:rgb(var(--color-accent-hover)); } .ds-search-save:active { transform:translateY(1px); } @media (max-width:760px) { .ds-search-card { padding:16px; } } @media (prefers-reduced-motion:reduce) { .ds-search-save { transition:none; } .ds-search-save:active { transform:none; } }"
+    },
+    {
+      "name": "绘图生成动作",
+      "kind": "button",
+      "description": "配置滚动体之外的全宽生成按钮。",
+      "html": "<button class=\"ds-generate\">生成</button>",
+      "css": ".ds-generate { display:inline-flex; width:100%; min-height:2.25rem; align-items:center; justify-content:center; gap:0.4rem; border:1px solid rgb(var(--color-accent)); border-radius:8px; padding:0.45rem 0.7rem; background:rgb(var(--color-accent)); color:rgb(var(--color-on-accent)); font-size:var(--font-small); cursor:pointer; transition:background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 140ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-generate:hover:not(:disabled) { border-color:rgb(var(--color-accent-hover)); background:rgb(var(--color-accent-hover)); } .ds-generate:active:not(:disabled) { transform:none; background:color-mix(in srgb, rgb(var(--color-accent-hover)) 90%, rgb(var(--color-text))); } .ds-generate:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:2px; } .ds-generate:disabled { border-color:rgb(var(--color-disabled)); background:rgb(var(--color-disabled)); color:rgb(var(--color-disabled-text)); cursor:default; } @media (prefers-reduced-motion:reduce) { .ds-generate { transition:none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "安静、清楚的个人创作工作台",
+    "overview": "保留现有识别和个性化能力，以任务布局、对齐和文字层级建立整体感。系统中文字体、用户主题、背景、头像、气泡及可选局部玻璃继续构成个人工作区。",
+    "keyCharacteristics": ["任务分组清楚，静态工作面安静。", "聊天阅读与绘图作品保持主要地位。", "操作直接可达，键盘焦点清晰。"],
+    "rules": [],
+    "dos": ["Do 使用现有语义颜色和字号变量，保留用户个性化能力。", "Do 让任务、风险说明与对应动作就近排列。", "Do 保留搜索紧凑服务卡片与外观较大的右侧独立滚动预览。", "Do 保留清楚的焦点、键盘访问、强制颜色和减少动态效果支持。"],
+    "donts": ["Don't 以颜色单独承担状态。", "Don't 隐藏常用消息操作或重排已确认的聊天工具位置。", "Don't 把静态工作面改为空洞分区，或叠加重投影与营销装饰。"]
+  }
+}

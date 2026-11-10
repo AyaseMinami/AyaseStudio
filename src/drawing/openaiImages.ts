@@ -1,13 +1,33 @@
 import type { FetchLike } from "../chat/types";
 import { resolveOpenAIImagesEndpoint } from "../chat/urlResolution";
 import { ImageGenerationError, normalizeImageResponseData, readBoundedImageResponse } from "./imageResponse";
-import type { DrawingImageInput, DrawingParameters, ImageGenerationTransport } from "./types";
+import type { DrawingImageInput, DrawingParameters, ImageGenerationTransport, OpenAIDrawingOptions } from "./types";
 
 export const openAIImageQualities = ["auto", "low", "medium", "high", "xhigh", "max"] as const;
 export const openAIImageSizes = ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152", "3840x2160", "2160x3840"] as const;
 
+export function validOpenAIDrawingOptions(value: Record<string, unknown>): boolean {
+  return typeof value.size === "string" && typeof value.quality === "string"
+    && (openAIImageQualities as readonly string[]).includes(value.quality)
+    && (!("outputFormat" in value) || ["png", "svg", "gif"].includes(value.outputFormat as string))
+    && (!("svgModel" in value) || typeof value.svgModel === "string")
+    && (!("frameCount" in value) || typeof value.frameCount === "number" && Number.isInteger(value.frameCount) && value.frameCount >= 2 && value.frameCount <= 16)
+    && (!("frameDurationMs" in value) || typeof value.frameDurationMs === "number" && Number.isInteger(value.frameDurationMs) && value.frameDurationMs >= 20 && value.frameDurationMs <= 655350);
+}
+
+/** Drafts retain hidden controls; frozen tasks contain only the selected format's options. */
+export function openAIDrawingParameters(options: OpenAIDrawingOptions): OpenAIDrawingOptions {
+  return { size: options.size, quality: options.quality,
+    ...(options.outputFormat !== undefined ? { outputFormat: options.outputFormat } : {}),
+    ...(options.outputFormat === "svg" && options.svgModel?.trim() ? { svgModel: options.svgModel.trim() } : {}),
+    ...(options.outputFormat === "gif" && options.frameCount !== undefined ? { frameCount: options.frameCount } : {}),
+    ...(options.outputFormat === "gif" && options.frameDurationMs !== undefined ? { frameDurationMs: options.frameDurationMs } : {}) };
+}
+
 export function validateOpenAIImagesParameters(parameters: DrawingParameters): asserts parameters is Extract<DrawingParameters, { protocol: "openai-images" }> {
   if (parameters.protocol !== "openai-images") throw new ImageGenerationError("绘图协议与参数不匹配。");
+  if (!validOpenAIDrawingOptions({ ...parameters })) throw new ImageGenerationError("OpenAI 绘图格式或参数无效，请检查输出格式、帧数与帧时长。");
+  if ((parameters.outputFormat ?? "png") !== "png" && parameters.references?.length) throw new ImageGenerationError("SVG／GIF 仅支持文生图，请先移除参考图。");
   resolveOpenAIImagesEndpoint(parameters.baseUrl, parameters.modelId);
   if (["dall-e-2", "dall-e-3"].includes(parameters.modelId.trim())) throw new ImageGenerationError("当前绘图接入支持 GPT Image 与兼容服务，尚未接入 DALL·E 参数契约。");
   const prompt = parameters.prompt.trim();
@@ -29,20 +49,20 @@ export function validateOpenAIImagesParameters(parameters: DrawingParameters): a
 
 function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 
-export function parseOpenAIImages(value: unknown): DrawingImageInput[] {
+export function parseOpenAIImages(value: unknown, fallbackFormat: "png" | "svg" | "gif" = "png"): DrawingImageInput[] {
   if (!record(value)) throw new ImageGenerationError("绘图服务返回了无效响应。");
   if (value.error) throw new ImageGenerationError("绘图服务返回了错误。");
   const items = Array.isArray(value.data) ? value.data : record(value.data) ? [value.data] : [];
   if (!items.length) throw new ImageGenerationError("绘图服务未返回图片。");
   if (items.length > 8) throw new ImageGenerationError("绘图结果超出本地保存限制。");
-  const format = value.output_format ?? "png";
-  if (format !== "png" && format !== "jpeg" && format !== "webp") throw new ImageGenerationError("绘图服务返回了不支持的图片格式。");
+  const format = value.output_format ?? fallbackFormat;
+  if (format !== "png" && format !== "jpeg" && format !== "webp" && format !== "svg" && format !== "gif") throw new ImageGenerationError("绘图服务返回了不支持的图片格式。");
   let totalBytes = 0;
   return items.map(item => {
     if (!record(item)) throw new ImageGenerationError("绘图服务返回了无效图片字段。");
     const data = item.b64_json;
     if (data === undefined && typeof item.url === "string") throw new ImageGenerationError("当前仅支持 Base64 图片，服务返回的 URL 不会自动下载。");
-    const mime = `image/${format}`;
+    const mime = format === "svg" ? "image/svg+xml" : `image/${format}`;
     const normalized = normalizeImageResponseData(data, mime);
     totalBytes += normalized.bytes;
     if (totalBytes > 64 * 1024 * 1024) throw new ImageGenerationError("绘图结果超出本地保存限制。");
@@ -53,6 +73,7 @@ export function parseOpenAIImages(value: unknown): DrawingImageInput[] {
 export function createOpenAIImagesTransport(fetcher: FetchLike): ImageGenerationTransport {
   return { async generate(parameters, apiKey, signal, references = []) {
     validateOpenAIImagesParameters(parameters);
+    if ((parameters.outputFormat ?? "png") !== "png" && references.length) throw new ImageGenerationError("SVG／GIF 仅支持文生图，请先移除参考图。");
     if (!apiKey.trim() || /[\u0000-\u001f\u007f]/.test(apiKey)) throw new ImageGenerationError("请先在设置中填写有效的绘图 API Key。");
     if (signal.aborted) throw new ImageGenerationError("请求尚未发出，已取消。");
     const endpoint = resolveOpenAIImagesEndpoint(parameters.baseUrl, parameters.modelId, references.length ? "edits" : "generations");
@@ -60,7 +81,11 @@ export function createOpenAIImagesTransport(fetcher: FetchLike): ImageGeneration
     signal.addEventListener("abort", abort, { once: true });
     const timeout = setTimeout(abort, 400_000);
     try {
-      const fields = { model: parameters.modelId.trim(), prompt: parameters.prompt.trim(), n: 1, output_format: "png",
+      const format = parameters.outputFormat ?? "png";
+      const fields = { model: parameters.modelId.trim(), prompt: parameters.prompt.trim(), n: 1, output_format: format,
+        ...(format === "svg" && parameters.svgModel?.trim() ? { svg: { model: parameters.svgModel.trim() } } : {}),
+        ...(format === "gif" && parameters.frameCount !== undefined ? { frame_count: parameters.frameCount } : {}),
+        ...(format === "gif" && parameters.frameDurationMs !== undefined ? { frame_duration_ms: parameters.frameDurationMs } : {}),
         ...(parameters.size !== "auto" ? { size: parameters.size } : {}),
         ...(parameters.quality !== "auto" ? { quality: parameters.quality } : {}) };
       let body: string | FormData = JSON.stringify(fields);
@@ -90,7 +115,7 @@ export function createOpenAIImagesTransport(fetcher: FetchLike): ImageGeneration
       const text = await readBoundedImageResponse(response, controller.signal);
       let value: unknown;
       try { value = JSON.parse(text); } catch { throw new ImageGenerationError("绘图服务返回的 JSON 无法解析。"); }
-      return parseOpenAIImages(value);
+      return parseOpenAIImages(value, format);
     } catch (error) {
       if (error instanceof ImageGenerationError) throw error;
       throw new ImageGenerationError("网络中断、请求超时或请求已停止，服务端结果未知。请勿自动重发。", "unknown");

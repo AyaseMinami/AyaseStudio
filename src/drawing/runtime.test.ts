@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeImageTransport, openDrawingOutputDirectory } from "./runtime";
+import { createRuntimeImageTransport, openDrawingOutputDirectory, runtimeDrawingFiles } from "./runtime";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
 import { initialGrokDrawingOptions } from "./grokImages";
@@ -7,6 +7,14 @@ import { initialSeedreamDrawingOptions } from "./seedreamImages";
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: vi.fn(() => true), invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-http", () => ({ fetch: vi.fn() }));
 describe("native image transport", () => {
+  it("passes the original-format flag only for the explicit original export", async () => {
+    vi.mocked(invoke).mockClear().mockResolvedValue(true);
+    await runtimeDrawingFiles.export("drawing/task/result.gif");
+    expect(invoke).toHaveBeenLastCalledWith("export_drawing_result", { reference: "drawing/task/result.gif" });
+    await runtimeDrawingFiles.export("drawing/task/result.gif", undefined, true);
+    expect(invoke).toHaveBeenLastCalledWith("export_drawing_result", { reference: "drawing/task/result.gif", original: true });
+    vi.mocked(invoke).mockClear();
+  });
   it("opens only the host-chosen directory without accepting or supplying a path", async () => {
     vi.mocked(invoke).mockResolvedValueOnce(undefined);
     await openDrawingOutputDirectory();

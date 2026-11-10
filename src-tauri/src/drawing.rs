@@ -1,6 +1,8 @@
 //! Private, bounded drawing originals with a manifest as the publication boundary.
 #[path = "drawing_output.rs"]
 pub mod output;
+#[path = "drawing_formats.rs"]
+mod formats;
 use std::{
     collections::HashSet,
     fs::{Metadata, OpenOptions},
@@ -76,6 +78,12 @@ pub struct DrawingExportParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
     output_format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    svg_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_duration_ms: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     watermark: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     aspect_ratio: Option<String>,
@@ -122,6 +130,13 @@ enum DrawingResponseModality {
 
 impl DrawingExportParameters {
     fn validate(&self) -> Result<(), Error> {
+        let svg = self.protocol == "openai-images" && self.output_format.as_deref() == Some("svg");
+        let gif = self.protocol == "openai-images" && self.output_format.as_deref() == Some("gif");
+        if self.svg_model.as_ref().is_some_and(|model| !svg || model.trim().is_empty() || model.len() > 256 || model.chars().any(char::is_control))
+            || self.frame_count.is_some_and(|count| !gif || !(2..=16).contains(&count))
+            || self.frame_duration_ms.is_some_and(|duration| !gif || !(20..=655_350).contains(&duration)) {
+            return Err(Error::InvalidParameters);
+        }
         if self.model.trim().is_empty()
             || [
                 &self.aspect_ratio,
@@ -174,7 +189,7 @@ impl DrawingExportParameters {
                     && self.thinking_level.is_none()
                     && self.response_modalities.is_none()
                     && self.model_version.is_none()
-                    && self.output_format.is_none()
+                    && self.output_format.as_deref().is_none_or(|format| matches!(format, "png" | "svg" | "gif"))
                     && self.watermark.is_none()
                     && self.api_type.as_deref().is_none_or(|value| value == "gpt") =>
             {
@@ -341,7 +356,7 @@ fn reference(value: &str) -> Result<(&str, &str, &str), Error> {
     let (id, ext) = name.rsplit_once('.').ok_or(Error::InvalidReference)?;
     uuid(task)?;
     uuid(id)?;
-    if !matches!(ext, "png" | "jpg" | "webp") {
+    if !matches!(ext, "png" | "jpg" | "webp" | "svg" | "gif") {
         return Err(Error::InvalidReference);
     }
     Ok((task, id, ext))
@@ -463,14 +478,21 @@ fn kind(mime: &str) -> Result<(ImageFormat, &'static str), Error> {
         "image/png" => Ok((ImageFormat::Png, "png")),
         "image/jpeg" => Ok((ImageFormat::Jpeg, "jpg")),
         "image/webp" => Ok((ImageFormat::WebP, "webp")),
+        "image/gif" => Ok((ImageFormat::Gif, "gif")),
         _ => Err(Error::Corrupt),
     }
+}
+
+fn extension(mime: &str) -> Result<&'static str, Error> {
+    if mime == "image/svg+xml" { Ok("svg") } else { kind(mime).map(|(_, ext)| ext) }
 }
 
 fn decode_image(bytes: &[u8], mime: &str) -> Result<DynamicImage, Error> {
     if bytes.len() > IMAGE_LIMIT {
         return Err(Error::TooLarge);
     }
+    if mime == "image/svg+xml" { return formats::decode_svg(bytes); }
+    if mime == "image/gif" { return formats::decode_gif(bytes); }
     let (format, _) = kind(mime)?;
     if image::guess_format(bytes).map_err(|_| Error::Corrupt)? != format {
         return Err(Error::Corrupt);
@@ -499,7 +521,7 @@ fn decode_inputs(images: &[DrawingImageInput]) -> Result<Vec<Vec<u8>>, Error> {
     let mut total = 0usize;
     let mut decoded = Vec::with_capacity(images.len());
     for image in images {
-        kind(&image.mime)?;
+        extension(&image.mime)?;
         if image.data.len() > IMAGE_LIMIT.div_ceil(3) * 4 {
             return Err(Error::TooLarge);
         }
@@ -572,7 +594,7 @@ fn validate_descriptors<'a>(
         let (reference_task, id, ext) = reference(&item.reference)?;
         if reference_task != task
             || id != item.id
-            || kind(&item.mime)?.1 != ext
+            || extension(&item.mime)? != ext
             || !references.insert(&item.reference)
             || !ids.insert(&item.id)
         {
@@ -845,7 +867,7 @@ fn plan(task: &str, images: &[DrawingImageInput], bytes: &[Vec<u8>]) -> Result<P
     for (input, bytes) in images.iter().zip(bytes) {
         let image = decode_image(bytes, &input.mime)?;
         let id = Uuid::new_v4().to_string();
-        let filename = format!("{id}.{}", kind(&input.mime)?.1);
+        let filename = format!("{id}.{}", extension(&input.mime)?);
         files.push(PendingFile {
             file: DrawingFile {
                 id,
@@ -1288,6 +1310,15 @@ fn export_png_with_parameters(
         text.extend_from_slice(&parameters);
         png.splice(33..33, png_chunk(b"iTXt", &text)?);
     }
+    write_export(root, destination, &png)
+}
+
+fn export_original(root: &Path, value: &str, destination: &Path) -> Result<(), Error> {
+    let (_, bytes) = read_result_bytes(root, value)?;
+    write_export(root, destination, &bytes)
+}
+
+fn write_export(root: &Path, destination: &Path, bytes: &[u8]) -> Result<(), Error> {
     if inspect(destination)?.is_some_and(|metadata| !metadata.is_file()) {
         return Err(Error::InvalidReference);
     }
@@ -1312,7 +1343,7 @@ fn export_png_with_parameters(
         return Err(Error::InvalidReference);
     }
     let mut output = tempfile::NamedTempFile::new_in(&parent).map_err(|_| Error::Storage)?;
-    output.write_all(&png).map_err(|_| Error::Storage)?;
+    output.write_all(bytes).map_err(|_| Error::Storage)?;
     output.flush().map_err(|_| Error::Storage)?;
     output.as_file().sync_all().map_err(|_| Error::Storage)?;
     output.persist(destination).map_err(|_| Error::Storage)?;
@@ -1534,9 +1565,12 @@ pub async fn export_drawing_result(
     app: AppHandle,
     reference: String,
     parameters: Option<DrawingExportParameters>,
+    original: Option<bool>,
 ) -> Result<bool, String> {
     let root = app_directory(&app)?;
-    self::reference(&reference).map_err(|error| error.code())?;
+    let (_, _, extension) = self::reference(&reference).map_err(|error| error.code())?;
+    let extension = if original.unwrap_or(false) { extension.to_owned() } else { "png".to_owned() };
+    if original.unwrap_or(false) && parameters.is_some() { return Err(Error::InvalidParameters.code()); }
     if let Some(parameters) = &parameters {
         parameters.validate().map_err(|error| error.code())?;
     }
@@ -1544,8 +1578,8 @@ pub async fn export_drawing_result(
         let Some(file) = app
             .dialog()
             .file()
-            .add_filter("PNG image", &["png"])
-            .set_file_name("Ayase-drawing.png")
+            .add_filter("Drawing image", &[extension.as_str()])
+            .set_file_name(format!("Ayase-drawing.{extension}"))
             .blocking_save_file()
         else {
             return Ok(false);
@@ -1554,7 +1588,9 @@ pub async fn export_drawing_result(
             .into_path()
             .map_err(|_| Error::InvalidReference.code())?;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
-        let result = if let Some(parameters) = &parameters {
+        let result = if original.unwrap_or(false) {
+            export_original(&root, &reference, &destination)
+        } else if let Some(parameters) = &parameters {
             export_png_with_parameters(&root, &reference, &destination, Some(parameters))
         } else {
             export_png(&root, &reference, &destination)
@@ -2868,7 +2904,7 @@ mod tests {
         for protocol in ["gemini-image", "openai-images"] {
             for extra in [
                 serde_json::json!({"model_version": "2.0"}),
-                serde_json::json!({"output_format": "png"}),
+                serde_json::json!({"output_format": "unsupported"}),
                 serde_json::json!({"watermark": false}),
             ] {
                 let mut value = serde_json::json!({"prompt": "test", "model": "synthetic", "protocol": protocol});

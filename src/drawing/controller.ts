@@ -1,7 +1,7 @@
 import type { ConnectionSettingsState } from "../chat/settings";
 import { getDrawingTarget } from "../chat/settings";
 import { ImageGenerationError, validateDrawingParameters } from "./geminiImage";
-import { validateOpenAIImagesParameters } from "./openaiImages";
+import { openAIDrawingParameters, validOpenAIDrawingOptions, validateOpenAIImagesParameters } from "./openaiImages";
 import { initialGrokDrawingOptions, validGrokDrawingOptions, validateGrokImagesParameters } from "./grokImages";
 import { initialSeedreamDrawingOptions, validSeedreamDrawingOptions, validateSeedreamImagesParameters } from "./seedreamImages";
 import { isDrawingProtocol } from "../chat/protocolOptions";
@@ -68,13 +68,17 @@ function validateOwnership(saved: DrawingSnapshot): void {
     if (!item || !isDrawingProtocol(item.protocol)) throw new Error("Unknown drawing protocol");
     const common = ["prompt", "providerId", "connectionId", "configuredModelId", "modelId", "modelName", "baseUrl", "references", "protocol"];
     const protocolFields = item.protocol === "gemini-image" ? ["aspectRatio", "resolution", "gemini"]
-      : item.protocol === "openai-images" ? ["size", "quality"]
+      : item.protocol === "openai-images" ? ["size", "quality", "outputFormat", "svgModel", "frameCount", "frameDurationMs"]
       : item.protocol === "grok-images" ? ["modelVersion", "aspectRatio", "resolution", "quality"]
       : ["modelVersion", "size", "outputFormat", "watermark"];
     if (Object.keys(item).some(key => ![...common, ...protocolFields].includes(key))) throw new Error("Mismatched drawing protocol fields");
     if (item.protocol === "grok-images" && !validGrokDrawingOptions({ modelVersion: item.modelVersion, aspectRatio: item.aspectRatio, resolution: item.resolution, quality: item.quality })) throw new Error("Invalid Grok drawing settings");
     if (item.protocol === "seedream-images" && !validSeedreamDrawingOptions({ modelVersion: item.modelVersion, size: item.size, outputFormat: item.outputFormat, watermark: item.watermark })) throw new Error("Invalid Seedream drawing settings");
-    for (const [key, value] of Object.entries(item)) if (key !== "references" && key !== "gemini" && value !== undefined && typeof value !== "string")
+    if (item.protocol === "openai-images" && !validOpenAIDrawingOptions({ ...item })) throw new Error("Invalid OpenAI drawing settings");
+    if (item.protocol === "openai-images" && ((item.svgModel !== undefined && item.outputFormat !== "svg")
+      || ((item.frameCount !== undefined || item.frameDurationMs !== undefined) && item.outputFormat !== "gif"))) throw new Error("Mismatched OpenAI drawing format fields");
+    if (item.protocol === "openai-images" && (item.outputFormat ?? "png") !== "png" && item.references?.length) throw new Error("Unsupported OpenAI reference format");
+    for (const [key, value] of Object.entries(item)) if (!["references", "gemini", "frameCount", "frameDurationMs"].includes(key) && value !== undefined && typeof value !== "string")
       throw new Error("Invalid drawing parameter structure");
     if ("gemini" in item && item.gemini !== undefined && (item.protocol !== "gemini-image" || !validGeminiDrawingOptions(item.gemini))) throw new Error("Invalid Gemini drawing settings");
     item.references?.forEach(value => reference(value));
@@ -217,6 +221,10 @@ export class DrawingController {
   }
   setDraft = (draft: DrawingDraft): void => {
     if (!this.state.ready || this.state.closing) return;
+    if (draft.openai !== undefined && (!validOpenAIDrawingOptions({ ...draft.openai })
+      || Object.keys(draft.openai).some(key => !Object.prototype.hasOwnProperty.call(dataPolicies.drawingOpenai, key)))) {
+      this.publish({ error: "OpenAI 绘图格式或参数无效，请检查输出格式、帧数与帧时长。" }); return;
+    }
     if (draft.gemini !== undefined && !validGeminiDrawingOptions(draft.gemini)) {
       this.publish({ error: "Gemini 高级参数无效，请检查温度、安全阈值和输出模式。" });
       return;
@@ -233,7 +241,7 @@ export class DrawingController {
     const next = { id: "current" as const, prompt: draft.prompt, aspectRatio: draft.aspectRatio, resolution: draft.resolution, modelId: draft.modelId,
       count: draft.count ?? 1, concurrency: draft.concurrency ?? 1, completionSound: draft.completionSound ?? true,
       ...(draft.reusedProtocol ? { reusedProtocol: draft.reusedProtocol } : {}),
-      ...(draft.openai ? { openai: { size: draft.openai.size, quality: draft.openai.quality } } : {}),
+      ...(draft.openai ? { openai: structuredClone(draft.openai) } : {}),
       ...(draft.gemini ? { gemini: structuredClone(draft.gemini) } : {}),
       ...(draft.grok ? { grok: structuredClone(draft.grok) } : {}),
       ...(draft.seedream ? { seedream: structuredClone(draft.seedream) } : {}),
@@ -394,6 +402,9 @@ export class DrawingController {
   useAsReference = (id: string): Promise<void> => this.referenceCommand(async () => {
     const result = this.state.results.find(image => image.id === id);
     if (!result) return;
+    if (result.mime === "image/svg+xml" || result.mime === "image/gif") {
+      this.publish({ error: "SVG／GIF 成果无法作为参考图，请选择 PNG、JPEG 或 WebP 图片。" }); return;
+    }
     const references = this.state.references;
     if (managedReferences(references).some(existing => existing.reference === result.reference)) {
       this.publish({ error: "重复参考图已跳过。" }); return;
@@ -427,7 +438,7 @@ export class DrawingController {
       reusedProtocol: invalid ? parameters.protocol : undefined, references: this.state.draft.references,
       ...(parameters.protocol === "gemini-image" ? { aspectRatio: parameters.aspectRatio, resolution: parameters.resolution,
         gemini: structuredClone(parameters.gemini ?? {}) }
-        : parameters.protocol === "openai-images" ? { openai: { size: parameters.size, quality: parameters.quality } }
+        : parameters.protocol === "openai-images" ? { openai: openAIDrawingParameters(parameters) }
         : parameters.protocol === "grok-images" ? { grok: { modelVersion: parameters.modelVersion, aspectRatio: parameters.aspectRatio, resolution: parameters.resolution, quality: parameters.quality } }
         : { seedream: { modelVersion: parameters.modelVersion, size: parameters.size, outputFormat: parameters.outputFormat, watermark: parameters.watermark } }) };
     const priorDraft = this.state.draft;
@@ -548,7 +559,7 @@ export class DrawingController {
       ...(target.connection.protocol === "gemini-image"
         ? { protocol: "gemini-image" as const, aspectRatio: draft.aspectRatio, resolution: draft.resolution,
           ...(draft.gemini ? { gemini: structuredClone(draft.gemini) } : {}) }
-        : target.connection.protocol === "openai-images" ? { protocol: "openai-images" as const, size: draft.openai?.size ?? "auto", quality: draft.openai?.quality ?? "auto" }
+        : target.connection.protocol === "openai-images" ? { protocol: "openai-images" as const, ...openAIDrawingParameters(draft.openai ?? { size: "auto", quality: "auto" }) }
         : target.connection.protocol === "grok-images" ? { protocol: "grok-images" as const, ...structuredClone(draft.grok ?? initialGrokDrawingOptions) }
         : { protocol: "seedream-images" as const, ...structuredClone(draft.seedream ?? initialSeedreamDrawingOptions) }),
     };
@@ -556,7 +567,10 @@ export class DrawingController {
       if (!Number.isInteger(draft.count ?? 1) || (draft.count ?? 1) < 1 || (draft.count ?? 1) > 99)
         throw new ImageGenerationError("每批数量须为 1–99 的整数。");
       if (parameters.protocol === "gemini-image") validateDrawingParameters(parameters);
-      else if (parameters.protocol === "openai-images") validateOpenAIImagesParameters(parameters);
+      else if (parameters.protocol === "openai-images") {
+        validateOpenAIImagesParameters(parameters);
+        if ((parameters.outputFormat ?? "png") !== "png" && selection.length) throw new ImageGenerationError("SVG／GIF 仅支持文生图，请先移除参考图。");
+      }
       else if (parameters.protocol === "grok-images") validateGrokImagesParameters(parameters);
       else validateSeedreamImagesParameters(parameters);
       if (!target.connection.apiKey.trim() || /[\u0000-\u001f\u007f]/.test(target.connection.apiKey)) throw new ImageGenerationError("请先在设置中填写有效的绘图 API Key。");
@@ -674,6 +688,7 @@ export class DrawingController {
         throw new ImageGenerationError("排队时的连接或模型已失效或目标已改变，已阻止请求。请检查设置后明确重新提交。");
       const key = target.connection.apiKey;
       if (!key.trim() || /[\u0000-\u001f\u007f]/.test(key)) throw new ImageGenerationError("绘图 API Key 无效，未发起请求。");
+      if (parameters.protocol === "openai-images") validateOpenAIImagesParameters(parameters);
       const transport = await this.dependencies.transport();
       const references: DrawingImageInput[] = [];
       for (const reference of active.references) {
@@ -850,14 +865,16 @@ export class DrawingController {
     catch { this.publish({ error: "提示词复制失败，请检查剪贴板权限。" }); }
   }
   export = (id: string): Promise<void> => this.exportResults([id], false);
-  exportResults = (ids: string[], withParameters: boolean): Promise<void> => this.managementCommand(async () => {
+  exportResults = (ids: string[], withParameters: boolean, original = false): Promise<void> => this.managementCommand(async () => {
     const selected = [...new Set(ids)].map(id => this.state.results.find(result => result.id === id)).filter((result): result is DrawingResult => !!result);
     let succeeded = 0, cancelled = false;
     const failed: number[] = [];
     for (let index = 0; index < selected.length; index++) {
       try {
         const result = selected[index];
-        const exported = withParameters
+        const exported = original
+          ? await this.dependencies.files.export(result.reference, withParameters ? drawingExportParameters(result.parameters) : undefined, true)
+          : withParameters
           ? await this.dependencies.files.export(result.reference, drawingExportParameters(result.parameters))
           : await this.dependencies.files.export(result.reference);
         if (!exported) { cancelled = true; break; }

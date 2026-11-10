@@ -1,7 +1,7 @@
 .settings-page.settings-workspace-page.connection-settings-page {
   max-width: none;
   margin-inline: 0;
-  padding: 16px 40px;
+  padding: 24px var(--settings-page-gutter) 40px;
 }
 
 .settings-workspace-page.connection-settings-page > .settings-page-heading {
@@ -14,7 +14,7 @@
 }
 
 @media (max-width: 760px) {
-  .settings-page.settings-workspace-page.connection-settings-page { padding-inline: 24px; }
+  .settings-page.settings-workspace-page.connection-settings-page { padding: 20px 20px 32px; }
 }
 
 .api-key-input {
@@ -76,8 +76,8 @@
 }
 
 .connection-settings-page .connection-settings-workbench {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: 8px;
+  grid-template-columns: minmax(220px, 26%) minmax(0, 1fr);
+  gap: var(--settings-card-gap, 16px);
   border: 0;
   background: transparent;
 }
@@ -87,15 +87,15 @@
   border: 1px solid var(--workbench-border);
   border-radius: 12px;
   background: var(--workbench-surface);
-  box-shadow: var(--workbench-shadow);
+  box-shadow: none;
 }
 
 .connection-settings-page .connection-tree {
-  padding: 0.55rem;
+  padding: 12px;
 }
 
 .connection-settings-page .connection-detail {
-  padding: 0.875rem 1.25rem;
+  padding: 20px;
 }
 
 .connection-detail-body {
@@ -252,6 +252,8 @@
 .connection-settings-page .connection-tree-provider > .provider-tree-avatar { flex: 0 0 24px; width: 24px; height: 24px; border-radius: 5px; }
 .connection-settings-page .provider-tree-avatar .assistant-avatar-initial { font-size: .875rem; }
 .provider-heading-actions { display: flex; align-items: center; gap: 4px; }
+.connection-tree-heading { flex-wrap: wrap; }
+.connection-tree-heading h3 { flex-shrink: 0; white-space: nowrap; }
 .connection-settings-page .provider-template-menu { max-height: min(30rem, 65dvh); overflow-y: auto; }
 .connection-settings-page .provider-template-menu button { display: flex; align-items: center; gap: 8px; }
 .connection-settings-page .provider-template-menu .brand-avatar { flex: 0 0 24px; width: 24px; height: 24px; border-radius: 5px; }

@@ -170,7 +170,7 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
           onClearReferences={() => void drawing.controller.clearReferences()}
           readThumbnail={drawing.controller.readThumbnail} onPreviewActive={drawing.setPreviewActive}
           onDeleteResults={ids => void drawing.controller.deleteResults(ids)}
-          onExportResults={(ids, withParameters) => void drawing.controller.exportResults(ids, withParameters)}
+          onExportResults={(ids, withParameters, original) => void drawing.controller.exportResults(ids, withParameters, original)}
           onCopyPrompt={id => void drawing.controller.copyPrompt(id)} notice={drawing.notice} closing={drawing.closing}
           referencesBusy={drawing.referencesBusy} onAddReferences={files => void drawing.controller.addReferences(files)}
           onRemoveReference={id => void drawing.controller.removeReference(id)}

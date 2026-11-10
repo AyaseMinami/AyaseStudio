@@ -1,0 +1,119 @@
+/* Shared page grammar. Component CSS retains field layout and interaction states. */
+.settings-workspace .settings-page {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 24px var(--settings-page-gutter) 40px;
+}
+.settings-workspace .settings-page > .settings-page-heading {
+  width: 100%;
+  margin: 0 0 var(--settings-section-gap);
+  padding: 16px 20px;
+  border: 1px solid var(--workbench-border);
+  border-radius: 12px;
+  background: var(--workbench-surface);
+}
+.settings-workspace .settings-page > .settings-page-heading h2 {
+  margin: 0 0 6px;
+  font-size: var(--font-title);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: normal;
+}
+.settings-workspace .settings-page > .settings-page-heading p {
+  margin: 0;
+  max-width: 70ch;
+  font-size: var(--font-ui);
+  line-height: 1.6;
+}
+.settings-workspace :is(.settings-card, .about-card) { box-shadow: none; }
+.settings-workspace .settings-button { min-height: 36px; border-radius: 8px; }
+.settings-workspace .settings-page .field-label { line-height: 1.5; }
+.settings-workspace .settings-page :is(button, a, input, summary):focus-visible {
+  outline: 2px solid rgb(var(--color-focus));
+  outline-offset: 3px;
+}
+
+/* Group names remain in a stable left column; values and actions share a right edge. */
+.settings-workspace .general-settings-page > .settings-page-heading { max-width: 1000px; }
+.settings-workspace .general-settings-groups { max-width: 1000px; gap: var(--settings-card-gap); }
+.settings-workspace .general-settings-group {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px 24px;
+  padding: var(--settings-card-padding);
+  border: 1px solid var(--workbench-border);
+  border-radius: 12px;
+  background: var(--workbench-surface);
+  box-shadow: none;
+}
+.settings-workspace .general-settings-group > h3 { grid-column: 1; padding-top: 8px; }
+.settings-workspace .general-settings-group > :not(h3) { grid-column: 2; }
+.settings-workspace .general-settings-group > h3 + * { grid-row: 1; }
+.settings-workspace .general-preference-row { min-height: 40px; }
+.settings-workspace .general-profile-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  flex: 1;
+  align-items: center;
+  gap: 4px 16px;
+}
+.settings-workspace .general-profile-details p { grid-column: 1; margin: 0; }
+.settings-workspace .general-avatar-actions { grid-column: 2; grid-row: 1 / span 2; }
+.settings-workspace .drawing-output-directory {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(var(--color-panel));
+  border: 1px solid var(--workbench-border);
+}
+
+/* Keep the established compact service cards and their container breakpoints. */
+.settings-workspace .network-search-page { max-width: none; }
+
+/* Data actions retain their warnings beside the action they guard. */
+.settings-workspace .data-management-page { max-width: 1120px; gap: var(--settings-card-gap); }
+/* The flex gap already contributes to the title-to-content spacing. */
+.settings-workspace .data-management-page > .settings-page-heading {
+  margin-bottom: calc(var(--settings-section-gap) - var(--settings-card-gap));
+}
+.settings-workspace .data-management-page .settings-card {
+  padding: var(--settings-card-padding);
+  border: 1px solid var(--workbench-border);
+  border-radius: 12px;
+  background: var(--workbench-surface);
+  box-shadow: none;
+}
+.settings-workspace .data-management-entry-footer {
+  margin: 4px 0 0;
+  padding: 16px;
+  border: 1px solid var(--workbench-border);
+  border-radius: 12px;
+  background: rgb(var(--color-panel));
+}
+.settings-workspace .data-management-entry-heading { margin-bottom: 4px; }
+.settings-workspace .data-management-page .data-import-page { gap: 0; }
+.settings-workspace .about-page { max-width: 1040px; }
+.settings-workspace .about-card { border: 1px solid var(--workbench-border); border-radius: 12px; padding: 24px; background: var(--workbench-surface); }
+.settings-workspace .about-brand { align-items: flex-start; text-align: left; padding: 0 0 var(--settings-section-gap); }
+.settings-workspace .about-brand h2 { font-size: var(--font-title); letter-spacing: normal; margin: 16px 0 6px; }
+.settings-workspace .about-update { padding-block: 24px; }
+.settings-workspace .about-feedback-row,
+.settings-workspace .about-email,
+.settings-workspace .about-info-row { padding-block: 16px; }
+
+@media (max-width: 760px) {
+  .settings-workspace .settings-page { padding: 20px 20px 32px; }
+  .settings-workspace .general-settings-group { grid-template-columns: minmax(0, 1fr); gap: 12px; padding-block: 20px; }
+  .settings-workspace .general-settings-group > h3,
+  .settings-workspace .general-settings-group > :not(h3) { grid-column: 1; grid-row: auto; }
+  .settings-workspace .general-settings-group > h3 { padding-top: 0; margin-bottom: 4px; }
+}
+@media (max-width: 480px) {
+  .settings-workspace .general-profile-details { display: flex; flex-direction: column; align-items: flex-start; }
+  .settings-workspace .general-avatar-actions { margin-top: 8px; }
+  .settings-workspace .data-management-entry-footer { padding: 12px; }
+}
+@media (forced-colors: active) {
+  .settings-workspace .settings-page { --workbench-border: CanvasText; }
+}

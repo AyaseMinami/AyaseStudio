@@ -1,5 +1,13 @@
 # 持久数据契约
 
+## OpenAI SVG／GIF 绘图输出（2026-11-09）
+
+绘图设置模块升为 v5／最低读者 5，排除于可移植备份的 drawingHistory 升为 v3。OpenAI 草稿组及冻结参数新增可选 `outputFormat`、`svgModel`、`frameCount`、`frameDurationMs`。缺失格式按 PNG 执行，其余缺失字段省略请求，纯读取不补写。草稿保留切换格式前的选项，任务和请求只冻结当前格式相关字段。旧历史读取和复用保持兼容，非法值、未知字段在耐久写入前拒绝并保留原文。字段策略、真实设置投影和共享克隆读入口同步更新。
+
+设置备份以 v5 声明最低读者。版本小于 5 却包含新字段的包拒绝恢复，未来可读模块沿既有参数过滤和再导出警告处理。替换旧设置清除新字段，回滚保留原始设置。Dexie schema v9、备份文档 v5、信封 v1、凭据及备份资源范围保持既有合同。
+
+新成果 MIME 为 `image/svg+xml`／`image/gif`，逻辑引用扩展名 `.svg`／`.gif`。复用现有不可变资源、manifest／pending v1、输出定位和恢复所有权，不搬迁旧原件。旧客户端无法读取新成果，不承诺降级读取。原件、任务和成果继续排除于可移植备份。原格式导出保留字节，PNG 导出派生像素并取 GIF 首帧。显式 PNG 参数导出包含匹配格式的 `output_format`、`svg_model`、`frame_count`、`frame_duration_ms`，不包含密钥、地址或本机路径。不安全 SVG、损坏 GIF 在成果发布前拒绝。
+
 ## 历史消息附件编辑 #128（2026-10-13）
 
 复用 `StoredChatMessage.attachments`／`SentAttachment` 和既有 roundVersions；无新增表、索引、偏好键、持久编辑状态、资源类别、凭据或权限。核对当前 Dexie schema v9、chat 模块 v3／最低读者 3、备份文档 v5／信封 v1，均不因 #128 升级，无新增必需能力或语义迁移。缺失附件仍为空；显式保存空列表省略 attachments，不批量改写旧记录。原引用及元数据不变，新增 File 只产生受管不可变副本，不存用户源路径或编辑草稿。

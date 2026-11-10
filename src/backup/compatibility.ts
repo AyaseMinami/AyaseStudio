@@ -222,6 +222,12 @@ export function normalizeCompatibleParameters(raw: unknown): void {
       const stamp = compatibility.modules.drawingSettings;
       let settings: unknown = raw.drawing.settings;
       dataRecord(settings);
+      if (settings.openai !== undefined) {
+        dataRecord(settings.openai);
+        const openai = settings.openai;
+        dataCheck(stamp.version >= 5 || !["outputFormat", "svgModel", "frameCount", "frameDurationMs"].some(key => key in openai),
+          "OpenAI 输出格式参数与绘图模块版本不匹配，请升级应用。");
+      }
       dataCheck(stamp.version !== 1 || !("gemini" in settings), "Gemini 高级参数与绘图模块版本不匹配，请升级应用。");
       if (settings.gemini !== undefined) {
         dataRecord(settings.gemini);

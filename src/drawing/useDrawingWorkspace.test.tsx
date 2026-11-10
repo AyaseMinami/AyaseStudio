@@ -74,6 +74,17 @@ it("releases originals when preview is hidden and reads only when it becomes vis
   await act(async () => state.setPreviewActive(true));
   expect(mocks.read).toHaveBeenCalledTimes(2); expect(state.previewUrl).toBe("blob:synthetic");
 });
+it("uses SVG only as a Base64 image URL and preserves GIF bytes in a typed preview Blob", async () => {
+  mocks.read.mockResolvedValueOnce({ mime: "image/svg+xml", data: "AQID" });
+  await act(async () => state.controller.generate(settings));
+  expect(state.previewUrl).toBe("data:image/svg+xml;base64,AQID");
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  mocks.read.mockResolvedValueOnce({ mime: "image/gif", data: "AQID" });
+  await act(async () => state.controller.generate(settings));
+  expect(state.previewUrl).toBe("blob:synthetic");
+  const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+  expect(blob.type).toBe("image/gif"); expect(blob.size).toBe(3);
+});
 it("plays one completion tone, honors mute, and releases audio resources", async () => {
   const disconnect = vi.fn(), start = vi.fn(), stop = vi.fn();
   const oscillator = { frequency: { value: 0 }, connect: vi.fn(), disconnect, start, stop, onended: null as null | (() => void) };

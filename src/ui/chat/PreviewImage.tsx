@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Maximize, Minus, Plus } from "lucide-react";
+import { Copy, Maximize, Minus, Plus } from "lucide-react";
 import type { RequestAttachment } from "../../chat/attachments";
 
 const MIN_ZOOM = 0.25;
@@ -18,6 +18,10 @@ function constrain(view: View, fitted: Size, viewport: Size): View {
 
 export function PreviewImage({ item, onError }: { item: RequestAttachment; onError(): void }) {
   const stage = useRef<HTMLDivElement>(null);
+  const image = useRef<HTMLImageElement>(null);
+  const copying = useRef(false);
+  const alive = useRef(true);
+  const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "failed" | "unsupported">("idle");
   const hintId = useId();
   const [natural, setNatural] = useState<Size>({ width: 0, height: 0 });
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
@@ -29,6 +33,44 @@ export function PreviewImage({ item, onError }: { item: RequestAttachment; onErr
   const current = constrain(view, fitted, viewport);
   const canPan = fitted.width * current.zoom > viewport.width || fitted.height * current.zoom > viewport.height;
   const ready = fit > 0;
+
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+
+  const copyImage = async () => {
+    const source = image.current;
+    if (!ready || !source || copying.current) return;
+    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined"
+      || ClipboardItem.supports?.("image/png") === false) {
+      setCopyState("unsupported");
+      return;
+    }
+    copying.current = true;
+    setCopyState("copying");
+    try {
+      const png = new Promise<Blob>((resolve, reject) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = source.naturalWidth;
+        canvas.height = source.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context) { reject(new Error("Image canvas unavailable")); return; }
+        // Copy original pixels, independent of viewport fit, zoom and panning.
+        context.drawImage(source, 0, 0);
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("PNG encoding failed")), "image/png");
+      });
+      // A rejected clipboard constructor/write must not leave an unobserved encoder rejection.
+      void png.catch(() => undefined);
+      // Begin the clipboard operation in the click's user-activation scope.
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      if (alive.current) setCopyState("copied");
+    } catch {
+      if (alive.current) setCopyState("failed");
+    } finally {
+      copying.current = false;
+    }
+  };
 
   useEffect(() => {
     setView((old) => constrain(old, fitted, viewport));
@@ -92,7 +134,15 @@ export function PreviewImage({ item, onError }: { item: RequestAttachment; onErr
       <button type="button" aria-label="放大图片" aria-disabled={!ready || current.zoom >= MAX_ZOOM}
         onClick={() => { if (ready) zoomBy(1.25); }}><Plus size={18} /></button>
       <button type="button" onClick={reset}><Maximize size={16} />适配窗口</button>
+      <button type="button" aria-label="复制图片" title="复制原尺寸图片" aria-disabled={!ready || copyState === "copying"}
+        aria-busy={copyState === "copying"} onClick={() => void copyImage()}>
+        <Copy size={16} />{copyState === "copying" ? "正在复制…" : "复制图片"}
+      </button>
     </div>
+    {copyState === "copied" && <p className="attachment-preview-copy-status" role="status">图片已复制</p>}
+    {(copyState === "failed" || copyState === "unsupported") && <p className="attachment-preview-copy-status" role="alert">
+      {copyState === "unsupported" ? "当前环境暂不支持复制图片。" : "复制图片失败，请检查剪贴板权限后重试。"}
+    </p>}
     <div ref={stage} className="attachment-preview-stage" tabIndex={0} role="group" aria-label="图片查看区域"
       aria-describedby={hintId} data-pannable={canPan} data-dragging={dragging}
       onKeyDown={(event) => {
@@ -129,7 +179,7 @@ export function PreviewImage({ item, onError }: { item: RequestAttachment; onErr
         stopDrag();
         if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       }} onPointerCancel={stopDrag} onLostPointerCapture={stopDrag}>
-      <img className="attachment-preview-image" alt={item.name} draggable={false}
+      <img ref={image} className="attachment-preview-image" alt={item.name} draggable={false}
         src={`data:${item.mimeType};base64,${item.data}`} onError={onError}
         onLoad={(event) => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
         style={{ width: fitted.width, height: fitted.height, visibility: ready ? "visible" : "hidden",

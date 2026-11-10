@@ -11,9 +11,9 @@ export const dataModules = {
   appearance: { version: 3, capabilities: [], resources: "shared titlebar/rail transparency defaults to 40%, sidebar to 50%, message bubbles to 12%; independent glass flags default sidebar off/composer on; managed background originals; derived thumbnails excluded" },
   connections: { version: 6, capabilities: [], resources: "connection-scoped model groups and explicit model membership; built-in preset identities and initialization marker; bundled brand IDs; immutable provider avatar snapshots exported only with selected connections; local record remains v3" },
   search: { version: 3, capabilities: [], resources: "independent Exa/Tavily/Zhipu credentials; disabled new providers; v1 MCP and v2 Exa migrate without writes; governs new provider selections and records across modules" },
-  drawingSettings: { version: 4, capabilities: [], resources: "allowlisted Gemini thinking/Grok/Seedream controls with explicit version contracts; no prompt or image bindings" },
+  drawingSettings: { version: 5, capabilities: [], resources: "allowlisted OpenAI PNG/SVG/GIF and Gemini/Grok/Seedream controls; no prompt or image bindings" },
   drawingPresets: { version: 1, capabilities: [], resources: "explicit text only; dedicated drawing.presets projection" },
-  drawingHistory: { version: 2, capabilities: [], resources: "excluded; stable logical image references; native layout v2 stores new originals in drawing root and journals in drawing/meta, legacy task directories remain readable; Grok/Seedream frozen parameters; #110 session selections excluded, legacy draft bindings retained until explicit removal" },
+  drawingHistory: { version: 3, capabilities: [], resources: "excluded; stable logical image references; native layout v2 stores new originals in drawing root and journals in drawing/meta, legacy task directories remain readable; OpenAI PNG/SVG/GIF and Grok/Seedream frozen parameters; #110 session selections excluded, legacy draft bindings retained until explicit removal" },
   recovery: { version: 1, capabilities: [], resources: "private journals; origin-scoped native drawing import receipts v1 under drawing/meta/reference-imports with legacy inventory support; never portable" },
 } as const;
 
