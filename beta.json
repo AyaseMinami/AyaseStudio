@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0-beta.8",
-  "notes": "## 新增与调整\n\n- OpenAI Images 绘图支持 SVG 矢量图与 GIF 动画，提供格式参数、预览和原格式导出。SVG/GIF 仅支持纯提示词生成，具体模型权限以服务商为准。\n- GIF 可保留动画原文件，导出 PNG 时使用首帧。SVG 使用受限的静态内容与资源预算校验。\n- 聊天附件的大图预览新增常显“复制图片”按钮，覆盖待发送、历史消息及消息编辑中的图片，以原尺寸 PNG 复制并保留透明度。\n- 调整设置页与绘图工作区的布局、间距、预览区域及窄窗口滚动。\n\n## 测试说明\n\n本版本为 Windows x64 Beta 测试发布，使用 Tauri updater 签名验证安装包。Windows Authenticode 代码签名尚未提供。\n\n全新安装、覆盖升级、安装后数据保留及图片向其他应用粘贴仍待实际验收。升级前请导出重要数据备份，并单独保存重要绘图成果。SVG/GIF 的真实服务生成尚未进行本次付费探测。\n\n此前报告的旧背景丢失问题保留原调查结论，修复已按用户决定暂缓。\n",
-  "pub_date": "2026-11-10T06:04:51.803Z",
+  "version": "0.1.0-beta.9",
+  "notes": "## 新增与调整\n\n- 重新整理绘图参数区，输出格式、尺寸与画质按面板宽度规整排列，数量和并发独立成组。SVG／GIF 附加参数、说明及自定义尺寸占完整行，窄面板自动换行。\n- 点击助手消息头像或顶部对话名称，即可打开当前对话配置弹窗。支持键盘操作、取消回焦及现有配置保存流程。\n\n## 测试说明\n\n本版本为 Windows x64 Beta 测试发布，使用 Tauri updater 签名验证安装包。Windows Authenticode 代码签名尚未提供。\n\n全新安装、覆盖升级、安装后数据保留及真实窗口交互仍待实际验收。升级前请导出重要数据备份，并单独保存重要绘图成果。\n",
+  "pub_date": "2026-11-10T07:21:48.353Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUZLQUlaVVZtVlhwYVE5WFlHZGROSjdjUE5SVXlBeEZCdExnbVYxa1h5QzhRS2hXblFSZzVEalVsQitPa3M4ZGMyamx3YnBIb25udkJlazJnMW94ZlFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MjkwNjg4CWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuOF94NjQtc2V0dXAuZXhlCnNOcVJGQzJMOU9xZkYyakFVcGkyb2RjbldXRTBmNDhBd0laQ1AxYzJyUmZSUWN5eDVZOVZxa2h2Z2RTWnR2MXBYa1pYaHVZTmtKMEdzWS9uQ3ZvZEN3PT0K",
-      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.8/Ayase.Studio_0.1.0-beta.8_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUl2NlF2aHFNWXlhQnhSZmdQeXVBb08wNEN1WlZaYWNnWXYxQ3dJQUlzNWdkamZUL3ZRTXE1N2tXN3Z0bHBjeERyRXlKcU9MWkUzalpGZEROc2l4ZUE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Mjk1MzA1CWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuOV94NjQtc2V0dXAuZXhlCjk1blZhOWRSMUhURStTcUsyMmJGeEtHdUhobTRXT05wYksxWnhnMk9xdHZ1SGZDRXZEcXRnakxEZ1FURXNQbEoybHc3YXNsNjlxQnRKY0hYZnlTdUR3PT0K",
+      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.9/Ayase.Studio_0.1.0-beta.9_x64-setup.exe"
     }
   }
 }
