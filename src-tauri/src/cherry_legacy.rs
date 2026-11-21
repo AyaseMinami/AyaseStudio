@@ -327,21 +327,10 @@ pub(crate) fn normalize(
         }
         output_topics.push(json!({"id":tid,"assistantId":owner,"title":title,"createdAt":time(metadata,"createdAt")?,"updatedAt":time(metadata,"updatedAt")?,"messages":out}));
     }
-    // Keep metadata-only empty topics too; reject missing message tables for nonempty refs.
-    for (tid, metadata) in &meta {
-        if topic_ids.contains(tid) {
-            continue;
-        }
-        return Err(if metadata
-            .get("messages")
-            .and_then(Value::as_array)
-            .is_some_and(|v| !v.is_empty())
-        {
-            "cherry-missing-topic"
-        } else {
-            "cherry-missing-topic"
-        }
-        .into());
+    // Every topic referenced in assistant metadata must have a corresponding topic record
+    // (empty topics are represented by a topic record with an empty messages array).
+    if meta.keys().any(|tid| !topic_ids.contains(tid)) {
+        return Err("cherry-missing-topic".into());
     }
     if used.len() != blocks.len() {
         warnings.push("未被消息引用的内容块未导入。".into())
@@ -483,6 +472,28 @@ mod tests {
         let out = normalize(a, t, b).unwrap();
         assert!(out["topics"][0]["messages"][0]["parts"][0]["text"] == "Example");
         assert!(!out.to_string().contains("synthetic-not-imported"))
+    }
+    #[test]
+    fn existing_empty_topic_record_is_preserved() {
+        let (a, mut t, _) = data();
+        t[0]["messages"] = json!([]);
+        let out = normalize(a, t, vec![]).unwrap();
+        assert_eq!(out["topics"].as_array().unwrap().len(), 1);
+        assert_eq!(out["topics"][0]["messages"], json!([]));
+        assert_eq!(out["warnings"], json!([]));
+    }
+    #[test]
+    fn missing_topic_record_rejects_regardless_of_metadata_messages() {
+        for metadata_messages in [None, Some(json!([])), Some(json!([{"id": "m"}]))] {
+            let (mut a, _, _) = data();
+            if let Some(messages) = metadata_messages {
+                a[0]["topics"][0]["messages"] = messages;
+            }
+            assert_eq!(
+                normalize(a, vec![], vec![]).unwrap_err(),
+                "cherry-missing-topic"
+            );
+        }
     }
     #[test]
     fn empty_topic_uses_unique_assistant_list_owner_despite_stale_reference() {

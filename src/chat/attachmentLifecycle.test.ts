@@ -106,4 +106,35 @@ describe("private attachment lifecycle", () => {
     await lifecycle.cleanup();
     expect(cleanup).toHaveBeenCalledWith([sent.reference, second.reference], []);
   });
+
+  it("waits for in-flight and chained cleanup operations when settling before backup maintenance", async () => {
+    let resolveFirst!: () => void;
+    let resolveSecond!: () => void;
+    const firstGate = new Promise<void>((resolve) => { resolveFirst = resolve; });
+    const secondGate = new Promise<void>((resolve) => { resolveSecond = resolve; });
+    const cleanup = vi.fn()
+      .mockImplementationOnce(() => firstGate)
+      .mockImplementationOnce(() => secondGate);
+    const store = { cleanup } as unknown as AttachmentStore;
+    const lifecycle = new AttachmentLifecycle(store, async () => []);
+
+    const first = lifecycle.cleanup();
+    let settled = false;
+    const settling = lifecycle.settle().then(() => { settled = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    const second = lifecycle.cleanup();
+    resolveFirst();
+    await first;
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolveSecond();
+    await second;
+    await settling;
+    expect(settled).toBe(true);
+    expect(cleanup).toHaveBeenCalledTimes(2);
+  });
 });

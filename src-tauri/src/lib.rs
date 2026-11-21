@@ -1,4 +1,5 @@
 mod background;
+mod file_safety;
 mod updater;
 mod update_signature;
 mod tray;

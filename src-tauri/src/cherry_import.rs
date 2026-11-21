@@ -13,6 +13,7 @@ use zip::ZipArchive;
 const ARCHIVE_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
 const CHAT_LIMIT: u64 = 128 * 1024 * 1024;
 const FILE_LIMIT: u64 = 64 * 1024 * 1024;
+const SESSION_READ_LIMIT: u64 = 1024 * 1024 * 1024;
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 struct Session {
     token: String,
@@ -102,7 +103,8 @@ impl Session {
     fn bytes(&mut self, key: &str, limit: u64) -> Result<Vec<u8>, String> {
         let index = *self.indices.get(key).ok_or("cherry-missing-entry")?;
         let mut file = self.archive.by_index(index).map_err(error)?;
-        if file.size() > limit {
+        let declared_size = file.size();
+        if declared_size > limit {
             return Err("cherry-limit".into());
         }
         let mut bytes = Vec::new();
@@ -110,8 +112,12 @@ impl Session {
             .take(limit + 1)
             .read_to_end(&mut bytes)
             .map_err(error)?;
-        if bytes.len() as u64 > limit {
+        let actual_size = bytes.len() as u64;
+        if actual_size > limit {
             return Err("cherry-limit".into());
+        }
+        if actual_size != declared_size {
+            return Err("cherry-invalid-backup".into());
         }
         Ok(bytes)
     }
@@ -267,25 +273,35 @@ impl Session {
         if !recoverable {
             return Ok(None);
         }
-        if !self.indices.contains_key(key) {
+        let Some(&index) = self.indices.get(key) else {
+            return Ok(None);
+        };
+        let remaining = SESSION_READ_LIMIT
+            .checked_sub(self.read_budget)
+            .ok_or("cherry-limit")?;
+        let mut entry = self.archive.by_index(index).map_err(error)?;
+        let declared_size = entry.size();
+        if declared_size > FILE_LIMIT {
             return Ok(None);
         }
-        let size = self
-            .archive
-            .by_index(self.indices[key])
-            .map_err(error)?
-            .size();
-        if size > FILE_LIMIT {
-            return Ok(None);
-        }
-        if expected_size != 0 && size != expected_size {
+        if expected_size != 0 && declared_size != expected_size {
             return Err("cherry-invalid-file".into());
         }
-        self.read_budget = self.read_budget.checked_add(size).ok_or("cherry-limit")?;
-        if self.read_budget > 1024 * 1024 * 1024 {
+        if declared_size > remaining {
             return Err("cherry-limit".into());
         }
-        let bytes = self.bytes(key, FILE_LIMIT)?;
+        let read_cap = FILE_LIMIT.min(remaining);
+        let mut bytes = Vec::new();
+        let read_result = entry.by_ref().take(read_cap + 1).read_to_end(&mut bytes);
+        let actual_size = bytes.len() as u64;
+        self.read_budget = self.read_budget.saturating_add(actual_size);
+        if actual_size > FILE_LIMIT || self.read_budget > SESSION_READ_LIMIT {
+            return Err("cherry-limit".into());
+        }
+        read_result.map_err(error)?;
+        if actual_size != declared_size || (expected_size != 0 && actual_size != expected_size) {
+            return Err("cherry-invalid-file".into());
+        }
         let Some(mime) = crate::attachments::import_mime(&name, &bytes) else {
             return Ok(None);
         };
@@ -351,6 +367,61 @@ mod tests {
             writer.write_all(&bytes).unwrap()
         }
         writer.finish().unwrap();
+        file
+    }
+    fn zip_with_forged_uncompressed_sizes(
+        entries: Vec<(&str, Vec<u8>, Option<u32>)>,
+    ) -> tempfile::NamedTempFile {
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut buffer);
+            for (key, bytes, _) in &entries {
+                writer
+                    .start_file(
+                        *key,
+                        zip::write::SimpleFileOptions::default()
+                            .compression_method(zip::CompressionMethod::Deflated),
+                    )
+                    .unwrap();
+                writer.write_all(bytes).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let mut raw = buffer.into_inner();
+        for (key, bytes, forged) in &entries {
+            let Some(forged_size) = forged else {
+                continue;
+            };
+            let actual = u32::try_from(bytes.len()).unwrap().to_le_bytes();
+            let patched = forged_size.to_le_bytes();
+            let name = key.as_bytes();
+            let mut patched_local = 0usize;
+            let mut patched_central = 0usize;
+            for offset in 0..raw.len().saturating_sub(30) {
+                if &raw[offset..offset + 4] == b"PK\x03\x04" {
+                    let name_len =
+                        u16::from_le_bytes([raw[offset + 26], raw[offset + 27]]) as usize;
+                    if raw.get(offset + 30..offset + 30 + name_len) == Some(name) {
+                        assert_eq!(&raw[offset + 22..offset + 26], &actual);
+                        raw[offset + 22..offset + 26].copy_from_slice(&patched);
+                        patched_local += 1;
+                    }
+                } else if offset + 46 <= raw.len() && &raw[offset..offset + 4] == b"PK\x01\x02" {
+                    let name_len =
+                        u16::from_le_bytes([raw[offset + 28], raw[offset + 29]]) as usize;
+                    if raw.get(offset + 46..offset + 46 + name_len) == Some(name) {
+                        assert_eq!(&raw[offset + 24..offset + 28], &actual);
+                        raw[offset + 24..offset + 28].copy_from_slice(&patched);
+                        patched_central += 1;
+                    }
+                }
+            }
+            assert_eq!(patched_local, 1);
+            assert_eq!(patched_central, 1);
+        }
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&raw).unwrap();
+        file.flush().unwrap();
         file
     }
     fn canonical(mut value: Value) -> Value {
@@ -435,6 +506,126 @@ mod tests {
             .insert(key.to_owned(), ("external.txt".to_owned(), 4, false));
         assert!(session.file(key).unwrap().is_none());
         assert_eq!(session.read_budget, 0);
+    }
+    #[test]
+    fn file_rejects_underdeclared_entry_and_charges_actual_bytes() {
+        let key = "Data/Files/underdeclared.txt";
+        let payload = b"0123456789abcdef0123456789abcdef".to_vec();
+        let archive = zip_with_forged_uncompressed_sizes(vec![(key, payload.clone(), Some(4))]);
+        let mut session = Session::open(archive.path()).unwrap();
+        assert_eq!(session.archive.by_index(session.indices[key]).unwrap().size(), 4);
+
+        session
+            .files
+            .insert(key.to_owned(), ("underdeclared.txt".to_owned(), 0, true));
+        assert_eq!(session.file(key).unwrap_err(), "cherry-invalid-file");
+        assert_eq!(session.read_budget, payload.len() as u64);
+
+        // Even when metadata expected_size matches the forged declared size, actual mismatch fails.
+        session
+            .files
+            .insert(key.to_owned(), ("underdeclared.txt".to_owned(), 4, true));
+        assert_eq!(session.file(key).unwrap_err(), "cherry-invalid-file");
+        assert_eq!(session.read_budget, (payload.len() * 2) as u64);
+    }
+    #[test]
+    fn file_rejects_overdeclared_entry_and_charges_actual_bytes() {
+        let key = "Data/Files/overdeclared.txt";
+        let payload = b"note".to_vec();
+        let archive = zip_with_forged_uncompressed_sizes(vec![(key, payload.clone(), Some(32))]);
+        let mut session = Session::open(archive.path()).unwrap();
+        session
+            .files
+            .insert(key.to_owned(), ("overdeclared.txt".to_owned(), 0, true));
+        assert_eq!(session.file(key).unwrap_err(), "cherry-invalid-file");
+        assert_eq!(session.read_budget, payload.len() as u64);
+    }
+    #[test]
+    fn file_enforces_session_read_budget_against_underdeclared_zip_entries() {
+        let key_forged = "Data/Files/forged.txt";
+        let key_small = "Data/Files/small.txt";
+        let key_zero_forged = "Data/Files/zero-forged.txt";
+        let archive = zip_with_forged_uncompressed_sizes(vec![
+            (key_forged, vec![b'a'; 64], Some(4)),
+            (key_small, b"ok".to_vec(), None),
+            (key_zero_forged, vec![b'b'; 16], Some(0)),
+        ]);
+
+        let mut session = Session::open(archive.path()).unwrap();
+        session
+            .files
+            .insert(key_forged.to_owned(), ("forged.txt".to_owned(), 0, true));
+        session
+            .files
+            .insert(key_small.to_owned(), ("small.txt".to_owned(), 2, true));
+        session.read_budget = SESSION_READ_LIMIT - 16;
+
+        assert_eq!(session.file(key_forged).unwrap_err(), "cherry-limit");
+        assert_eq!(session.read_budget, SESSION_READ_LIMIT + 1);
+        assert_eq!(session.file(key_small).unwrap_err(), "cherry-limit");
+
+        // Zero-declared entry with non-empty payload must still trip limit at remaining == 0.
+        let mut exact_session = Session::open(archive.path()).unwrap();
+        exact_session.files.insert(
+            key_zero_forged.to_owned(),
+            ("zero-forged.txt".to_owned(), 0, true),
+        );
+        exact_session.read_budget = SESSION_READ_LIMIT;
+        assert_eq!(
+            exact_session.file(key_zero_forged).unwrap_err(),
+            "cherry-limit"
+        );
+        assert_eq!(exact_session.read_budget, SESSION_READ_LIMIT + 1);
+    }
+    #[test]
+    fn file_enforces_exact_session_read_budget_boundary_for_valid_entries() {
+        let key_a = "Data/Files/a.txt";
+        let key_b = "Data/Files/b.txt";
+        let key_c = "Data/Files/c.txt";
+        let archive = zip(vec![
+            (key_a, vec![b'a'; 10]),
+            (key_b, vec![b'b'; 6]),
+            (key_c, vec![b'c'; 1]),
+        ]);
+        let mut session = Session::open(archive.path()).unwrap();
+        session
+            .files
+            .insert(key_a.to_owned(), ("a.txt".to_owned(), 10, true));
+        session
+            .files
+            .insert(key_b.to_owned(), ("b.txt".to_owned(), 6, true));
+        session
+            .files
+            .insert(key_c.to_owned(), ("c.txt".to_owned(), 1, true));
+        session.read_budget = SESSION_READ_LIMIT - 16;
+
+        assert!(session.file(key_a).unwrap().is_some());
+        assert_eq!(session.read_budget, SESSION_READ_LIMIT - 6);
+        assert!(session.file(key_b).unwrap().is_some());
+        assert_eq!(session.read_budget, SESSION_READ_LIMIT);
+        assert_eq!(session.file(key_c).unwrap_err(), "cherry-limit");
+        assert_eq!(session.read_budget, SESSION_READ_LIMIT);
+    }
+    #[test]
+    fn file_rejects_expected_size_mismatch_without_consuming_budget() {
+        let key = "Data/Files/mismatch.txt";
+        let archive = zip(vec![(key, b"note".to_vec())]);
+        let mut session = Session::open(archive.path()).unwrap();
+        session
+            .files
+            .insert(key.to_owned(), ("mismatch.txt".to_owned(), 8, true));
+        assert_eq!(session.file(key).unwrap_err(), "cherry-invalid-file");
+        assert_eq!(session.read_budget, 0);
+    }
+    #[test]
+    fn bytes_rejects_forged_declared_size() {
+        let key = "data.json";
+        let archive = zip_with_forged_uncompressed_sizes(vec![(key, b"{}".to_vec(), Some(1))]);
+        let mut session = Session::open(archive.path()).unwrap();
+        assert_eq!(
+            session.bytes(key, CHAT_LIMIT).unwrap_err(),
+            "cherry-invalid-backup"
+        );
     }
     #[test]
     fn unsafe_paths_reject() {

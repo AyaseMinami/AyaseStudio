@@ -204,41 +204,43 @@ fn preflight(
     total: &mut i64,
 ) -> Result<(), String> {
     // All identifiers come from this module's fixed whitelist, never the DB.
+    let cap = limit.checked_add(1).ok_or(LIMIT)?;
     let count: i64 = db(connection.query_row(
-        &format!("SELECT count(*) FROM {table} WHERE deleted_at IS NULL"),
-        [],
+        &format!(
+            "SELECT count(*) FROM (SELECT 1 FROM {table} WHERE deleted_at IS NULL LIMIT ?1)"
+        ),
+        [cap],
         |r| r.get(0),
     ))?;
     if count > limit {
         return Err(LIMIT.to_owned());
     }
-    let lengths: Vec<_> = fields
+    let projections: Vec<_> = fields
         .iter()
-        .map(|f| format!("coalesce(length(CAST({f} AS BLOB)),0)"))
+        .enumerate()
+        .map(|(i, f)| format!("coalesce(length(CAST({f} AS BLOB)),0) AS l{i}"))
         .collect();
-    let oversized: i64 = db(connection.query_row(
+    let oversized_check = (0..fields.len())
+        .map(|i| format!("l{i}>{MAX_FIELD}"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let sum_expr = (0..fields.len())
+        .map(|i| format!("l{i}"))
+        .collect::<Vec<_>>()
+        .join("+");
+    let (oversized, bytes): (i64, i64) = db(connection.query_row(
         &format!(
-            "SELECT count(*) FROM {table} WHERE deleted_at IS NULL AND ({})",
-            lengths
-                .iter()
-                .map(|s| format!("{s}>{MAX_FIELD}"))
-                .collect::<Vec<_>>()
-                .join(" OR ")
+            "SELECT coalesce(max(CASE WHEN ({oversized_check}) THEN 1 ELSE 0 END),0), \
+             coalesce(sum({sum_expr}),0) \
+             FROM (SELECT {} FROM {table} WHERE deleted_at IS NULL)",
+            projections.join(", ")
         ),
         [],
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?)),
     ))?;
     if oversized != 0 {
         return Err(LIMIT.to_owned());
     }
-    let bytes: i64 = db(connection.query_row(
-        &format!(
-            "SELECT coalesce(sum({}),0) FROM {table} WHERE deleted_at IS NULL",
-            lengths.join("+")
-        ),
-        [],
-        |r| r.get(0),
-    ))?;
     *total = total.checked_add(bytes).ok_or(LIMIT)?;
     if *total > MAX_TOTAL {
         return Err(LIMIT.to_owned());

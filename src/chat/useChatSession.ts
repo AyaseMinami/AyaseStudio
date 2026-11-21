@@ -1432,6 +1432,7 @@ export function useChatSession({
     try {
       saveConnectionSettings(connectionSettingsRef.current);
       await workspace.flushSessionWrites();
+      await attachmentLifecycle.settle();
       if (!canPrepare()) throw new Error("对话操作仍在进行。");
       return true;
     } catch {
