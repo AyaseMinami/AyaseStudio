@@ -1,15 +1,15 @@
 # Ayase Studio Repository Instructions
 
-These instructions apply to the entire repository.
+These instructions apply to the entire repository and serve as the shared repository rule entry point for both Codex and Antigravity.
 
 ## Read first
 
 Use `README.md` for orientation and read the references relevant to the task:
 
-- `docs/DEVELOPMENT.md`: environment, commands, and verification.
+- `docs/DEVELOPMENT.md`: environment, commands, multi-agent handoff, and verification.
 - `docs/ARCHITECTURE.md`: module boundaries, state ownership, persistence, and security.
 - [docs/DATA-CONTRACTS.md](docs/DATA-CONTRACTS.md): mandatory persistence registration, field policies, migrations, backup compatibility, and acceptance boundaries.
-- [docs/UI-DESIGN.md](docs/UI-DESIGN.md): read before UI work; visual conventions, implementation locations, and confirmed versus pending design details.
+- [docs/UI-DESIGN.md](docs/UI-DESIGN.md): read before UI work; the authoritative current UI contract (derived tool summaries in `DESIGN.md`, `PRODUCT.md`, and `.impeccable/design.json` defer to `docs/UI-DESIGN.md` and explicit current user instructions on any conflict).
 - `docs/PLAN.md`: feature scope and acceptance criteria.
 - `docs/PROTOCOLS.md`: transport, URL, streaming, and provider work.
 - `CONTEXT.md`: domain terminology.
@@ -18,11 +18,14 @@ GitHub Issues record approved feature scope and acceptance criteria. Explicit us
 
 Complete authorized local edits and relevant checks without asking again for routine implementation choices. Ask when a missing product decision or authorization affects the outcome, and continue independent work while waiting.
 
-## Branch and remote policy
+## Branch, worktree, and handoff policy
 
 - `main` is the stable baseline; `dev` is the normal integration branch.
 - Work in `dev` unless the user explicitly requests another branch or worktree.
-- Do not create branches or worktrees merely as a precaution.
+- Do not create Git branches or worktrees merely as a precaution; if a tool needs to create an actual Git branch or worktree, follow repository authorization first.
+- Single-writer serial relay on `dev`, with parallel read-only review allowed. Codex and Antigravity may swap implementer/reviewer roles by task or hand off mid-task.
+- Write authority transfers only on explicit handoff: the outgoing implementer stops writing first and provides the baseline commit, ownership of uncommitted files, editable scope for the incoming agent, checks already run, and pending acceptance items. The incoming agent inspects `git status` and relevant `git diff` before editing. Handoff does not require committing by default.
+- When delegating to subagents that share the current workspace (such as `inherit`), the main agent must either assign strictly non-overlapping write scopes or restrict parallel subagents to read-only review.
 - Do not commit, push, open or merge a PR, close an Issue, or publish a release unless the user explicitly requests that remote or Git action.
 - Preserve unrelated user changes in a dirty worktree. Never use destructive reset or checkout commands to remove them.
 
@@ -53,7 +56,7 @@ Apply [the data contract rules](docs/DATA-CONTRACTS.md) whenever adding or chang
 - Decide and document module versions, minimum readers, required capabilities, migration steps, missing-field defaults, credential handling, resource ownership and backup disposition. Preserve unknown or invalid original data; unsupported structure must fail before durable writes instead of silently resetting it.
 - Reuse the pure clone-based migration seam for local reads and backup reads. Do not infer semantic conversions, silently change protocols/targets, or filter unknown security, credential or reference fields as optional parameters.
 - Add deterministic coverage for old/current versions, repeated and skipped-version migrations, defaults, unsupported structure with zero writes, parameter filtering reports, re-export warnings and rollback as relevant. Run `npm.cmd run check:data-contracts` (also included in `npm.cmd run check`); static inspection does not prove coverage of arbitrary dynamically computed keys.
-- Data-format, cross-module, migration, security or release-gate changes require independent `comprehensive_reviewer` or equivalent Sol/high review. Keep #93 integration, cross-version examples and #94 pressure/native acceptance distinct; local implementation is not Issue closure.
+- Data-format, cross-module, migration, security or release-gate changes require independent read-only review in a separate context covering the deliverable diff, relevant contracts, and verification evidence; the main agent verifies findings and fixes. Codex continues using `comprehensive_reviewer` (or equivalent high-reasoning reviewer); Antigravity may run an equivalent independent read-only reviewer or hand a fixed scope to Codex for cross-review (and vice versa). Independence follows actual participation: if both agents edited the same major change, an uninvolved independent reviewer must review the final diff—swapping roles does not turn an author into an independent reviewer. Keep #93 integration, cross-version examples and #94 pressure/native acceptance distinct; local implementation is not Issue closure.
 
 ## Product boundaries
 
@@ -65,7 +68,7 @@ Apply [the data contract rules](docs/DATA-CONTRACTS.md) whenever adding or chang
 
 ## Editing and verification
 
-- Use `apply_patch` for intentional text edits.
+- Use the agent's native targeted editing tool for intentional text edits (e.g. `apply_patch` in Codex, `edit_file` or equivalent minimal local edits in Antigravity), preserving unrelated changes.
 - Prefer `rg` and `rg --files` for search.
 - On Windows, use `npm.cmd` when PowerShell blocks `npm.ps1`.
 - Add or update deterministic tests for changed behavior. Documentation-only edits require content/link review and Git diff checks, not application builds or desktop launch.
@@ -78,7 +81,8 @@ git diff --check
 git status --short --branch
 ```
 
-- Use the Codex in-app browser for autonomous UI acceptance: layout, themes, responsive sizes, navigation, dialogs, and frontend interactions. Use isolated local test data and mocked native/provider boundaries when necessary; do not read live credentials or send provider requests for UI checks.
+- Run autonomous frontend UI acceptance (layout, themes, responsive sizes, navigation, dialogs, and frontend interactions) only in a verified built-in isolated browser against isolated local test pages, synthetic data, and mocked native/provider boundaries; never read live credentials, send provider requests, or reuse a browser profile carrying real user cookies/sessions/data. Codex uses the Codex in-app browser; Antigravity runs browser acceptance only when verified to be using its built-in isolated browser—if switched to an external browser (such as attaching to a running Chrome instance) or if isolation is uncertain, hand browser acceptance directly to Codex.
+- Store temporary verification fixtures, logs, and handoff screenshots under ignored `*.local/` directories (such as `.verify.local/<task>/`) and report workspace-relative paths readable by both agents during handoff.
 - Do not try Computer Use, native desktop screenshots, or other native UI automation by default, including as a preliminary step or fallback after browser verification. Use them only when the user explicitly requests them.
-- For Tauri permissions, runtime networking, window behavior, local files, or theme-first-paint changes, run the relevant native checks and `npm.cmd run tauri dev` startup smoke check. Record native-only interactions (such as window dragging, minimize/maximize, Snap Layout, and OS file dialogs) as pending user manual acceptance when they cannot be verified in the in-app browser. Browser checks, compilation, or successful startup must not be reported as native interaction acceptance.
-- Keep `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, and `docs/PROTOCOLS.md` synchronized with changes to their stated contracts.
+- For Tauri permissions, runtime networking, window behavior, local files, or theme-first-paint changes, run the relevant native checks and `npm.cmd run tauri dev` startup smoke check. Record native-only interactions (such as window dragging, minimize/maximize, Snap Layout, and OS file dialogs) as pending user manual acceptance when they cannot be verified in an isolated browser. Browser checks, compilation, or successful startup must not be reported as native interaction acceptance.
+- Keep `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, `docs/PROTOCOLS.md`, `docs/DATA-CONTRACTS.md`, and `docs/UI-DESIGN.md` synchronized with changes to their stated contracts. When UI contracts change, also update derived design summaries (`DESIGN.md`, `PRODUCT.md`, and `.impeccable/design.json`) so they do not contradict `docs/UI-DESIGN.md`.
