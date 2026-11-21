@@ -32,7 +32,7 @@
 }
 .avatar-card { border: 1px solid rgb(var(--color-border)); border-radius: 8px; background: rgb(var(--color-panel)); overflow: hidden; }
 .avatar-card-heading { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgb(var(--color-border)); }
-.avatar-card-heading h3 { margin: 0; font-size: var(--font-ui); font-weight: 600; }
+.avatar-card-heading h3 { margin: 0; font-size: var(--font-ui); font-weight: 500; }
 .avatar-card-heading span, .avatar-format, .avatar-local-note, .avatar-preview-label { font-size: var(--font-caption); color: rgb(var(--color-muted)); }
 .avatar-profile { display: flex; gap: 20px; align-items: center; padding: 24px 20px 16px; }
 .avatar-profile strong { font-size: var(--font-ui); font-weight: 500; }
@@ -58,24 +58,21 @@
 .avatar-error { color: rgb(var(--color-error-text)); font-size: var(--font-small); }
 .avatar-crop-dialog { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; margin: auto; padding: 24px; border: 1px solid rgb(var(--color-border)); border-radius: 12px; color: rgb(var(--color-text)); background: rgb(var(--color-panel)); box-shadow: 0 24px 80px #0004; }
 .avatar-crop-dialog::backdrop { background: #0006; }
-.avatar-crop-dialog h2 { margin: 0; font-size: var(--font-section); font-weight: 600; }
+.avatar-crop-dialog h2 { margin: 0; font-size: var(--font-section); font-weight: 500; }
 .avatar-crop-dialog header p { font-size: var(--font-small); margin: 8px 0 20px; }
-.avatar-crop-stage { display: block; width: min(280px, 100%); aspect-ratio: 1; margin: 0 auto 24px; overflow: hidden; background: transparent; border-radius: 4px; outline: 1px solid rgb(var(--color-border)); touch-action: none; cursor: grab; }
+.avatar-crop-stage { display: block; width: min(280px, 100%); aspect-ratio: 1; margin: 0 auto 24px; overflow: hidden; background: transparent; border-radius: 8px; outline: 1px solid rgb(var(--color-border)); touch-action: none; cursor: grab; }
 .avatar-crop-stage:active { cursor: grabbing; }
-.avatar-crop-sliders label { display: grid; grid-template-columns: 64px minmax(0, 1fr) 42px; gap: 12px; align-items: center; margin: 14px 0; font-size: var(--font-small); }
-.avatar-crop-sliders input { width: 100%; accent-color: rgb(var(--color-accent)); }
+.avatar-crop-sliders { padding: 8px 12px; border-radius: 8px; background: rgb(var(--color-text) / 0.025); }
+.avatar-crop-sliders label { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) 3rem; min-height: 32px; gap: 12px; align-items: center; margin: 4px 0; font-size: var(--font-small); }
+.avatar-crop-sliders input { width: 100%; min-width: 0; margin: 0; accent-color: rgb(var(--color-accent)); cursor: pointer; }
+.avatar-crop-sliders input:disabled { cursor: default; }
+.avatar-crop-sliders input:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 4px; border-radius: 4px; }
 .avatar-crop-sliders output { text-align: right; color: rgb(var(--color-muted)); font-variant-numeric: tabular-nums; }
 .avatar-crop-dialog footer { display: flex; gap: 8px; margin-top: 24px; }
 .avatar-crop-dialog footer span { flex: 1; }
 .avatar-crop-dialog:has(.avatar-crop-stage) { border-radius: 16px; border-color: color-mix(in srgb, rgb(var(--color-border)) 65%, rgb(var(--color-panel))); }
-.avatar-crop-dialog:has(.avatar-crop-stage) header h2 { font-size: 1.25rem; }
+.avatar-crop-dialog:has(.avatar-crop-stage) header h2 { font-size: var(--font-dialog-title); }
 .avatar-crop-dialog:has(.avatar-crop-stage) header p { line-height: 1.6; }
-.avatar-crop-stage { border-radius: 8px; }
-.avatar-crop-sliders { padding: 8px 12px; border-radius: 8px; background: rgb(var(--color-text) / 0.025); }
-.avatar-crop-sliders label { grid-template-columns: 4.5rem minmax(0, 1fr) 3rem; min-height: 32px; margin: 4px 0; }
-.avatar-crop-sliders input { min-width: 0; margin: 0; cursor: pointer; }
-.avatar-crop-sliders input:disabled { cursor: default; }
-.avatar-crop-sliders input:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 4px; border-radius: 4px; }
 .avatar-crop-dialog:has(.avatar-crop-stage) footer { padding-top: 16px; border-top: 1px solid rgb(var(--color-border) / 0.6); flex-wrap: wrap; }
 .avatar-crop-dialog:has(.avatar-crop-stage) footer .settings-button { min-height: 36px; border-radius: 6px; transition: background-color 120ms, transform 140ms cubic-bezier(0.16, 1, 0.3, 1); }
 .avatar-crop-dialog:has(.avatar-crop-stage) footer .settings-button:first-child { border-color: transparent; background: transparent; color: rgb(var(--color-muted)); }

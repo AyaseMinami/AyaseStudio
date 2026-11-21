@@ -6,11 +6,11 @@
   background: rgb(var(--color-panel));
 }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-panel-header { padding: 20px 24px 16px; align-items: center; }
-.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-panel-header h2 { margin: 0 0 6px; font-size: 1.25rem; font-weight: 600; }
+.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-panel-header h2 { margin: 0 0 6px; font-size: var(--font-dialog-title); font-weight: 500; }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-panel-header p { margin: 0; line-height: 1.6; }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-panel-scroll { padding: 0 24px 12px; }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-section { padding-block: 20px; gap: 10px; border-color: color-mix(in srgb, rgb(var(--color-border)) 60%, transparent); }
-.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-section h3 { margin: 0 0 2px; font-weight: 600; }
+.session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-section h3 { margin: 0 0 2px; font-weight: 500; }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-section label { font-weight: 500; }
 .session-config-panel:has(.assistant-config-basics, .conversation-config-basics) .session-config-section p { margin: 0; line-height: 1.6; }
 .assistant-config-identity { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 20px; }

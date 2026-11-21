@@ -361,6 +361,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
           const expanded = selected && conversationPanelOpen && assistantExpanded;
           const count = conversationCounts.get(assistant.id) ?? 0;
           return <li className="chat-navigation-item assistant-branch" key={assistant.id} {...sortAttributes("assistant", assistant.id)}
+            data-menu-open={menuTarget?.kind === "assistant" && menuTarget.id === assistant.id || undefined}
             onContextMenu={(event) => openContextMenu({ kind: "assistant", id: assistant.id }, event)}
             onKeyDown={(event) => { if (isContextMenuKey(event)) openContextMenu({ kind: "assistant", id: assistant.id }, event); }}>
           {manageAssistants ? <label className="batch-row-select" data-selected={selectedIds.has(assistant.id) || undefined} data-disabled={assistant.id === DEFAULT_ASSISTANT_ID || undefined}><input className="ui-checkbox" type="checkbox" aria-label={`选择助手 ${assistant.name}`} checked={selectedIds.has(assistant.id)}
@@ -404,7 +405,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
               : <button className="settings-button new-conversation-button" type="button" disabled={busy || !!management} data-busy-only={busy} onClick={() => void openConversation({ type: "create-conversation", id: crypto.randomUUID(), assistantId: selectedAssistant.id })}><Plus size={14} />新建对话</button>}
             {conversations.length === 0 && <p className="muted-text assistant-conversations-empty">还没有对话</p>}
             <ConversationNavigationList conversations={conversations} selectedId={conversation?.id} generatingIds={generatingIds}
-              busy={busy} dialogOpen={!!dialog} pendingDelete={pendingDelete} pendingDeleteRef={pendingDeleteRef}
+              busy={busy} dialogOpen={!!dialog} pendingDelete={pendingDelete} pendingDeleteRef={pendingDeleteRef} menuConversationId={menuTarget?.kind === "conversation" ? menuTarget.id : undefined}
               management={manageConversations} selection={manageConversations ? selectedIds : undefined} onSelect={manageConversations ? toggleSelected : undefined} mutationsDisabled={!!management}
               drag={navigationDrag.drag} actions={listActions} />
       </aside>}

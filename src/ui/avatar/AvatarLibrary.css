@@ -38,7 +38,7 @@
 .avatar-library-content .avatar-library-choice:hover:not(:disabled) { background: rgb(var(--color-accent) / 0.08); }
 .avatar-library-content .avatar-library-choice[aria-pressed="true"] { background: rgb(var(--color-accent) / 0.12); }
 .avatar-library-content .avatar-library-choice:active:not(:disabled) { background: rgb(var(--color-accent) / 0.2); }
-.avatar-library-content .avatar-library-section-heading { margin-block: 24px 12px; color: rgb(var(--color-text)); font-weight: 600; }
+.avatar-library-content .avatar-library-section-heading { margin-block: 24px 12px; color: rgb(var(--color-text)); }
 .avatar-library-dialog .avatar-library-content .avatar-library-actions { position: sticky; bottom: 0; z-index: 1; margin-top: 24px; padding-block: 16px; border-top: 1px solid rgb(var(--color-border) / 0.6); background: rgb(var(--color-panel)); }
 .avatar-library-content .avatar-library-actions .settings-button { min-height: 36px; }
 @media (prefers-reduced-motion: reduce) {

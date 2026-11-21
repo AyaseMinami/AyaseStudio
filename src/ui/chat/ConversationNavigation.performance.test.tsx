@@ -12,9 +12,9 @@ import { ConversationNavigation } from "./ConversationNavigation";
 const rowIconRender = vi.hoisted(() => vi.fn());
 vi.mock("lucide-react", async () => {
   const icons = await vi.importActual<typeof import("lucide-react")>("lucide-react");
-  return { ...icons, MessageSquare: (props: React.ComponentProps<typeof icons.MessageSquare>) => {
+  return { ...icons, Pencil: (props: React.ComponentProps<typeof icons.Pencil>) => {
     rowIconRender();
-    return createElement(icons.MessageSquare, props);
+    return createElement(icons.Pencil, props);
   } };
 });
 
@@ -84,7 +84,7 @@ describe("conversation navigation list render isolation", () => {
   it("keeps unchanged row icons mounted without rendering on navigation visibility changes", async () => {
     const ui = await mount();
     const row = ui.host.querySelector<HTMLLIElement>('[data-conversation-id="second"]')!;
-    const icon = row.querySelector(".lucide-message-square");
+    const icon = row.querySelector(".lucide-pencil");
     const list = row.closest<HTMLUListElement>("ul")!;
     list.scrollTop = 120;
     const count = rowIconRender.mock.calls.length;
@@ -96,7 +96,7 @@ describe("conversation navigation list render isolation", () => {
     await click(ui.button("助手与对话"));
     expect(rowIconRender).toHaveBeenCalledTimes(count);
     expect(ui.host.querySelector('[data-conversation-id="second"]')).toBe(row);
-    expect(row.querySelector(".lucide-message-square")).toBe(icon);
+    expect(row.querySelector(".lucide-pencil")).toBe(icon);
     expect(list.scrollTop).toBe(120);
   });
 

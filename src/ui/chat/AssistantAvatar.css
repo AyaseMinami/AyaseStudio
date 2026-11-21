@@ -1,10 +1,11 @@
 .assistant-avatar { width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; vertical-align: middle; background: rgb(var(--color-hover)); color: rgb(var(--color-text)); }
+.assistant-avatar:is(.assistant-avatar-automatic, .assistant-avatar-blue, .assistant-avatar-green, .assistant-avatar-violet) { box-shadow: inset 0 0 0 1px rgb(var(--color-text) / 0.06); }
+.assistant-avatar.assistant-avatar-image, .assistant-avatar.brand-avatar { background: transparent; box-shadow: none; }
 .assistant-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .assistant-avatar svg { width: 62.5%; height: 62.5%; }
 .assistant-avatar-blue { background: #dbeafe; color: #1d4ed8; }
 .assistant-avatar-green { background: #dcfce7; color: #166534; }
 .assistant-avatar-violet { background: #ede9fe; color: #6d28d9; }
-.assistant-avatar.assistant-avatar-image { background: transparent; }
 .assistant-avatar-legacy { font-size: 20px; line-height: 1; }
 .assistant-avatar-initial { font-size: 1.125rem; font-weight: 600; line-height: 1; }
 .assistant-avatar-editor { display: grid; gap: 12px; }

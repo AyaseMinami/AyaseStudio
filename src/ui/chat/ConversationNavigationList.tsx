@@ -1,5 +1,5 @@
 import { memo, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
-import { GripVertical, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { GripVertical, Pencil, Trash2 } from "lucide-react";
 import type { Conversation } from "../../chat/workspace";
 import { isContextMenuKey } from "../ActionMenu";
 import type { useNavigationListDrag } from "./useNavigationListDrag";
@@ -16,7 +16,7 @@ export type ConversationListActions = {
 
 /** Private mounted list: visibility belongs to the surrounding pane, not its rows. */
 export const ConversationNavigationList = memo(function ConversationNavigationList({
-  conversations, selectedId, generatingIds, busy, dialogOpen, pendingDelete, pendingDeleteRef, drag, actions, management, selection, onSelect, mutationsDisabled,
+  conversations, selectedId, generatingIds, busy, dialogOpen, pendingDelete, pendingDeleteRef, menuConversationId, drag, actions, management, selection, onSelect, mutationsDisabled,
 }: {
   conversations: readonly Conversation[];
   selectedId?: string;
@@ -25,6 +25,7 @@ export const ConversationNavigationList = memo(function ConversationNavigationLi
   dialogOpen: boolean;
   pendingDelete?: string;
   pendingDeleteRef: RefObject<HTMLLIElement | null>;
+  menuConversationId?: string;
   drag: ReturnType<typeof useNavigationListDrag>["drag"];
   actions: ConversationListActions;
   management?: boolean;
@@ -35,6 +36,7 @@ export const ConversationNavigationList = memo(function ConversationNavigationLi
   return <ul className="chat-navigation-list">{conversations.map((item) => <li key={item.id} className="chat-navigation-item conversation-leaf" data-conversation-id={item.id}
     data-navigation-sort-kind="conversation" data-navigation-sort-id={item.id}
     data-dragging={drag?.item.kind === "conversation" && drag.item.id === item.id || undefined}
+    data-menu-open={menuConversationId === item.id || undefined}
     data-drop-placement={drag?.item.kind === "conversation" && drag.drop?.id === item.id ? drag.drop.placement : undefined}
     data-navigation-sort-scope={item.assistantId}
     onContextMenu={(event) => actions.openContextMenu(item.id, event)}
@@ -48,7 +50,7 @@ export const ConversationNavigationList = memo(function ConversationNavigationLi
       title="拖动排序；Shift+F10 或右键打开菜单上移／下移" onPointerDown={(event) => actions.beginDrag(event, item)}><GripVertical size={14} aria-hidden="true" /></button>
     <button className="chat-navigation-select conversation-leaf-select" type="button" aria-pressed={item.id === selectedId} disabled={busy} title={`${item.title}${generatingIds.has(item.id) ? " · 生成中" : ""}`}
       onPointerDown={(event) => actions.beginDrag(event, item)}
-      onClick={() => actions.select(item)}><MessageSquare size={14} /><span>{item.title}{generatingIds.has(item.id) ? " · 生成中" : ""}</span></button>
+      onClick={() => actions.select(item)}><span>{item.title}{generatingIds.has(item.id) ? " · 生成中" : ""}</span></button>
     <div className="chat-navigation-actions conversation-row-actions">
       {pendingDelete === item.id
         ? <button className="conversation-delete-cancel" type="button" aria-label={`取消删除对话 ${item.title}`} onClick={actions.cancelDelete}>取消</button>

@@ -3,6 +3,11 @@
   "generatedAt": "2026-10-25T13:50:39+08:00",
   "title": "Design System: Ayase Studio",
   "extensions": {
+    "authority": {
+      "role": "derived-summary",
+      "sourceOfTruth": "docs/UI-DESIGN.md",
+      "conflictPolicy": "本文件仅为设计工具读取的派生摘要；发生冲突时一律以 docs/UI-DESIGN.md 和用户当前明确指令为准。docs/ISSUE-129-UI-PLAN.md 为历史施工记录，当前工作树已落地 #130 且最终视觉验收状态单独记录。"
+    },
     "colorMeta": {
       "accent": { "role": "primary", "displayName": "主题强调色" },
       "workbench-surface": { "role": "neutral", "displayName": "安静工作面" },
@@ -11,8 +16,10 @@
     },
     "typographyMeta": {
       "title": { "displayName": "页面标题", "purpose": "设置页标题。" },
+      "dialogTitle": { "displayName": "弹窗标题", "purpose": "确认、裁剪、模型目录与配置弹窗标题（--font-dialog-title）。" },
       "section": { "displayName": "分组标题", "purpose": "设置分组与绘图面板标题。" },
-      "message": { "displayName": "消息正文", "purpose": "聊天与外观页实际字号阅读样本。" }
+      "message": { "displayName": "消息正文", "purpose": "聊天与外观页实际字号阅读样本。" },
+      "fontScale": { "displayName": "字号缩放基线", "purpose": "统一 --font-scale: 1 乘数底座，为 #126 全局字体比例开关预留，默认视觉字号不变。" }
     },
     "shadows": [
       { "name": "static-workbench", "value": "none", "purpose": "静态设置与外观分组面板。" },
@@ -69,7 +76,7 @@
     {
       "name": "设置分类导航",
       "kind": "nav",
-      "description": "设置分类的当前页状态与轻量悬停。",
+      "description": "设置分类的当前页状态与轻量悬停；与右侧设置内容区构成 12px 圆角成对工作区面板，存在壁纸时采用柔和磨砂，无壁纸及减少透明度／强制颜色模式回退实底。冲突时以 docs/UI-DESIGN.md 为准。",
       "html": "<nav aria-label=\"设置\"><button class=\"ds-navigation\" aria-current=\"page\"><strong>外观</strong></button></nav>",
       "css": ".ds-navigation { display:flex; width:100%; align-items:flex-start; gap:0.7rem; border:1px solid transparent; border-radius:0.375rem; padding:0.65rem; background:transparent; color:rgb(var(--color-muted)); text-align:left; cursor:pointer; } .ds-navigation strong { color:rgb(var(--color-text-soft)); font-size:var(--font-ui); font-weight:500; } .ds-navigation:hover { background:rgb(var(--color-hover)); color:rgb(var(--color-text)); } .ds-navigation[aria-current=page] { background:rgb(var(--color-accent) / 0.12); color:rgb(var(--color-text)); } .ds-navigation[aria-current=page] strong { color:rgb(var(--color-text)); } .ds-navigation:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; }"
     },
@@ -77,9 +84,9 @@
       "name": "实体工作面",
       "kind": "card",
       "refersTo": "workbench-card",
-      "description": "常规、数据与外观分组使用实体工作面和一层边界，无面板投影；关于页内边距为 24px。",
+      "description": "用于设置工作区内部的常规、数据、外观分组卡片与关于卡片，以一层边界分组、无面板投影；设置页头为透明无框页头，不单独包裹白色标题卡片。存在壁纸时设置工作区底板采用柔和雾面，完整规则见 docs/UI-DESIGN.md。",
       "html": "<section class=\"ds-surface\"><h3>阅读预览</h3><p>查看实际字号与主题效果。</p></section>",
-      "css": ".ds-surface { padding:20px; border:1px solid var(--workbench-border); border-radius:12px; background:var(--workbench-surface); color:rgb(var(--color-text)); box-shadow:none; } .ds-surface h3 { margin:0; font-size:var(--font-section); font-weight:600; line-height:1.5; } .ds-surface p { margin:4px 0 0; color:rgb(var(--color-muted)); font-size:var(--font-small); line-height:1.5; }"
+      "css": ".ds-surface { padding:20px; border:1px solid var(--workbench-border); border-radius:12px; background:var(--workbench-surface); color:rgb(var(--color-text)); box-shadow:none; } .ds-surface h3 { margin:0; font-size:var(--font-section); font-weight:500; line-height:1.5; } .ds-surface p { margin:4px 0 0; color:rgb(var(--color-muted)); font-size:var(--font-small); line-height:1.5; }"
     },
     {
       "name": "搜索紧凑服务卡片",
@@ -87,7 +94,7 @@
       "refersTo": "workbench-card",
       "description": "沿用原有紧凑服务卡片；全宽页面在 1040px 容器断点切换为单列。",
       "html": "<section class=\"ds-search-card\"><h3>搜索服务</h3><p>独立配置地址与密钥。</p><input class=\"ds-search-field\" aria-label=\"服务地址\" value=\"https://example.test\" /><button class=\"ds-search-save\">保存</button></section>",
-      "css": ".ds-search-card { display:grid; gap:16px; min-width:0; padding:20px; border:1px solid var(--workbench-border); border-radius:12px; background:var(--workbench-surface); color:rgb(var(--color-text)); box-shadow:none; } .ds-search-card h3 { margin:0; font-size:var(--font-section); font-weight:600; line-height:1.4; } .ds-search-card p { margin:0; color:rgb(var(--color-muted)); font-size:var(--font-small); line-height:1.6; } .ds-search-field { min-width:0; height:36px; border:1px solid rgb(var(--color-border)); border-radius:6px; padding:0 10px; background:color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas))); color:rgb(var(--color-text)); font-size:var(--font-small); } .ds-search-field:hover { border-color:rgb(var(--color-border-strong)); } .ds-search-field:focus { border-color:rgb(var(--color-accent)); } .ds-search-field:focus-visible, .ds-search-save:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; } .ds-search-save { justify-self:start; min-height:36px; padding:6px 10px; border:1px solid rgb(var(--color-accent)); border-radius:8px; background:rgb(var(--color-accent)); color:rgb(var(--color-on-accent)); font-size:var(--font-small); font-weight:500; cursor:pointer; transition:background-color 120ms, color 120ms, transform 140ms cubic-bezier(.16, 1, .3, 1); } .ds-search-save:hover { background:rgb(var(--color-accent-hover)); border-color:rgb(var(--color-accent-hover)); } .ds-search-save:active { transform:translateY(1px); } @media (max-width:760px) { .ds-search-card { padding:16px; } } @media (prefers-reduced-motion:reduce) { .ds-search-save { transition:none; } .ds-search-save:active { transform:none; } }"
+      "css": ".ds-search-card { display:grid; gap:16px; min-width:0; padding:20px; border:1px solid var(--workbench-border); border-radius:12px; background:var(--workbench-surface); color:rgb(var(--color-text)); box-shadow:none; } .ds-search-card h3 { margin:0; font-size:var(--font-section); font-weight:500; line-height:1.4; } .ds-search-card p { margin:0; color:rgb(var(--color-muted)); font-size:var(--font-small); line-height:1.6; } .ds-search-field { min-width:0; height:36px; border:1px solid rgb(var(--color-border)); border-radius:6px; padding:0 10px; background:color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas))); color:rgb(var(--color-text)); font-size:var(--font-small); } .ds-search-field:hover { border-color:rgb(var(--color-border-strong)); } .ds-search-field:focus { border-color:rgb(var(--color-accent)); } .ds-search-field:focus-visible, .ds-search-save:focus-visible { outline:2px solid rgb(var(--color-focus)); outline-offset:3px; } .ds-search-save { justify-self:start; min-height:36px; padding:6px 10px; border:1px solid rgb(var(--color-accent)); border-radius:8px; background:rgb(var(--color-accent)); color:rgb(var(--color-on-accent)); font-size:var(--font-small); font-weight:500; cursor:pointer; transition:background-color 120ms, color 120ms, transform 140ms cubic-bezier(.16, 1, .3, 1); } .ds-search-save:hover { background:rgb(var(--color-accent-hover)); border-color:rgb(var(--color-accent-hover)); } .ds-search-save:active { transform:translateY(1px); } @media (max-width:760px) { .ds-search-card { padding:16px; } } @media (prefers-reduced-motion:reduce) { .ds-search-save { transition:none; } .ds-search-save:active { transform:none; } }"
     },
     {
       "name": "绘图生成动作",
@@ -99,7 +106,7 @@
   ],
   "narrative": {
     "northStar": "安静、清楚的个人创作工作台",
-    "overview": "保留现有识别和个性化能力，以任务布局、对齐和文字层级建立整体感。系统中文字体、用户主题、背景、头像、气泡及可选局部玻璃继续构成个人工作区。",
+    "overview": "本文件为设计工具使用的摘要，现行唯一权威规范为 docs/UI-DESIGN.md（冲突时以该文档及用户当前明确指令为准）。保留现有识别和个性化能力，以任务布局、对齐和文字层级建立整体感；系统中文字体、用户主题、背景、头像、气泡及局部磨砂／可选玻璃继续构成个人工作区。",
     "keyCharacteristics": ["任务分组清楚，静态工作面安静。", "聊天阅读与绘图作品保持主要地位。", "操作直接可达，键盘焦点清晰。"],
     "rules": [],
     "dos": ["Do 使用现有语义颜色和字号变量，保留用户个性化能力。", "Do 让任务、风险说明与对应动作就近排列。", "Do 保留搜索紧凑服务卡片与外观较大的右侧独立滚动预览。", "Do 保留清楚的焦点、键盘访问、强制颜色和减少动态效果支持。"],

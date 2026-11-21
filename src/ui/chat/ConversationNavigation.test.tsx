@@ -559,4 +559,28 @@ describe("new assistant dialog", () => {
     expect(randomUUID).toHaveBeenCalledTimes(1);
     expect(ui.workspace().snapshot!.assistants.find(item => item.id === id)?.name).toBe("保存成功");
   });
+
+  it("marks assistant and conversation rows with data-menu-open while their action menu is open", async () => {
+    const ui = await mount();
+    const conversationRow = ui.host.querySelector<HTMLLIElement>('[data-conversation-id="second"]')!;
+    const conversationHandle = conversationRow.querySelector<HTMLButtonElement>(".navigation-drag-handle")!;
+    expect(conversationRow.getAttribute("data-menu-open")).toBeNull();
+    await key(conversationHandle, "F10", { shiftKey: true });
+    expect(conversationRow.getAttribute("data-menu-open")).toBe("true");
+    const conversationMenu = document.querySelector<HTMLElement>('[role="menu"]');
+    expect(conversationMenu).not.toBeNull();
+    await key(conversationMenu!, "Escape");
+    expect(conversationRow.getAttribute("data-menu-open")).toBeNull();
+
+    await click(ui.button("展开助手栏"));
+    const assistantRow = ui.host.querySelector<HTMLLIElement>('.assistant-branch[data-navigation-sort-id="writer"]')!;
+    const assistantHandle = assistantRow.querySelector<HTMLButtonElement>(".navigation-drag-handle")!;
+    expect(assistantRow.getAttribute("data-menu-open")).toBeNull();
+    await key(assistantHandle, "F10", { shiftKey: true });
+    expect(assistantRow.getAttribute("data-menu-open")).toBe("true");
+    const assistantMenu = document.querySelector<HTMLElement>('[role="menu"]');
+    expect(assistantMenu).not.toBeNull();
+    await key(assistantMenu!, "Escape");
+    expect(assistantRow.getAttribute("data-menu-open")).toBeNull();
+  });
 });

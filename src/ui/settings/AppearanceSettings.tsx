@@ -140,13 +140,13 @@ export function AppearanceSettings({
     </section>
 
     <section className="appearance-group appearance-group-card appearance-transparency-group" aria-labelledby="appearance-transparency-title">
-      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。顶栏与最左功能栏共用背景透明度；侧栏透明度控制聊天的助手栏、对话栏和设置分类导航。未开启玻璃效果时，浮层侧栏会增强底色，避免下方聊天文字干扰导航。</GroupHeading>
+      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。顶栏与最左功能栏共用背景透明度；侧栏透明度控制聊天的助手栏、对话栏和设置分类导航（存在背景图时设置分类导航保留至少 76% 不透明底色以保证可读性，无壁纸时使用实底）。未开启玻璃效果时，浮层侧栏会增强底色，避免下方聊天文字干扰导航。</GroupHeading>
       <div className="appearance-rows">
         <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖四个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
         <div className="appearance-row appearance-range-row"><RowCopy title="顶栏与功能栏背景透明度" /><RangeControl value={`${chromeTransparency}%`} ariaLabel="顶栏与功能栏背景透明度" valueNumber={chromeTransparency} onChange={onChromeTransparencyChange} onReset={() => onChromeTransparencyChange(defaultAppearancePreferences.chromeTransparency)} max="100" min="0" /></div>
         <div className="appearance-row appearance-switch-row"><RowCopy title="侧栏玻璃效果" /><input type="checkbox" role="switch" className="ui-switch" aria-label="侧栏玻璃效果" checked={sidebarGlassEnabled} onChange={(event) => onSidebarGlassEnabledChange(event.target.checked)} /></div>
         <p className="muted-text">仅作用于聊天助手栏和对话栏，不影响设置分类导航。</p>
-        {sidebarGlassEnabled && <p className="notice appearance-inline-notice">侧栏玻璃效果已开启，覆盖聊天侧栏透明度；下方数值仍会保存，关闭效果后使用。设置分类导航继续使用该透明度值。</p>}
+        {sidebarGlassEnabled && <p className="notice appearance-inline-notice">侧栏玻璃效果已开启，覆盖聊天侧栏透明度；下方数值仍会保存，关闭效果后使用。设置分类导航继续使用该透明度值（存在背景图时保留至少 76% 不透明底色，无壁纸时使用实底）。</p>}
         <div className="appearance-row appearance-range-row"><RowCopy title="侧栏透明度" /><RangeControl value={`${sidebarTransparency}%`} ariaLabel="侧栏透明度" valueNumber={sidebarTransparency} onChange={onSidebarTransparencyChange} onReset={() => onSidebarTransparencyChange(defaultAppearancePreferences.sidebarTransparency)} max="100" min="0" /></div>
         <div className="appearance-row appearance-switch-row"><RowCopy title="输入区域玻璃效果" /><input type="checkbox" role="switch" className="ui-switch" aria-label="输入区域玻璃效果" checked={composerGlassEnabled} onChange={(event) => onComposerGlassEnabledChange(event.target.checked)} /></div>
         {composerGlassEnabled && <p className="notice appearance-inline-notice">输入区域玻璃效果已开启，覆盖输入区域透明度；下方数值仍会保存，关闭效果后使用。</p>}

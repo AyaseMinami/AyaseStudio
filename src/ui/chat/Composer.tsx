@@ -231,8 +231,8 @@ export function Composer({
               event.preventDefault();
               onFiles?.(namePastedImages(images, draftAttachments.map((item) => item.name), pasteSequence.current));
             }}
-            placeholder={`输入消息，Enter / Ctrl+Enter 发送，Shift+Enter 换行${onBrowseHistory ? "；首行 ↑ / 末行 ↓ 浏览历史" : ""}`}
-            title={onBrowseHistory ? "首行按 ↑ 浏览历史输入，末行按 ↓ 返回较新输入或草稿" : undefined}
+            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            title={`Enter / Ctrl+Enter 发送，Shift+Enter 换行${onBrowseHistory ? "；首行按 ↑ 浏览历史输入，末行按 ↓ 返回较新输入或草稿" : ""}`}
             disabled={!isHydrated}
             data-busy-only={busyOnly}
           />

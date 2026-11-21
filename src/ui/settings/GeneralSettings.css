@@ -2,7 +2,7 @@
 .general-settings-page > .settings-page-heading { width: 100%; margin-bottom: 16px; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .general-settings-groups { display: grid; gap: 16px; max-width: 800px; }
 .general-settings-group { display: grid; gap: 16px; min-width: 0; padding: 20px; border-color: var(--workbench-border); border-radius: 12px; background: var(--workbench-surface); box-shadow: var(--workbench-shadow); }
-.general-settings-group h3 { margin: 0; font-size: var(--font-section); font-weight: 600; }
+.general-settings-group h3 { margin: 0; font-size: var(--font-section); font-weight: 500; }
 .general-profile { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .general-avatar-preview { display: grid; place-items: center; flex: 0 0 64px; width: 64px; height: 64px; overflow: hidden; border-radius: 12px; color: rgb(var(--color-muted)); background: rgb(var(--color-hover)); }
 .general-avatar-image { background: transparent; }
@@ -30,7 +30,7 @@
 .general-settings-page .avatar-page .avatar-profile p { margin: 0 0 12px; }
 .general-settings-page .avatar-page > .avatar-card > .avatar-library-subheading { border-top: 1px solid rgb(var(--color-border) / 0.6); padding-top: 20px; }
 .general-settings-page .avatar-page > .avatar-card > .avatar-library-note { margin: 12px 0; }
-.general-settings-page .avatar-page > .avatar-card > .avatar-library-section-heading { margin: 20px 0 12px; color: rgb(var(--color-text)); font-weight: 600; }
+.general-settings-page .avatar-page > .avatar-card > .avatar-library-section-heading { margin: 20px 0 12px; color: rgb(var(--color-text)); font-weight: 500; }
 .general-settings-page .avatar-page > .avatar-card > .avatar-library-grid { gap: 12px; padding: 3px; }
 .general-settings-page .avatar-page > .avatar-card > .avatar-library-grid > .avatar-library-choice { padding: 5px; border: 1px solid rgb(var(--color-border) / 0.55); border-radius: 10px; background: rgb(var(--color-text) / 0.025); }
 .general-settings-page .avatar-page .avatar-library-choice:hover:not(:disabled) { background: rgb(var(--color-accent) / 0.08); }

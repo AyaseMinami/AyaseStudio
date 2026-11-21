@@ -225,7 +225,8 @@ it("sends on Enter or Ctrl+Enter and preserves composition and multiline input",
     expect(onSend).not.toHaveBeenCalled();
     await act(async () => { press({ key: "Enter" }); press({ key: "Enter", ctrlKey: true }); });
     expect(onSend).toHaveBeenCalledTimes(2);
-    expect(textarea.getAttribute("placeholder")).toContain("Ctrl+Enter");
+    expect(textarea.getAttribute("placeholder")).toBe("输入消息，Enter 发送，Shift+Enter 换行");
+    expect(textarea.getAttribute("title")).toContain("Ctrl+Enter");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 

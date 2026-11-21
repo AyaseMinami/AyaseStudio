@@ -19,15 +19,21 @@ colors:
 typography:
   title:
     fontSize: "1.375rem"
-    fontWeight: 600
+    fontWeight: 500
+    lineHeight: 1.4
+  dialogTitle:
+    fontSize: "1.25rem"
+    fontWeight: 500
     lineHeight: 1.4
   section:
     fontSize: "1rem"
-    fontWeight: 600
+    fontWeight: 500
     lineHeight: 1.5
   ui:
-    fontFamily: '"Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif'
+    fontFamily: '"Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif'
     fontSize: "0.875rem"
+  mono:
+    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace'
   message:
     fontSize: "0.9375rem"
     lineHeight: 1.75
@@ -70,6 +76,8 @@ components:
 
 # Design System: Ayase Studio
 
+> **权威优先级声明**：本文件仅为设计工具读取的派生摘要，现行唯一权威 UI 规范为 [UI 设计规范](docs/UI-DESIGN.md)；任何冲突一律以 `docs/UI-DESIGN.md` 和用户当前明确指令为准。[#129 施工方案](docs/ISSUE-129-UI-PLAN.md) 保留为历史施工记录；当前工作树已落地 `#130` 视觉修订（详见 `docs/UI-DESIGN.md` 顶部），最终视觉验收状态单独记录。
+
 ## Overview
 
 **Creative North Star: "安静、清楚的个人创作工作台"**
@@ -82,7 +90,7 @@ components:
 - 聊天阅读与绘图作品保持主要地位。
 - 操作直接可达，键盘焦点清晰。
 
-本轮权威方案见 [#129 施工方案](docs/ISSUE-129-UI-PLAN.md)，完整行为约束见 [UI 设计规范](docs/UI-DESIGN.md)。实现值以 [App.css](src/App.css) 及对应组件 CSS 为准；前置 tokens 通过现有 CSS 变量跟随主题和用户配色，不固定为某套默认色。
+实现值以 [App.css](src/App.css) 及对应组件 CSS 为准；前置 tokens 通过现有 CSS 变量跟随主题和用户配色，不固定为某套默认色。
 
 ## Colors
 
@@ -96,13 +104,13 @@ components:
 
 ## Typography
 
-沿用系统无衬线字体栈和现有代码字体。标题、分组、界面、消息、辅助、元信息分别使用前置 tokens 中对应层级；实际实现通过 `--font-*` 变量使用这些值。消息行高保持舒展，普通表单保持紧凑，不把缩小后的整体预览作为字号判断依据。
+通过 `:root` 中的 `--font-sans`（Windows 11 优先 `"Segoe UI Variable Text"`，中文优先标准版 `"Microsoft YaHei"` 并回退 `"Microsoft YaHei UI"` 等系统中文字体）与 `--font-mono`（`"Cascadia Mono"`, `"Cascadia Code"`, `Consolas`, `ui-monospace`, `monospace`）统一界面与代码字族，托盘窗口同步复用同一无衬线字体栈。由于 Windows 微软雅黑可用字形（Light / Regular / Bold）缺少 Medium，按 CSS 字重匹配规则 `500` 会优先匹配 Regular 而 `600` 会跳至 Bold；因此页面标题（`--font-title`）、弹窗标题（`--font-dialog-title`）与分组标题（`--font-section`）统一使用 `font-weight: 500`，依靠字号、主／副字色与留白建立层级，仅在选中态、激活模型与 Markdown 强调处保留 `600`。所有语义字号均经 `--font-scale: 1` 统一派生，为 `#126` 全局字体比例开关提供干净的变量底座（默认视觉字号不变）。消息行高保持舒展，普通表单保持紧凑，不把缩小后的整体预览作为字号判断依据。
 
 ## Layout
 
 间距按关系分档：标题到主要内容为 `--settings-section-gap: 24px`，同级设置卡片为 `--settings-card-gap: 16px`，常规/外观/数据卡片内边距为 `--settings-card-padding: 20px`。数据页的父容器 gap 与标题 margin 合计 24px，不重复叠加。组内保持 8/12/16px；关于信息行上下 16px。绘图工作面仍为 8px 缝隙，外观左右工作区仍为 24px，导航/聊天不机械套用设置卡片间距。
 
-设置页横向留白使用 `--settings-page-gutter`（`clamp(20px, 3vw, 40px)`），页标题与内容间距使用 section。共享页面最大宽度为 1440px；搜索和外观使用完整可用宽度，常规、数据、关于各自限制内容宽度。标题、常规分组、数据任务和关于页使用实体工作面；常规保持组内对齐，连接以列表与详情组织，数据以任务与风险说明组织，关于以版本、更新、反馈组织。
+设置页横向留白使用 `--settings-page-gutter`（`clamp(20px, 3vw, 40px)`），页标题与内容间距使用 section。共享页面最大宽度为 1440px；搜索和外观使用完整可用宽度，常规与数据管理内容最大宽度统一为 1000px，并与连接配置、外观、网络搜索共 5 页统一左对齐（`margin-inline: 0`）；关于页作为独立品牌信息卡片单独居中展示（最大宽 880px）。设置页头取消孤立全宽白色标题卡片，改为透明无框页头直接承载于设置工作区底板上；内部各设置卡片继续沿用 `var(--workbench-surface)` 与 `var(--workbench-border)`。常规保持组内对齐，连接以列表与详情组织，数据以任务与风险说明组织，关于以版本、更新、反馈组织。
 
 搜索保留紧凑服务卡片与原有字段布局；卡片间距为 content。沿用 [NetworkSearchSettings.css](src/ui/settings/NetworkSearchSettings.css) 的容器规则：页面内容宽度大于 1040px 时两列，1040px 及以下单列；卡片内字段在容器达到 560px 时并列。不要改成占满一整行的宽松服务分区。
 
@@ -112,11 +120,11 @@ components:
 
 ## Elevation & Depth
 
-标题、常规分组、数据、关于及外观使用实体工作面，搜索保留紧凑服务卡片。工作面以一层边界建立分组，面板不叠投影。弹窗、菜单和浮动反馈保留已有结构性投影；用户可选的侧栏与输入区玻璃继续沿用原能力。具体投影与动效见 [.impeccable/design.json](.impeccable/design.json)。
+设置工作区右侧内容区与左侧分类导航统一为 12px 圆角成对面板：无壁纸时分别为 `--color-canvas` 与 `--color-panel` 实色底板，存在壁纸时右侧采用柔和雾面底板、左侧同步柔和磨砂；强制颜色与减少透明度偏好统一回退不透明实底。设置页头透明无框，内部常规分组、数据、关于、外观卡片及搜索紧凑服务卡片使用实体工作面，以一层边界建立分组且面板不叠投影。弹窗、菜单和浮动反馈保留已有结构性投影；聊天外框、侧栏、输入区与底部生成统计栏的壁纸磨砂及可选玻璃规则以 [UI 设计规范](docs/UI-DESIGN.md) 为准。具体投影与动效见 [.impeccable/design.json](.impeccable/design.json)。
 
 ## Shapes
 
-工作面采用 surface 圆角，主要设置按钮采用 control 圆角，确认弹窗采用 dialog 圆角。实体分组内部的设置行保持轻分隔；搜索保留每个服务一张紧凑卡片。现有输入、导航、确认按钮和资源缩略图保留组件自己的形状，不强制把全部圆角改成同一值。
+设置工作区面板与内部工作面采用 surface 圆角，主要设置按钮采用 control 圆角，确认弹窗采用 dialog 圆角。实体分组内部的设置行保持轻分隔；搜索保留每个服务一张紧凑卡片。现有输入、导航、确认按钮和资源缩略图保留组件自己的形状（如聊天输入框 16px 圆角与圆形发送按钮），不强制把全部圆角改成同一值。
 
 ## Components
 
