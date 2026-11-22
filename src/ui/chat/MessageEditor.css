@@ -1,6 +1,6 @@
 .message-editor.message-attachment-editor { min-width: 0; max-width: 100%; grid-template-columns: minmax(0, 1fr); gap: 0.4rem; border-color: rgb(var(--color-border)); border-radius: 12px; }
 .message-attachment-editor.message-editor-drag-over { outline: 2px dashed rgb(var(--color-accent)); outline-offset: 4px; }
-.message-attachment-editor textarea.composer-input { min-height: 4rem; max-height: 12rem; padding: 0.25rem 0; border: 0; border-radius: 0; background: transparent; resize: vertical; font-size: 0.9375rem; line-height: 1.5rem; }
+.message-attachment-editor textarea.composer-input { min-height: 4rem; max-height: 12rem; padding: 0.25rem 0; border: 0; border-radius: 0; background: transparent; resize: vertical; font-size: var(--font-message); line-height: 1.5rem; }
 .message-attachment-editor textarea.composer-input:focus-visible { outline: none; }
 .message-editor.message-attachment-editor:focus-within { border-color: rgb(var(--color-focus)); }
 .message-attachment-editor > .message-editor-attachments { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; }

@@ -16,7 +16,7 @@
 .data-management-page .data-import-mode { padding-top: 12px; border-top: 1px solid rgb(var(--color-border)); }
 .data-management-page .data-import-confirm { padding-top: 12px; }
 .data-management-intro { display: flex; flex-direction: column; gap: 0.75rem; }
-.data-management-page .settings-card h3 { margin: 0; font-size: var(--font-section); font-weight: 600; line-height: 1.4; }
+.data-management-page .settings-card h3 { margin: 0; font-size: var(--font-section); font-weight: 500; line-height: 1.4; }
 .data-management-page .settings-card p { margin: 0; font-size: var(--font-ui); line-height: 1.65; overflow-wrap: anywhere; }
 .data-management-intro > .settings-button, .data-management-page .data-import-intro > .settings-button { align-self: flex-start; margin-top: 0.25rem; }
 @media (max-width: 760px) {

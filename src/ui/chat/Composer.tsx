@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronsDown, ChevronsUp, FileImage, FileText, MoveHorizontal, Paperclip, Send, Square, X } from "lucide-react";
-import { attachmentAccept, materializeDraftAttachment, type DraftAttachment } from "../../chat/attachments";
+import { attachmentAccept, materializeDraftAttachment, supportsOfficeAttachments, type DraftAttachment } from "../../chat/attachments";
 import type { ChatProtocol } from "../../chat/types";
 import { SentAttachmentPreview } from "./SentAttachmentPreview";
 import { isTextareaVisualBoundary, type TextareaCaretAffinity } from "./textareaVisualLine";
@@ -29,6 +29,7 @@ export interface ComposerProps {
   onBrowseHistory?(direction: -1 | 1, selection: { start: number; end: number }): boolean;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;
+  sendStatus?: string;
   attachmentBlockReason?: string;
   error?: string;
   isHydrated: boolean;
@@ -56,6 +57,7 @@ export function Composer({
   onBrowseHistory,
   draftAttachments = [],
   attachmentBusy,
+  sendStatus,
   attachmentBlockReason,
   error,
   isHydrated,
@@ -231,16 +233,17 @@ export function Composer({
               event.preventDefault();
               onFiles?.(namePastedImages(images, draftAttachments.map((item) => item.name), pasteSequence.current));
             }}
-            placeholder={`输入消息，Enter / Ctrl+Enter 发送，Shift+Enter 换行${onBrowseHistory ? "；首行 ↑ / 末行 ↓ 浏览历史" : ""}`}
-            title={onBrowseHistory ? "首行按 ↑ 浏览历史输入，末行按 ↓ 返回较新输入或草稿" : undefined}
+            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            title={`Enter / Ctrl+Enter 发送，Shift+Enter 换行${onBrowseHistory ? "；首行按 ↑ 浏览历史输入，末行按 ↓ 返回较新输入或草稿" : ""}`}
             disabled={!isHydrated}
             data-busy-only={busyOnly}
           />
           {attachmentBusy && <p className="attachment-loading" role="status">正在读取附件，完成后才能发送…</p>}
+          {!attachmentBusy && sendStatus && <p className="attachment-loading send-status" role="status" aria-live="polite">{sendStatus}</p>}
           <div className="composer-toolbar">
             <div className="composer-tools" role="group" aria-label="聊天功能">
             <button className="composer-tool-button" type="button" aria-label="添加附件"
-              title={`添加图片、PDF、文本/代码${protocol === "openai-responses" ? "、Office 原文件" : "（Office 需 Responses）"}；点击发送后才请求`}
+              title={`添加图片、PDF、文本/代码${supportsOfficeAttachments(protocol) ? "、Office 原文件" : "（Office 需 Responses 或 Gemini）"}；点击发送后才请求`}
               disabled={!isHydrated}
               data-busy-only={busyOnly}
               onClick={() => picker.current?.click()}><Paperclip size={17} /></button>

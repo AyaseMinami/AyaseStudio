@@ -63,3 +63,29 @@ it("destroys an already started PDF task when closing before document loading fi
   expect(getPage).not.toHaveBeenCalled();
   host.remove();
 });
+
+it("describes Office attachments as handled by the selected protocol service rather than hardcoding Responses", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const readOffice = vi.fn();
+  const office: SentAttachment = {
+    name: "deck.pptx",
+    mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    size: 12345,
+    reference: "attachments/deck.pptx",
+  };
+  try {
+    await act(async () => root.render(
+      <SentAttachmentPreview item={office} read={readOffice} returnFocus={host} onClose={() => {}} />,
+    ));
+    const text = host.querySelector('[role="dialog"]')?.textContent ?? "";
+    expect(text).toContain("发送时由所选协议服务端处理");
+    expect(text).not.toContain("Responses");
+    expect(readOffice).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

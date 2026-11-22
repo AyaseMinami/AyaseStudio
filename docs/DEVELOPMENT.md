@@ -1,5 +1,29 @@
 # Ayase Studio Development Guide
 
+## Backend optimization #131 — Batch 3 background case boundary, shared file safety, and evaluation items (2026-11-22)
+
+Batch 3 of #131 (Plan A) completes the background UUID case-consistency fix, extracts shared path-safety/bounded-read helpers, and resolves the evaluation items on `dev` (baseline `8991e03`, preserving Batch 1 `drawing*.rs` and Batch 2 `cherry_import.rs`/`cherry_legacy.rs` changes in the worktree):
+
+- **Background case alignment (`src-tauri/src/background.rs`)**: aligned `parse_managed_file_name` / `managed_file_name` with frontend `isBackgroundReference` (`src/appearance/appearance.ts`, case-insensitive `backgrounds/` prefix, RFC 4122 UUIDv4, and `png|jpg|webp` extension). `resolve_existing_managed_file` keeps a zero-scan fast path for canonical lowercase files and preserves the actual on-disk casing for legacy/mixed-case files (and their thumbnails) across both Windows and case-sensitive filesystems; `cleanup_background_files` normalizes retained references, originals, and thumbnail stems to canonical lowercase for set comparison while deleting by actual `entry.path()`, closing the Windows mixed-case deletion hazard without altering existing managed files or portable backup rules.
+- **Shared file safety & cleanups (`src-tauri/src/file_safety.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/ayase_backup.rs`, `src-tauri/src/drawing.rs`, `src-tauri/src/drawing_output.rs`)**: extracted identical `is_link`, `inspect` (with upfront `ParentDir`/`CurDir` rejection before traversal), `checked_read`, and `bounded_read` helpers while preserving per-module error codes and distinct write/persist semantics (`create_new`, atomic `persist`, `persist_noclobber`); removed four no-op unbuffered `File::flush()` calls before `sync_all()` and a duplicate `uuid(task)?` in `drawing_output::reserve`.
+- **Evaluation item decisions & large-sample release measurements** (reproducible isolated `--release` harness and raw log in ignored `.verify.local/issue-131-batch3/benchmark.txt`):
+  - **Adopted — `attachments.rs` async offloading + backup maintenance quiescence** (`src-tauri/src/attachments.rs`, `src-tauri/src/ayase_backup.rs`, `src/chat/attachmentLifecycle.ts`, `src/chat/useChatSession.ts`): moved all 5 `#[tauri::command]` entry points into `tauri::async_runtime::spawn_blocking` via `run_attachment_op`, acquiring an RAII `InFlightGuard` before queuing so `ayase_backup_fence` drains queued attachment work via `attachments::wait_for_idle()` before acquiring mutexes; `useChatSession::prepareBackup()` also awaits `attachmentLifecycle.settle()` before reloading into `#backup`. Measured on a 20 MiB synthetic text attachment: synchronous `persist` stalled the caller for 19.89 ms (`read`: 14.17 ms) vs 0.038 ms caller dispatch with `spawn_blocking`.
+  - **Adopted — `cherry_v8.rs` bottom-up JSON length caching**: replaced repeated `serde_json::to_vec` calls on nested objects/arrays and `^` back-references with zero-allocation `json_string_len` / `json_number_len`, O(1) bottom-up length composition, and cached `memo` lengths (charging before cloning on back-references). Measured: 2,000-message topic (797,041-byte wire) 8.78 → 6.50 ms (1.35×), 500×4 KiB back-references 2.71 → 1.02 ms (2.65×), depth-60×128 KiB nesting 3.92 → 2.10 ms (1.87×).
+  - **Adopted — `cherry_sqlite.rs` preflight scan consolidation**: bounded the row-count fast-fail query with `LIMIT (limit + 1)` and merged the oversized-field and total-bytes scans into a single derived-table pass preserving `LIMIT`/`INVALID` semantics. Measured: 50,000-row (~55 MiB) valid table 110.22 → 79.60 ms (1.38×), 150,000-row oversized table (limit 100k) 18.57 → 13.34 ms (1.39×).
+  - **Adopted (bounded) — `drawing_output.rs` same-call `writable` deduplication**: deduplicated identical directory probes within a single `reserve()` invocation while keeping zero cross-call caching so every `prepare_drawing_output` call still re-verifies all distinct roots, `meta/`, and `meta/<task>/` per [DATA-CONTRACTS.md](DATA-CONTRACTS.md). Measured: 50 existing tasks sharing one output root (150 → 52 fsync probes) 597.98 → 207.95 ms (2.88×).
+  - **Deferred — retiring `import_drawing_reference`**: retained in runtime because `src/drawing/referenceSession.ts` fallback, unit tests, and `scripts/drawing110/measurement.tsx` Base64-vs-binary benchmarks still reference it.
+
+Verification (post-Codex P2 fixes): `cargo test --locked --manifest-path src-tauri/Cargo.toml` passed 195 tests (1 existing ignored `local_backup_preview`; including new tests for `attachments::wait_for_idle`, `background` mixed-case disk preservation, `file_safety`, `drawing_output`, and `cherry_v8` `json_string_len` ASCII/UTF-8 parity), `cargo check --locked --manifest-path src-tauri/Cargo.toml` passed with zero warnings, `npm.cmd run check` passed (30 release tests, 16 data-contract tests covering 14 tables / 9 preference keys / 9 backup tables, 183 frontend test files / 3,153 tests including new `attachmentLifecycle.settle()` test, TypeScript, and Vite production build), and `git diff --check` passed. An independent read-only review in a separate context verified the final Batch 3 diff with no blocking findings. Codex re-acceptance for Batch 3, remote Issue #131 updates, and Git commit/push remain separate.
+
+## Backend optimization #131 — Batch 2 Cherry import budget and legacy topic cleanup (2026-11-22)
+
+Batch 2 of #131 fixes the Cherry attachment 1 GiB session read-budget accounting in `src-tauri/src/cherry_import.rs` and cleans up the duplicate dead branch in `src-tauri/src/cherry_legacy.rs`, while preserving the existing security, version-matrix, and data contracts in [CHERRY-IMPORT.md](CHERRY-IMPORT.md) (baseline `8991e03`, preserving existing uncommitted Batch 1 `drawing*.rs` changes in the `dev` worktree).
+
+- `Session::file` merges the duplicate `archive.by_index()` lookup, bounds decompression to `min(64 MiB, remaining) + 1`, accounts `read_budget` strictly by actual bytes read (including error, mismatch, and unsupported-MIME reads) against `SESSION_READ_LIMIT` (1 GiB), and validates actual decompressed length against both ZIP declared length and non-zero `expected_size`. `Session::bytes` likewise rejects declared/actual length mismatches.
+- `cherry_legacy::normalize` collapses the duplicate same-value `if/else` returning `"cherry-missing-topic"` and corrects its comment, retaining the distinction between an existing empty topic record (`messages: []`) and a missing topic record.
+
+Verification: `cargo test --manifest-path src-tauri/Cargo.toml` passed 188 tests (1 existing ignored `local_backup_preview`; 62 Cherry tests including forged under-declared, over-declared, zero-declared 1 GiB overrun, exact 1 GiB boundary, `expected_size` mismatch, `Session::bytes` mismatch, and empty/missing topic cases), `cargo check --manifest-path src-tauri/Cargo.toml` passed, `npm.cmd run check` passed (30 release tests, 16 data-contract tests covering 14 tables / 9 preference keys / 9 backup tables, Vitest, TypeScript, and Vite production build), and `git diff --check` passed. An independent read-only review in a separate context found no blocking defects or contract regressions. Codex cross-acceptance for Batch 2 also passed per user confirmation (with isolated native startup log recorded under ignored `.verify.local/issue131-batch2-3_wz0fta/startup.log`). Batch 1 and Batch 3 tracking, remote Issue #131 updates, Git commit/push, and real Cherry 2.1.3 export acceptance remain separate.
+
 ## Beta 9 test publication preparation (2026-11-10)
 
 The user requested packaging and publication of the verified drawing layout and conversation-configuration entry points. All version sources are aligned to `0.1.0-beta.9`; the dependency inventory is regenerated for the updated locks. The existing signed Actions candidate and explicit Beta test-publication mode apply. Installed upgrade, data retention and real native window interaction remain pending manual acceptance. The implementation, isolated browser evidence and independent review are recorded below.
@@ -969,13 +993,17 @@ npm.cmd ci
 
 办公室与家里之间通过 Git 远端交换已检查的工作。提交、推送和 PR 操作需要用户明确授权；已有授权涵盖本次操作时不重复询问。没有授权时完成本地工作并报告待同步状态。
 
-当前分支约定：
+当前分支与双代理协作约定：
 
 - `main`：稳定基线与阶段版本。
-- `dev`：日常集成开发分支。
+- `dev`：日常集成开发分支，实行**单写者、串行接力，允许并行只读复核**。
+- Codex 与 Antigravity 共用仓库根目录 [AGENTS.md](../AGENTS.md)，可按任务互换实施／复核角色，同一任务也可中途交接。
+- 写权限随交接转移：原实施方先停止写入，提供**任务目标、基准提交、未提交文件的归属、接手方可改范围、已跑检查、待验项及共享证据路径**；接手方核对 `git status` 和相关 `git diff` 后再动笔。交接不默认要求 commit。
+- 独立审查按实际参与情况认定：重大变更须由未参与实施的独立审查者在独立上下文中只读复核最终 diff；若双方都改过同一批重大变更，不能通过互换角色代替独立审查。
 - GitHub Issues：记录需求范围、验收标准和依赖。
 - 达到一个可发布阶段后，通过 Pull Request 将 `dev` 合并到 `main`。
-- 除非用户明确要求，不为普通工作额外创建分支或 worktree。
+- 除非用户明确要求，不为普通工作额外创建分支或 worktree；使用共享当前工作区的子代理（如 `inherit`）时，主代理需为并行子代理分配互不重叠的写入范围，或仅安排只读复核。
+- 临时验收夹具、日志与跨代理交接截图统一存放在已忽略的 `*.local/` 目录（如 `.verify.local/<任务>/`），交接时给出双方均可读取的仓库内相对路径。`.impeccable/critique/`、`.impeccable/review/` 与 `.taste-skill/` 按子目录忽略，保留已入库的 `.impeccable/design.json`。
 
 ## Local credentials and live probes
 
@@ -1077,7 +1105,7 @@ git status --short --branch
 npm.cmd run tauri dev
 ```
 
-并完成与修改范围相称的桌面烟雾测试。真实 API 探针仅用于确有需要且用户已授权的兼容性验证。检查通过后，只有相关修改、失败或新的疑点才需要扩大或重复检查。
+并完成与修改范围相称的桌面烟雾测试。前端自主浏览器验收仅在已核实的内置隔离浏览器中针对隔离本地测试页与合成数据执行，禁止读取真实凭据、发送供应商请求或复用带用户 Cookie／登录态的浏览器配置；Codex 使用 Codex 内置浏览器，Antigravity 仅在已核实使用内置隔离浏览器时承接，若切换到外接浏览器或隔离性存疑则直接交由 Codex 承接。真实 API 探针仅用于确有需要且用户已授权的兼容性验证。检查通过后，只有相关修改、失败或新的疑点才需要扩大或重复检查。
 
 ## Troubleshooting
 

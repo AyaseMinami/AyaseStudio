@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { MoreHorizontal, X } from "lucide-react";
+import { ActionMenu, useActionMenu } from "../ActionMenu";
 import { SearchSelectField } from "../SearchSelectField";
 import type { DrawingPresetInput, DrawingPromptPreset } from "../../drawing/presets";
 
@@ -103,12 +104,17 @@ export function DrawingPresets({ presets, prompt, disabled = false, onApply, onC
 }) {
   const [selectedId, setSelectedId] = useState("");
   const [dialog, setDialog] = useState<PresetDialog | null>(null);
+  const menu = useActionMenu<"actions">();
+  const menuTrigger = useRef<HTMLButtonElement>(null);
   const selected = presets.find(preset => preset.id === selectedId);
   const selectId = useId();
   const dialogOpen = Boolean(dialog);
   useEffect(() => {
     return () => onDialogChange?.(false);
   }, [onDialogChange]);
+  useEffect(() => {
+    if ((disabled || !selected || dialogOpen) && menu.state) menu.close();
+  }, [disabled, selected, dialogOpen, menu]);
   function close() {
     setDialog(null);
     onDialogChange?.(false);
@@ -120,26 +126,41 @@ export function DrawingPresets({ presets, prompt, disabled = false, onApply, onC
       content: kind === "edit" || kind === "delete" ? selected!.content : prompt });
     onDialogChange?.(true);
   }
-  return <section className="drawing-presets" aria-label="提示词预设">
-    <div className="drawing-field drawing-preset-controls" inert={dialogOpen}>
-      <label className="drawing-label" htmlFor={selectId}>提示词预设</label>
+  return <div className="drawing-presets" aria-label="提示词预设">
+    <div className="drawing-preset-controls" inert={dialogOpen}>
+      <label className="drawing-visually-hidden" htmlFor={selectId}>提示词预设</label>
       <SearchSelectField id={selectId} label="提示词预设" value={selected?.id ?? ""} disabled={disabled}
-        options={[{ value: "", label: "选择预设，直接载入提示词" }, ...presets.map(preset => ({ value: preset.id, label: preset.name, description: preset.content.length > 160 ? `${preset.content.slice(0, 160)}…` : preset.content }))]}
+        options={[{ value: "", label: "选择预设" }, ...presets.map(preset => ({ value: preset.id, label: preset.name, description: preset.content.length > 160 ? `${preset.content.slice(0, 160)}…` : preset.content }))]}
         onChange={id => {
           setSelectedId(id);
           if (presets.some(preset => preset.id === id)) onApply(id);
         }} />
       <div className="drawing-actions">
-        {([
-          ["update", "更新"], ["save-as", "另存"], ["edit", "编辑"], ["delete", "删除"],
-        ] as const).map(([kind, label]) => <button key={kind} type="button" className="drawing-button"
-          aria-label={`${label}预设`} title={`${label}预设`}
-          disabled={disabled || (kind !== "save-as" && !selected)} onClick={event => open(kind, event.currentTarget)}>{label}</button>)}
+        <button type="button" className="drawing-button drawing-preset-save"
+          aria-label="另存预设" title="将当前提示词另存为预设"
+          disabled={disabled} onClick={event => open("save-as", event.currentTarget)}>另存</button>
+        <button ref={menuTrigger} type="button" className="drawing-button drawing-preset-more"
+          aria-label="更多预设操作" aria-haspopup="menu" aria-expanded={Boolean(menu.state)}
+          title={selected ? "管理当前预设（更新、编辑、删除）" : "先选择一个预设后可管理"}
+          disabled={disabled || !selected}
+          onClick={event => {
+            if (menu.state) menu.close(true);
+            else menu.open("actions", event.currentTarget);
+          }}><MoreHorizontal size={15} aria-hidden="true" /></button>
       </div>
     </div>
+    {menu.state && selected && <ActionMenu state={menu.state} label="预设管理操作" onClose={menu.close}
+      items={[
+        { id: "update", label: "用当前草稿更新预设", accessibleLabel: "更新预设", disabled: disabled || !selected,
+          onSelect: () => { if (menuTrigger.current) open("update", menuTrigger.current); } },
+        { id: "edit", label: "编辑预设", accessibleLabel: "编辑预设", disabled: disabled || !selected,
+          onSelect: () => { if (menuTrigger.current) open("edit", menuTrigger.current); } },
+        { id: "delete", label: "删除预设", accessibleLabel: "删除预设", danger: true, separatorBefore: true, disabled: disabled || !selected,
+          onSelect: () => { if (menuTrigger.current) open("delete", menuTrigger.current); } },
+      ]} />}
     {dialog && <PresetEditor initial={dialog} disabled={disabled}
       targetExists={!dialog.targetId || presets.some(preset => preset.id === dialog.targetId)} onClose={close}
       onSave={input => dialog.kind === "delete" ? onDelete(dialog.targetId!)
         : dialog.kind === "update" || dialog.kind === "edit" ? onUpdate(dialog.targetId!, input) : onCreate(input)} />}
-  </section>;
+  </div>;
 }

@@ -9,8 +9,8 @@
 }
 :root :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog) h2 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: var(--font-dialog-title);
+  font-weight: 500;
 }
 :root :is(.message-confirm-dialog, .management-dialog, .drawing-task-confirm-dialog) p {
   margin: 0;

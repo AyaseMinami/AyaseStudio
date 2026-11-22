@@ -126,19 +126,19 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v3（最低读者 3）、绘图设置模块 v4（最低读者 4），其余当前备份模块 v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、绘图设置模块 v5（最低读者 5）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v3（最低读者 3），其余当前备份模块 v1；排除于可移植备份的模块为 `general` v2、`drawingHistory` v3、`recovery` v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 
-当前 13 张 Dexie 表全部注册：
+当前 14 张 Dexie 表全部注册：
 
 | 备份策略 | 表 |
 | --- | --- |
-| `included` | `assistants`、`conversations`、`chats`、`workspace`、`avatarLibrary`、`userAvatar`、`cherryImports`、`legacyConversationConfigs` |
+| `included` | `assistants`、`conversations`、`chats`、`workspace`、`avatarLibrary`、`userAvatar`、`providerAvatars`、`cherryImports`、`legacyConversationConfigs` |
 | `projected` | `drawingDrafts`、`drawingPromptPresets` |
 | `excluded` | `drawingTasks`、`drawingResults`、`backupJournal` |
 
-当前 8 个偏好键全部注册：外观、聊天宽度、新助手默认头像、连接 v3、搜索 v1 五个当前配置键；连接 v2 和供应商 v1 两个 `legacy-source`；`ayase-studio.data-compatibility.v1` 为私有兼容报告。连接和搜索通过专用受校验区域导出，不将其原始存储文本混入普通偏好。
+当前 9 个偏好键全部注册：外观、聊天宽度、新助手默认头像（#81 后仅历史兼容保留）、连接 v3、搜索 v1 五个 `included` 配置键；常规偏好 `ayase-studio.general.v1` 一个 `excluded` 设备级配置键；连接 v2 和供应商 v1 两个 `legacy-source`；`ayase-studio.data-compatibility.v1` 为私有兼容报告。连接和搜索通过专用受校验区域导出，不将其原始存储文本混入普通偏好。
 
 新增表／偏好必须声明模块、版本、备份处理和资源所有者；刻意排除也要注册。删除入口同步移除过期注册，并保留已批准的历史读取／迁移合同。`backupJournal` 属于恢复内部状态，不可作为可移植应用内容导出。
 
@@ -148,7 +148,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 
 嵌套持久对象有自己的类型和策略；新增嵌套字段同步更新对应策略、投影和读取校验。凭据不得进入普通消息／偏好；资源字段仍必须经过受管路径、字节预算、MIME、摘要、所有权和引用重映射校验。协议映射、模型／助手／对话 ID、版本和能力是结构，不是可丢弃参数。动态 JSON、供应商回放和用户自定义参数仍遵循各自既有边界；类型策略不提供自动语义验证。
 
-绘图设置／预设使用 `projected` 策略，`src/backup/types.ts` 中 `projectedBackupTables` 是独立于原始可移植 `backupTables` 的静态清单；真实设置及嵌套 OpenAI 投影、预设读取均使用字段策略。设置仅包含比例、分辨率、模型 ID、OpenAI 尺寸／画质、可选 Gemini temperature／safetyThreshold／outputMode／thinkingLevel、Grok／Seedream 明确版本参数组、数量、并发、提示音和可选复用协议；预设仅包含 id、name、content、createdAt、updatedAt。同名不同 ID 独立保存，正文空白不规范化。自动草稿提示词、参考图、任务／结果历史和图片排除；原始当前草稿／预设仅参与私有日志与回滚，不加入可移植 rows。#93 维护协调取代旧广泛绘图禁用规则，本地代码门禁、定向回归及独立 Sol/high 审查已完成；不得按旧 #83 整图库提案扩大实现。
+绘图设置／预设使用 `projected` 策略，`src/backup/types.ts` 中 `projectedBackupTables` 是独立于原始可移植 `backupTables` 的静态清单；真实设置及嵌套 OpenAI 投影、预设读取均使用字段策略。设置仅包含比例、分辨率、模型 ID、OpenAI 尺寸／画质及可选输出格式 `outputFormat`／`svgModel`／`frameCount`／`frameDurationMs`、可选 Gemini temperature／safetyThreshold／outputMode／thinkingLevel、Grok／Seedream 明确版本参数组、数量、并发、提示音和可选复用协议；预设仅包含 id、name、content、createdAt、updatedAt。同名不同 ID 独立保存，正文空白不规范化。自动草稿提示词、参考图、任务／结果历史和图片排除；原始当前草稿／预设仅参与私有日志与回滚，不加入可移植 rows。#93 维护协调取代旧广泛绘图禁用规则，本地代码门禁、定向回归及独立 Sol/high 审查已完成；不得按旧 #83 整图库提案扩大实现。
 
 ## 迁移、默认值与失败
 
@@ -196,7 +196,7 @@ v1–v4 文档继续按各自原始合同读取：v1–v3 不获得宽松参数�
 
 每次数据变化同步类型／策略／注册、读取和导出投影、版本及迁移／默认政策、相关文档和确定性测试。测试按变化覆盖旧／当前版本、跨多个版本与重复读取、默认值、非法／未来结构零写入、允许参数过滤与拒绝边界、报告的预览／重启／再次导出及事务／日志回滚。使用合成数据和独立数据库，不读取真实用户数据、凭据或请求供应商。
 
-运行数据契约检查及相关测试，然后按 [DEVELOPMENT.md](DEVELOPMENT.md#required-verification-before-handoff) 完成适当门禁。数据格式、迁移、模块协议、安全或发布门禁变化必须经独立 Sol/high 审查；主代理核对证据和修复。通过局部测试不代表原生文件窗口、真实恢复、断电或跨版本发布验收。
+运行数据契约检查及相关测试，然后按 [DEVELOPMENT.md](DEVELOPMENT.md#required-verification-before-handoff) 完成适当门禁。数据格式、迁移、模块协议、安全或发布门禁变化必须经未参与实施的独立审查者在独立上下文中只读审查（Codex 继续使用 `comprehensive_reviewer`／高推理档位，Antigravity 使用等效独立只读审查或交由另一方交叉复核；若双方均修改过同一批重大变更，须由未参与实施的独立审查者复核最终 diff）；主代理核对证据和修复。通过局部测试不代表原生文件窗口、真实恢复、断电或跨版本发布验收。
 
 #93 本地接入设置／预设、恢复和维护协调；合并／副本保留本机设置，替换只改包含的绘图类别且保留 prompt／references，旧包／缺失类别不清空绘图。原始草稿／预设和普通表在同一日志及 Dexie 提交中保护；旧日志没有绘图快照时跳过该类别。任务、成果、图片、原生未决保存日志始终保留。#105 绘图接入及确定性跨版本样例已补齐；#93 本地代码门禁、定向回归与独立 Sol/high 审查完成。隔离浏览器恢复、浅深／自定义主题宽窄窗口视觉验收及 Tauri 编译／启动已有证据，实际原生窗口／文件窗口接受项和 #94 压力／桌面关闭重启仍待独立验收。当前状态见 [#105 记录](ISSUE-105-IMPLEMENTATION.md) 和 [#93 记录](ISSUE-93-IMPLEMENTATION.md)，不得以实现或门禁通过代替 Issue 完成／关闭。
 

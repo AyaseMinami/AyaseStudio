@@ -9,6 +9,9 @@ const textExtensions = "txt,csv,tsv,json,xml,yaml,yml,log,html,htm,css,js,jsx,ts
 export function isOfficeAttachment(item: AttachmentMetadata): boolean {
   return Object.values(officeMimeTypes).some((mime) => mime === item.mimeType);
 }
+export function supportsOfficeAttachments(protocol?: ChatProtocol): boolean {
+  return protocol === "openai-responses" || protocol === "gemini-native";
+}
 export function attachmentAccept(): string {
   return ["png", "jpg", "jpeg", "webp", "pdf", "md", "markdown", ...textExtensions,
     ...Object.keys(officeMimeTypes)].map((ext) => `.${ext}`).join(",");
@@ -46,7 +49,7 @@ function mimeFromName(name: string): AttachmentMime {
     case "pdf": return "application/pdf";
     case "txt": return "text/plain";
     case "md": case "markdown": return "text/markdown";
-    default: throw new AttachmentError("不支持此文件类型。可添加图片、PDF、常用文本或 DOCX/XLSX/PPTX（仅 Responses）。");
+    default: throw new AttachmentError("不支持此文件类型。可添加图片、PDF、常用文本或 DOCX/XLSX/PPTX（仅 Responses 或 Gemini 原生）。");
   }
 }
 
@@ -109,8 +112,16 @@ export function safeTextAttachment(data: string): string {
   return new TextDecoder("utf-8", { fatal: true }).decode(base64ToBytes(data));
 }
 
-export function attachmentCapabilityNotice(model: string, attachments: AttachmentMetadata[]): string | undefined {
-  if (attachments.some(isOfficeAttachment)) return "Office 原文件由 Responses 服务端处理，本地不解析；文档内图片/图表不保证读取，表格可能只处理部分行。中转站兼容性尚未核实。";
+export function attachmentCapabilityNotice(protocol: ChatProtocol, model: string, attachments: AttachmentMetadata[]): string | undefined {
+  if (attachments.some(isOfficeAttachment)) {
+    if (protocol === "openai-responses") {
+      return "Office 原文件由 Responses 服务端处理，本地不解析；文档内图片/图表不保证读取，表格可能只处理部分行。中转站兼容性尚未核实。";
+    }
+    if (protocol === "gemini-native") {
+      return "Office 原文件通过 Gemini 原生接口内联发送，本地不解析；文档理解能力与范围由服务端和所选模型决定。中转站兼容性尚未核实。";
+    }
+    return "Office 原文件由所选协议服务端处理，本地不解析。中转站兼容性尚未核实。";
+  }
   if (!attachments.some((item) => !item.mimeType.startsWith("text/"))) return undefined;
   return model.trim()
     ? "当前模型的图片/PDF 输入能力尚未核实；若上游不支持会报告错误，不会自动改用其他模型或重试。"
@@ -119,8 +130,8 @@ export function attachmentCapabilityNotice(model: string, attachments: Attachmen
 
 export function attachmentCapabilityFailure(protocol: ChatProtocol, model: string,
   attachments: AttachmentMetadata[]): string | undefined {
-  if (protocol !== "openai-responses" && attachments.some(isOfficeAttachment)) {
-    return "Office 附件仅支持 Responses 连接。请切换连接或移除附件；不会自动转换文件。";
+  if (!supportsOfficeAttachments(protocol) && attachments.some(isOfficeAttachment)) {
+    return "Office 附件仅支持 Responses 或 Gemini 原生连接。请切换连接或移除附件；不会自动转换文件。";
   }
   if (!attachments.some((item) => item.mimeType.startsWith("image/") || item.mimeType === "application/pdf")) return undefined;
   if ((protocol === "openai-chat" || protocol === "openai-responses") &&

@@ -2,7 +2,7 @@
 use std::{
     collections::HashSet,
     fs::{Metadata, OpenOptions},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -69,79 +69,23 @@ fn reference(value: &str) -> Result<Reference<'_>, Error> {
     })
 }
 
-fn link(metadata: &Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if metadata.file_attributes() & 0x400 != 0 {
-            return true;
+impl From<crate::file_safety::FileSafetyError> for Error {
+    fn from(error: crate::file_safety::FileSafetyError) -> Self {
+        match error {
+            crate::file_safety::FileSafetyError::InvalidPath => Self::InvalidReference,
+            crate::file_safety::FileSafetyError::Unavailable => Self::Unavailable,
+            crate::file_safety::FileSafetyError::TooLarge => Self::TooLarge,
+            crate::file_safety::FileSafetyError::Storage => Self::Storage,
         }
     }
-    false
 }
 
-// Check each ancestor, including junctions on Windows. Never canonicalize a link.
-// A missing suffix is allowed for new resources and idempotent journal cleanup.
 fn inspect_path(path: &Path) -> Result<Option<Metadata>, Error> {
-    if !path.is_absolute() {
-        return Err(Error::InvalidReference);
-    }
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        current.push(component);
-        if !current.is_absolute() {
-            continue;
-        }
-        match std::fs::symlink_metadata(&current) {
-            Ok(metadata) => {
-                if link(&metadata) || (current != path && !metadata.is_dir()) {
-                    return Err(Error::InvalidReference);
-                }
-                if current == path {
-                    return Ok(Some(metadata));
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err(Error::Storage),
-        }
-    }
-    Err(Error::InvalidReference)
+    Ok(crate::file_safety::inspect(path)?)
 }
 
 fn bounded_read(path: &Path, limit: u64) -> Result<Vec<u8>, Error> {
-    let metadata = inspect_path(path)?.ok_or(Error::Unavailable)?;
-    if !metadata.is_file() {
-        return Err(Error::InvalidReference);
-    }
-    if metadata.len() > limit {
-        return Err(Error::TooLarge);
-    }
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
-    }
-    let file = options.open(path).map_err(|_| Error::Unavailable)?;
-    let metadata = file.metadata().map_err(|_| Error::Storage)?;
-    if link(&metadata) || !metadata.is_file() {
-        return Err(Error::InvalidReference);
-    }
-    if metadata.len() > limit {
-        return Err(Error::TooLarge);
-    }
-    let mut bytes = Vec::new();
-    file.take(limit + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| Error::Storage)?;
-    if bytes.len() as u64 > limit {
-        return Err(Error::TooLarge);
-    }
-    Ok(bytes)
+    Ok(crate::file_safety::bounded_read(path, limit)?)
 }
 
 fn original_path(directory: &Path, item: &Reference<'_>) -> PathBuf {
@@ -258,7 +202,6 @@ fn write_resource(directory: &Path, value: &str, data: &str) -> Result<(), Error
         .map_err(|_| Error::Storage)?;
     // Do not remove a partial file: the already-persisted import journal owns it.
     file.write_all(&bytes).map_err(|_| Error::Storage)?;
-    file.flush().map_err(|_| Error::Storage)?;
     file.sync_all().map_err(|_| Error::Storage)
 }
 
@@ -312,7 +255,6 @@ fn save_backup(path: &Path, data: &str) -> Result<(), Error> {
     output
         .write_all(data.as_bytes())
         .map_err(|_| Error::Storage)?;
-    output.flush().map_err(|_| Error::Storage)?;
     output.as_file().sync_all().map_err(|_| Error::Storage)?;
     output.persist(path).map_err(|_| Error::Storage)?;
     Ok(())
@@ -445,6 +387,7 @@ pub async fn assert_ayase_resources_available(
 #[tauri::command]
 pub async fn ayase_backup_fence() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        crate::attachments::wait_for_idle().map_err(|_| Error::Storage.code())?;
         let _drawing = crate::drawing::DRAWING_FILES
             .lock()
             .map_err(|_| Error::Storage.code())?;

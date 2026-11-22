@@ -37,7 +37,50 @@ fn read_preference(root: &Path) -> Result<Preference, Error> {
     Ok(value)
 }
 
+#[cfg(test)]
+pub(super) mod probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LOCATION_CALLS: Cell<usize> = const { Cell::new(0) };
+        static PROTECT_ROOT_CHECKS: Cell<usize> = const { Cell::new(0) };
+        static WRITABLE_CALLS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(in crate::drawing) fn reset() {
+        LOCATION_CALLS.with(|cell| cell.set(0));
+        PROTECT_ROOT_CHECKS.with(|cell| cell.set(0));
+        WRITABLE_CALLS.with(|cell| cell.set(0));
+    }
+
+    pub(super) fn record_location() {
+        LOCATION_CALLS.with(|cell| cell.set(cell.get() + 1));
+    }
+
+    pub(in crate::drawing) fn location_calls() -> usize {
+        LOCATION_CALLS.with(Cell::get)
+    }
+
+    pub(super) fn record_protect_root_check() {
+        PROTECT_ROOT_CHECKS.with(|cell| cell.set(cell.get() + 1));
+    }
+
+    pub(in crate::drawing) fn protect_root_checks() -> usize {
+        PROTECT_ROOT_CHECKS.with(Cell::get)
+    }
+
+    pub(super) fn record_writable() {
+        WRITABLE_CALLS.with(|cell| cell.set(cell.get() + 1));
+    }
+
+    pub(super) fn writable_calls() -> usize {
+        WRITABLE_CALLS.with(Cell::get)
+    }
+}
+
 pub(super) fn location(root: &Path, task: &str) -> Result<Option<PathBuf>, Error> {
+    #[cfg(test)]
+    probe::record_location();
     let path = location_path(root, task)?;
     if inspect(&path)?.is_none() { return Ok(None); }
     let value: Location = serde_json::from_slice(&bounded_read(&path, MANIFEST_LIMIT)?)
@@ -48,6 +91,8 @@ pub(super) fn location(root: &Path, task: &str) -> Result<Option<PathBuf>, Error
 }
 
 pub(super) fn writable(directory: &Path, create: bool) -> Result<(), Error> {
+    #[cfg(test)]
+    probe::record_writable();
     valid_path(directory)?;
     let metadata = inspect(directory).map_err(|_| Error::OutputUnwritable)?;
     if metadata.is_none() && !create { return Err(Error::OutputUnavailable); }
@@ -112,32 +157,40 @@ pub(super) fn reserve(root: &Path, default: &Path, tasks: &[String]) -> Result<(
     for task in tasks { uuid(task)?; if !unique.insert(task) { return Err(Error::InvalidParameters); } }
     let preference = read_preference(root)?;
     let selected = preference.directory.as_deref().unwrap_or(default);
+    let mut probed = HashSet::new();
+    let mut check_writable = |directory: &Path, create: bool| -> Result<(), Error> {
+        if probed.contains(directory) {
+            return Ok(());
+        }
+        writable(directory, create)?;
+        probed.insert(directory.to_owned());
+        Ok(())
+    };
     let mut bindings = Vec::new();
     for task in tasks {
-        uuid(task)?;
         if let Some(directory) = location(root, task)? {
-            writable(&directory, false)?;
-            writable(&directory.join("meta"), true)?;
-            writable(&directory.join("meta").join(task), true)?;
+            check_writable(&directory, false)?;
+            check_writable(&directory.join("meta"), true)?;
+            check_writable(&directory.join("meta").join(task), true)?;
         } else if inspect(&root.join("drawing").join(task))?.is_some()
             || inspect(&root.join("drawing").join("meta").join(task))?.is_some() {
             // Existing v1/v2 task data is pinned to app data forever.
-            writable(&root.join("drawing"), false)?;
-            writable(&task_directory(root, task)?, false)?;
+            check_writable(&root.join("drawing"), false)?;
+            check_writable(&task_directory(root, task)?, false)?;
         } else {
             bindings.push(task);
         }
     }
     if bindings.is_empty() { return Ok(()); }
-    writable(selected, preference.directory.is_none())?;
-    writable(&selected.join("meta"), true)?;
+    check_writable(selected, preference.directory.is_none())?;
+    check_writable(&selected.join("meta"), true)?;
     let directory = root.join("drawing-locations");
     inspect(&directory)?;
     std::fs::create_dir_all(&directory).map_err(|_| Error::OutputConfig)?;
     for task in bindings {
         let value = Location { version: 1, task: task.clone(), directory: selected.to_owned() };
         publish(&location_path(root, task)?, &serde_json::to_vec(&value).map_err(|_| Error::OutputConfig)?)?;
-        writable(&selected.join("meta").join(task), true)?;
+        check_writable(&selected.join("meta").join(task), true)?;
     }
     Ok(())
 }
@@ -281,6 +334,63 @@ mod tests {
         let other = tempfile::tempdir().unwrap();
         assert!(protect_export(app.path(), &other.path().join("export.png")).is_ok());
     }
+
+    #[test]
+    fn protect_export_deduplicates_output_roots_while_validating_every_locator() {
+        let app = tempfile::tempdir().unwrap();
+        let output_a = tempfile::tempdir().unwrap();
+        let output_b = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+
+        let tasks_a: Vec<String> = (0..10).map(|_| Uuid::new_v4().to_string()).collect();
+        let tasks_b: Vec<String> = (0..5).map(|_| Uuid::new_v4().to_string()).collect();
+        reserve(app.path(), output_a.path(), &tasks_a).unwrap();
+        select(app.path(), output_a.path(), Some(output_b.path().to_owned())).unwrap();
+        reserve(app.path(), output_a.path(), &tasks_b).unwrap();
+
+        probe::reset();
+        protect_export(app.path(), &outside.path().join("safe.png")).unwrap();
+        assert_eq!(probe::location_calls(), 15);
+        assert_eq!(probe::protect_root_checks(), 2);
+
+        assert_eq!(
+            protect_export(app.path(), &output_a.path().join("nested.png")),
+            Err(Error::InvalidReference)
+        );
+        assert_eq!(
+            protect_export(app.path(), &output_b.path().join("nested.png")),
+            Err(Error::InvalidReference)
+        );
+
+        let corrupt_task = Uuid::new_v4().to_string();
+        let corrupt_path = location_path(app.path(), &corrupt_task).unwrap();
+        std::fs::write(&corrupt_path, b"corrupt-locator").unwrap();
+        assert_eq!(
+            protect_export(app.path(), &outside.path().join("safe.png")),
+            Err(Error::OutputConfig)
+        );
+    }
+
+    #[test]
+    fn reserve_deduplicates_shared_directory_writable_probes_within_single_call() {
+        let app = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let existing: Vec<String> = (0..4).map(|_| Uuid::new_v4().to_string()).collect();
+        reserve(app.path(), output.path(), &existing).unwrap();
+
+        // Re-reserving 4 already-bound tasks + 1 new task in the same output directory
+        // should probe root once, meta once, and each task's meta/<task> once (2 + 5 = 7).
+        let mut mixed = existing.clone();
+        mixed.push(Uuid::new_v4().to_string());
+        probe::reset();
+        reserve(app.path(), output.path(), &mixed).unwrap();
+        assert_eq!(probe::writable_calls(), 7);
+
+        // A subsequent reserve() still re-probes from scratch (no cross-call caching).
+        probe::reset();
+        reserve(app.path(), output.path(), &existing).unwrap();
+        assert_eq!(probe::writable_calls(), 6);
+    }
 }
 
 pub(super) fn protect_export(root: &Path, destination: &Path) -> Result<(), Error> {
@@ -289,6 +399,9 @@ pub(super) fn protect_export(root: &Path, destination: &Path) -> Result<(), Erro
     let target_parent = destination.parent().ok_or(Error::InvalidReference)?
         .canonicalize().map_err(|_| Error::Storage)?;
     let destination = target_parent.join(destination.file_name().ok_or(Error::InvalidReference)?);
+    // Windows path components are case insensitive even though Path::starts_with is not.
+    let target = destination.to_string_lossy().replace('/', "\\").to_lowercase();
+    let mut checked_outputs = HashSet::new();
     for entry in std::fs::read_dir(&directory).map_err(|_| Error::Storage)? {
         let path = entry.map_err(|_| Error::Storage)?.path();
         // An interrupted NamedTempFile publication can leave .tmp* files.
@@ -296,13 +409,15 @@ pub(super) fn protect_export(root: &Path, destination: &Path) -> Result<(), Erro
         if path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(".tmp")) { continue; }
         let task = path.file_stem().and_then(|name| name.to_str()).ok_or(Error::OutputConfig)?;
         let output = location(root, task)?.ok_or(Error::OutputConfig)?;
+        if checked_outputs.contains(&output) { continue; }
+        checked_outputs.insert(output.clone());
+        #[cfg(test)]
+        probe::record_protect_root_check();
         // A nonexistent output cannot contain this already-existing destination parent.
         // Existing roots and the destination use the same canonical representation,
         // including UNC prefixes and Windows short-name aliases.
         if inspect(&output)?.is_none() { continue; }
         let output = output.canonicalize().map_err(|_| Error::Storage)?;
-        // Windows path components are case insensitive even though Path::starts_with is not.
-        let target = destination.to_string_lossy().replace('/', "\\").to_lowercase();
         let prefix = output.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase();
         if target == prefix || target.starts_with(&format!("{prefix}\\")) { return Err(Error::InvalidReference); }
     }

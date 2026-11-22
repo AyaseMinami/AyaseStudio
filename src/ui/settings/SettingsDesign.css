@@ -2,21 +2,21 @@
 .settings-workspace .settings-page {
   width: 100%;
   max-width: 1440px;
-  margin-inline: auto;
+  margin-inline: 0;
   padding: 24px var(--settings-page-gutter) 40px;
 }
 .settings-workspace .settings-page > .settings-page-heading {
   width: 100%;
   margin: 0 0 var(--settings-section-gap);
-  padding: 16px 20px;
-  border: 1px solid var(--workbench-border);
-  border-radius: 12px;
-  background: var(--workbench-surface);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .settings-workspace .settings-page > .settings-page-heading h2 {
   margin: 0 0 6px;
   font-size: var(--font-title);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
   letter-spacing: normal;
 }
@@ -72,7 +72,7 @@
 .settings-workspace .network-search-page { max-width: none; }
 
 /* Data actions retain their warnings beside the action they guard. */
-.settings-workspace .data-management-page { max-width: 1120px; gap: var(--settings-card-gap); }
+.settings-workspace .data-management-page { max-width: calc(1000px + 2 * var(--settings-page-gutter)); gap: var(--settings-card-gap); }
 /* The flex gap already contributes to the title-to-content spacing. */
 .settings-workspace .data-management-page > .settings-page-heading {
   margin-bottom: calc(var(--settings-section-gap) - var(--settings-card-gap));
@@ -93,9 +93,9 @@
 }
 .settings-workspace .data-management-entry-heading { margin-bottom: 4px; }
 .settings-workspace .data-management-page .data-import-page { gap: 0; }
-.settings-workspace .about-page { max-width: 1040px; }
+.settings-workspace .about-page { max-width: 880px; margin-inline: auto; }
 .settings-workspace .about-card { border: 1px solid var(--workbench-border); border-radius: 12px; padding: 24px; background: var(--workbench-surface); }
-.settings-workspace .about-brand { align-items: flex-start; text-align: left; padding: 0 0 var(--settings-section-gap); }
+.settings-workspace .about-brand { align-items: center; text-align: center; padding: 8px 0 var(--settings-section-gap); }
 .settings-workspace .about-brand h2 { font-size: var(--font-title); letter-spacing: normal; margin: 16px 0 6px; }
 .settings-workspace .about-update { padding-block: 24px; }
 .settings-workspace .about-feedback-row,

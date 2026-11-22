@@ -225,7 +225,8 @@ it("sends on Enter or Ctrl+Enter and preserves composition and multiline input",
     expect(onSend).not.toHaveBeenCalled();
     await act(async () => { press({ key: "Enter" }); press({ key: "Enter", ctrlKey: true }); });
     expect(onSend).toHaveBeenCalledTimes(2);
-    expect(textarea.getAttribute("placeholder")).toContain("Ctrl+Enter");
+    expect(textarea.getAttribute("placeholder")).toBe("输入消息，Enter 发送，Shift+Enter 换行");
+    expect(textarea.getAttribute("title")).toContain("Ctrl+Enter");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
@@ -332,5 +333,45 @@ it("turns a compact drag into the expanded state and collapses to the original h
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="展开输入框"]')!.click());
     expect(footer.style.height).toBe("50%");
     expect(host.querySelector("textarea")?.value).toBe("keep draft");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("updates the paperclip Office tooltip for Responses, Gemini native and other protocols", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    for (const protocol of ["openai-responses", "gemini-native"] as const) {
+      await act(async () => root.render(<Composer draft="" protocol={protocol} isHydrated isGenerating={false}
+        onDraftChange={() => {}} onSend={() => {}} onStop={() => {}} />));
+      const title = host.querySelector<HTMLButtonElement>('[aria-label="添加附件"]')?.getAttribute("title") ?? "";
+      expect(title).toContain("、Office 原文件");
+      expect(title).not.toContain("Office 需");
+    }
+    for (const protocol of ["openai-chat", "anthropic-native", undefined] as const) {
+      await act(async () => root.render(<Composer draft="" protocol={protocol} isHydrated isGenerating={false}
+        onDraftChange={() => {}} onSend={() => {}} onStop={() => {}} />));
+      const title = host.querySelector<HTMLButtonElement>('[aria-label="添加附件"]')?.getAttribute("title") ?? "";
+      expect(title).toContain("Office 需 Responses 或 Gemini");
+    }
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("displays sendStatus feedback text when not reading newly picked attachments", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Composer draft="" sendStatus="正在准备附件，请稍候…" isHydrated isGenerating
+      onDraftChange={() => {}} onSend={() => {}} onStop={() => {}} />));
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("正在准备附件，请稍候…");
+    await act(async () => root.render(<Composer draft="" sendStatus="正在等待模型响应…" isHydrated isGenerating
+      onDraftChange={() => {}} onSend={() => {}} onStop={() => {}} />));
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("正在等待模型响应…");
+    await act(async () => root.render(<Composer draft="" attachmentBusy sendStatus="正在等待模型响应…" isHydrated isGenerating={false}
+      onDraftChange={() => {}} onSend={() => {}} onStop={() => {}} />));
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("正在读取附件，完成后才能发送…");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

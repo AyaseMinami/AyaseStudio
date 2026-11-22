@@ -12,6 +12,7 @@ interface ConversationView extends InputDraft {
   messages: StoredChatMessage[];
   draftAttachments: DraftAttachment[];
   attachmentBusy: boolean;
+  sendStatus?: string;
   error?: string;
   contextPlan?: ContextSummary;
   configErrors: ConfigErrors;
@@ -171,7 +172,7 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
           // If reloading fails, the old writable store must not resurrect the
           // transcript that the transaction has already edited or deleted.
           stores.current.delete(id);
-          if (view) views.current.set(id, { ...view, contextPlan: undefined, error: undefined });
+          if (view) views.current.set(id, { ...view, contextPlan: undefined, error: undefined, sendStatus: undefined });
           await loadView(id);
         }
         await publish(updated);
@@ -245,6 +246,11 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
     setErrorAt: (target: string, value: SetStateAction<string | undefined>) => {
       const current = views.current.get(target); if (!current) return;
       views.current.set(target, { ...current, error: typeof value === "function" ? value(current.error) : value }); changed();
+    },
+    setSendStatusAt: (target: string, value: string | undefined) => {
+      const current = views.current.get(target);
+      if (!current || current.sendStatus === value) return;
+      views.current.set(target, { ...current, sendStatus: value }); changed();
     },
     // Presentation only: the first transcript load remains visibly unavailable.
     isTemporarilyBusy: busy && hasHydratedView.current,

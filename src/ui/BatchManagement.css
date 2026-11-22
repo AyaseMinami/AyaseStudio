@@ -34,8 +34,7 @@
 .batch-delete-treatment label:has(input:checked) { background: rgb(var(--color-accent) / .08); }
 .batch-delete-treatment label:hover { background: rgb(var(--color-text) / .035); }
 .batch-delete-treatment:disabled label { cursor: default; }
-.batch-delete-treatment input { flex-shrink: 0; }
-.batch-delete-treatment input { accent-color: rgb(var(--color-accent)); }
+.batch-delete-treatment input { flex-shrink: 0; accent-color: rgb(var(--color-accent)); }
 .batch-delete-impact { margin: 16px 0 0; line-height: 1.6; overflow-wrap: anywhere; }
 .batch-delete-warning { margin: 12px 0 0; font-size: var(--font-small); color: rgb(var(--color-muted)); line-height: 1.6; overflow-wrap: anywhere; }
 .batch-delete-error { margin: 12px 0 0; color: rgb(var(--color-error-text)); font-size: var(--font-small); }

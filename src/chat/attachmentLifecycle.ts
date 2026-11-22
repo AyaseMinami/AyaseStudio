@@ -75,4 +75,12 @@ export class AttachmentLifecycle {
         [...new Set([...pendingBeforeRead, ...this.reserved])]);
     });
   }
+
+  async settle(): Promise<void> {
+    let pending: Promise<void>;
+    do {
+      pending = this.queue;
+      await pending.catch(() => undefined);
+    } while (this.queue !== pending);
+  }
 }

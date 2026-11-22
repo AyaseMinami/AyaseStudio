@@ -15,8 +15,9 @@ export function containsSelectFieldTarget(container: Element | null, target: Eve
 }
 
 /** Short, single-choice lists. Focus stays on the trigger inside its owning dialog. */
-export function SelectField({ value, options, label, disabled = false, title, id: fieldId, className, onChange }: {
+export function SelectField({ value, options, label, disabled = false, title, id: fieldId, className, describedBy, invalid = false, onChange }: {
   value: string; options: SelectOption[]; label: string; disabled?: boolean; title?: string; id?: string; className?: string;
+  describedBy?: string; invalid?: boolean;
   onChange(value: string): void;
 }) {
   const id = useId();
@@ -90,6 +91,7 @@ export function SelectField({ value, options, label, disabled = false, title, id
     <button ref={trigger} id={fieldId} type="button" className={`select-field${className ? ` ${className}` : ""}`} role="combobox" aria-label={label}
       aria-haspopup="listbox" aria-expanded={shown} aria-controls={shown ? id : undefined}
       aria-activedescendant={shown && activeIndex >= 0 ? `${id}-${activeIndex}` : undefined}
+      aria-describedby={describedBy} aria-invalid={invalid || undefined}
       disabled={disabled} title={title ?? selected?.label ?? value} onBlur={() => setOpen(false)}
       onClick={() => shown ? setOpen(false) : show()}
       onKeyDown={event => {

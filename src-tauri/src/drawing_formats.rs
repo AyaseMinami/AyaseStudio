@@ -19,7 +19,40 @@ const SVG_RASTER_BYTES: u64 = 256 * 1024 * 1024;
 const GIF_FRAMES: usize = 64;
 const GIF_PIXELS: u64 = 128_000_000;
 
+#[cfg(test)]
+mod probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static DIMENSIONS_CALLS: Cell<usize> = const { Cell::new(0) };
+        static RESOURCE_REFERENCES_CALLS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn reset() {
+        DIMENSIONS_CALLS.with(|cell| cell.set(0));
+        RESOURCE_REFERENCES_CALLS.with(|cell| cell.set(0));
+    }
+
+    pub(super) fn record_dimensions() {
+        DIMENSIONS_CALLS.with(|cell| cell.set(cell.get() + 1));
+    }
+
+    pub(super) fn dimensions_calls() -> usize {
+        DIMENSIONS_CALLS.with(Cell::get)
+    }
+
+    pub(super) fn record_resource_references() {
+        RESOURCE_REFERENCES_CALLS.with(|cell| cell.set(cell.get() + 1));
+    }
+
+    pub(super) fn resource_references_calls() -> usize {
+        RESOURCE_REFERENCES_CALLS.with(Cell::get)
+    }
+}
+
 fn dimensions(width: u32, height: u32) -> Result<(), Error> {
+    #[cfg(test)]
+    probe::record_dimensions();
     if width == 0 || height == 0 || u64::from(width) * u64::from(height) > PIXEL_LIMIT {
         return Err(Error::TooLarge);
     }
@@ -115,7 +148,7 @@ fn fragment(value: &str) -> Result<&str, Error> {
     Ok(id)
 }
 
-fn static_value(value: &str) -> Result<(), Error> {
+fn static_value(value: &str) -> Result<bool, Error> {
     // No CSS escapes, comments, directives, markup, or external resource URLs.
     if value.contains(['\\', '@', '<', '>'])
         || value.contains("/*")
@@ -125,11 +158,15 @@ fn static_value(value: &str) -> Result<(), Error> {
     {
         return Err(Error::Corrupt);
     }
-    resource_references(value)?;
-    Ok(())
+    Ok(!resource_references(value)?.is_empty())
 }
 
 fn resource_references(value: &str) -> Result<Vec<&str>, Error> {
+    #[cfg(test)]
+    probe::record_resource_references();
+    if !value.as_bytes().contains(&b'(') {
+        return Ok(Vec::new());
+    }
     let lower = value.to_ascii_lowercase();
     let mut offset = 0;
     let mut references = Vec::new();
@@ -146,26 +183,32 @@ fn resource_references(value: &str) -> Result<Vec<&str>, Error> {
     Ok(references)
 }
 
-fn declarations(value: &str) -> Result<(), Error> {
-    static_value(value)?;
+fn declaration_properties(value: &str, owner: Option<Node<'_, '_>>) -> Result<(), Error> {
     for declaration in value
         .split(';')
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        let (property, _) = declaration.split_once(':').ok_or(Error::Corrupt)?;
-        if !presentation_property(property.trim()) {
+        let (property, prop_value) = declaration.split_once(':').ok_or(Error::Corrupt)?;
+        let property = property.trim();
+        if !presentation_property(property) {
             return Err(Error::Corrupt);
+        }
+        if let Some(node) = owner {
+            if is_inherited_resource_property_on_non_shape(node, property)
+                && !resource_references(prop_value)?.is_empty()
+            {
+                return Err(Error::Corrupt);
+            }
         }
     }
     Ok(())
 }
 
 fn stylesheet(value: &str) -> Result<(), Error> {
-    static_value(value)?;
     // CSS selectors and inherited properties obscure reference multiplicity.
     // Resource URLs must be attached directly to a bounded XML element.
-    if !resource_references(value)?.is_empty() {
+    if static_value(value)? {
         return Err(Error::Corrupt);
     }
     let mut remaining = value.trim();
@@ -178,7 +221,7 @@ fn stylesheet(value: &str) -> Result<(), Error> {
         if body.contains('{') {
             return Err(Error::Corrupt);
         }
-        declarations(body)?;
+        declaration_properties(body, None)?;
         remaining = rest.trim();
     }
     Ok(())
@@ -347,20 +390,15 @@ fn expand<'a>(
     Ok(())
 }
 
-fn resource_owner(node: Node<'_, '_>, property: &str, value: &str) -> Result<(), Error> {
+fn is_inherited_resource_property_on_non_shape(node: Node<'_, '_>, property: &str) -> bool {
     // These properties are inherited and can multiply a resource once per
     // descendant. Keep them on direct shapes so the expansion budget is exact
     // or conservative. marker-mid is excluded because it repeats per segment.
-    if matches!(property, "fill" | "stroke" | "marker-start" | "marker-end")
-        && !resource_references(value)?.is_empty()
+    matches!(property, "fill" | "stroke" | "marker-start" | "marker-end")
         && !matches!(
             node.tag_name().name(),
             "path" | "line" | "polyline" | "polygon" | "rect" | "circle" | "ellipse"
         )
-    {
-        return Err(Error::Corrupt);
-    }
-    Ok(())
 }
 
 fn validate_svg(text: &str) -> Result<(), Error> {
@@ -417,18 +455,12 @@ fn validate_svg(text: &str) -> Result<(), Error> {
             if attr.name() == "href" {
                 fragment(attr.value())?;
             } else if attr.name() == "style" {
-                declarations(attr.value())?;
-                for declaration in attr
-                    .value()
-                    .split(';')
-                    .filter(|value| !value.trim().is_empty())
-                {
-                    let (property, value) = declaration.split_once(':').ok_or(Error::Corrupt)?;
-                    resource_owner(node, property.trim(), value)?;
-                }
-            } else {
-                static_value(attr.value())?;
-                resource_owner(node, attr.name(), attr.value())?;
+                let has_references = static_value(attr.value())?;
+                declaration_properties(attr.value(), has_references.then_some(node))?;
+            } else if static_value(attr.value())?
+                && is_inherited_resource_property_on_non_shape(node, attr.name())
+            {
+                return Err(Error::Corrupt);
             }
         }
         if node.tag_name().name() == "style" {
@@ -446,17 +478,19 @@ struct RasterBudget {
     max_height: f64,
 }
 
-fn validate_raster_budget(tree: &usvg::Tree) -> Result<(), Error> {
+fn validate_raster_budget(tree: &usvg::Tree) -> Result<(u32, u32), Error> {
     let size = tree.size().to_int_size();
-    dimensions(size.width(), size.height())?;
-    let pixels = u64::from(size.width()) * u64::from(size.height());
+    let (width, height) = (size.width(), size.height());
+    dimensions(width, height)?;
+    let pixels = u64::from(width) * u64::from(height);
     let mut budget = RasterBudget {
         remaining: SVG_RASTER_BYTES,
-        max_width: f64::from(size.width()) * 5.0,
-        max_height: f64::from(size.height()) * 5.0,
+        max_width: f64::from(width) * 5.0,
+        max_height: f64::from(height) * 5.0,
     };
     budget.charge(pixels, 8)?;
-    budget.group(tree.root(), pixels, tiny_skia::Transform::identity(), 0)
+    budget.group(tree.root(), pixels, tiny_skia::Transform::identity(), 0)?;
+    Ok((width, height))
 }
 
 impl RasterBudget {
@@ -600,10 +634,8 @@ pub(super) fn decode_svg(bytes: &[u8]) -> Result<DynamicImage, Error> {
         ..usvg::Options::default()
     };
     let tree = usvg::Tree::from_str(text, &options).map_err(|_| Error::Corrupt)?;
-    let size = tree.size().to_int_size();
-    dimensions(size.width(), size.height())?;
-    validate_raster_budget(&tree)?;
-    let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).ok_or(Error::TooLarge)?;
+    let (width, height) = validate_raster_budget(&tree)?;
+    let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or(Error::TooLarge)?;
     resvg::render(
         &tree,
         tiny_skia::Transform::identity(),
@@ -618,8 +650,7 @@ pub(super) fn decode_svg(bytes: &[u8]) -> Result<DynamicImage, Error> {
             [color.red(), color.green(), color.blue(), color.alpha()]
         })
         .collect();
-    let image =
-        image::RgbaImage::from_raw(size.width(), size.height(), rgba).ok_or(Error::Corrupt)?;
+    let image = image::RgbaImage::from_raw(width, height, rgba).ok_or(Error::Corrupt)?;
     Ok(DynamicImage::ImageRgba8(image))
 }
 
@@ -886,5 +917,35 @@ mod tests {
         assert_eq!(image.dimensions(), (20, 10));
         assert_eq!(image.get_pixel(0, 0).0, [255, 0, 0, 128]);
         assert_eq!(image.get_pixel(15, 0).0, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn svg_validation_and_decode_eliminate_duplicate_dimension_and_reference_scans() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><style>.a{fill:#ff0000;stroke:#111}.b{opacity:0.8;fill-opacity:0.5}</style><defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient><clipPath id="c"><rect width="20" height="10"/></clipPath></defs><g style="clip-path:url(#c);fill:red"><rect class="a" style="fill:url(#g);stroke:#111;opacity:0.9" width="10" height="10"/></g></svg>"##;
+        probe::reset();
+        let image = decode_svg(svg).unwrap();
+        assert_eq!((image.width(), image.height()), (20, 10));
+        assert_eq!(probe::dimensions_calls(), 1);
+
+        probe::reset();
+        stylesheet(".a{fill:#111;stroke:#222}.b{opacity:0.5;fill-opacity:0.8}").unwrap();
+        assert_eq!(probe::resource_references_calls(), 1);
+
+        assert_eq!(
+            stylesheet(".a{fill:url(#g)}"),
+            Err(Error::Corrupt)
+        );
+        assert_eq!(
+            validate_svg(
+                r#"<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient></defs><g style="fill:url(#g)"><rect width="1" height="1"/></g></svg>"#
+            ),
+            Err(Error::Corrupt)
+        );
+        assert_eq!(
+            validate_svg(
+                r#"<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient></defs><g fill="url(#g)"><rect width="1" height="1"/></g></svg>"#
+            ),
+            Err(Error::Corrupt)
+        );
     }
 }

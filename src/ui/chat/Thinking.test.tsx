@@ -57,7 +57,23 @@ it("uses Anthropic choices and its independent effort selector", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   try {
-    await act(async () => root.render(<ThinkingControl protocol="anthropic-native" model="claude-opus-5" disabled={false} onChange={() => {}} />));
+    await act(async () => root.render(<ThinkingControl protocol="anthropic-native" model="claude-opus-5"
+      value={{ ...defaultGeminiThinking, choice: "budget", budget: "1024" }} disabled={false} onChange={() => {}} />));
+    const choiceTrigger = host.querySelector<HTMLButtonElement>('[aria-label="思考模式（当前助手）"]')!;
+    const effortTrigger = host.querySelector<HTMLButtonElement>('[aria-label="思考力度（当前助手）"]')!;
+    const budgetInput = host.querySelector<HTMLInputElement>('[aria-label="思考 Token 预算"]')!;
+    expect(choiceTrigger.id).toBeTruthy();
+    expect(effortTrigger.id).toBeTruthy();
+    expect(budgetInput.id).toBeTruthy();
+    const choiceLabel = host.querySelector<HTMLLabelElement>(`label[for="${choiceTrigger.id}"]`)!;
+    const effortLabel = host.querySelector<HTMLLabelElement>(`label[for="${effortTrigger.id}"]`)!;
+    const budgetLabel = host.querySelector<HTMLLabelElement>(`label[for="${budgetInput.id}"]`)!;
+    expect(choiceLabel.contains(choiceTrigger)).toBe(false);
+    expect(effortLabel.contains(effortTrigger)).toBe(false);
+    expect(budgetLabel.contains(budgetInput)).toBe(false);
+    const summaryToggle = host.querySelector<HTMLLabelElement>(".thinking-summary-toggle")!;
+    expect(summaryToggle.closest(".thinking-summary-field")).not.toBeNull();
+    expect(choiceLabel.contains(summaryToggle)).toBe(false);
     expect(await optionsFor(host, "思考模式（当前助手）")).toEqual(labelsFor("default", "off", "adaptive", "budget"));
     expect(await optionsFor(host, "思考力度（当前助手）")).toEqual(labelsFor("default", "low", "medium", "high", "xhigh", "max"));
     expect(host.textContent).toContain("显示思考内容");

@@ -50,7 +50,8 @@ export class MessageEdits {
   async settle(): Promise<void> { await Promise.allSettled([...this.pending]); }
 
   submit(id: string, messageId: string, content: string, draft: MessageEditDraft | undefined,
-    prepare?: (before: StoredChatMessage[], edited: StoredChatMessage) => Promise<PreparedMessageEdit>): Promise<MessageEditResult> {
+    prepare?: (before: StoredChatMessage[], edited: StoredChatMessage) => Promise<PreparedMessageEdit>,
+    beforeStage?: () => Promise<void>): Promise<MessageEditResult> {
     if (!this.accepting || this.has(id) || !this.access.canBegin(id)) return Promise.resolve({ status: "notSaved", error: "请等待该对话的操作完成后重试。" });
     // Freeze synchronously, including File references, before any awaited work.
     const input = draft && { base: structuredClone(draft.base), attachments: draft.attachments?.map(item => item.kind === "retained"
@@ -59,7 +60,7 @@ export class MessageEdits {
     const op: Operation = { id, ownedNew: [] };
     this.operations.set(id, op);
     this.changed();
-    return this.track(this.run(op, messageId, content, input, prepare));
+    return this.track(this.run(op, messageId, content, input, prepare, beforeStage));
   }
   private track<T>(promise: Promise<T>): Promise<T> {
     this.pending.add(promise); this.changed();
@@ -109,7 +110,8 @@ export class MessageEdits {
     return result;
   }
   private async run(op: Operation, messageId: string, content: string, draft: MessageEditDraft | undefined,
-    prepare?: (before: StoredChatMessage[], edited: StoredChatMessage) => Promise<PreparedMessageEdit>): Promise<MessageEditResult> {
+    prepare?: (before: StoredChatMessage[], edited: StoredChatMessage) => Promise<PreparedMessageEdit>,
+    beforeStage?: () => Promise<void>): Promise<MessageEditResult> {
     try {
       op.before = readEditTranscript(await this.access.read(op.id, true));
       const base = withReplyLinks(op.before).find(message => message.id === messageId);
@@ -131,6 +133,7 @@ export class MessageEdits {
       let final: SentAttachment[] | undefined;
       if (items !== undefined) {
         final = [];
+        if (items.some(item => item.kind === "added")) await beforeStage?.();
         for (const item of items) {
           if (item.kind === "retained") final.push(readSentAttachment(item.attachment));
           else {

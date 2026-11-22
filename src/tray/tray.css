@@ -6,7 +6,10 @@
   --color-focus: 147 197 253;
   --color-error-text: 252 165 165;
   --color-shadow: 0 0 0;
-  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-sans:
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

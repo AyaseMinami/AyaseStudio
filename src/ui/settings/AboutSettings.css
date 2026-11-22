@@ -1,7 +1,7 @@
 .about-page { max-width: 680px; margin: 0 auto; font-size: var(--font-ui); line-height: 1.6; }
 .about-card { min-width: 0; padding: 24px; border: 1px solid var(--workbench-border); border-radius: 12px; background: var(--workbench-surface); box-shadow: var(--workbench-shadow); }
 .about-brand { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 16px 0 32px; }
-.about-brand h2 { font-size: 26px; font-weight: 600; line-height: 1.25; letter-spacing: -.6px; margin: 20px 0 10px; }
+.about-brand h2 { font-size: var(--font-title); font-weight: 500; line-height: 1.4; letter-spacing: normal; margin: 16px 0 6px; }
 .about-brand > p { color: rgb(var(--color-muted)); font-size: inherit; margin: 0; }
 .about-update { padding: 18px 4px; border-top: 1px solid rgb(var(--color-border) / .6); }
 .about-update-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }

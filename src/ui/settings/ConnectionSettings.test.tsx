@@ -606,8 +606,10 @@ describe("ConnectionSettings", () => {
       row.dispatchEvent(new KeyboardEvent("keydown", { ...keys, bubbles: true, cancelable: true }));
     });
     expect(document.activeElement).toBe(menuItem("编辑连接 备用线路"));
+    expect(button("管理连接 备用线路").getAttribute("aria-expanded")).toBe("true");
     await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(document.querySelector('.action-menu')).toBeNull();
+    expect(button("管理连接 备用线路").getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(row);
     expect(button("查看连接 主线路").getAttribute("aria-current")).toBe("true");
     expect(props.onSelectModel).not.toHaveBeenCalled();

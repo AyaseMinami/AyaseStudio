@@ -8,6 +8,7 @@ import { useChatSession } from "./useChatSession";
 import { createChatRepository, type StoredChatMessage } from "./repository";
 import { saveConnectionSettings } from "./settings";
 import { bytesToBase64, prepareDraftAttachment, type RequestAttachment, type SentAttachment } from "./attachments";
+import { buildProtocolBody } from "./requestMapping";
 import type { MessageEditDraft, MessageEditResult } from "./messageEditTypes";
 import type { ChatRequest, ChatTransport } from "./types";
 import { defaultSessionConfig } from "./sessionConfig";
@@ -238,5 +239,146 @@ describe("#128 message edits through the real chat session", () => {
     expect(mocks.save).toHaveBeenCalledTimes(1); expect(mocks.verify).toHaveBeenCalledTimes(2);
     expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled(); expect(mocks.discardUncommitted).not.toHaveBeenCalled();
     await act(async () => { expect(await session.prepareBackup()).toBe(true); session.cancelBackupPreparation(); });
+  });
+
+  it("edits and sends Office attachments under gemini-native and blocks oversized edits before transcript writes", async () => {
+    saveConnectionSettings({ version: 3, activeModelId: "m", providers: [{ id: "p", name: "Synthetic", connections: [{
+      id: "c", name: "Gemini", baseUrl: "https://example.invalid", apiKey: "synthetic-only", protocol: "gemini-native", models: [{ id: "m", modelId: "gemini-2.5-pro" }],
+    }] }] });
+    for (const id of ["current", "other"]) await repository.execute({ type: "configure-conversation", id, settings: { modelId: "m", config: defaultSessionConfig() } });
+    function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
+    await act(async () => root.render(<Probe />)); await wait(() => session.isHydrated);
+    mocks.save.mockImplementation(async (item: RequestAttachment): Promise<SentAttachment> => {
+      const ext = item.name.split(".").pop() ?? "txt";
+      const reference = `attachments/00000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}.${ext}`;
+      saved.set(reference, item);
+      return { reference, name: item.name, mimeType: item.mimeType, size: item.size };
+    });
+    const docx = await prepareDraftAttachment(new File([new Uint8Array([80, 75, 3, 4, 9])], "plan.docx"));
+    const base = structuredClone(session.messages.find(message => message.id === "user")!);
+    let observed: ChatRequest | undefined;
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream(value) {
+      observed = value;
+      yield { type: "text-delta", text: "gemini read" };
+      yield { type: "completed", finishReason: "STOP" };
+    } } satisfies ChatTransport);
+    await act(async () => {
+      const res = await session.editAndSendMessage("user", "updated with docx", { base, attachments: [{ kind: "added", attachment: docx }] });
+      expect(res.status).toBe("saved");
+    });
+    await wait(() => !session.isAnyGenerating);
+    expect(observed).toBeDefined();
+    expect(buildProtocolBody("gemini-native", observed!).contents).toMatchObject([{ role: "user", parts: [
+      { text: "updated with docx" },
+      { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: "UEsDBAk=" } },
+    ] }]);
+
+    // Oversized edited attachment exceeding Gemini's 50 MB single-doc limit must fail before durable transcript write and discard newly saved staging copy.
+    const snapshotBefore = (await repository.load("current"))!.messages;
+    const hugePdf = await prepareDraftAttachment(new File([new Uint8Array([37, 80, 68, 70])], "huge.pdf"));
+    mocks.save.mockImplementationOnce(async (item: RequestAttachment): Promise<SentAttachment> => {
+      const reference = `attachments/00000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}.pdf`;
+      saved.set(reference, { ...item, size: 50_000_001 });
+      return { reference, name: item.name, mimeType: item.mimeType, size: 50_000_001 };
+    });
+    mocks.createRuntimeChatTransport.mockClear();
+    mocks.discardUncommitted.mockClear();
+    const currentBase = structuredClone(session.messages.find(message => message.id === "user")!);
+    let failedResult!: MessageEditResult;
+    await act(async () => {
+      failedResult = await session.editAndSendMessage("user", "oversized edit", { base: currentBase, attachments: [{ kind: "added", attachment: hugePdf }] });
+    });
+    expect(failedResult.status).toBe("notSaved");
+    expect(failedResult.error).toMatch(/Gemini.*50 MB/);
+    expect(session.sendStatus).toBeUndefined();
+    expect((await repository.load("current"))!.messages).toEqual(snapshotBefore);
+    expect(mocks.discardUncommitted).toHaveBeenCalledTimes(1);
+    expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+  });
+
+  it("paints preparing-attachments status before staging newly added edit attachments", async () => {
+    await mount();
+    const events: string[] = [];
+    const file = new File([new Uint8Array([37, 80, 68, 70, 45])], "large.pdf", { type: "application/pdf" });
+    const draftAttachment = await prepareDraftAttachment(file);
+    const rawArrayBuffer = file.arrayBuffer.bind(file);
+    vi.spyOn(file, "arrayBuffer").mockImplementation(async () => {
+      events.push(`materialize:${session.sendStatus ?? "none"}`);
+      return rawArrayBuffer();
+    });
+    let releaseFirstRaf!: () => void;
+    let firstRafScheduled!: () => void;
+    const firstRafGate = new Promise<void>((resolve) => { firstRafScheduled = resolve; });
+    let rafCount = 0;
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb: FrameRequestCallback) => {
+      rafCount += 1;
+      if (rafCount === 1) {
+        firstRafScheduled();
+        releaseFirstRaf = () => {
+          events.push(`raf-paint:${session.sendStatus ?? "none"}`);
+          cb(performance.now());
+        };
+        return 1;
+      }
+      return window.setTimeout(() => cb(performance.now()), 0);
+    });
+    mocks.save.mockImplementationOnce(async (item: RequestAttachment): Promise<SentAttachment> => {
+      events.push(`save:${session.sendStatus ?? "none"}`);
+      const reference = `attachments/00000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}.pdf`;
+      saved.set(reference, item);
+      return { reference, name: item.name, mimeType: item.mimeType, size: item.size };
+    });
+    let releaseStream!: () => void;
+    let streamStarted!: () => void;
+    const streamGate = new Promise<void>((resolve) => { streamStarted = resolve; });
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
+      streamStarted();
+      await new Promise<void>((resolve) => { releaseStream = resolve; });
+      yield { type: "text-delta", text: "done" };
+      yield { type: "completed", finishReason: "stop" };
+    } } satisfies ChatTransport);
+    const base = structuredClone(session.messages.find(message => message.id === "user")!);
+    try {
+      let editing!: Promise<MessageEditResult>;
+      await act(async () => {
+        editing = session.editAndSendMessage("user", "edit with attachment", {
+          base,
+          attachments: [{ kind: "added", attachment: draftAttachment }],
+        });
+      });
+      await firstRafGate;
+      await wait(() => session.sendStatus === "正在准备附件，请稍候…");
+      // Before the paint frame finishes, neither attachment byte reading nor native save may start.
+      expect(events).toEqual([]);
+      expect(mocks.save).not.toHaveBeenCalled();
+
+      await act(async () => {
+        releaseFirstRaf();
+        expect((await editing).status).toBe("saved");
+      });
+      expect(events).toEqual([
+        "raf-paint:正在准备附件，请稍候…",
+        "materialize:正在准备附件，请稍候…",
+        "save:正在准备附件，请稍候…",
+      ]);
+
+      await streamGate;
+      await wait(() => session.sendStatus === "正在等待模型响应…");
+      // A concurrently rejected editAndSendMessage must not wipe out the active generation status.
+      await act(async () => {
+        const rejected = await session.editAndSendMessage("user", "concurrent edit", {
+          base: structuredClone(session.messages.find(message => message.id === "user")!),
+          attachments: [{ kind: "added", attachment: draftAttachment }],
+        });
+        expect(rejected.status).toBe("notSaved");
+      });
+      expect(session.sendStatus).toBe("正在等待模型响应…");
+
+      await act(async () => { releaseStream(); });
+      await wait(() => !session.isAnyGenerating);
+      expect(session.sendStatus).toBeUndefined();
+    } finally {
+      rafSpy.mockRestore();
+    }
   });
 });

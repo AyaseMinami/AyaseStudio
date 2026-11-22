@@ -35,6 +35,7 @@ export interface ChatWorkspaceProps {
   onBrowseHistory?(direction: -1 | 1, selection: DraftSelection): boolean;
   draftAttachments?: DraftAttachment[];
   attachmentBusy?: boolean;
+  sendStatus?: string;
   contextPlan?: ContextSummary;
   error?: string;
   isHydrated: boolean;
@@ -77,6 +78,7 @@ export function ChatWorkspace({
   onBrowseHistory,
   draftAttachments,
   attachmentBusy,
+  sendStatus,
   contextPlan,
   error,
   isHydrated,
@@ -147,10 +149,10 @@ export function ChatWorkspace({
       <MessageList assistant={assistant} userAvatarUrl={userAvatarUrl} messages={messages} onReadAttachment={onReadAttachment} actions={messageActions}
         actionsDisabled={messageActionsDisabled} actionsTemporarilyDisabled={isWorkspaceBusy && !isGenerating} actionError={messageActionError} />
       {draftAttachments && (attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
-        attachmentCapabilityNotice(modelId ?? "", draftAttachments)) &&
+        attachmentCapabilityNotice(protocol ?? "openai-chat", modelId ?? "", draftAttachments)) &&
         <p className="attachment-capability-notice" role="status">{
           attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) ||
-          attachmentCapabilityNotice(modelId ?? "", draftAttachments)}</p>}
+          attachmentCapabilityNotice(protocol ?? "openai-chat", modelId ?? "", draftAttachments)}</p>}
       <Composer
         generationStats={<GenerationStats messages={messages} />}
         layout={layout}
@@ -170,6 +172,7 @@ export function ChatWorkspace({
         onBrowseHistory={onBrowseHistory}
         draftAttachments={draftAttachments}
         attachmentBusy={attachmentBusy}
+        sendStatus={sendStatus}
         attachmentBlockReason={draftAttachments ? attachmentCapabilityFailure(protocol ?? "openai-chat", modelId ?? "", draftAttachments) : undefined}
         error={error}
         isHydrated={isHydrated}

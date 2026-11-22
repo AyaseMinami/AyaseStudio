@@ -108,13 +108,15 @@ export function SettingsWorkspace({
           </button>
         </nav>
 
-        <div
-          className={`settings-page-scroll${
-            activeSection === "connections"
-              ? " settings-page-scroll-workbench"
-              : ""
-          }`}
-        >
+        <div className="settings-content-pane">
+          <div className="settings-content-surface" aria-hidden="true" />
+          <div
+            className={`settings-page-scroll${
+              activeSection === "connections"
+                ? " settings-page-scroll-workbench"
+                : ""
+            }`}
+          >
           {activeSection === "general" ? (
             <GeneralSettings avatar={avatar} general={general} />
           ) : activeSection === "connections" ? (
@@ -144,6 +146,7 @@ export function SettingsWorkspace({
           ) : (
             <AboutSettings update={update} downloadMirror={{ url: "https://pan.baidu.com/s/1nj359REFcGMwTbf7PWD4OQ?pwd=ayas", code: "ayas" }} />
           )}
+          </div>
         </div>
       </div>
     </div>

@@ -22,6 +22,11 @@ dist-ssr
 coverage
 /output/
 
+# Design-tool scratch outputs (keep tracked .impeccable/design.json)
+/.impeccable/critique/
+/.impeccable/review/
+/.taste-skill/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

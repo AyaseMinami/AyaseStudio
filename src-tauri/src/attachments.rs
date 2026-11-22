@@ -1,5 +1,5 @@
 use std::{collections::HashSet, fs::{FileTimes, OpenOptions}, io::Write,
-    path::{Path, PathBuf}, sync::Mutex, time::{Duration, SystemTime}};
+    path::{Path, PathBuf}, sync::{Condvar, Mutex}, time::{Duration, SystemTime}};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use image::ImageFormat;
@@ -13,6 +13,38 @@ pub(crate) fn import_mime(name: &str, bytes: &[u8]) -> Option<&'static str> {
 }
 const SECOND_SCAN_AGE: Duration = Duration::from_secs(60 * 60);
 pub(crate) static FILE_OPERATIONS: Mutex<()> = Mutex::new(());
+static IN_FLIGHT: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+struct InFlightGuard;
+
+impl InFlightGuard {
+    fn acquire() -> Result<Self, AttachmentError> {
+        let mut count = IN_FLIGHT.0.lock().map_err(|_| AttachmentError::Storage)?;
+        *count += 1;
+        Ok(Self)
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let mut count = match IN_FLIGHT.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            IN_FLIGHT.1.notify_all();
+        }
+    }
+}
+
+pub(crate) fn wait_for_idle() -> Result<(), ()> {
+    let mut count = IN_FLIGHT.0.lock().map_err(|_| ())?;
+    while *count > 0 {
+        count = IN_FLIGHT.1.wait(count).map_err(|_| ())?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum AttachmentError { Unsupported, Corrupt, InvalidReference, Unavailable, Storage }
@@ -249,37 +281,47 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, AttachmentError> {
     app.path().app_data_dir().map_err(|_| AttachmentError::Storage)
 }
 
-#[tauri::command]
-pub fn persist_attachment(app: AppHandle, name: String, data: String) -> Result<SavedAttachment, String> {
-    let _guard = FILE_OPERATIONS.lock().map_err(|_| AttachmentError::Storage.code())?;
-    save(&app_data(&app).map_err(|error| error.code())?, name, data).map_err(|error| error.code().to_owned())
+async fn run_attachment_op<T, F>(app: AppHandle, op: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&Path) -> Result<T, AttachmentError> + Send + 'static,
+{
+    let dir = app_data(&app).map_err(|error| error.code().to_owned())?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code().to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
+        let _guard = FILE_OPERATIONS
+            .lock()
+            .map_err(|_| AttachmentError::Storage.code().to_owned())?;
+        op(&dir).map_err(|error| error.code().to_owned())
+    })
+    .await
+    .map_err(|_| AttachmentError::Storage.code().to_owned())?
 }
 
 #[tauri::command]
-pub fn read_sent_attachment(app: AppHandle, reference: String) -> Result<String, String> {
-    let _guard = FILE_OPERATIONS.lock().map_err(|_| AttachmentError::Storage.code())?;
-    read_saved(&app_data(&app).map_err(|error| error.code())?, &reference).map_err(|error| error.code().to_owned())
+pub async fn persist_attachment(app: AppHandle, name: String, data: String) -> Result<SavedAttachment, String> {
+    run_attachment_op(app, move |dir| save(dir, name, data)).await
 }
 
 #[tauri::command]
-pub fn verify_sent_attachments(app: AppHandle, items: Vec<AttachmentCheck>) -> Result<(), String> {
-    let _guard = FILE_OPERATIONS.lock().map_err(|_| AttachmentError::Storage.code())?;
-    verify_saved(&app_data(&app).map_err(|error| error.code())?, &items)
-        .map_err(|error| error.code().to_owned())
+pub async fn read_sent_attachment(app: AppHandle, reference: String) -> Result<String, String> {
+    run_attachment_op(app, move |dir| read_saved(dir, &reference)).await
 }
 
 #[tauri::command]
-pub fn discard_uncommitted_attachments(app: AppHandle, references: Vec<String>) -> Result<(), String> {
-    let _guard = FILE_OPERATIONS.lock().map_err(|_| AttachmentError::Storage.code())?;
-    discard_uncommitted(&app_data(&app).map_err(|error| error.code())?, &references)
-        .map_err(|error| error.code().to_owned())
+pub async fn verify_sent_attachments(app: AppHandle, items: Vec<AttachmentCheck>) -> Result<(), String> {
+    run_attachment_op(app, move |dir| verify_saved(dir, &items)).await
 }
 
 #[tauri::command]
-pub fn cleanup_sent_attachments(app: AppHandle, retained_references: Vec<String>, pending_references: Vec<String>) -> Result<(), String> {
-    let _guard = FILE_OPERATIONS.lock().map_err(|_| AttachmentError::Storage.code())?;
-    cleanup(&app_data(&app).map_err(|error| error.code())?, &retained_references, &pending_references)
-        .map_err(|error| error.code().to_owned())
+pub async fn discard_uncommitted_attachments(app: AppHandle, references: Vec<String>) -> Result<(), String> {
+    run_attachment_op(app, move |dir| discard_uncommitted(dir, &references)).await
+}
+
+#[tauri::command]
+pub async fn cleanup_sent_attachments(app: AppHandle, retained_references: Vec<String>, pending_references: Vec<String>) -> Result<(), String> {
+    run_attachment_op(app, move |dir| cleanup(dir, &retained_references, &pending_references)).await
 }
 
 #[cfg(test)]
@@ -514,5 +556,28 @@ mod tests {
         assert!(temp.path().join(&sent.reference).is_file());
         assert!(!scan.exists());
         assert!(read_saved(temp.path(), &sent.reference).is_ok());
+    }
+
+    #[test]
+    fn wait_for_idle_blocks_until_queued_in_flight_attachment_operation_completes() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        // Hold only InFlightGuard (not FILE_OPERATIONS) to simulate a queued
+        // spawn_blocking attachment command that has not acquired the mutex yet.
+        let guard = InFlightGuard::acquire().unwrap();
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_clone = Arc::clone(&finished);
+        let waiter = std::thread::spawn(move || {
+            wait_for_idle().unwrap();
+            finished_clone.store(true, Ordering::SeqCst);
+        });
+        std::thread::sleep(Duration::from_millis(25));
+        assert!(!finished.load(Ordering::SeqCst));
+        drop(guard);
+        waiter.join().unwrap();
+        assert!(finished.load(Ordering::SeqCst));
     }
 }

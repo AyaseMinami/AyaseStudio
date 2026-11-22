@@ -184,17 +184,20 @@ fn save_thumbnail(image: &DynamicImage, path: &Path) -> Result<(), BackgroundErr
     Ok(())
 }
 
-fn managed_file_name(reference: &str) -> Result<&str, BackgroundError> {
-    let file_name = reference
-        .strip_prefix("backgrounds/")
+fn parse_managed_file_name(reference: &str) -> Result<(&str, String), BackgroundError> {
+    let (prefix, file_name) = reference
+        .split_once('/')
         .ok_or(BackgroundError::InvalidReference)?;
-    if file_name.contains(['/', '\\']) {
+    if !prefix.eq_ignore_ascii_case("backgrounds") || file_name.contains(['/', '\\']) {
         return Err(BackgroundError::InvalidReference);
     }
     let (identifier, extension) = file_name
         .rsplit_once('.')
         .ok_or(BackgroundError::InvalidReference)?;
-    if !matches!(extension, "png" | "jpg" | "webp") {
+    if !matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "webp"
+    ) {
         return Err(BackgroundError::InvalidReference);
     }
     let bytes = identifier.as_bytes();
@@ -203,7 +206,7 @@ fn managed_file_name(reference: &str) -> Result<&str, BackgroundError> {
         || bytes[13] != b'-'
         || bytes[14] != b'4'
         || bytes[18] != b'-'
-        || !matches!(bytes[19], b'8' | b'9' | b'a' | b'b')
+        || !matches!(bytes[19].to_ascii_lowercase(), b'8' | b'9' | b'a' | b'b')
         || bytes[23] != b'-'
         || bytes
             .iter()
@@ -212,7 +215,64 @@ fn managed_file_name(reference: &str) -> Result<&str, BackgroundError> {
     {
         return Err(BackgroundError::InvalidReference);
     }
-    Ok(file_name)
+    Ok((file_name, file_name.to_ascii_lowercase()))
+}
+
+fn managed_file_name(reference: &str) -> Result<String, BackgroundError> {
+    parse_managed_file_name(reference).map(|(_, canonical)| canonical)
+}
+
+fn resolve_existing_managed_file(
+    background_dir: &Path,
+    raw_name: &str,
+    canonical_name: &str,
+) -> Result<(String, PathBuf, std::fs::Metadata), BackgroundError> {
+    // Fast path for canonical lowercase references when the lowercase file exists.
+    if raw_name == canonical_name {
+        let exact = background_dir.join(raw_name);
+        if let Ok(metadata) = std::fs::metadata(&exact) {
+            if metadata.is_file() {
+                return Ok((raw_name.to_owned(), exact, metadata));
+            }
+            return Err(BackgroundError::Unavailable);
+        }
+    }
+    // Preserve actual on-disk casing for legacy/mixed-case files across case-sensitive
+    // and case-insensitive filesystems. Prefer exact match, then canonical lowercase,
+    // then any case-insensitive managed match.
+    let entries = std::fs::read_dir(background_dir).map_err(|_| BackgroundError::Unavailable)?;
+    let mut canonical_match: Option<(String, PathBuf)> = None;
+    let mut case_match: Option<(String, PathBuf)> = None;
+    for entry in entries {
+        let entry = entry.map_err(|_| BackgroundError::Unavailable)?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case(canonical_name) {
+            continue;
+        }
+        let path = entry.path();
+        if name == raw_name {
+            let metadata = std::fs::metadata(&path).map_err(|_| BackgroundError::Unavailable)?;
+            if !metadata.is_file() {
+                return Err(BackgroundError::Unavailable);
+            }
+            return Ok((name, path, metadata));
+        }
+        if name == canonical_name {
+            canonical_match = Some((name, path));
+        } else if case_match.is_none() {
+            case_match = Some((name, path));
+        }
+    }
+    let Some((actual_name, path)) = canonical_match.or(case_match) else {
+        return Err(BackgroundError::Unavailable);
+    };
+    let metadata = std::fs::metadata(&path).map_err(|_| BackgroundError::Unavailable)?;
+    if !metadata.is_file() {
+        return Err(BackgroundError::Unavailable);
+    }
+    Ok((actual_name, path, metadata))
 }
 
 fn import_background_from_path(
@@ -265,7 +325,7 @@ fn cleanup_background_files(
         .map_err(|_| BackgroundError::StorageFailed)?;
     let retained_names = retained_references
         .iter()
-        .map(|reference| managed_file_name(reference).map(str::to_owned))
+        .map(|reference| managed_file_name(reference))
         .collect::<Result<HashSet<_>, _>>()?;
     let background_dir = app_data_dir.join("backgrounds");
     let entries = match std::fs::read_dir(&background_dir) {
@@ -274,6 +334,7 @@ fn cleanup_background_files(
         Err(_) => return Err(BackgroundError::StorageFailed),
     };
 
+    let mut existing_originals = HashSet::new();
     for entry in entries {
         let entry = entry.map_err(|_| BackgroundError::StorageFailed)?;
         let file_type = entry
@@ -286,8 +347,13 @@ fn cleanup_background_files(
             continue;
         };
         let reference = format!("backgrounds/{file_name}");
-        if managed_file_name(&reference).is_ok() && !retained_names.contains(&file_name) {
+        let Ok(canonical_name) = managed_file_name(&reference) else {
+            continue;
+        };
+        if !retained_names.contains(&canonical_name) {
             std::fs::remove_file(entry.path()).map_err(|_| BackgroundError::StorageFailed)?;
+        } else {
+            existing_originals.insert(canonical_name);
         }
     }
     let thumbnails = match std::fs::read_dir(background_dir.join("thumbnails")) {
@@ -310,10 +376,11 @@ fn cleanup_background_files(
         let Some(original_name) = name.strip_suffix(".png") else {
             continue;
         };
-        if managed_file_name(&format!("backgrounds/{original_name}")).is_err() {
+        let Ok(canonical_name) = managed_file_name(&format!("backgrounds/{original_name}")) else {
             continue;
-        }
-        if !retained_names.contains(original_name) || !background_dir.join(original_name).is_file()
+        };
+        if !retained_names.contains(&canonical_name)
+            || !existing_originals.contains(&canonical_name)
         {
             std::fs::remove_file(entry.path()).map_err(|_| BackgroundError::StorageFailed)?;
         }
@@ -338,17 +405,17 @@ fn resolve_background_resource(
     let _guard = BACKGROUND_FILES
         .lock()
         .map_err(|_| BackgroundError::StorageFailed)?;
-    let file_name = managed_file_name(reference)?;
-    let absolute_path = app_data_dir.join("backgrounds").join(file_name);
-    let metadata = std::fs::metadata(&absolute_path).map_err(|_| BackgroundError::Unavailable)?;
-    if !metadata.is_file() {
-        return Err(BackgroundError::Unavailable);
-    }
+    let (raw_name, canonical_name) = parse_managed_file_name(reference)?;
+    let (actual_name, absolute_path, metadata) = resolve_existing_managed_file(
+        &app_data_dir.join("backgrounds"),
+        raw_name,
+        &canonical_name,
+    )?;
     validate_background_size(metadata.len())?;
     if metadata.len() == 0 {
         return Err(BackgroundError::Corrupt);
     }
-    let cached_path = thumbnail_path(app_data_dir, file_name);
+    let cached_path = thumbnail_path(app_data_dir, &actual_name);
     if thumbnail && !refresh && validate_thumbnail(&cached_path).is_ok() {
         return Ok(ImportedBackground {
             reference: reference.to_owned(),
@@ -357,7 +424,7 @@ fn resolve_background_resource(
     }
     let bytes = std::fs::read(&absolute_path).map_err(|_| BackgroundError::Unavailable)?;
     let (kind, image) = decode_background_bytes(&bytes)?;
-    if !file_name.ends_with(&format!(".{}", kind.extension())) {
+    if !canonical_name.ends_with(&format!(".{}", kind.extension())) {
         return Err(BackgroundError::Corrupt);
     }
     let absolute_path = if thumbnail {
@@ -485,7 +552,7 @@ mod tests {
             assert_eq!(resolved.reference, imported.reference);
             assert_eq!(
                 resolved.absolute_path,
-                thumbnail_path(&app_data, managed_file_name(&imported.reference).unwrap())
+                thumbnail_path(&app_data, &managed_file_name(&imported.reference).unwrap())
             );
             let thumbnail = image::open(resolved.absolute_path).unwrap().to_rgba8();
             assert_eq!(thumbnail.dimensions(), expected);
@@ -519,7 +586,7 @@ mod tests {
     fn old_images_lazily_create_thumbnails_and_hot_reads_do_not_decode_originals() {
         let temp = tempfile::tempdir().unwrap();
         let reference = legacy_image(temp.path(), &png_image(1024, 512));
-        let cached = thumbnail_path(temp.path(), managed_file_name(&reference).unwrap());
+        let cached = thumbnail_path(temp.path(), &managed_file_name(&reference).unwrap());
         assert!(!cached.exists());
         let resolved = resolve_background_resource(temp.path(), &reference, true, false).unwrap();
         assert_eq!(resolved.absolute_path, cached);
@@ -544,7 +611,7 @@ mod tests {
     fn missing_corrupt_and_oversized_thumbnails_are_rebuilt() {
         let temp = tempfile::tempdir().unwrap();
         let reference = legacy_image(temp.path(), &png_image(800, 400));
-        let cached = thumbnail_path(temp.path(), managed_file_name(&reference).unwrap());
+        let cached = thumbnail_path(temp.path(), &managed_file_name(&reference).unwrap());
         resolve_background_resource(temp.path(), &reference, true, false).unwrap();
         for replacement in [b"broken".to_vec(), png_image(513, 1)] {
             std::fs::write(&cached, replacement).unwrap();
@@ -609,10 +676,10 @@ mod tests {
         )
         .unwrap();
         assert!(temp.path().join(&kept).exists());
-        assert!(thumbnail_path(temp.path(), managed_file_name(&kept).unwrap()).exists());
+        assert!(thumbnail_path(temp.path(), &managed_file_name(&kept).unwrap()).exists());
         assert!(!stale.absolute_path.exists());
         assert!(
-            !thumbnail_path(temp.path(), managed_file_name(&stale.reference).unwrap()).exists()
+            !thumbnail_path(temp.path(), &managed_file_name(&stale.reference).unwrap()).exists()
         );
         assert!(!orphan_path.exists());
         assert!(thumbnail_dir.join("unmanaged.png").exists());
@@ -733,8 +800,16 @@ mod tests {
         let reference = "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.webp";
 
         assert_eq!(
-            managed_file_name(reference),
+            managed_file_name(reference).as_deref(),
             Ok("01234567-89ab-4cde-8fab-0123456789ab.webp")
+        );
+        assert_eq!(
+            managed_file_name("BACKGROUNDS/01234567-89AB-4CDE-AFAB-0123456789AB.WEBP").as_deref(),
+            Ok("01234567-89ab-4cde-afab-0123456789ab.webp")
+        );
+        assert_eq!(
+            managed_file_name("backgrounds/01234567-89ab-4cde-cfab-0123456789ab.webp"),
+            Err(BackgroundError::InvalidReference)
         );
         assert_eq!(
             managed_file_name("../wallpaper.png"),
@@ -744,6 +819,78 @@ mod tests {
             managed_file_name("C:\\Users\\someone\\wallpaper.png"),
             Err(BackgroundError::InvalidReference)
         );
+    }
+
+    #[test]
+    fn mixed_case_and_canonical_references_resolve_and_survive_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let canonical_ref = "backgrounds/01234567-89ab-4cde-afab-0123456789ab.png";
+        let mixed_ref = "backgrounds/01234567-89AB-4CDE-AFAB-0123456789AB.PNG";
+        let upper_prefix_ref = "BACKGROUNDS/01234567-89AB-4CDE-AFAB-0123456789AB.png";
+        let backgrounds = temp.path().join("backgrounds");
+        std::fs::create_dir_all(&backgrounds).unwrap();
+        let original_bytes = png_image(64, 32);
+        std::fs::write(
+            backgrounds.join("01234567-89ab-4cde-afab-0123456789ab.png"),
+            &original_bytes,
+        )
+        .unwrap();
+
+        let source = temp.path().join("stale.png");
+        std::fs::write(&source, png_image(32, 16)).unwrap();
+        let stale = import_background_from_path(&source, temp.path()).unwrap();
+
+        // Both canonical and mixed-case references open the original and generate/read the thumbnail.
+        assert!(resolve_background_reference(temp.path(), canonical_ref).is_ok());
+        assert!(resolve_background_reference(temp.path(), mixed_ref).is_ok());
+        assert!(resolve_background_reference(temp.path(), upper_prefix_ref).is_ok());
+        let thumb = resolve_background_resource(temp.path(), mixed_ref, true, false).unwrap();
+        assert_eq!(thumb.reference, mixed_ref);
+        assert_eq!(
+            thumb.absolute_path,
+            thumbnail_path(temp.path(), "01234567-89ab-4cde-afab-0123456789ab.png")
+        );
+
+        // Cleaning up with only the mixed-case reference keeps both the canonical original and thumbnail.
+        cleanup_background_files(temp.path(), &[mixed_ref.to_owned()]).unwrap();
+        assert!(backgrounds
+            .join("01234567-89ab-4cde-afab-0123456789ab.png")
+            .is_file());
+        assert!(thumb.absolute_path.is_file());
+        assert!(!stale.absolute_path.exists());
+        assert!(
+            !thumbnail_path(temp.path(), &managed_file_name(&stale.reference).unwrap()).exists()
+        );
+    }
+
+    #[test]
+    fn existing_mixed_case_disk_file_preserves_actual_case_and_survives_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let disk_name = "01234567-89AB-4CDE-8FAB-0123456789AB.png";
+        let mixed_ref = format!("backgrounds/{disk_name}");
+        let canonical_ref = "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png";
+        let backgrounds = temp.path().join("backgrounds");
+        std::fs::create_dir_all(&backgrounds).unwrap();
+        std::fs::write(backgrounds.join(disk_name), png_image(64, 32)).unwrap();
+
+        let resolved = resolve_background_reference(temp.path(), &mixed_ref).unwrap();
+        assert_eq!(
+            resolved.absolute_path.file_name().and_then(|n| n.to_str()),
+            Some(disk_name)
+        );
+        let thumb = resolve_background_resource(temp.path(), &mixed_ref, true, false).unwrap();
+        assert_eq!(thumb.absolute_path, thumbnail_path(temp.path(), disk_name));
+        assert!(thumb.absolute_path.is_file());
+
+        // Cleanup with canonical lowercase reference preserves the existing mixed-case file and its thumbnail.
+        cleanup_background_files(temp.path(), &[canonical_ref.to_owned()]).unwrap();
+        assert!(backgrounds.join(disk_name).is_file());
+        assert!(thumb.absolute_path.is_file());
+
+        // Cleanup with mixed-case reference also preserves both.
+        cleanup_background_files(temp.path(), &[mixed_ref]).unwrap();
+        assert!(backgrounds.join(disk_name).is_file());
+        assert!(thumb.absolute_path.is_file());
     }
 
     #[test]

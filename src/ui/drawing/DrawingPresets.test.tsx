@@ -32,9 +32,13 @@ async function choose(id = preset.id) {
   await act(async () => button("提示词预设").click());
   const options = [...document.querySelectorAll<HTMLButtonElement>(".model-picker-option")];
   const item = options.find(option => id === "preset-two" ? option.querySelector("small")?.textContent === "另一条提示词"
-    : id === "" ? option.querySelector("strong")?.textContent === "选择预设，直接载入提示词" : option.querySelector("small")?.textContent === preset.content);
+    : id === "" ? option.querySelector("strong")?.textContent === "选择预设" : option.querySelector("small")?.textContent === preset.content);
   if (!item) throw new Error(`Missing preset: ${id}`);
   await act(async () => item.click());
+}
+async function openMenuAction(label: "更新预设" | "编辑预设" | "删除预设") {
+  await act(async () => button("更多预设操作").click());
+  await act(async () => button(label).click());
 }
 async function fill(selector: "input" | "textarea", value: string) {
   const input = dialog()!.querySelector(selector)!;
@@ -77,19 +81,18 @@ it("filters presets without applying them and uses the latest callback for one e
   expect(dialog()).toBeNull();
 });
 
-it("shows four persistent actions and enables selection-dependent actions only after choosing a preset", async () => {
+it("shows compact save-as and overflow management actions, enabling management only after choosing a preset", async () => {
   await act(async () => root.render(<DrawingPresets {...props()} />));
-  const actions = ["更新预设", "另存预设", "编辑预设", "删除预设"];
-  expect([...host.querySelectorAll(".drawing-actions button")].map(item => item.textContent)).toEqual(["更新", "另存", "编辑", "删除"]);
-  for (const action of actions) {
-    expect(button(action).closest("[hidden]")).toBeNull();
-    expect(button(action).disabled).toBe(action !== "另存预设");
-  }
+  expect(button("另存预设").disabled).toBe(false);
+  expect(button("更多预设操作").disabled).toBe(true);
   const select = button("提示词预设");
   expect(host.querySelector("label")?.htmlFor).toBe(select.id);
   expect(host.querySelector("label")?.textContent).toBe("提示词预设");
   await choose();
-  for (const action of actions) expect(button(action).disabled).toBe(false);
+  expect(button("更多预设操作").disabled).toBe(false);
+  await act(async () => button("更多预设操作").click());
+  for (const action of ["更新预设", "编辑预设", "删除预设"] as const) expect(button(action).disabled).toBe(false);
+  await act(async () => button("更多预设操作").click());
   expect(dialog()).toBeNull();
 });
 
@@ -105,8 +108,8 @@ it("loads the exact ID immediately even when names repeat and never auto binds d
   expect(options.onApply).toHaveBeenCalledTimes(1);
   expect(options.onUpdate).not.toHaveBeenCalled();
   await act(async () => root.render(<DrawingPresets {...options} presets={[preset]} />));
-  expect(button("提示词预设").querySelector("span")?.textContent).toBe("选择预设，直接载入提示词");
-  expect(button("更新预设").disabled).toBe(true);
+  expect(button("提示词预设").querySelector("span")?.textContent).toBe("选择预设");
+  expect(button("更多预设操作").disabled).toBe(true);
   expect(options.onApply).toHaveBeenCalledTimes(1);
 });
 
@@ -132,13 +135,15 @@ it("discards unselected save-as and selected save-as, update, edit and delete di
   await click("另存预设"); await click("取消");
   expect(dialog()).toBeNull(); expect(document.activeElement).toBe(button("另存预设"));
   await choose();
-  for (const entry of ["另存预设", "更新预设", "编辑预设", "删除预设"]) {
-    await click(entry);
+  await click("另存预设"); await click("取消");
+  expect(dialog()).toBeNull(); expect(document.activeElement).toBe(button("另存预设"));
+  for (const entry of ["更新预设", "编辑预设", "删除预设"] as const) {
+    await openMenuAction(entry);
     await click("取消");
     expect(dialog()).toBeNull();
-    expect(document.activeElement).toBe(button(entry));
+    expect(document.activeElement).toBe(button("更多预设操作"));
   }
-  await click("编辑预设");
+  await openMenuAction("编辑预设");
   await fill("input", "未保存");
   const outer = vi.fn(); document.addEventListener("keydown", outer);
   await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
@@ -160,13 +165,13 @@ it("uses current draft for save-as and update, but saved content for edit, witho
   await click("保存预设");
   expect(options.onCreate).toHaveBeenCalledExactlyOnceWith({ name: "山谷 副本", content: options.prompt });
   expect(options.onUpdate).not.toHaveBeenCalled();
-  await click("更新预设");
+  await openMenuAction("更新预设");
   expect(dialog()!.querySelector("textarea")!.value).toBe(options.prompt);
   await fill("input", "重命名");
   expect(options.onUpdate).not.toHaveBeenCalled();
   await click("保存预设");
   expect(options.onUpdate).toHaveBeenCalledExactlyOnceWith(preset.id, { name: "重命名", content: options.prompt });
-  await click("编辑预设");
+  await openMenuAction("编辑预设");
   expect(dialog()!.querySelector("textarea")!.value).toBe(preset.content);
   await fill("textarea", "编辑后的存储内容"); await click("保存预设");
   expect(options.onUpdate).toHaveBeenLastCalledWith(preset.id, { name: preset.name, content: "编辑后的存储内容" });
@@ -175,7 +180,7 @@ it("uses current draft for save-as and update, but saved content for edit, witho
 
 it("requires deletion confirmation and retains it on failed deletion", async () => {
   const options = props(); options.onDelete.mockResolvedValueOnce(false);
-  await act(async () => root.render(<DrawingPresets {...options} />)); await choose(); await click("删除预设");
+  await act(async () => root.render(<DrawingPresets {...options} />)); await choose(); await openMenuAction("删除预设");
   expect(document.activeElement).toBe(button("取消"));
   expect(options.onDelete).not.toHaveBeenCalled();
   await click("确认删除预设");
@@ -248,7 +253,7 @@ it.each(["false", "rejection"])("keeps focus and values inside a pending save af
 
 it("blocks writes when disabled or the selected preset is deleted, and traps keyboard focus", async () => {
   const options = props();
-  await act(async () => root.render(<DrawingPresets {...options} />)); await choose(); await click("编辑预设");
+  await act(async () => root.render(<DrawingPresets {...options} />)); await choose(); await openMenuAction("编辑预设");
   const first = button("关闭预设弹窗"), last = button("保存预设");
   first.focus();
   await act(async () => first.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true })));

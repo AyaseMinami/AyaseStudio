@@ -180,7 +180,7 @@ describe("attachment UI", () => {
     await act(async () => stage.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
     expect(document.activeElement).toBe(container.querySelector<HTMLButtonElement>('[aria-label="关闭预览"]'));
   });
-  it("keeps Office selectable and blocks sending after switching protocol without losing the draft", async () => {
+  it("keeps Office selectable and allows Responses and Gemini native while blocking others without losing the draft", async () => {
     const item = { id: "office", name: "report.docx", size: 5,
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const,
       file: new File(["PK"], "report.docx") };
@@ -189,11 +189,20 @@ describe("attachment UI", () => {
     await mount(<ChatWorkspace {...props} protocol="openai-responses" />);
     expect(container.querySelector<HTMLInputElement>('input[type="file"]')!.accept).toContain(".docx");
     expect(container.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(false);
-    await act(async () => root!.render(<ChatWorkspace {...props} protocol="anthropic-native" />));
-    expect(container.querySelector<HTMLInputElement>('input[type="file"]')!.accept).toContain(".docx");
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(true);
-    expect(container.textContent).toContain("report.docx");
-    expect(container.textContent).toContain("Office 附件仅支持 Responses");
+    expect(container.querySelector(".attachment-capability-notice")?.textContent).toContain("Responses 服务端");
+    expect(container.querySelector(".attachment-capability-notice")?.textContent).toContain("中转站兼容性尚未核实");
+    await act(async () => root!.render(<ChatWorkspace {...props} protocol="gemini-native" />));
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(false);
+    expect(container.querySelector(".attachment-capability-notice")?.textContent).toContain("Gemini 原生接口");
+    expect(container.querySelector(".attachment-capability-notice")?.textContent).toContain("中转站兼容性尚未核实");
+    expect(container.querySelector(".attachment-capability-notice")?.textContent).not.toContain("Responses");
+    for (const unsupported of ["openai-chat", "anthropic-native"] as const) {
+      await act(async () => root!.render(<ChatWorkspace {...props} protocol={unsupported} />));
+      expect(container.querySelector<HTMLInputElement>('input[type="file"]')!.accept).toContain(".docx");
+      expect(container.querySelector<HTMLButtonElement>('[aria-label="发送"]')!.disabled).toBe(true);
+      expect(container.textContent).toContain("report.docx");
+      expect(container.textContent).toContain("Office 附件仅支持 Responses 或 Gemini 原生");
+    }
     await act(async () => root!.render(<ChatWorkspace {...props} protocol={undefined} />));
     const accept = container.querySelector<HTMLInputElement>('input[type="file"]')!.accept;
     expect(accept).toContain(".docx");
@@ -207,7 +216,10 @@ describe("attachment UI", () => {
       attachments: [{ reference: "attachments/id.xlsx", name: "budget.xlsx", size: 5,
         mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] }]} onReadAttachment={read} />);
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="预览附件 budget.xlsx"]')!.click());
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("不解析或预览 Office 正文");
+    const dialogText = container.querySelector('[role="dialog"]')?.textContent ?? "";
+    expect(dialogText).toContain("不解析或预览 Office 正文");
+    expect(dialogText).toContain("发送时由所选协议服务端处理");
+    expect(dialogText).not.toContain("Responses");
     expect(read).not.toHaveBeenCalled();
   });
   it("shows a compact filename chip before the input without decoding the draft image", async () => {

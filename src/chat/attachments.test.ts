@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { addDraftAttachments, materializeDraftAttachment, prepareDraftAttachment, type DraftAttachment } from "./attachments";
+import {
+  addDraftAttachments,
+  attachmentCapabilityFailure,
+  attachmentCapabilityNotice,
+  materializeDraftAttachment,
+  prepareDraftAttachment,
+  supportsOfficeAttachments,
+  type DraftAttachment,
+} from "./attachments";
 
 const file = (name: string, bytes: Uint8Array) => new File([new Uint8Array(bytes).buffer], name);
 
@@ -20,6 +28,34 @@ describe("attachment drafts", () => {
     }
     await expect(prepareDraftAttachment(file("fake.docx", new TextEncoder().encode("plain text"))))
       .rejects.toThrow("容器格式无效");
+    await expect(prepareDraftAttachment(file("archive.zip", new Uint8Array([80, 75, 3, 4]))))
+      .rejects.toThrow("DOCX/XLSX/PPTX（仅 Responses 或 Gemini 原生）");
+  });
+
+  it("allows Office attachments for Responses and Gemini native while distinguishing capability notices", () => {
+    const office = [
+      { name: "report.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const, size: 5 },
+      { name: "sheet.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const, size: 5 },
+      { name: "slides.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" as const, size: 5 },
+    ];
+    expect(supportsOfficeAttachments("openai-responses")).toBe(true);
+    expect(supportsOfficeAttachments("gemini-native")).toBe(true);
+    expect(supportsOfficeAttachments("openai-chat")).toBe(false);
+    expect(supportsOfficeAttachments("anthropic-native")).toBe(false);
+    expect(supportsOfficeAttachments(undefined)).toBe(false);
+    for (const item of office) {
+      expect(attachmentCapabilityFailure("openai-responses", "gpt-5", [item])).toBeUndefined();
+      expect(attachmentCapabilityFailure("gemini-native", "gemini-2.5-pro", [item])).toBeUndefined();
+      expect(attachmentCapabilityFailure("openai-chat", "gpt-5", [item])).toContain("Responses 或 Gemini 原生");
+      expect(attachmentCapabilityFailure("anthropic-native", "claude", [item])).toContain("Responses 或 Gemini 原生");
+    }
+    const responsesNotice = attachmentCapabilityNotice("openai-responses", "gpt-5", [office[0]]);
+    expect(responsesNotice).toContain("Responses 服务端");
+    expect(responsesNotice).toContain("中转站兼容性尚未核实");
+    const geminiNotice = attachmentCapabilityNotice("gemini-native", "gemini-2.5-pro", [office[0]]);
+    expect(geminiNotice).toContain("Gemini 原生接口");
+    expect(geminiNotice).toContain("中转站兼容性尚未核实");
+    expect(geminiNotice).not.toContain("Responses");
   });
   it("uses the actual JPEG type when a valid image is named .png", async () => {
     const jpeg = Uint8Array.from(atob(
