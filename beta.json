@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0-beta.9",
-  "notes": "## 新增与调整\n\n- 重新整理绘图参数区，输出格式、尺寸与画质按面板宽度规整排列，数量和并发独立成组。SVG／GIF 附加参数、说明及自定义尺寸占完整行，窄面板自动换行。\n- 点击助手消息头像或顶部对话名称，即可打开当前对话配置弹窗。支持键盘操作、取消回焦及现有配置保存流程。\n\n## 测试说明\n\n本版本为 Windows x64 Beta 测试发布，使用 Tauri updater 签名验证安装包。Windows Authenticode 代码签名尚未提供。\n\n全新安装、覆盖升级、安装后数据保留及真实窗口交互仍待实际验收。升级前请导出重要数据备份，并单独保存重要绘图成果。\n",
-  "pub_date": "2026-11-10T07:21:48.353Z",
+  "version": "0.1.0-beta.10",
+  "notes": "## 本版更新\n\n- 助手与对话配置新增「常规配置」和「系统提示词」页签。长提示词可以整页编辑并查看字数，模型、思考、联网搜索和生成参数集中在常规页。\n- Gemini 原生连接支持直接发送 Word、Excel 和 PowerPoint 文件（DOCX、XLSX、PPTX）。发送或编辑后重发附件时会显示准备提示，流式回复意外中断时会提示发送结果待确认，由你决定是否重试。\n- 优化聊天与设置界面的列表、头像和操作按钮。绘图工作区调整了提示词预设、参考图和 Gemini 高级参数布局，宽窗下可在一行查看任务状态、参数、提示词和耗时。\n- 减少绘图文件保存与恢复时的重复磁盘操作，优化 Cherry 备份导入时的数据扫描，并改进附件和背景文件处理。\n\n本版面向 Windows x64。安装包带有 Tauri 应用内更新签名，尚未提供 Windows Authenticode 签名。全新安装、同版重装、旧版升级后的数据保留及应用内更新全流程仍待实机验证。\n",
+  "pub_date": "2026-11-22T16:18:10.011Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUl2NlF2aHFNWXlhQnhSZmdQeXVBb08wNEN1WlZaYWNnWXYxQ3dJQUlzNWdkamZUL3ZRTXE1N2tXN3Z0bHBjeERyRXlKcU9MWkUzalpGZEROc2l4ZUE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Mjk1MzA1CWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuOV94NjQtc2V0dXAuZXhlCjk1blZhOWRSMUhURStTcUsyMmJGeEtHdUhobTRXT05wYksxWnhnMk9xdHZ1SGZDRXZEcXRnakxEZ1FURXNQbEoybHc3YXNsNjlxQnRKY0hYZnlTdUR3PT0K",
-      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.9/Ayase.Studio_0.1.0-beta.9_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUlkWmIydDNZaFhCd2tkQW9EYUhtWUNiblZnK3R5YnRPUGU1cCtUQ0NKdDZuSnZJZFYyZFNKK2JUY0ExcUdpSUdOVmFIZXVnV3pZMGpVTDBuaFduVGdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MzY0Mjg3CWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuMTBfeDY0LXNldHVwLmV4ZQpjaDFKdjdUb1pDSDREUGJ6NlFmSkd5NHMzeGdrOTdZOU9hSVM1M3EyQ2Qya0o4akhLcWJ5U1BRT1BMZm1uMkdLbnIvV0FFVzJjYVB1WFdhdG80TjZBQT09Cg==",
+      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.10/Ayase.Studio_0.1.0-beta.10_x64-setup.exe"
     }
   }
 }
