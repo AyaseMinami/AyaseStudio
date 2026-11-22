@@ -344,11 +344,11 @@ Each `AssistantPreset` may contain an `avatar` (original Blob, cropped 256×256 
 
 `MessageList` 经既有 `onReadAttachment` 仓库边界读取已发送图片。`SentImageAttachment` 使用消息滚动区作为 IntersectionObserver 根，在可视区域附近按需加载，离开后释放组件持有的图片数据，忽略已失效的异步结果；不建立全局图片缓存。稳定的预览占位使图片读取/解码不改变消息高度。`SentAttachmentPreview` 继续在弹窗打开期间读取，新增同消息图片导航与焦点管理。此规则将原先的“预览仅在打开期间读取”扩展为消息内可视预览和显式弹窗两种临时生命周期；草稿、发送、私有引用、原图字节及协议合同均不变。
 
-## Lightweight attachment expansion (#63)
+## Lightweight attachment expansion (#63, updated by #132)
 
-按 2026-09-27 用户确认，新增常用 UTF-8 文本/代码和 Responses 的 DOCX/XLSX/PPTX 原文件输入。文本复用 `text/plain` 与受管 `.txt` 副本，保留原文件名；Office 使用对应 MIME 与原字节，受管引用保留 Office 后缀。`attachments.ts` 统一前端格式识别、选择器列表及协议提示，Rust 校验与副本读写保持一致。Office 仅检查 ZIP 文件头，不解压或验证完整 OOXML，不能将此检查视为完整真实性或损坏检测。
+按 2026-09-27 用户确认与 2026-11-22 #132 修订，支持常用 UTF-8 文本/代码，以及 Responses 与 Gemini 原生协议的 DOCX/XLSX/PPTX 原文件输入。文本复用 `text/plain` 与受管 `.txt` 副本，保留原文件名；Office 使用对应 MIME 与原字节，受管引用保留 Office 后缀。`attachments.ts` 统一前端格式识别、选择器列表、`supportsOfficeAttachments` 协议支持判定与按协议区分的能力提示，Rust 校验与副本读写保持一致。Office 仅检查 ZIP 文件头，不解压或验证完整 OOXML，不能将此检查视为完整真实性或损坏检测。
 
-不新增解析器、OCR、转码或 Files API。Office 预览只显示已有元数据，不读取完整二进制；文本作为纯文本预览，Markdown 沿用 SafeMarkdown。切换协议保留草稿，Office 在非 Responses 下阻止发送；最终请求映射也检查保留的历史附件。原有持久化、取消、引用整理和请求临时内存生命周期保持不变。
+不新增解析器、OCR、转码或 Files API。Office 预览只显示已有元数据，不读取完整二进制，且说明由发送时所选协议服务端处理；文本作为纯文本预览，Markdown 沿用 SafeMarkdown。切换协议保留草稿，Office 在 `openai-chat` 与 `anthropic-native` 下阻止发送；最终请求映射（`requestMapping.ts`）同时校验保留的历史附件、OpenAI 50 MB 文件上限、Gemini 单份 PDF/Office 官方 50 MB（原始字节）与含内联媒体整次请求官方 100 MB（UTF-8 JSON）、Anthropic 单图 Base64 官方 10 MB 与整次请求官方 128 MB（UTF-8 JSON）。`useConversationWorkspace` 与 `useChatSession` 新增按会话隔离的运行时 `sendStatus`（不持久化），含附件发送在读取编码前先刷新绘制“正在准备附件，请稍候…”，提交传输前先刷新绘制“正在等待模型响应…”，首段输出或终态时清除；断连、超时或缺少终态事件明确提示“未收到完整响应，发送结果未确认；请决定是否重试”。桌面端 `src/chat/runtime.ts` 当前通过 `@tauri-apps/plugin-http` 跨 IPC 发送请求体（字节展开为 JSON 数字数组），98.7 MB / 126.7 MB 连续 3 轮回环实测均可送达，但会造成 7.8–11.4 s 主线程停顿与 12.1–13.5 GB 进程峰值私有内存（详见 [PROTOCOLS.md](PROTOCOLS.md)），二进制传输层改造留待独立 Issue 跟进。原有持久化、取消、引用整理和请求临时内存生命周期保持不变。
 
 ## Issue #31 对话自动命名
 

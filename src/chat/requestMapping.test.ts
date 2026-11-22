@@ -23,24 +23,36 @@ function configured(): SessionConfig {
 }
 
 describe("protocol request mapping", () => {
-  it("sends Office unchanged through Responses and blocks incompatible history or oversized files", () => {
-    const attachment = { name: "report.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const,
-      size: 5, data: "UEsDBAE=" };
-    const attached: ChatRequest = { ...request, messages: [
-      { role: "user", content: "previous", attachments: [attachment] },
-      { role: "assistant", content: "ok" }, { role: "user", content: "continue" },
-    ] };
-    const body = buildProtocolBody("openai-responses", attached);
-    expect(body.store).toBe(false);
-    expect(body.input).toMatchObject([{ content: [
-      { type: "input_text" }, { type: "input_file", filename: attachment.name,
-        file_data: `data:${attachment.mimeType};base64,${attachment.data}` },
-    ] }, {}, {}]);
-    for (const protocol of ["openai-chat", "gemini-native", "anthropic-native"] as const) {
-      expect(() => buildProtocolBody(protocol, attached)).toThrow("Office 附件仅支持 Responses");
+  it("sends Office unchanged through Responses and Gemini native and blocks incompatible history or oversized files", () => {
+    const officeAttachments = [
+      { name: "report.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const,
+        size: 5, data: "UEsDBAE=" },
+      { name: "budget.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const,
+        size: 5, data: "UEsDBAE=" },
+      { name: "slides.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" as const,
+        size: 5, data: "UEsDBAE=" },
+    ];
+    for (const attachment of officeAttachments) {
+      const attached: ChatRequest = { ...request, messages: [
+        { role: "user", content: "previous", attachments: [attachment] },
+        { role: "assistant", content: "ok" }, { role: "user", content: "continue" },
+      ] };
+      const body = buildProtocolBody("openai-responses", attached);
+      expect(body.store).toBe(false);
+      expect(body.input).toMatchObject([{ content: [
+        { type: "input_text" }, { type: "input_file", filename: attachment.name,
+          file_data: `data:${attachment.mimeType};base64,${attachment.data}` },
+      ] }, {}, {}]);
+      const gemini = buildProtocolBody("gemini-native", attached);
+      expect(gemini.contents).toMatchObject([{ role: "user", parts: [
+        { text: "previous" }, { inlineData: { mimeType: attachment.mimeType, data: attachment.data } },
+      ] }, { role: "model", parts: [{ text: "ok" }] }, { role: "user", parts: [{ text: "continue" }] }]);
+      for (const protocol of ["openai-chat", "anthropic-native"] as const) {
+        expect(() => buildProtocolBody(protocol, attached)).toThrow("Office 附件仅支持 Responses 或 Gemini 原生");
+      }
     }
     expect(() => buildProtocolBody("openai-responses", { ...request, messages: [
-      { role: "user", content: "", attachments: [{ ...attachment, size: 50_000_000 }] },
+      { role: "user", content: "", attachments: [{ ...officeAttachments[0], size: 50_000_000 }] },
     ] })).toThrow("50 MB");
   });
   it("maps images, PDFs and UTF-8 documents inline for each protocol without provider uploads", () => {
@@ -77,26 +89,103 @@ describe("protocol request mapping", () => {
     ] }]);
   });
 
-  it("rejects a reference without loaded bytes and an Anthropic body beyond 32MB before fetch", () => {
+  it("rejects a reference without loaded bytes and enforces Anthropic's 128 MB total request limit", () => {
     expect(() => buildProtocolBody("openai-chat", { ...request, messages: [{ role: "user", content: "hi",
       attachments: [{ reference: "attachments/test.pdf", name: "test.pdf", mimeType: "application/pdf", size: 1 }] }] })).toThrow(RequestConfigError);
-    const data = "A".repeat(32_000_000);
+    // Above legacy 32 MB stays valid under first-party 128 MB contract (size matches Base64 length).
     expect(() => buildProtocolBody("anthropic-native", { ...request, messages: [{ role: "user", content: "hi",
-      attachments: [{ name: "large.pdf", mimeType: "application/pdf", size: 10_000_000, data }] }] })).toThrow(RequestConfigError);
+      attachments: [{ name: "large.pdf", mimeType: "application/pdf", size: 25_000_002, data: "A".repeat(33_333_336) }] }] })).not.toThrow();
+    const docRawSize = 47_999_700; // ceil(size / 3) * 4 = 63_999_600 Base64 chars each
+    const docData = "A".repeat(Math.ceil(docRawSize / 3) * 4);
+    const docs = [
+      { name: "part1.pdf", mimeType: "application/pdf" as const, size: docRawSize, data: docData },
+      { name: "part2.pdf", mimeType: "application/pdf" as const, size: docRawSize, data: docData },
+    ];
+    const baseBytes = new TextEncoder().encode(JSON.stringify(buildProtocolBody("anthropic-native", {
+      ...request, messages: [{ role: "user", content: "", attachments: docs }],
+    }))).length;
+    expect(baseBytes).toBeLessThan(128_000_000);
+    const pad = "a".repeat(128_000_000 - baseBytes);
+    expect(() => buildProtocolBody("anthropic-native", { ...request, messages: [{ role: "user", content: pad, attachments: docs }] })).not.toThrow();
+    expect(() => buildProtocolBody("anthropic-native", { ...request, messages: [{ role: "user", content: `${pad}a`, attachments: docs }] })).toThrow(/Anthropic.*128 MB/);
   });
 
-  it("uses Anthropic's encoded image limit instead of the former app file limit", () => {
+  it("uses Anthropic's 10 MB encoded image boundary", () => {
+    expect(() => buildProtocolBody("anthropic-native", { ...request, messages: [{ role: "user", content: "look",
+      attachments: [{ name: "view.jpg", mimeType: "image/jpeg", size: 7_500_000, data: "A".repeat(10_000_000) }] }] })).not.toThrow();
     const data = "A".repeat(10_000_001);
     expect(() => buildProtocolBody("anthropic-native", { ...request, messages: [{ role: "user", content: "look",
       attachments: [{ name: "view.jpg", mimeType: "image/jpeg", size: 7_500_000, data }] }] }))
       .toThrow(/Anthropic.*10 MB/);
   });
 
-  it("applies Gemini's official 20 MB inline request limit", () => {
-    const data = "A".repeat(20_000_001);
-    expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: "look",
-      attachments: [{ name: "view.jpg", mimeType: "image/jpeg", size: 15_000_000, data }] }] }))
-      .toThrow(/Gemini.*20 MB/);
+  it("applies Gemini's 50 MB single PDF/Office document limit (raw bytes)", () => {
+    const docTypes = [
+      { name: "report.pdf", mimeType: "application/pdf" as const },
+      { name: "report.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const },
+      { name: "budget.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const },
+      { name: "slides.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" as const },
+    ];
+    for (const doc of docTypes) {
+      expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: "read",
+        attachments: [{ ...doc, size: 50_000_000, data: "UEsDBAE=" }] }] })).not.toThrow();
+      expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: "read",
+        attachments: [{ ...doc, size: 50_000_001, data: "UEsDBAE=" }] }] })).toThrow(/Gemini.*50 MB/);
+    }
+    // Historical oversized PDF/Office is also blocked.
+    expect(() => buildProtocolBody("gemini-native", { ...request, messages: [
+      { role: "user", content: "old", attachments: [{ ...docTypes[1], size: 50_000_001, data: "UEsDBAE=" }] },
+      { role: "assistant", content: "ok" }, { role: "user", content: "next" },
+    ] })).toThrow(/Gemini.*50 MB/);
+  });
+
+  it("applies Gemini's 100 MB UTF-8 JSON inline request limit across image, document, mixed, and two 40 MB docs", () => {
+    const halfDocRaw = 37_499_850; // <= 50 MB raw; Base64 length = 49_999_800 each
+    const halfDocData = "A".repeat(Math.ceil(halfDocRaw / 3) * 4);
+    const largeImgRaw = 74_999_700; // Base64 length = 99_999_600 (images have no 50 MB single-doc cap)
+    const largeImgData = "A".repeat(Math.ceil(largeImgRaw / 3) * 4);
+    const cases = [
+      { label: "pure image", attachments: [
+        { name: "view.jpg", mimeType: "image/jpeg" as const, size: largeImgRaw, data: largeImgData },
+      ] },
+      { label: "pure pdf (two compliant <=50 MB docs)", attachments: [
+        { name: "doc1.pdf", mimeType: "application/pdf" as const, size: halfDocRaw, data: halfDocData },
+        { name: "doc2.pdf", mimeType: "application/pdf" as const, size: halfDocRaw, data: halfDocData },
+      ] },
+      { label: "pure office (two compliant <=50 MB docs)", attachments: [
+        { name: "doc1.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const, size: halfDocRaw, data: halfDocData },
+        { name: "doc2.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const, size: halfDocRaw, data: halfDocData },
+      ] },
+      { label: "mixed image and doc", attachments: [
+        { name: "view.png", mimeType: "image/png" as const, size: halfDocRaw, data: halfDocData },
+        { name: "doc.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const, size: halfDocRaw, data: halfDocData },
+      ] },
+    ];
+    for (const scenario of cases) {
+      const baseBytes = new TextEncoder().encode(JSON.stringify(buildProtocolBody("gemini-native", {
+        ...request,
+        messages: [{ role: "user", content: "", attachments: scenario.attachments }],
+      }))).length;
+      expect(baseBytes, scenario.label).toBeLessThan(100_000_000);
+      const pad = "a".repeat(100_000_000 - baseBytes);
+      expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: pad, attachments: scenario.attachments }] }), scenario.label).not.toThrow();
+      expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: `${pad}a`, attachments: scenario.attachments }] }), scenario.label).toThrow(/Gemini.*100 MB/);
+    }
+    // Two 40 MB documents each pass the 50 MB single-file check, but Base64 (~106.7 MB) exceeds 100 MB total.
+    const fortyMbBase64 = "A".repeat(Math.ceil(40_000_000 / 3) * 4);
+    expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: "compare",
+      attachments: [
+        { name: "a.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 40_000_000, data: fortyMbBase64 },
+        { name: "b.pdf", mimeType: "application/pdf", size: 40_000_000, data: fortyMbBase64 },
+      ] }] })).toThrow(/Gemini.*100 MB/);
+    // Counts UTF-8 bytes rather than UTF-16 code units: "中" is 1 code unit but 3 UTF-8 bytes.
+    const utf8Img = [{ name: "view.png", mimeType: "image/png" as const, size: largeImgRaw, data: largeImgData }];
+    const baseUtf8 = new TextEncoder().encode(JSON.stringify(buildProtocolBody("gemini-native", {
+      ...request, messages: [{ role: "user", content: "中", attachments: utf8Img }],
+    }))).length;
+    const utf8Pad = "a".repeat(100_000_000 - baseUtf8);
+    expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: `中${utf8Pad}`, attachments: utf8Img }] })).not.toThrow();
+    expect(() => buildProtocolBody("gemini-native", { ...request, messages: [{ role: "user", content: `中${utf8Pad}a`, attachments: utf8Img }] })).toThrow(/Gemini.*100 MB/);
   });
 
   it("blocks a documented text-only OpenAI model with image or PDF before transport", () => {

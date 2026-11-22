@@ -123,7 +123,7 @@ export function SentAttachmentPreview({ item, read, images = [], onNavigate, ret
       </div>}
       {error && <p role="alert">{error}</p>}
       {infoOnly && <div className="attachment-preview-text"><p>{item.name} · {(item.size / 1_000_000).toFixed(2)} MB</p>
-        <p>{item.mimeType}</p><p>原文件已保存在本地。本应用不解析或预览 Office 正文，发送时由 Responses 服务端处理。</p></div>}
+        <p>{item.mimeType}</p><p>原文件已保存在本地。本应用不解析或预览 Office 正文，发送时由所选协议服务端处理。</p></div>}
       {!infoOnly && !loaded && !error && <p role="status">正在读取附件…</p>}
       {!error && loaded?.mimeType.startsWith("image/") &&
         <PreviewImage key={item.reference} item={loaded}

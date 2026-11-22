@@ -133,6 +133,36 @@ function uniqueProviderName(existingNames: string[], desiredName: string): strin
   return `${desiredName} ${suffix}`;
 }
 
+function flushUiPaint(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const fallback = window.setTimeout(finish, 50);
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => {
+          window.clearTimeout(fallback);
+          finish();
+        }, 0);
+      });
+    }
+  });
+}
+
+function formatFailureError(error: import("./types").ChatFailure): string {
+  const status = error.status ? ` (${error.status})` : "";
+  const base = `${error.message}${status}`;
+  if (error.kind === "network" || error.status === 408 || error.status === 504) {
+    return `未收到完整响应，发送结果未确认；请决定是否重试。详情：${base}`;
+  }
+  return base;
+}
+
 function replaceAssistant(
   messages: StoredChatMessage[],
   id: string,
@@ -190,7 +220,7 @@ export function useChatSession({
     connectionSettings.providers.flatMap((provider) => provider.connections.filter(isChatConnection).flatMap((connection) => connection.models.map((model) => model.id))),
     id => generationTasks.has(id) || !!editOwner.current?.has(id) || imports.current.has(id), cleanupAttachments,
     () => backupPreparingRef.current || closingRef.current, id => !!editOwner.current?.has(id), () => backupPreparingRef.current);
-  const { messages, draft, draftAttachments, attachmentBusy, error, contextPlan, configErrors } = workspace.view;
+  const { messages, draft, draftAttachments, attachmentBusy, sendStatus, error, contextPlan, configErrors } = workspace.view;
   const sessionConfig = workspace.effective.config;
   const { setMessages, setDraft, setDraftAttachments, setAttachmentBusy, setError, setContextPlan, setConfigErrors } = workspace;
   editAccess.current = {
@@ -891,7 +921,14 @@ export function useChatSession({
     const task = generationTasks.begin(requestStore.id);
     if (!task) return;
     const { controller } = task;
+    const hasAttachmentsToPrepare = frozenAttachments.length > 0 || existingAttachments.length > 0 ||
+      requestHistory.some((message) => !!message.attachments?.length);
     try {
+      if (hasAttachmentsToPrepare) {
+        workspace.setSendStatusAt(requestStore.id, "正在准备附件，请稍候…");
+        await flushUiPaint();
+        if (controller.signal.aborted) return;
+      }
       let planned: ContextPlan;
       try {
         planned = resume?.continuation ? { messages: [...resume.continuation.messages,
@@ -1082,9 +1119,11 @@ export function useChatSession({
 
       await streamReply({ requestStore, controller, requestConnection, frozenConfig, requestModelId, requestMessages,
         workingMessages, resume, externalSearch, searchSettings, searchQuery, searchMode, requestHistory, content, planned,
-        replayScope, userMessage, assistantId, startTitleNaming, setMessages, setError, setContextPlan });
+        replayScope, userMessage, assistantId, startTitleNaming, setMessages, setError, setContextPlan,
+        setSendStatus: (value) => workspace.setSendStatusAt(requestStore.id, value) });
       return true;
     } finally {
+      workspace.setSendStatusAt(requestStore.id, undefined);
       generationTasks.finish(task);
     }
   }
@@ -1098,10 +1137,11 @@ export function useChatSession({
     replayScope: string; userMessage: StoredChatMessage; assistantId: string; startTitleNaming(): void;
     setMessages(value: StoredChatMessage[]): void; setError(value: import("react").SetStateAction<string | undefined>): void;
     setContextPlan(value: import("./contextBudget").ContextSummary): void;
+    setSendStatus(value: string | undefined): void;
   }): Promise<void> {
     const { requestStore, controller, requestConnection, frozenConfig, requestModelId, resume, externalSearch,
       searchSettings, searchQuery, searchMode, requestHistory, content, replayScope, userMessage, assistantId,
-      startTitleNaming, setMessages, setError, setContextPlan } = input;
+      startTitleNaming, setMessages, setError, setContextPlan, setSendStatus } = input;
     let { requestMessages, workingMessages, planned } = input;
     let persistChain = Promise.resolve();
     let persistenceFailed = false;
@@ -1131,6 +1171,7 @@ export function useChatSession({
     let terminalSeen = false;
     try {
       if (externalSearch && !resume) {
+        setSendStatus("正在检索外部资料…");
         const result = await searchExa(searchSettings!, searchQuery!, controller.signal, searchMode as ExternalSearchProvider);
         if (controller.signal.aborted) throw new Error("检索已停止。");
         // Preserve successful retrieval independently of budget/model failures.
@@ -1166,6 +1207,11 @@ export function useChatSession({
         startTitleNaming();
       }
       if (controller.signal.aborted) throw new Error("生成已停止。");
+      setSendStatus("正在等待模型响应…");
+      if (requestMessages.some((message) => !!message.attachments?.length)) {
+        await flushUiPaint();
+        if (controller.signal.aborted) throw new Error("生成已停止。");
+      }
       const transport = await createRuntimeChatTransport(
         requestConnection.protocol,
       );
@@ -1202,6 +1248,7 @@ export function useChatSession({
           continue;
         }
         if (event.type === "text-delta" || event.type === "thinking-delta") {
+          setSendStatus(undefined);
           if (event.type === "text-delta") assistantText += event.text;
           else workingMessages = workingMessages.map((message) => message.id === assistantId
             ? { ...message, thinkingSummary: (message.thinkingSummary ?? "") + event.text } : message);
@@ -1244,20 +1291,21 @@ export function useChatSession({
           );
         } else {
           terminalSeen = true;
+          setSendStatus(undefined);
           workingMessages = replaceAssistant(
             workingMessages,
             assistantId,
             assistantText,
             "failed",
           );
-          const status = event.error.status ? ` (${event.error.status})` : "";
-          setError(`${event.error.message}${status}`);
+          setError(formatFailureError(event.error));
         }
         updateGenerationMetrics(workingMessages.find(message => message.id === assistantId)!.status);
         setMessages(workingMessages);
         queuePersist(workingMessages);
       }
       if (!terminalSeen) {
+        setSendStatus(undefined);
         workingMessages = replaceAssistant(
           workingMessages, assistantId, assistantText,
           controller.signal.aborted ? "aborted" : "failed",
@@ -1265,9 +1313,10 @@ export function useChatSession({
         updateGenerationMetrics(controller.signal.aborted ? "aborted" : "failed");
         setMessages(workingMessages);
         queuePersist(workingMessages);
-        if (!controller.signal.aborted) setError("请求结束前未收到终态事件。");
+        if (!controller.signal.aborted) setError("未收到完整响应，发送结果未确认；请决定是否重试。");
       }
     } catch (caught) {
+      setSendStatus(undefined);
       workingMessages = replaceAssistant(
         workingMessages,
         assistantId,
@@ -1281,6 +1330,7 @@ export function useChatSession({
         setError(caught instanceof Error ? caught.message : "无法启动请求");
       }
     } finally {
+      setSendStatus(undefined);
       await persistChain;
       if (persistenceFailed) {
         setError((current) => current ?? "回复已生成，但保存本地记录失败。");
@@ -1304,7 +1354,10 @@ export function useChatSession({
     const frozenTarget = activeTarget && structuredClone(activeTarget);
     const config = structuredClone(sessionConfig);
     let task: import("./generationTasks").GenerationTask | undefined;
-    return edits.submit(conversationId, id, content, draft, async (before, user) => {
+    let startedGeneration = false;
+    const hasEditAttachments = (draft?.attachments?.length ?? 0) > 0 || messages.some((message) => !!message.attachments?.length);
+    if (hasEditAttachments) workspace.setSendStatusAt(conversationId, "正在准备附件，请稍候…");
+    const result = await edits.submit(conversationId, id, content, draft, async (before, user) => {
       if (user.role !== "user") throw new Error("仅用户消息可以保存并发送。");
       if (!frozenTarget) throw new Error("当前会话的模型未选择或已失效，请先选择模型。");
       const requestConnection = frozenTarget.connection;
@@ -1334,6 +1387,10 @@ export function useChatSession({
       const requestHistory = projectSearchHistory(history).map(message => message.providerReplay?.scope === replayScope
         ? message : { ...message, providerReplay: undefined });
       const attachments = user.attachments ?? [];
+      if (attachments.length > 0 || requestHistory.some((message) => !!message.attachments?.length)) {
+        workspace.setSendStatusAt(conversationId, "正在准备附件，请稍候…");
+        await flushUiPaint();
+      }
       const planned = await planContextBudget(requestHistory, content, frozenConfig, requestConnection.protocol, requestModelId,
         undefined, attachments.map(item => ({ ...item, data: "" })));
       const requestMessages: import("./types").ChatMessage[] = [];
@@ -1360,6 +1417,7 @@ export function useChatSession({
         claim: () => { task = generationTasks.begin(conversationId); return !!task; },
         cancel: () => { if (task) generationTasks.finish(task); },
         committed: () => {
+          startedGeneration = true;
           const requestStore = workspace.getStore(conversationId)!;
           workspace.setMessagesAt(conversationId, workingMessages);
           // The accepted generation outlives navigation and does not consume the Composer draft.
@@ -1367,14 +1425,21 @@ export function useChatSession({
             requestMessages, workingMessages, externalSearch, searchSettings, searchQuery, searchMode, requestHistory,
             content, planned, replayScope, userMessage, assistantId, startTitleNaming: () => undefined,
             setMessages: value => workspace.setMessagesAt(conversationId, value),
-            setError: value => workspace.setErrorAt(conversationId, value), setContextPlan: value => {
+            setError: value => workspace.setErrorAt(conversationId, value),
+            setSendStatus: value => workspace.setSendStatusAt(conversationId, value),
+            setContextPlan: value => {
               // This setter is already bound to the originating view.
               setContextPlan(value);
             } }).catch(() => workspace.setErrorAt(conversationId, "消息已保存，但请求终态保存失败。"))
-            .finally(() => generationTasks.finish(task!));
+            .finally(() => {
+              workspace.setSendStatusAt(conversationId, undefined);
+              generationTasks.finish(task!);
+            });
         },
       };
     });
+    if (!startedGeneration) workspace.setSendStatusAt(conversationId, undefined);
+    return result;
   }
 
   async function deleteMessage(id: string): Promise<boolean> {
@@ -1537,6 +1602,7 @@ export function useChatSession({
     draft,
     draftAttachments,
     attachmentBusy,
+    sendStatus,
     addFiles,
     removeDraftAttachment: (id: string) => setDraftAttachments((items) => items.filter((item) => item.id !== id)),
     readAttachment: attachmentStore.read,

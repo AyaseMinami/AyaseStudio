@@ -120,6 +120,7 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
           onBrowseHistory={chat.workspace.browseHistory}
           draftAttachments={chat.draftAttachments}
           attachmentBusy={chat.attachmentBusy}
+          sendStatus={chat.sendStatus}
           contextPlan={chat.contextPlan}
           error={chat.error}
           isHydrated={chat.isHydrated}

@@ -8,6 +8,7 @@ import { useChatSession } from "./useChatSession";
 import { createChatRepository, type StoredChatMessage } from "./repository";
 import { saveConnectionSettings } from "./settings";
 import { bytesToBase64, prepareDraftAttachment, type RequestAttachment, type SentAttachment } from "./attachments";
+import { buildProtocolBody } from "./requestMapping";
 import type { MessageEditDraft, MessageEditResult } from "./messageEditTypes";
 import type { ChatRequest, ChatTransport } from "./types";
 import { defaultSessionConfig } from "./sessionConfig";
@@ -238,5 +239,60 @@ describe("#128 message edits through the real chat session", () => {
     expect(mocks.save).toHaveBeenCalledTimes(1); expect(mocks.verify).toHaveBeenCalledTimes(2);
     expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled(); expect(mocks.discardUncommitted).not.toHaveBeenCalled();
     await act(async () => { expect(await session.prepareBackup()).toBe(true); session.cancelBackupPreparation(); });
+  });
+
+  it("edits and sends Office attachments under gemini-native and blocks oversized edits before transcript writes", async () => {
+    saveConnectionSettings({ version: 3, activeModelId: "m", providers: [{ id: "p", name: "Synthetic", connections: [{
+      id: "c", name: "Gemini", baseUrl: "https://example.invalid", apiKey: "synthetic-only", protocol: "gemini-native", models: [{ id: "m", modelId: "gemini-2.5-pro" }],
+    }] }] });
+    for (const id of ["current", "other"]) await repository.execute({ type: "configure-conversation", id, settings: { modelId: "m", config: defaultSessionConfig() } });
+    function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
+    await act(async () => root.render(<Probe />)); await wait(() => session.isHydrated);
+    mocks.save.mockImplementation(async (item: RequestAttachment): Promise<SentAttachment> => {
+      const ext = item.name.split(".").pop() ?? "txt";
+      const reference = `attachments/00000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}.${ext}`;
+      saved.set(reference, item);
+      return { reference, name: item.name, mimeType: item.mimeType, size: item.size };
+    });
+    const docx = await prepareDraftAttachment(new File([new Uint8Array([80, 75, 3, 4, 9])], "plan.docx"));
+    const base = structuredClone(session.messages.find(message => message.id === "user")!);
+    let observed: ChatRequest | undefined;
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream(value) {
+      observed = value;
+      yield { type: "text-delta", text: "gemini read" };
+      yield { type: "completed", finishReason: "STOP" };
+    } } satisfies ChatTransport);
+    await act(async () => {
+      const res = await session.editAndSendMessage("user", "updated with docx", { base, attachments: [{ kind: "added", attachment: docx }] });
+      expect(res.status).toBe("saved");
+    });
+    await wait(() => !session.isAnyGenerating);
+    expect(observed).toBeDefined();
+    expect(buildProtocolBody("gemini-native", observed!).contents).toMatchObject([{ role: "user", parts: [
+      { text: "updated with docx" },
+      { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: "UEsDBAk=" } },
+    ] }]);
+
+    // Oversized edited attachment exceeding Gemini's 50 MB single-doc limit must fail before durable transcript write and discard newly saved staging copy.
+    const snapshotBefore = (await repository.load("current"))!.messages;
+    const hugePdf = await prepareDraftAttachment(new File([new Uint8Array([37, 80, 68, 70])], "huge.pdf"));
+    mocks.save.mockImplementationOnce(async (item: RequestAttachment): Promise<SentAttachment> => {
+      const reference = `attachments/00000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}.pdf`;
+      saved.set(reference, { ...item, size: 50_000_001 });
+      return { reference, name: item.name, mimeType: item.mimeType, size: 50_000_001 };
+    });
+    mocks.createRuntimeChatTransport.mockClear();
+    mocks.discardUncommitted.mockClear();
+    const currentBase = structuredClone(session.messages.find(message => message.id === "user")!);
+    let failedResult!: MessageEditResult;
+    await act(async () => {
+      failedResult = await session.editAndSendMessage("user", "oversized edit", { base: currentBase, attachments: [{ kind: "added", attachment: hugePdf }] });
+    });
+    expect(failedResult.status).toBe("notSaved");
+    expect(failedResult.error).toMatch(/Gemini.*50 MB/);
+    expect(session.sendStatus).toBeUndefined();
+    expect((await repository.load("current"))!.messages).toEqual(snapshotBefore);
+    expect(mocks.discardUncommitted).toHaveBeenCalledTimes(1);
+    expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
   });
 });

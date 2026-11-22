@@ -20,13 +20,44 @@ export class RequestConfigError extends Error {
   }
 }
 
-function checkedInlineBody(protocol: ChatProtocol, body: Record<string, unknown>, hasInlineMedia = false): Record<string, unknown> {
-  const bytes = new TextEncoder().encode(JSON.stringify(body)).length;
-  if (protocol === "gemini-native" && hasInlineMedia && bytes > 20_000_000) {
-    throw new RequestConfigError({ customJson: "Gemini 内联附件使整次请求超过官方 20 MB 上限；请减少附件或历史轮次。" });
+function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length) {
+      const next = text.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
   }
-  if (protocol === "anthropic-native" && bytes > 32_000_000) {
-    throw new RequestConfigError({ customJson: "Anthropic 整个请求超过官方 32 MB 上限；请减少附件或历史轮次。" });
+  return bytes;
+}
+
+function checkedInlineBody(protocol: ChatProtocol, body: Record<string, unknown>, hasInlineMedia = false): Record<string, unknown> {
+  const limit = protocol === "gemini-native" && hasInlineMedia ? 100_000_000
+    : protocol === "anthropic-native" ? 128_000_000 : undefined;
+  if (limit === undefined) return body;
+  let bytes: number;
+  try {
+    bytes = utf8ByteLength(JSON.stringify(body));
+  } catch (error) {
+    if (error instanceof RangeError) bytes = limit + 1;
+    else throw error;
+  }
+  if (bytes > limit) {
+    throw new RequestConfigError({
+      customJson: protocol === "gemini-native"
+        ? "Gemini 内联附件使整次请求超过官方 100 MB 上限；请减少附件或历史轮次。"
+        : "Anthropic 整个请求超过官方 128 MB 上限；请减少附件或历史轮次。",
+    });
   }
   return body;
 }
@@ -197,6 +228,9 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   }
   const mapped = messages.map((message) => ({ message, attachments: readyAttachments(message) }));
   const inlineAttachments = mapped.flatMap(({ attachments }) => attachments);
+  const capabilityError = attachmentCapabilityFailure(protocol, request.model,
+    inlineAttachments);
+  if (capabilityError) throw new RequestConfigError({ customJson: capabilityError });
   if (protocol === "openai-chat" || protocol === "openai-responses") {
     const files = inlineAttachments.filter((item) => item.mimeType === "application/pdf" || isOfficeAttachment(item));
     if (files.some((item) => item.size >= 50_000_000) ||
@@ -204,14 +238,17 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
       throw new RequestConfigError({ customJson: "OpenAI 文件输入要求单个文件小于 50 MB、请求内所有文件合计不超过 50 MB。" });
     }
   }
+  if (protocol === "gemini-native") {
+    const documents = inlineAttachments.filter((item) => item.mimeType === "application/pdf" || isOfficeAttachment(item));
+    if (documents.some((item) => item.size > 50_000_000)) {
+      throw new RequestConfigError({ customJson: "Gemini 单份 PDF/Office 文档不能超过官方 50 MB 上限；请减少文件大小。" });
+    }
+  }
   const hasInlineMedia = mapped.some(({ attachments }) => attachments.some((item) => !item.mimeType.startsWith("text/")));
   if (protocol === "anthropic-native" && mapped.some(({ attachments }) =>
     attachments.some((item) => item.mimeType.startsWith("image/") && item.data.length > 10_000_000))) {
     throw new RequestConfigError({ customJson: "Anthropic 内联图片的 Base64 数据不能超过官方 10 MB 上限；请减少图片大小。" });
   }
-  const capabilityError = attachmentCapabilityFailure(protocol, request.model,
-    inlineAttachments);
-  if (capabilityError) throw new RequestConfigError({ customJson: capabilityError });
   if (protocol === "openai-chat") {
     return checkedInlineBody(protocol, {
       ...custom,

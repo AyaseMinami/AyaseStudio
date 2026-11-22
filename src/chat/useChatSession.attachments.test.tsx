@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatSession } from "./useChatSession";
 import { createChatRepository } from "./repository";
 import { saveConnectionSettings } from "./settings";
+import { buildProtocolBody } from "./requestMapping";
 import type { ChatRequest, ChatTransport } from "./types";
 
 const mocks = vi.hoisted(() => ({
@@ -255,5 +256,124 @@ describe("attachment send ownership", () => {
     expect((await repository.load("current"))?.messages).toMatchObject([
       ...history, { role: "user", content: "continue" }, { role: "assistant", content: "continued" },
     ]);
+  });
+
+  it("sends Office attachments and retained Office history through gemini-native as inlineData", async () => {
+    saveConnectionSettings({ version: 3, providers: [{ id: "p", name: "Synthetic", connections: [{
+      id: "c", name: "Gemini", protocol: "gemini-native", baseUrl: "https://relay.example.com",
+      apiKey: "synthetic", models: [{ id: "configured", modelId: "gemini-2.5-pro" }],
+    }] }], activeModelId: "configured" });
+    const storedFiles = new Map<string, { name: string; mimeType: string; size: number; data: string }>();
+    let seq = 1;
+    mocks.save.mockImplementation(async (draft) => {
+      const reference = `attachments/123e4567-e89b-42d3-a456-${String(seq++).padStart(12, "0")}.${draft.name.split(".").pop()}`;
+      storedFiles.set(reference, { name: draft.name, mimeType: draft.mimeType, size: draft.size, data: draft.data });
+      return { reference, name: draft.name, mimeType: draft.mimeType, size: draft.size };
+    });
+    mocks.read.mockImplementation(async (sent) => {
+      const record = storedFiles.get(sent.reference);
+      if (!record) throw new Error(`missing synthetic attachment ${sent.reference}`);
+      return { ...sent, data: record.data };
+    });
+    const observed: ChatRequest[] = [];
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      if (request.config?.stream !== false) observed.push(request);
+      yield { type: "text-delta", text: "ok" };
+      yield { type: "completed", finishReason: "STOP" };
+    } } satisfies ChatTransport);
+    await mount();
+    const officeFiles = [
+      new File([new Uint8Array([80, 75, 3, 4, 1])], "report.docx"),
+      new File([new Uint8Array([80, 75, 3, 4, 2])], "sheet.xlsx"),
+      new File([new Uint8Array([80, 75, 3, 4, 3])], "deck.pptx"),
+    ];
+    await act(async () => session.addFiles(officeFiles));
+    await act(async () => session.setDraft("summarize"));
+    await act(async () => { await session.sendMessage(); });
+    expect(session.error).toBeUndefined();
+    expect(observed).toHaveLength(1);
+    const firstBody = buildProtocolBody("gemini-native", observed[0]);
+    expect(firstBody.contents).toMatchObject([{ role: "user", parts: [
+      { text: "summarize" },
+      { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: "UEsDBAE=" } },
+      { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data: "UEsDBAI=" } },
+      { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", data: "UEsDBAM=" } },
+    ] }]);
+    // Follow-up turn retains the historical Office attachments via attachmentStore.read.
+    await act(async () => session.setDraft("follow up"));
+    await act(async () => { await session.sendMessage(); });
+    expect(session.error).toBeUndefined();
+    expect(observed).toHaveLength(2);
+    const secondBody = buildProtocolBody("gemini-native", observed[1]);
+    expect(secondBody.contents).toMatchObject([
+      { role: "user", parts: [
+        { text: "summarize" },
+        { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: "UEsDBAE=" } },
+        { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data: "UEsDBAI=" } },
+        { inlineData: { mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", data: "UEsDBAM=" } },
+      ] },
+      { role: "model", parts: [{ text: "ok" }] },
+      { role: "user", parts: [{ text: "follow up" }] },
+    ]);
+  });
+
+  it("blocks oversized normal sends before persisting messages or calling transport", async () => {
+    saveConnectionSettings({ version: 3, providers: [{ id: "p", name: "Synthetic", connections: [{
+      id: "c", name: "Gemini", protocol: "gemini-native", baseUrl: "https://relay.example.com",
+      apiKey: "synthetic", models: [{ id: "configured", modelId: "gemini-2.5-pro" }],
+    }] }], activeModelId: "configured" });
+    await mount();
+    const history = [
+      { id: "u1", role: "user" as const, content: "old", status: "complete" as const,
+        attachments: [{ name: "huge.pdf", mimeType: "application/pdf" as const, size: 50_000_001,
+          reference: "attachments/huge.pdf" }] },
+      { id: "a1", role: "assistant" as const, content: "reply", status: "complete" as const },
+    ];
+    await act(async () => {
+      session.workspace.setMessages(history);
+      await session.workspace.store!.updateMessages(history);
+    });
+    const updateSpy = vi.spyOn(session.workspace.store!, "updateMessages");
+    mocks.read.mockResolvedValue({ name: "huge.pdf", mimeType: "application/pdf", size: 50_000_001, data: "JVBERi0=" });
+    await act(async () => session.setDraft("next question"));
+    await act(async () => { await session.sendMessage(); });
+    expect(session.error).toMatch(/Gemini.*50 MB/);
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect((await repository.load("current"))?.messages).toEqual(history);
+    expect(session.draft).toBe("next question");
+  });
+
+  it("shows preparing-attachments and waiting-for-model send status in order and clarifies ambiguous disconnect errors", async () => {
+    let releaseSave!: (value: { reference: string; name: string; mimeType: "text/plain"; size: number }) => void;
+    let saveStarted!: () => void;
+    const saveGate = new Promise<void>((resolve) => { saveStarted = resolve; });
+    mocks.save.mockImplementationOnce(async () => {
+      saveStarted();
+      return await new Promise((resolve) => { releaseSave = resolve; });
+    });
+    let releaseStream!: () => void;
+    let streamStarted!: () => void;
+    const streamGate = new Promise<void>((resolve) => { streamStarted = resolve; });
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
+      streamStarted();
+      await new Promise<void>((resolve) => { releaseStream = resolve; });
+      yield { type: "failed", error: { kind: "network", message: "connection reset", retryable: true } };
+    } } satisfies ChatTransport);
+    await mount(); await stage();
+    let sending!: Promise<void>;
+    await act(async () => { sending = session.sendMessage(); });
+    await saveGate;
+    expect(session.sendStatus).toBe("正在准备附件，请稍候…");
+    await act(async () => {
+      releaseSave({ reference: "attachments/123e4567-e89b-42d3-a456-426614174000.txt", name: "note.txt", mimeType: "text/plain", size: 5 });
+    });
+    await streamGate;
+    expect(session.sendStatus).toBe("正在等待模型响应…");
+    await act(async () => { releaseStream(); await sending; });
+    expect(session.sendStatus).toBeUndefined();
+    expect(session.error).toContain("未收到完整响应，发送结果未确认");
+    expect(session.error).toContain("connection reset");
   });
 });

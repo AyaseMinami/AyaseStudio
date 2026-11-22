@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatSession } from "./useChatSession";
 import { createChatRepository } from "./repository";
 import { saveConnectionSettings } from "./settings";
+import { buildProtocolBody } from "./requestMapping";
 import { saveSearchSettings, defaultSearchSettings, loadSearchConfiguration, saveSearchConfiguration, type ExternalSearchProvider } from "../search/settings";
 import type { ChatProtocol, ChatRequest, ChatTransport } from "./types";
 
@@ -238,5 +239,51 @@ describe("external search in session generation", () => {
     await act(async () => { resolvers.get("second conversation")!({ sources: [source] }); await second; });
     expect((await repo.load("other"))?.messages[1].status).toBe("aborted");
     expect((await repo.load("current"))?.messages[1].status).toBe("complete");
+  });
+
+  it("blocks external search before model call when injected search text pushes Gemini body over 100 MB, preserving message and search results", async () => {
+    await act(async () => {
+      await session.updateConnection("c", "protocol", "gemini-native");
+      await session.setSearchMode("tavily");
+      await session.workspace.execute({ type: "rename-conversation", id: "current", title: "manual" });
+    });
+    const imgRaw = 74_999_700;
+    const history = [
+      { id: "u1", role: "user" as const, content: "prior", status: "complete" as const,
+        attachments: [{ name: "img.png", mimeType: "image/png" as const, size: imgRaw, reference: "attachments/img.png" }] },
+      { id: "a1", role: "assistant" as const, content: "ok", status: "complete" as const },
+    ];
+    await act(async () => {
+      session.workspace.setMessages(history);
+      await session.workspace.store!.updateMessages(history);
+    });
+    // Size the historical inline image so the initial pre-search request fits <= 100 MB,
+    // while adding the Tavily retrieval excerpt pushes the final UTF-8 JSON body > 100 MB.
+    const emptyBody = buildProtocolBody("gemini-native", {
+      baseUrl: "https://model.example", apiKey: "", model: "any",
+      config: { ...session.sessionConfig, webSearch: false },
+      messages: [
+        { role: "user", content: "prior", attachments: [{ name: "img.png", mimeType: "image/png", size: imgRaw, data: "" }] },
+        { role: "assistant", content: "ok" },
+        { role: "user", content: "search this" },
+      ],
+    });
+    const overhead = new TextEncoder().encode(JSON.stringify(emptyBody)).length;
+    const nearLimitData = "A".repeat(100_000_000 - overhead - 50);
+    mocks.read.mockResolvedValue({ name: "img.png", mimeType: "image/png", size: Math.floor(nearLimitData.length / 4) * 3, data: nearLimitData });
+    mocks.createRuntimeChatTransport.mockClear();
+    await draft("search this");
+    await act(async () => { await session.sendMessage(); });
+    expect(mocks.searchExa).toHaveBeenCalledTimes(1);
+    expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+    expect(session.error).toMatch(/Gemini.*100 MB/);
+    expect(session.sendStatus).toBeUndefined();
+    const persisted = (await repo.load("current"))!.messages;
+    expect(persisted).toHaveLength(4);
+    expect(persisted[2]).toMatchObject({ role: "user", content: "search this", status: "complete" });
+    expect(persisted[3]).toMatchObject({
+      role: "assistant", status: "failed",
+      search: { provider: "tavily", status: "completed", sources: [source] },
+    });
   });
 });
