@@ -356,7 +356,12 @@ describe("attachment send ownership", () => {
     let releaseStream!: () => void;
     let streamStarted!: () => void;
     const streamGate = new Promise<void>((resolve) => { streamStarted = resolve; });
-    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream() {
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      if (request.config?.stream === false) {
+        yield { type: "text-delta", text: "title" };
+        yield { type: "completed", finishReason: "stop" };
+        return;
+      }
       streamStarted();
       await new Promise<void>((resolve) => { releaseStream = resolve; });
       yield { type: "failed", error: { kind: "network", message: "connection reset", retryable: true } };
@@ -375,5 +380,47 @@ describe("attachment send ownership", () => {
     expect(session.sendStatus).toBeUndefined();
     expect(session.error).toContain("未收到完整响应，发送结果未确认");
     expect(session.error).toContain("connection reset");
+  });
+
+  it("marks premature stream end protocol failures as unconfirmed without prefixing malformed protocol errors", async () => {
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      if (request.config?.stream === false) {
+        yield { type: "text-delta", text: "title" };
+        yield { type: "completed", finishReason: "stop" };
+        return;
+      }
+      yield {
+        type: "failed",
+        error: {
+          kind: "protocol",
+          message: "Gemini stream ended before a finish reason",
+          retryable: true,
+        },
+      };
+    } } satisfies ChatTransport);
+    await mount();
+    await act(async () => session.setDraft("first"));
+    await act(async () => { await session.sendMessage(); });
+    expect(session.error).toContain("未收到完整响应，发送结果未确认；请决定是否重试");
+    expect(session.error).toContain("Gemini stream ended before a finish reason");
+
+    mocks.createRuntimeChatTransport.mockResolvedValue({ async *stream(request) {
+      if (request.config?.stream === false) {
+        yield { type: "text-delta", text: "title" };
+        yield { type: "completed", finishReason: "stop" };
+        return;
+      }
+      yield {
+        type: "failed",
+        error: {
+          kind: "protocol",
+          message: "Gemini response is malformed",
+          retryable: false,
+        },
+      };
+    } } satisfies ChatTransport);
+    await act(async () => session.setDraft("second"));
+    await act(async () => { await session.sendMessage(); });
+    expect(session.error).toBe("Gemini response is malformed");
   });
 });

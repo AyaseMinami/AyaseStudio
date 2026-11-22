@@ -455,6 +455,7 @@ describe("App navigation", () => {
   async function setPanelText(selector: string, value: string): Promise<void> {
     const element = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
     expect(element).not.toBeNull();
+    expect(element?.closest("[hidden]")).toBeNull();
     await act(async () => {
       const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(element, value);
@@ -462,11 +463,19 @@ describe("App navigation", () => {
     });
   }
 
+  async function selectConfigTab(tab: "general" | "prompt"): Promise<void> {
+    const button = container.querySelector<HTMLButtonElement>(`#session-config-tab-${tab}`);
+    expect(button).not.toBeNull();
+    await act(async () => button?.click());
+  }
+
   it("saves conversation configuration explicitly and retains it after clear and remount", async () => {
     configureChatTarget();
     await renderApp();
     await clickButtonWithText("编辑对话");
+    await selectConfigTab("prompt");
     await setPanelText("#session-system", "Stay concise.");
+    await selectConfigTab("general");
     await clickButtonWithText("高级 JSON");
     await setPanelText("#session-custom-json", '{"seed":7}');
     await act(async () => container.querySelector<HTMLInputElement>("#session-stream")?.click());
@@ -484,7 +493,10 @@ describe("App navigation", () => {
     root = createRoot(container);
     await renderApp();
     await clickButtonWithText("编辑对话");
+    await selectConfigTab("prompt");
+    expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.closest("[hidden]")).toBeNull();
     expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Stay concise.");
+    await selectConfigTab("general");
     await clickButtonWithText("高级 JSON");
     expect(container.querySelector<HTMLTextAreaElement>("#session-custom-json")?.value).toBe('{"seed":7}');
     expect(container.querySelector<HTMLInputElement>("#session-stream")?.checked).toBe(false);

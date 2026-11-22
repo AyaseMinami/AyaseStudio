@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FolderOpen, RotateCcw, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight, FolderOpen, RotateCcw, Trash2 } from "lucide-react";
 import { WindowControls } from "../window/WindowControls";
 import { SelectField } from "../SelectField";
 import { SearchSelectField } from "../SearchSelectField";
@@ -43,9 +43,10 @@ const HistoryItem = memo(function HistoryItem({ result, number, selected, onSele
   result: DrawingResult; number: number; selected: boolean;
   onSelect(id: string): void; read?: (reference: string) => Promise<DrawingImageInput>;
 }) {
-  return <button type="button" className="drawing-button" aria-label={`成果 ${number}`} aria-pressed={selected}
+  return <button type="button" className="drawing-button drawing-history-item" aria-label={`成果 ${number}`}
+    title={`成果 ${number}`} aria-pressed={selected}
     onClick={() => onSelect(result.id)}><DrawingResultThumbnail reference={result.reference}
-      label={`成果 ${number} 缩略图`} read={read} />成果 {number}</button>;
+      label={`成果 ${number} 缩略图`} read={read} /><span className="drawing-history-badge"><span className="drawing-visually-hidden">成果 </span>{number}</span></button>;
 });
 
 function RecordPagination({ page, count, onPage, label }: { page: number; count: number; onPage(page: number): void; label: string }) {
@@ -146,7 +147,7 @@ function TaskParameters({ task }: { task: DrawingTask }) {
 function TaskDiagnostic({ task }: { task: DrawingTask }) {
   if (!task.diagnostic) return null;
   return <details className="drawing-task-diagnosis drawing-muted">
-    <summary>诊断详情</summary>
+    <summary><ChevronRight size={13} className="drawing-disclosure-icon" aria-hidden="true" />诊断详情</summary>
     <p>{diagnosisLabels[task.diagnostic.category] ?? "其他错误"}
       {Number.isInteger(task.diagnostic.httpStatus) && task.diagnostic.httpStatus! >= 100 && task.diagnostic.httpStatus! <= 599
         ? ` · HTTP 状态 ${task.diagnostic.httpStatus}` : ""}</p>
@@ -430,17 +431,17 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
 
       <div className="drawing-body" inert={Boolean(confirmation) || presetDialogOpen}>
         {!ready && <p className="drawing-notice">正在加载绘图工作区…</p>}
-        {error && <p className="drawing-error" role="alert">{error}</p>}
-        {memoryTasks.length > 0 && <p className="drawing-error" role="alert" aria-label="未保存图片内存风险">
-          {memoryTasks.length} 项任务的 {memoryImages} 张图片仅保存在内存。保存失败时继续生成会增加内存占用，建议暂停队列并重试本地保存；退出可能丢失这些图片。
+        {error && <p className="drawing-error drawing-error-banner" role="alert"><AlertCircle size={15} aria-hidden="true" /><span>{error}</span></p>}
+        {memoryTasks.length > 0 && <p className="drawing-error drawing-error-banner" role="alert" aria-label="未保存图片内存风险">
+          <AlertCircle size={15} aria-hidden="true" /><span>{memoryTasks.length} 项任务的 {memoryImages} 张图片仅保存在内存。保存失败时继续生成会增加内存占用，建议暂停队列并重试本地保存；退出可能丢失这些图片。</span>
         </p>}
 
           <div className="drawing-layout">
             <section className="drawing-panel drawing-form" aria-label="绘图草稿">
               <div className="drawing-form-content" role="region" aria-label="绘图配置" tabIndex={0}>
-              <div className="drawing-field">
-                <label className="drawing-label" htmlFor="drawing-model">绘图模型</label>
+              <div className="drawing-field drawing-model-field">
                 <div className="drawing-model">
+                  <label className="drawing-label" htmlFor="drawing-model">绘图模型</label>
                   <SearchSelectField id="drawing-model" label="绘图模型" value={draft.modelId ?? ""} disabled={!ready}
                     options={[
                       { value: "", label: reusedProtocol ? `选择绘图模型（已复用 ${protocolNames[reusedProtocol]} 参数）` : "选择绘图模型" },
@@ -456,18 +457,18 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 {reusedProtocol && <p className="drawing-muted" role="status">原模型不可用，请重新选择绘图模型。已保留 {protocolNames[reusedProtocol]} 协议参数。</p>}
                 {ready && models.length === 0 && <p className="drawing-muted">请在设置中添加 Gemini、OpenAI、Grok 或 Seedream 绘图连接和模型。</p>}
               </div>
-              <label className="drawing-field">
-                <span className="drawing-label">提示词</span>
+              <div className="drawing-field drawing-prompt-field">
+                <div className="drawing-prompt-heading">
+                  <label className="drawing-label" htmlFor="drawing-prompt">提示词</label>
+                  {onApplyPreset && onCreatePreset && onUpdatePreset && onDeletePreset && <DrawingPresets
+                    presets={presets} prompt={draft.prompt} disabled={!ready || closing || presetsBusy || Boolean(confirmation)}
+                    onApply={onApplyPreset} onCreate={onCreatePreset} onUpdate={onUpdatePreset} onDelete={onDeletePreset}
+                    onDialogChange={setPresetDialogOpen} />}
+                </div>
                 <textarea id="drawing-prompt" value={draft.prompt} placeholder="描述想要生成的画面"
                   onChange={(event) => onDraftChange({ ...draft, prompt: event.target.value })} />
-              </label>
-              {onApplyPreset && onCreatePreset && onUpdatePreset && onDeletePreset && <DrawingPresets
-                presets={presets} prompt={draft.prompt} disabled={!ready || closing || presetsBusy || Boolean(confirmation)}
-                onApply={onApplyPreset} onCreate={onCreatePreset} onUpdate={onUpdatePreset} onDelete={onDeletePreset}
-                onDialogChange={setPresetDialogOpen} />}
-              <DrawingReferences references={references} disabled={!canEditReferences}
-                busy={referencesBusy} read={readReference} readThumbnail={readThumbnail} onAdd={onAddReferences}
-                onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
+              </div>
+              <div className="drawing-input-layout">
               <div className="drawing-compact-parameters">
               {openai ? <>
                 <div className="drawing-parameters drawing-output-parameters drawing-output-parameters-openai" role="group" aria-label="图像参数">
@@ -597,8 +598,11 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 </label>
               </div>
               <div className="drawing-parameter-tools">
-                {protocol === "gemini-image" && <button type="button" className="drawing-button" aria-expanded={advancedOpen}
-                  aria-controls="drawing-gemini-advanced" onClick={() => setAdvancedOpen(!advancedOpen)}>Gemini 高级参数</button>}
+                {protocol === "gemini-image" && <button type="button" className="drawing-button drawing-advanced-toggle" aria-expanded={advancedOpen}
+                  aria-controls="drawing-gemini-advanced" onClick={() => setAdvancedOpen(!advancedOpen)}>
+                  <span>Gemini 高级参数</span>
+                  <ChevronDown size={14} className="drawing-advanced-chevron" aria-hidden="true" />
+                </button>}
                 <span className="drawing-parameter-help-label">参数说明<SettingsHelp label="参数">{openai
                   ? "xhigh／max 需 GPT Image 2.5 或服务支持。自定义尺寸需 GPT Image 2／2.5：边长为 16 的倍数且不超过 3840，比例在 1:3 至 3:1，总像素 655360–8294400；高于 2560 × 1440 为实验性尺寸。旧模型和中转支持范围以服务为准。"
                   : grok ? "版本契约需手动选择，不根据模型 ID 推断。画质 low／medium 和 21:9／5:2 宽高比仅支持 2.0；自动选项跟随服务默认。"
@@ -610,65 +614,75 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               </label>
               </div>
               </div>
-              {protocol === "gemini-image" && advancedOpen && <div id="drawing-gemini-advanced">
-                <div className="drawing-field drawing-advanced-inline">
-                  <label className="drawing-label" htmlFor="drawing-gemini-thinking">思考强度</label>
-                  <SettingsHelp label="绘图思考强度">默认跟随模型。Nano Banana 2.1 支持 minimal／medium／high，默认 medium；3.1 Flash Image 和 Flash Lite Image 支持 minimal／high，默认 minimal。更低档位侧重速度，更高档位侧重推理；minimal 仍会思考。其他模型与中转以服务支持为准。</SettingsHelp>
-                  <SelectField id="drawing-gemini-thinking" label="Gemini 绘图思考强度" value={draft.gemini?.thinkingLevel ?? "auto"} disabled={!ready || closing}
-                    options={[{ value: "auto", label: "模型默认" }, ...geminiDrawingThinkingLevels.map(value => ({ value, label: value }))]}
-                    onChange={value => { const thinkingLevel = geminiDrawingThinkingLevels.find(level => level === value); if (value === "auto" || thinkingLevel) setGemini({ thinkingLevel }); }} />
-                </div>
+              <DrawingReferences references={references} disabled={!canEditReferences}
+                busy={referencesBusy} read={readReference} readThumbnail={readThumbnail} onAdd={onAddReferences}
+                onRemove={onRemoveReference} onMove={onMoveReference} onClear={onClearReferences} />
+              </div>
+              {protocol === "gemini-image" && advancedOpen && <div id="drawing-gemini-advanced" className="drawing-advanced-panel">
                 <div className="drawing-advanced-columns">
-                <div className="drawing-field">
-                <div className="drawing-temperature-row">
-                <div className="drawing-field drawing-advanced-inline">
-                  <label className="drawing-label" htmlFor="drawing-gemini-temperature">温度（0–2）</label>
-                  <SettingsHelp label="温度">默认跟随模型，不发送 temperature。Gemini 3 官方建议保持默认 1.0。</SettingsHelp>
-                  <input id="drawing-gemini-temperature" type="number" min="0" max="2" step="any" placeholder="跟随模型" disabled={!ready || closing}
-                    aria-label="Gemini temperature" aria-invalid={temperatureError} value={draft.gemini?.temperature ?? ""}
-                    onChange={event => {
-                      const text = event.target.value, value = event.target.valueAsNumber;
-                      const invalid = text !== "" && (!Number.isFinite(value) || value < 0 || value > 2);
-                      setTemperatureError(invalid);
-                      if (!invalid) setGemini({ temperature: text === "" ? undefined : value });
-                    }} />
+                  <div className="drawing-advanced-label-cell">
+                    <label className="drawing-label" htmlFor="drawing-gemini-thinking">思考强度</label>
+                    <SettingsHelp label="绘图思考强度">默认跟随模型。Nano Banana 2.1 支持 minimal／medium／high，默认 medium；3.1 Flash Image 和 Flash Lite Image 支持 minimal／high，默认 minimal。更低档位侧重速度，更高档位侧重推理；minimal 仍会思考。其他模型与中转以服务支持为准。</SettingsHelp>
+                  </div>
+                  <div className="drawing-field drawing-advanced-control">
+                    <SelectField id="drawing-gemini-thinking" label="Gemini 绘图思考强度" value={draft.gemini?.thinkingLevel ?? "auto"} disabled={!ready || closing}
+                      options={[{ value: "auto", label: "模型默认" }, ...geminiDrawingThinkingLevels.map(value => ({ value, label: value }))]}
+                      onChange={value => { const thinkingLevel = geminiDrawingThinkingLevels.find(level => level === value); if (value === "auto" || thinkingLevel) setGemini({ thinkingLevel }); }} />
+                  </div>
+                  <div className="drawing-advanced-label-cell drawing-advanced-label-right">
+                    <label className="drawing-label" htmlFor="drawing-gemini-temperature">温度（0–2）</label>
+                    <SettingsHelp label="温度">默认跟随模型，不发送 temperature。Gemini 3 官方建议保持默认 1.0。</SettingsHelp>
+                  </div>
+                  <div className="drawing-field drawing-advanced-control">
+                    <div className="drawing-temperature-row">
+                      <input id="drawing-gemini-temperature" type="number" min="0" max="2" step="any" placeholder="跟随模型" disabled={!ready || closing}
+                        aria-label="Gemini temperature" aria-invalid={temperatureError} value={draft.gemini?.temperature ?? ""}
+                        onChange={event => {
+                          const text = event.target.value, value = event.target.valueAsNumber;
+                          const invalid = text !== "" && (!Number.isFinite(value) || value < 0 || value > 2);
+                          setTemperatureError(invalid);
+                          if (!invalid) setGemini({ temperature: text === "" ? undefined : value });
+                        }} />
+                      <button type="button" className="drawing-button drawing-temperature-reset" disabled={!ready || closing}
+                        aria-label="恢复模型温度" title="恢复模型温度"
+                        onClick={() => { setTemperatureError(false); setGemini({ temperature: undefined }); }}><RotateCcw size={15} aria-hidden="true" /></button>
+                    </div>
+                    {temperatureError && <p className="drawing-error" role="alert">Temperature 须为 0–2 的有限数。</p>}
+                  </div>
+                  <div className="drawing-advanced-label-cell">
+                    <label className="drawing-label" htmlFor="drawing-gemini-safety">安全阈值</label>
+                    <SettingsHelp label="安全阈值">适用于骚扰、仇恨、色情和危险内容四类；服务端仍可能拒绝内容或参数，支持范围以模型和中转为准。</SettingsHelp>
+                  </div>
+                  <div className="drawing-field drawing-advanced-control">
+                    <SelectField id="drawing-gemini-safety" label="Gemini 安全阈值" value={draft.gemini?.safetyThreshold ?? "auto"} disabled={!ready || closing}
+                      options={[{ value: "auto", label: "服务默认" }, ...geminiSafetyThresholds.map(value => ({ value, label: value }))]}
+                      onChange={value => { const safetyThreshold = geminiSafetyThresholds.find(threshold => threshold === value); if (value === "auto" || safetyThreshold) setGemini({ safetyThreshold }); }} />
+                  </div>
+                  <div className="drawing-advanced-label-cell drawing-advanced-label-right">
+                    <label className="drawing-label" htmlFor="drawing-gemini-output-mode">输出模式</label>
+                  </div>
+                  <div className="drawing-field drawing-advanced-control">
+                    <SelectField id="drawing-gemini-output-mode" label="Gemini 输出模式" value={draft.gemini?.outputMode ?? "text-image"} disabled={!ready || closing}
+                      options={[{ value: "text-image", label: "文字＋图片" }, { value: "image", label: "仅图片" }]}
+                      onChange={value => { if (value === "text-image" || value === "image") setGemini({ outputMode: value }); }} />
+                  </div>
                 </div>
-                <button type="button" className="drawing-button drawing-temperature-reset" disabled={!ready || closing}
-                  aria-label="恢复模型温度" title="恢复模型温度"
-                  onClick={() => { setTemperatureError(false); setGemini({ temperature: undefined }); }}><RotateCcw size={16} aria-hidden="true" /></button>
-                </div>
-                {temperatureError && <p className="drawing-error" role="alert">Temperature 须为 0–2 的有限数。</p>}
-                </div>
-                <div className="drawing-field">
-                <div className="drawing-temperature-row">
-                <div className="drawing-field drawing-advanced-inline">
-                  <label className="drawing-label" htmlFor="drawing-gemini-safety">安全阈值</label>
-                  <SettingsHelp label="安全阈值">适用于骚扰、仇恨、色情和危险内容四类；服务端仍可能拒绝内容或参数，支持范围以模型和中转为准。</SettingsHelp>
-                  <SelectField id="drawing-gemini-safety" label="Gemini 安全阈值" value={draft.gemini?.safetyThreshold ?? "auto"} disabled={!ready || closing}
-                    options={[{ value: "auto", label: "服务默认" }, ...geminiSafetyThresholds.map(value => ({ value, label: value }))]}
-                    onChange={value => { const safetyThreshold = geminiSafetyThresholds.find(threshold => threshold === value); if (value === "auto" || safetyThreshold) setGemini({ safetyThreshold }); }} />
-                </div>
-                </div>
-                </div>
-                </div>
-                <label className="drawing-field"><span className="drawing-label">输出模式</span>
-                  <SelectField label="Gemini 输出模式" value={draft.gemini?.outputMode ?? "text-image"} disabled={!ready || closing}
-                    options={[{ value: "text-image", label: "文字＋图片" }, { value: "image", label: "仅图片" }]}
-                    onChange={value => { if (value === "text-image" || value === "image") setGemini({ outputMode: value }); }} />
-                </label>
               </div>}
               </div>
               <div className="drawing-submit">
-                {preparation && <>
+                {preparation && <div className="drawing-preparation-row">
                   <p className="drawing-muted" role="status">正在准备参考图 {preparation.completed}/{preparation.total}…</p>
                   <button type="button" className="drawing-button" disabled={!ready || closing || !onCancelPreparation}
                     onClick={event => { if (event.detail <= 1) onCancelPreparation?.(); }}>取消准备参考图</button>
-                </>}
-                <button id="drawing-generate" type="button" className="drawing-button drawing-generate"
-                  disabled={!canGenerate} onClick={event => { if (event.detail <= 1) onGenerate(); }} aria-describedby="drawing-generation-note">
-                  {submitting ? "正在加入队列…" : count > 1 ? `加入 ${count} 个任务` : busy || paused ? "加入队列" : "生成图片"}
-                </button>
-                <details className="drawing-generation-help drawing-parameter-help"><summary>队列说明</summary><p id="drawing-generation-note" className="drawing-muted">数量为独立单图请求数，同一批使用提交时的草稿快照。暂停只阻止新任务开始，正在执行的任务继续完成。</p></details>
+                </div>}
+                <div className="drawing-submit-row">
+                  <button id="drawing-generate" type="button" className="drawing-button drawing-generate"
+                    disabled={!canGenerate} onClick={event => { if (event.detail <= 1) onGenerate(); }} aria-describedby="drawing-generation-note">
+                    {submitting ? "正在加入队列…" : count > 1 ? `加入 ${count} 个任务` : busy || paused ? "加入队列" : "生成图片"}
+                  </button>
+                  <SettingsHelp label="队列说明">数量为独立单图请求数，同一批使用提交时的草稿快照。暂停只阻止新任务开始，正在执行的任务继续完成。</SettingsHelp>
+                  <span id="drawing-generation-note" className="drawing-visually-hidden">数量为独立单图请求数，同一批使用提交时的草稿快照。暂停只阻止新任务开始，正在执行的任务继续完成。</span>
+                </div>
               </div>
             </section>
 
@@ -676,7 +690,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               <div className="drawing-section-heading drawing-preview-heading">
                 <h2 id="drawing-preview-title">图像预览</h2>
                 <div className="drawing-preview-heading-actions">
-                <span className="drawing-muted">{selectedResult ? `成果 ${resultNumber(selectedResult.id)}` : "等待生成"}</span>
+                  <span className="drawing-muted">{selectedResult ? `成果 ${resultNumber(selectedResult.id)} · ${selectedResult.width} × ${selectedResult.height}` : "等待生成"}</span>
                 </div>
               </div>
               <DrawingResultPreview id={selectedResult?.id ?? null} url={selectedResult ? previewUrl : null} error={previewError}
@@ -698,16 +712,19 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
               </DrawingResultPreview>
               {directoryError && <p className="drawing-error" role="alert">{directoryError}</p>}
               {selectedResult && <details key={selectedResult.id} className="drawing-result-disclosure">
-                <summary><span className="drawing-result-summary" title={selectedResult.parameters.prompt}>{selectedResult.parameters.prompt}</span>
+                <summary><ChevronRight size={14} className="drawing-disclosure-icon" aria-hidden="true" /><span className="drawing-result-summary" title={selectedResult.parameters.prompt}>{selectedResult.parameters.prompt}</span>
                   <span className="drawing-muted">详细信息</span></summary>
                 <ResultDetails result={selectedResult} />
               </details>}
               <div className="drawing-section-heading drawing-history-heading">
-                <h2>生成历史</h2>
+                <div className="drawing-history-title-group">
+                  <h2>生成历史</h2>
+                  {results.length > 0 && <span className="drawing-count-pill">{results.length}</span>}
+                </div>
                 {onDeleteResults && <button type="button" className="drawing-button drawing-clear-history"
                   disabled={!canManage || !results.length}
                   onClick={event => { if (event.detail <= 1) deleteResults(results.map(result => result.id), event.currentTarget, true); }}>
-                  <Trash2 size={15} aria-hidden="true" />清空历史
+                  <Trash2 size={14} aria-hidden="true" />清空历史
                 </button>}
               </div>
               <RecordPagination page={activeHistoryPage} count={results.length} onPage={setHistoryPage} label="生成历史" />
@@ -733,34 +750,50 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     }}>{id === "list" ? "任务列表" : "任务日志"}</button>)}
                 </div>
         <div className="drawing-queue-summary">
-          <p className="drawing-muted" role="status" aria-label="绘图队列状态">
-            {paused ? "队列已暂停" : "队列运行中"} · 等待 {tasks.filter(task => task.status === "queued").length}
-            {` · 准备 ${tasks.filter(task => task.status === "preparing").length} · 生成 ${tasks.filter(task => task.status === "dispatching" || task.status === "running").length} · 保存 ${tasks.filter(task => task.status === "saving").length} · 已结束 ${tasks.filter(terminal).length}`}
-          </p>
+          <p className="drawing-muted" role="status" aria-label="绘图队列状态">{(() => {
+            const queuedCount = tasks.filter(task => task.status === "queued").length;
+            const preparingCount = tasks.filter(task => task.status === "preparing").length;
+            const runningCount = tasks.filter(task => task.status === "dispatching" || task.status === "running").length;
+            const savingCount = tasks.filter(task => task.status === "saving").length;
+            const finishedCount = tasks.filter(terminal).length;
+            const active = [
+              queuedCount ? `等待 ${queuedCount}` : "",
+              preparingCount ? `准备 ${preparingCount}` : "",
+              runningCount ? `生成 ${runningCount}` : "",
+              savingCount ? `保存 ${savingCount}` : "",
+            ].filter(Boolean);
+            return [
+              paused ? "队列已暂停" : active.length ? "队列运行中" : "队列空闲",
+              ...active,
+              finishedCount > 0 ? `已结束 ${finishedCount}` : "",
+            ].filter(Boolean).join(" · ");
+          })()}</p>
           <div className="drawing-actions">
             {paused ? onResume && <button type="button" className="drawing-button" disabled={!ready || submitting} onClick={onResume}>继续队列</button>
               : onPause && <button type="button" className="drawing-button" disabled={!ready || submitting} onClick={onPause}>暂停队列</button>}
             {hasCancellable && <button type="button" className="drawing-button" disabled={!canManage}
               onClick={event => { if (event.detail <= 1) onCancel(); }}>取消全部待处理任务</button>}
+            {onDeleteTasks && <>
+              <button type="button" className="drawing-button drawing-task-clear" aria-label="清空已完成历史" title="清空已完成历史"
+                disabled={!canManage || !completedTasks.length}
+                onClick={event => { if (event.detail <= 1) deleteTasks(completedTasks, event.currentTarget); }}>清空已完成</button>
+              <button type="button" className="drawing-button drawing-task-clear" aria-label="清空失败历史" title="清空失败历史"
+                disabled={!canManage || !failedTasks.length}
+                onClick={event => { if (event.detail <= 1) deleteTasks(failedTasks, event.currentTarget); }}>清空失败</button>
+            </>}
           </div>
           {hasCancellable && <p className="drawing-muted">已发出的请求取消后，服务端仍可能继续生成并计费。</p>}
         </div>
 
               </div>
-              <div className="drawing-task-toolbar">
+              {tasks.length > recordsPerPage && <div className="drawing-task-toolbar">
                 <RecordPagination page={taskSubview === "list" ? activeTaskPage : activeLogPage} count={tasks.length}
                   onPage={taskSubview === "list" ? setTaskPage : setLogPage} label={taskSubview === "list" ? "任务" : "任务日志"} />
-                {onDeleteTasks && <div className="drawing-actions">
-                  <button type="button" className="drawing-button" disabled={!canManage || !completedTasks.length}
-                    onClick={event => { if (event.detail <= 1) deleteTasks(completedTasks, event.currentTarget); }}>清空已完成历史</button>
-                  <button type="button" className="drawing-button" disabled={!canManage || !failedTasks.length}
-                    onClick={event => { if (event.detail <= 1) deleteTasks(failedTasks, event.currentTarget); }}>清空失败历史</button>
-                </div>}
-              </div>
+              </div>}
               <div id="drawing-task-content" className="drawing-task-content" role="tabpanel"
                 aria-labelledby={`drawing-task-tab-${taskSubview}`} tabIndex={0}>
                 {taskSubview === "logs" && <p className="drawing-log-note drawing-muted">显示每次生成的入队、开始、结束或最近状态，以及失败原因。</p>}
-                {tasks.length ? <table className="drawing-task-table" aria-label={taskSubview === "list" ? "任务列表" : "任务日志"}>
+                {tasks.length ? <table className="drawing-task-table" data-view={taskSubview} aria-label={taskSubview === "list" ? "任务列表" : "任务日志"}>
                   <colgroup><col className="drawing-task-id-column" /><col className="drawing-task-status-column" />
                     <col className="drawing-task-parameter-column" /><col className="drawing-task-time-column" /><col /><col className="drawing-task-action-column" /></colgroup>
                   <thead><tr><th scope="col">ID</th><th scope="col">状态</th><th scope="col">参数</th><th scope="col">耗时</th>
@@ -773,7 +806,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                     return <Fragment key={task.id}>
                       <tr className="drawing-task-row" data-status={task.status}>
                         <th scope="row" title={task.id}><span className="drawing-task-id">{taskLabel(task.id)}</span></th>
-                        <td>{taskLabels[task.status]}</td>
+                        <td><span className="drawing-task-status-badge" data-status={task.status}>{taskLabels[task.status]}</span></td>
                         <td><span className="drawing-task-truncate" title={summary}>{summary}</span></td>
                         <td aria-label={`执行耗时 ${elapsed(task, now)}`}>{elapsed(task, now)}</td>
                         <td>{taskSubview === "list" ? <button type="button" className="drawing-task-expand"
@@ -798,7 +831,7 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
                 {onDeleteTasks && <button type="button" className="drawing-button drawing-task-text-action" disabled={!canManage || !terminal(task)}
                   aria-label={`删除任务 ${taskLabel(task.id)} 历史`}
                   onClick={event => { if (event.detail <= 1) deleteTasks([task], event.currentTarget); }} title="删除历史">删除</button>}
-                          <details className="drawing-task-more"><summary aria-label={`任务 ${taskLabel(task.id)} 更多操作`}>更多</summary>
+                          <details className="drawing-task-more"><summary aria-label={`任务 ${taskLabel(task.id)} 更多操作`}><ChevronRight size={13} className="drawing-disclosure-icon" aria-hidden="true" />更多</summary>
                             <div className="drawing-actions">
                 {onReuseTask && <button type="button" className="drawing-button" disabled={!canManage || referencesBusy}
                   aria-label={`复用任务 ${taskLabel(task.id)} 参数`} onClick={() => { onReuseTask(task.id); }}>复用参数</button>}

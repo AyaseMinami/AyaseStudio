@@ -241,10 +241,12 @@ it("keeps one generate action outside configuration scrolling with artwork befor
     "drawing-panel drawing-form", "drawing-panel drawing-preview-panel", "drawing-panel drawing-task-panel",
   ]);
   const prompt = configuration.querySelector("#drawing-prompt")!;
-  const references = configuration.querySelector(".drawing-references")!;
   const parameters = configuration.querySelector(".drawing-compact-parameters")!;
-  expect(prompt.compareDocumentPosition(references) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(references.compareDocumentPosition(parameters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const references = configuration.querySelector(".drawing-references")!;
+  expect(parameters.parentElement?.className).toBe("drawing-input-layout");
+  expect(references.parentElement?.className).toBe("drawing-input-layout");
+  expect(prompt.compareDocumentPosition(parameters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(parameters.compareDocumentPosition(references) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   await act(async () => generate.click());
   expect(options.onGenerate).toHaveBeenCalledExactlyOnceWith();
   expect(options.onDraftChange).not.toHaveBeenCalled();
@@ -636,7 +638,8 @@ it("shows presets only with complete handlers, allows editing during generation 
   expect(host.querySelector('.drawing-presets')).toBeNull();
   await act(async () => root.render(<DrawingWorkspace {...options} {...handlers} presets={presets} busy tasks={[task]} />));
   expect(button("另存预设").disabled).toBe(false);
-  expect(host.querySelector('.drawing-presets')!.previousElementSibling!.querySelector('textarea')).not.toBeNull();
+  expect(host.querySelector('.drawing-prompt-heading .drawing-presets')).not.toBeNull();
+  expect(host.querySelector('.drawing-prompt-field textarea')).not.toBeNull();
   await choose("提示词预设", "合成预设");
   expect(handlers.onApplyPreset).toHaveBeenCalledExactlyOnceWith("preset");
   expect(options.onGenerate).not.toHaveBeenCalled(); expect(options.onRegenerate).not.toHaveBeenCalled();

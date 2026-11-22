@@ -156,3 +156,16 @@ it("keeps managed thumbnails while generation updates unrelated props", async ()
   expect(options.readThumbnail).toHaveBeenCalledTimes(1);
   expect(URL.revokeObjectURL).not.toHaveBeenCalled();
 });
+
+it("removes a reference directly via the thumbnail quick-remove button without opening preview", async () => {
+  const options = props();
+  await act(async () => root.render(<DrawingReferences {...options} />));
+  const remove = host.querySelector<HTMLButtonElement>('[aria-label="移除参考图 1"]')!;
+  expect(remove.disabled).toBe(false);
+  await act(async () => remove.click());
+  expect(options.onRemove).toHaveBeenCalledExactlyOnceWith(options.references[0].id);
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(options.read).not.toHaveBeenCalled();
+  await act(async () => root.render(<DrawingReferences {...options} disabled />));
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="移除参考图 1"]')!.disabled).toBe(true);
+});

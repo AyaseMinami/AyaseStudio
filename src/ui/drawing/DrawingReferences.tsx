@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { ImagePlus, Plus, X } from "lucide-react";
 import { ActionMenu, isContextMenuKey, useActionMenu } from "../ActionMenu";
 import { DrawingResultThumbnail } from "./DrawingResultThumbnail";
 import type { DrawingImageInput, DrawingReferenceSelection } from "../../drawing/types";
@@ -110,40 +110,56 @@ export function DrawingReferences({ references, disabled, busy, read, readThumbn
   const menuIndex = references.findIndex(item => item.id === menu.state?.target);
   const [preview, setPreview] = useState<{ id: string; opener: HTMLButtonElement } | null>(null);
   const previewIndex = preview ? references.findIndex(item => item.id === preview.id) : -1;
-  return <div className="drawing-field drawing-references" aria-label="参考图">
+  return <div className="drawing-field drawing-references" data-empty={references.length === 0 ? "true" : "false"} aria-label="参考图">
     <div className="drawing-reference-heading">
-    <span className="drawing-label">参考图{references.length > 0 ? ` · ${references.length}` : ""}</span>
-    <input ref={input} id="drawing-reference-input" className="drawing-reference-input" type="file" multiple
-      accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp" disabled={disabled}
-      aria-label="选择参考图文件" onChange={event => {
-        const files = Array.from(event.currentTarget.files ?? []);
-        event.currentTarget.value = "";
-        if (!disabled && files.length) onAdd(files);
-      }} />
-    <button type="button" className="drawing-button drawing-reference" disabled={disabled} onClick={() => input.current?.click()}>
-      <Plus size={16} aria-hidden="true" />添加参考图
-    </button>
-    {onClear && references.length > 0 && <button type="button" className="drawing-button" disabled={disabled}
-      onClick={() => { setPreview(null); onClear(); }}>清空参考图</button>}
+      <span className="drawing-label">参考图{references.length > 0 ? ` · ${references.length}` : ""}</span>
+      <input ref={input} id="drawing-reference-input" className="drawing-reference-input" type="file" multiple
+        accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp" disabled={disabled}
+        aria-label="选择参考图文件" onChange={event => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          if (!disabled && files.length) onAdd(files);
+        }} />
+      <div className="drawing-reference-heading-actions">
+        <button type="button" className="drawing-button drawing-reference" aria-label="添加参考图"
+          title="添加参考图（支持 PNG、JPG、JPEG、WebP、BMP）" disabled={disabled} onClick={() => input.current?.click()}>
+          <Plus size={14} aria-hidden="true" />添加
+        </button>
+        {onClear && references.length > 0 && <button type="button" className="drawing-button drawing-reference-clear"
+          aria-label="清空参考图" title="清空参考图" disabled={disabled}
+          onClick={() => { setPreview(null); onClear(); }}>清空</button>}
+      </div>
     </div>
-    {references.length === 0 && <p className="drawing-muted drawing-reference-hint" title="支持 PNG、JPG、JPEG、WebP、BMP">可多选，也可拖入或粘贴图片</p>}
-    <p className="drawing-muted drawing-reference-hint">未提交的参考图仅在本次打开期间保留。</p>
-    {busy && <p className="drawing-muted" role="status">正在添加参考图…</p>}
-    {references.length > 0 && <ol className="drawing-reference-list">
-      {references.map((item, index) => <li key={item.id} className="drawing-reference-card"
-        onContextMenu={event => {
-          event.preventDefault(); event.stopPropagation();
-          menu.open(item.id, event.currentTarget.querySelector<HTMLButtonElement>("button")!, { x: event.clientX, y: event.clientY });
-        }}
-        onKeyDown={event => {
-          if (!isContextMenuKey(event)) return;
-          event.preventDefault(); event.stopPropagation();
-          menu.open(item.id, event.currentTarget.querySelector<HTMLButtonElement>("button")!);
-        }}>
-        <ReferenceImage item={item} number={index + 1} read={readThumbnail}
-          onView={opener => setPreview({ id: item.id, opener })} />
-      </li>)}
-    </ol>}
+    {busy && <p className="drawing-muted drawing-reference-busy" role="status">正在添加参考图…</p>}
+    <div className="drawing-reference-stage">
+      {references.length === 0 ? <div className="drawing-reference-empty" title="支持 PNG、JPG、JPEG、WebP、BMP">
+        <ImagePlus size={18} strokeWidth={1.6} aria-hidden="true" />
+        <p className="drawing-muted drawing-reference-hint">可多选，也可拖入或粘贴图片</p>
+      </div> : <ol className="drawing-reference-list">
+        {references.map((item, index) => <li key={item.id} className="drawing-reference-card"
+          onContextMenu={event => {
+            event.preventDefault(); event.stopPropagation();
+            menu.open(item.id, event.currentTarget.querySelector<HTMLButtonElement>(".drawing-reference-thumbnail")!, { x: event.clientX, y: event.clientY });
+          }}
+          onKeyDown={event => {
+            if (!isContextMenuKey(event)) return;
+            event.preventDefault(); event.stopPropagation();
+            menu.open(item.id, event.currentTarget.querySelector<HTMLButtonElement>(".drawing-reference-thumbnail")!);
+          }}>
+          <ReferenceImage item={item} number={index + 1} read={readThumbnail}
+            onView={opener => setPreview({ id: item.id, opener })} />
+          <span className="drawing-reference-index" aria-hidden="true">{index + 1}</span>
+          <button type="button" className="drawing-reference-remove" disabled={disabled}
+            aria-label={`移除参考图 ${index + 1}`} title={`移除参考图 ${index + 1}`}
+            onClick={event => {
+              event.stopPropagation();
+              if (preview?.id === item.id) setPreview(null);
+              onRemove(item.id);
+            }}><X size={12} aria-hidden="true" /></button>
+        </li>)}
+      </ol>}
+    </div>
+    <p className="drawing-muted drawing-reference-footnote">未提交的参考图仅在本次打开期间保留。</p>
     {menu.state && menuIndex >= 0 && <ActionMenu state={menu.state} label={`参考图 ${menuIndex + 1} 操作`} onClose={menu.close}
       items={[
         { id: "previous", label: "前移", disabled: disabled || menuIndex === 0,

@@ -1827,84 +1827,6 @@ textarea:disabled {
   line-height: 1.35rem;
 }
 
-.session-config-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  justify-content: flex-end;
-  background: rgb(0 0 0 / 45%);
-}
-
-.session-config-panel {
-  display: flex;
-  width: min(29rem, 100vw);
-  height: 100%;
-  flex-direction: column;
-  border-left: 1px solid rgb(var(--color-border));
-  background: rgb(var(--color-canvas));
-  color: rgb(var(--color-text));
-  box-shadow: -0.8rem 0 2.5rem rgb(0 0 0 / 18%);
-}
-
-.session-config-panel-header {
-  display: flex;
-  flex-shrink: 0;
-  align-items: start;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid rgb(var(--color-border));
-  padding: 1rem 1.25rem;
-}
-
-.session-config-panel-header h2 { font-size: calc(1.1rem * var(--font-scale)); font-weight: 500; }
-.session-config-panel-header p { font-size: var(--font-small); }
-.session-config-panel-scroll { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 0.25rem 1.25rem 0.75rem; }
-.session-config-section { display: grid; gap: 0.5rem; border-bottom: 1px solid rgb(var(--color-border)); padding: 0.75rem 0; }
-.session-config-section:last-child { border-bottom: 0; }
-.session-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: 0.65rem 1rem; align-items: start; }
-.session-config-context-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
-.session-config-section h3 > label { font-size: inherit; }
-.session-config-advanced { display: grid; gap: 0.5rem; }
-.session-config-disclosure { display: flex; align-items: center; gap: 0.35rem; font-size: var(--font-section); font-weight: 500; text-align: left; }
-.session-config-disclosure[aria-expanded="true"] > svg { transform: rotate(90deg); }
-.session-config-disclosure:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 3px; }
-.session-config-section h3 { font-size: var(--font-section); font-weight: 500; }
-.session-config-section label, .session-config-field label { font-size: var(--font-ui); font-weight: 500; }
-.session-config-section p, .session-config-field small { font-size: var(--font-small); line-height: 1.1rem; }
-.session-config-section textarea, .session-config-field input, .session-config-field select {
-  width: 100%;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: 0.5rem;
-  background: rgb(var(--color-elevated));
-  color: rgb(var(--color-text));
-  padding: 0.5rem;
-  font-size: var(--font-ui);
-}
-.session-config-section textarea { min-height: 5rem; resize: vertical; }
-.session-config-field { display: grid; min-width: 0; gap: 0.3rem; }
-.session-config-number-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.4rem; }
-.assistant-identity-row { display: flex; align-items: stretch; gap: 0.6rem; min-width: 0; }
-.assistant-identity-row > input { flex: 1; min-width: 0; padding: 0.6rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.4rem; background: rgb(var(--color-input)); }
-.assistant-icon-picker { position: relative; flex: 0 0 3.25rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.4rem; background: rgb(var(--color-input)); }
-.assistant-icon-picker > span { display: flex; height: 100%; align-items: center; justify-content: center; gap: 0.2rem; }
-.assistant-icon-picker > span > svg:last-child { transform: rotate(90deg); }
-.assistant-icon-picker select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.assistant-icon-picker:focus-within { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
-.session-config-error { color: rgb(var(--color-warning-text)); font-size: var(--font-small); }
-.session-config-section .session-config-check { display: flex; align-items: start; gap: 0.5rem; font-weight: 400; }
-.session-config-capabilities { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem 1rem; margin-top: 0.75rem; }
-.session-config-capabilities .thinking-control-inline { display: contents; }
-.session-config-capabilities .session-config-web-search,
-.session-config-capabilities .thinking-field > label { min-height: 36px; margin: 0; align-items: center; font-size: var(--font-ui); font-weight: 400; }
-.session-config-capabilities input[type="checkbox"] { flex-shrink: 0; margin: 0; }
-.session-config-capabilities .thinking-select { flex-wrap: wrap; }
-.session-config-capabilities .thinking-select select { width: auto; min-width: 8rem; flex: 1; }
-.session-config-capabilities .thinking-budget { flex-wrap: wrap; }
-.session-config-capabilities .thinking-hint { flex-basis: 100%; font-size: var(--font-small); }
-.session-config-capabilities .thinking-hint:empty { display: none; }
-.session-config-check input { margin-top: 0.2rem; }
-
 .message-scroll-region {
   min-height: 0;
   flex: 1;
@@ -2586,20 +2508,6 @@ textarea:disabled {
 }
 
 @media (max-width: 760px) {
-  .session-config-backdrop {
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem;
-  }
-
-  .session-config-panel {
-    width: min(29rem, 100%);
-    height: calc(100vh - 1rem);
-    border: 1px solid rgb(var(--color-border));
-    border-radius: 0.75rem;
-    box-shadow: 0 0.8rem 2.5rem rgb(0 0 0 / 18%);
-  }
-
   .app-navigation {
     width: var(--app-navigation-width);
     padding-inline: var(--app-navigation-inset);
@@ -3027,16 +2935,9 @@ textarea:disabled {
 .management-dialog { width: min(100%, 30rem); max-height: calc(100dvh - 2rem); overflow-y: auto; display: grid; gap: 1rem; padding: 1.5rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.8rem; background: rgb(var(--color-panel)); }
 .management-dialog h2 { font-weight: 500; }
 .management-dialog form { display: grid; gap: 0.75rem; }
-.management-dialog input, .session-config-section > input, .session-config-section > select { min-width: 0; width: 100%; padding: 0.6rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.4rem; background: rgb(var(--color-input)); }
+.management-dialog input { min-width: 0; width: 100%; padding: 0.6rem; border: 1px solid rgb(var(--color-border)); border-radius: 0.4rem; background: rgb(var(--color-input)); }
 .management-dialog-actions { padding-top: 1rem; }
-.session-config-close { flex-shrink: 0; width: 2rem; height: 2rem; padding: 0; justify-content: center; }
-.session-config-panel-footer { display: flex; flex-shrink: 0; justify-content: flex-end; gap: 0.65rem; padding: 0.85rem 1.25rem; border-top: 1px solid rgb(var(--color-border)); }
-.session-config-reset { margin-right: auto; }
 .thinking-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.thinking-control-inline { align-items: flex-start; }
-.thinking-control-inline .thinking-field > label { min-height: 34px; }
-.session-config-modal { align-items: center; justify-content: center; padding: 1rem; }
-.session-config-modal .session-config-panel { width: min(42.5rem, 100%); height: min(48rem, calc(100dvh - 2rem)); border: 1px solid rgb(var(--color-border)); border-radius: 0.8rem; overflow: hidden; box-shadow: 0 1rem 3rem #0003; }
 .assistant-branch-toggle, .conversation-leaf-select { display: flex; align-items: center; gap: 0.5rem; }
 .assistant-branch { position: relative; display: flex; align-items: center; gap: 0.1rem; padding: 0; margin: 0 0 0.1875rem; border-bottom: 0; border-radius: 0.5rem; }
 .assistant-branch::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 0; border-radius: 999px; background: rgb(var(--color-accent)); transform: translateY(-50%); opacity: 0; pointer-events: none; transition: height 160ms ease, opacity 160ms ease; }
@@ -3058,10 +2959,6 @@ textarea:disabled {
 .assistant-menu-trigger:hover { background: rgb(var(--color-accent) / 0.1); color: rgb(var(--color-text)); }
 .assistant-branch-toggle:focus-visible, .assistant-menu-trigger:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: -2px; }
 @media (hover: none) { .assistant-menu-trigger { opacity: 1; } }
-@media (max-height: 600px), (max-width: 760px) {
-  .session-config-modal { padding: 0.5rem; }
-  .session-config-modal .session-config-panel { height: calc(100dvh - 1rem); }
-}
 .assistant-branch-toggle > svg, .conversation-leaf-select > svg { flex-shrink: 0; }
 .assistant-branch-name, .conversation-leaf-select > span { flex: 1; min-width: 0; }
 .assistant-conversations-empty { padding: 0.6rem; font-size: var(--font-small); }

@@ -48,7 +48,11 @@ it("requires explicit use for automatic avatars and clears image and legacy defa
   expect(avatarLibrary.remove).not.toHaveBeenCalled();
 });
 it("recrops legacy or library snapshots and preserves source metadata", async () => {
-  await mount(value); await click("重新裁切"); expect(decodeAvatar).toHaveBeenCalledWith(value.original);
+  await mount(value);
+  const icons = [...host.querySelectorAll(".avatar-buttons button svg")];
+  expect(icons.length).toBeGreaterThanOrEqual(2);
+  expect(icons.every(icon => icon.getAttribute("aria-hidden") === "true")).toBe(true);
+  await click("重新裁切"); expect(decodeAvatar).toHaveBeenCalledWith(value.original);
   await click("应用头像"); expect(change).toHaveBeenCalledWith({ ...value, thumbnail: expect.any(Blob) });
   await click("移除图片"); expect(change).toHaveBeenLastCalledWith(undefined);
   expect(defaultChange).toHaveBeenLastCalledWith(undefined); expect(avatarLibrary.remove).not.toHaveBeenCalled();

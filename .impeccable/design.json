@@ -38,7 +38,8 @@
       { "name": "appearance-independent-columns-viewport-min-width", "value": "1440px" },
       { "name": "appearance-independent-columns-viewport-min-height", "value": "700px" },
       { "name": "appearance-controls-container-stack-max-width", "value": "380px" },
-      { "name": "drawing-task-container-cards-max-width", "value": "480px" }
+      { "name": "drawing-task-container-two-line-max-width", "value": "41.5em" },
+      { "name": "drawing-task-container-cards-max-width", "value": "28.5em" }
     ]
   },
   "components": [

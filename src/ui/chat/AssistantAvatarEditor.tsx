@@ -65,8 +65,8 @@ export function AssistantAvatarEditor({ assistantName = "新助手", assistantId
     <div className="assistant-avatar-editor-profile">
       <AssistantAvatar avatar={value} defaultAvatar={defaultAvatar} legacyIcon={legacyIcon} assistantName={assistantName} assistantId={assistantId} className="assistant-avatar-editor-preview" />
       <div className="avatar-buttons">
-        <button type="button" className="settings-button" disabled={blocked} onClick={() => setSelecting(true)}><ImagePlus size={15} />选择头像</button>
-        {value && <><button type="button" className="settings-button" disabled={blocked} onClick={() => void open(value.original, value.crop)}><Crop size={15} />重新裁切</button>
+        <button type="button" className="settings-button" disabled={blocked} onClick={() => setSelecting(true)}><ImagePlus size={15} aria-hidden="true" />选择头像</button>
+        {value && <><button type="button" className="settings-button" disabled={blocked} onClick={() => void open(value.original, value.crop)}><Crop size={15} aria-hidden="true" />重新裁切</button>
           <button type="button" className="settings-button" disabled={blocked} onClick={() => { setError(undefined); onChange(undefined); onDefaultChange(undefined); }}>移除图片</button></>}
       </div>
     </div>

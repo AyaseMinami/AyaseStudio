@@ -59,9 +59,15 @@ describe("assistant workspace public behavior", () => {
     expect(button, text).toBeTruthy(); expect(button!.disabled, text).toBe(false);
     await act(async () => button!.click());
   }
+  async function openConfigTab(tab: "general" | "prompt") {
+    const button = container.querySelector<HTMLButtonElement>(`#session-config-tab-${tab}`)!;
+    expect(button, tab).toBeTruthy();
+    await act(async () => button.click());
+  }
   async function fill(selector: string, value: string) {
     const field = (container.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector) ?? document.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector))!;
     expect(field).toBeTruthy();
+    expect(field.closest("[hidden]")).toBeNull();
     await act(async () => {
       Object.getOwnPropertyDescriptor(field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(field, value);
       field.dispatchEvent(new Event("input", { bubbles: true }));
@@ -136,7 +142,9 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector(".conversation-navigation-toolbar")?.textContent).not.toContain("会话设置");
     await click("默认助手");
     await click("编辑对话 对话 A");
+    await openConfigTab("prompt");
     await fill("#session-system", "Conversation only");
+    await openConfigTab("general");
     await chooseModel("#conversation-model", "model-b");
     await click("保存对话");
     await wait(() => !container.querySelector('[role="dialog"]'));
@@ -145,11 +153,14 @@ describe("assistant workspace public behavior", () => {
     expect(saved.assistants.find((item) => item.id === "default")?.defaultConfig.systemInstruction).toBe("");
     expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-b");
     await click("编辑对话 对话 A");
+    await openConfigTab("prompt");
     await fill("#session-system", "Discard me");
+    await openConfigTab("general");
     await fill("#conversation-title", "Discard title");
     await click("取消");
     await click("编辑对话 对话 A");
     expect(container.querySelector<HTMLInputElement>("#conversation-title")?.value).toBe("对话 A");
+    await openConfigTab("prompt");
     expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Conversation only");
     await click("恢复助手默认值");
     expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("");
@@ -172,6 +183,7 @@ describe("assistant workspace public behavior", () => {
     const activeId = selectedConversation(await repo.initializeWorkspace(null, ["model-a", "model-b"]))?.id;
     await click("编辑对话 对话 A");
     await fill("#conversation-title", "Renamed A");
+    await openConfigTab("prompt");
     await fill("#session-system", "Only A");
     await click("保存对话");
     await wait(() => !container.querySelector('[role="dialog"]'));
@@ -560,7 +572,7 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("");
     expect(container.querySelector(".chat-model-trigger")?.textContent).toContain("upstream-b");
     await fill(".composer-input", "B draft");
-    await click("编辑助手 写作助手"); expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Only B");
+    await click("编辑助手 写作助手"); await openConfigTab("prompt"); expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Only B");
     await click("关闭");
     await chooseAssistant("默认助手", "对话 A");
     expect(container.querySelector<HTMLTextAreaElement>(".composer-input")?.value).toBe("A draft");
@@ -826,11 +838,13 @@ describe("assistant workspace public behavior", () => {
     expect(container.querySelector('.session-config-modal')).not.toBeNull();
     expect(container.querySelector('.session-config-panel-footer')?.textContent).toContain("取消保存助手");
     await fill("#assistant-name", "未保存名称");
+    await openConfigTab("prompt");
     await fill("#session-system", "未保存指令");
     await click("取消");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("管理助手 写作助手");
     await click("编辑助手 写作助手");
     expect(container.querySelector<HTMLInputElement>('#assistant-name')?.value).toBe("写作助手");
+    await openConfigTab("prompt");
     expect(container.querySelector<HTMLTextAreaElement>('#session-system')?.value).toBe("Only B");
     await fill("#session-system", "关闭也不保存");
     await click("关闭");
@@ -844,11 +858,12 @@ describe("assistant workspace public behavior", () => {
   it("preserves conversation settings when editing or deleting its assistant", async () => {
     await chooseAssistant("写作助手", "对话 B");
     await click("编辑助手 写作助手");
+    await openConfigTab("prompt");
     await fill("#session-system", "Revised default"); await click("保存助手");
     await wait(() => !container.querySelector('[aria-label="编辑助手"][role="dialog"]'));
     expect((await repo.load("b"))?.generationConfig).toBeUndefined();
     expect(container.textContent).not.toContain("应用助手设置");
-    await click("编辑助手 写作助手"); expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Revised default"); await click("关闭");
+    await click("编辑助手 写作助手"); await openConfigTab("prompt"); expect(container.querySelector<HTMLTextAreaElement>("#session-system")?.value).toBe("Revised default"); await click("关闭");
     await click("删除助手 写作助手");
     expect(document.querySelector(".batch-delete-dialog")?.textContent).toContain("1 个对话将移至默认助手");
     await click("删除 1 个助手");
@@ -914,6 +929,7 @@ describe("assistant workspace public behavior", () => {
     await click("默认助手"); await click("新建对话");
     await wait(() => !!container.querySelector('[aria-label="编辑对话 新对话"]'));
     await click("编辑对话 新对话");
+    await openConfigTab("prompt");
     await fill("#session-system", "Only change the persona");
     await click("保存对话"); await wait(() => !container.querySelector('[role="dialog"]'));
     const state = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
@@ -939,7 +955,9 @@ describe("assistant workspace public behavior", () => {
     expect(row.querySelectorAll('.conversation-row-actions button')).toHaveLength(2);
     expect(row.querySelectorAll('.conversation-row-actions button svg')).toHaveLength(2);
     await click("编辑助手 默认助手");
+    await openConfigTab("prompt");
     await fill("#session-system", "Shared instruction");
+    await openConfigTab("general");
     await chooseModel("#assistant-model", "model-b");
     await click("保存助手"); await wait(() => !container.querySelector('[role="dialog"]'));
     for (const title of ["对话 A", "新对话"]) {
@@ -980,7 +998,9 @@ describe("assistant workspace public behavior", () => {
     await fill('.composer-input', 'First'); await click('发送');
     await wait(() => observed.length === 1);
     await click('编辑对话 对话 A');
+    await openConfigTab("prompt");
     await fill('#session-system', 'New shared instruction');
+    await openConfigTab("general");
     await chooseModel("#conversation-model", 'model-b');
     await click('保存对话'); await wait(() => !container.querySelector('[role="dialog"]'));
     expect(observed[0].model).toBe('upstream-a');
@@ -1003,5 +1023,29 @@ describe("assistant workspace public behavior", () => {
     await fill("#assistant-name", "改名助手"); await click("保存助手"); await wait(() => !container.querySelector('[role="dialog"]'));
     const state = await repo.initializeWorkspace(null, ["model-a", "model-b"]);
     expect(state.assistants.find((item) => item.id === "writer")).toMatchObject({ name: "改名助手", defaultModelId: null, defaultConfig: { topK: { mode: "custom", value: "20" } } });
+  });
+
+  it("explains cross-tab save blocking for assistant parameter errors while allowing conversation saves", async () => {
+    await act(async () => root.unmount());
+    const unsupportedConfig = { ...defaultSessionConfig(), topK: { mode: "custom" as const, value: "20" } };
+    await repo.execute({ type: "edit-assistant", id: "writer", input: { name: "写作助手", icon: "", defaultModelId: "model-b", defaultConfig: unsupportedConfig } });
+    await repo.execute({ type: "configure-conversation", id: "b", settings: { modelId: "model-b", config: unsupportedConfig } });
+    root = createRoot(container); await act(async () => root.render(<App />));
+    await wait(() => container.querySelector<HTMLTextAreaElement>(".composer-input")?.disabled === false);
+    await chooseAssistant("写作助手", "对话 B");
+
+    await click("编辑助手 写作助手");
+    await openConfigTab("prompt");
+    const saveAssistant = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === "保存助手")!;
+    expect(saveAssistant.disabled).toBe(true);
+    expect(container.querySelector(".session-config-global-alerts")?.textContent).toContain("OpenAI API 不提供 Top-K 请求字段。");
+    await click("取消");
+
+    await click("编辑对话 对话 B");
+    await openConfigTab("prompt");
+    const saveConversation = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === "保存对话")!;
+    expect(saveConversation.disabled).toBe(false);
+    expect(container.querySelector(".session-config-global-alerts")).toBeNull();
+    await click("取消");
   });
 });

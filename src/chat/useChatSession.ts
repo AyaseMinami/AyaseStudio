@@ -157,7 +157,12 @@ function flushUiPaint(): Promise<void> {
 function formatFailureError(error: import("./types").ChatFailure): string {
   const status = error.status ? ` (${error.status})` : "";
   const base = `${error.message}${status}`;
-  if (error.kind === "network" || error.status === 408 || error.status === 504) {
+  if (
+    error.kind === "network" ||
+    error.status === 408 ||
+    error.status === 504 ||
+    (error.kind === "protocol" && error.retryable)
+  ) {
     return `未收到完整响应，发送结果未确认；请决定是否重试。详情：${base}`;
   }
   return base;
@@ -1355,8 +1360,13 @@ export function useChatSession({
     const config = structuredClone(sessionConfig);
     let task: import("./generationTasks").GenerationTask | undefined;
     let startedGeneration = false;
-    const hasEditAttachments = (draft?.attachments?.length ?? 0) > 0 || messages.some((message) => !!message.attachments?.length);
-    if (hasEditAttachments) workspace.setSendStatusAt(conversationId, "正在准备附件，请稍候…");
+    let paintedPreparing = false;
+    async function paintPreparingStatus(): Promise<void> {
+      if (paintedPreparing) return;
+      paintedPreparing = true;
+      workspace.setSendStatusAt(conversationId, "正在准备附件，请稍候…");
+      await flushUiPaint();
+    }
     const result = await edits.submit(conversationId, id, content, draft, async (before, user) => {
       if (user.role !== "user") throw new Error("仅用户消息可以保存并发送。");
       if (!frozenTarget) throw new Error("当前会话的模型未选择或已失效，请先选择模型。");
@@ -1388,8 +1398,7 @@ export function useChatSession({
         ? message : { ...message, providerReplay: undefined });
       const attachments = user.attachments ?? [];
       if (attachments.length > 0 || requestHistory.some((message) => !!message.attachments?.length)) {
-        workspace.setSendStatusAt(conversationId, "正在准备附件，请稍候…");
-        await flushUiPaint();
+        await paintPreparingStatus();
       }
       const planned = await planContextBudget(requestHistory, content, frozenConfig, requestConnection.protocol, requestModelId,
         undefined, attachments.map(item => ({ ...item, data: "" })));
@@ -1437,8 +1446,8 @@ export function useChatSession({
             });
         },
       };
-    });
-    if (!startedGeneration) workspace.setSendStatusAt(conversationId, undefined);
+    }, paintPreparingStatus);
+    if (paintedPreparing && !startedGeneration) workspace.setSendStatusAt(conversationId, undefined);
     return result;
   }
 

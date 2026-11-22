@@ -9,7 +9,7 @@ Use `README.md` for orientation and read the references relevant to the task:
 - `docs/DEVELOPMENT.md`: environment, commands, multi-agent handoff, and verification.
 - `docs/ARCHITECTURE.md`: module boundaries, state ownership, persistence, and security.
 - [docs/DATA-CONTRACTS.md](docs/DATA-CONTRACTS.md): mandatory persistence registration, field policies, migrations, backup compatibility, and acceptance boundaries.
-- [docs/UI-DESIGN.md](docs/UI-DESIGN.md): read before UI work; the authoritative current UI contract (derived tool summaries in `DESIGN.md`, `PRODUCT.md`, and `.impeccable/design.json` defer to `docs/UI-DESIGN.md` and explicit current user instructions on any conflict).
+- [docs/UI-DESIGN.md](docs/UI-DESIGN.md): read before UI work; the authoritative current UI contract (derived tool summaries in `DESIGN.md`, `PRODUCT.md`, and `.impeccable/design.json` and external UI/UX skills or catalogs such as `ui-ux-pro-max` are advisory only and defer to `docs/UI-DESIGN.md`, existing interaction contracts, and explicit current user instructions on any conflict; do not persist parallel `design-system/` spec files in the repository).
 - `docs/PLAN.md`: feature scope and acceptance criteria.
 - `docs/PROTOCOLS.md`: transport, URL, streaming, and provider work.
 - `CONTEXT.md`: domain terminology.

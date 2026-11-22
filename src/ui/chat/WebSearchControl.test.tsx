@@ -19,7 +19,12 @@ it("maps the shared selector to the same search configuration without changing o
   const root = createRoot(host); const change = vi.fn(); const config = defaultSessionConfig();
   try {
     await act(async () => root.render(<WebSearchControl config={config} disabled={false} onChange={change} />));
-    await act(async () => host.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
+    const trigger = host.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    const label = host.querySelector<HTMLLabelElement>("label")!;
+    expect(trigger.id).toBeTruthy();
+    expect(label.htmlFor).toBe(trigger.id);
+    expect(label.contains(trigger)).toBe(false);
+    await act(async () => trigger.click());
     expect(change).not.toHaveBeenCalled();
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent === "Exa API")!;
     await act(async () => option.click());

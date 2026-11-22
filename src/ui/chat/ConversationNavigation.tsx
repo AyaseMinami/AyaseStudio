@@ -21,7 +21,6 @@ import { useNavigationListDrag } from "./useNavigationListDrag";
 import { ConversationNavigationList, type ConversationListActions } from "./ConversationNavigationList";
 import { BatchDeleteDialog, BatchManagementBar } from "../BatchManagement";
 import { workspaceDeletionFingerprint } from "../../chat/workspace";
-import "./AssistantConfig.css";
 
 type Dialog =
   | { type: "conversation"; id: string }
@@ -44,6 +43,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const { open: navigationOpen, conversationsOpen: conversationPanelOpen, assistantExpanded } = useConversationNavigationSnapshot(navigation);
   const { bodyRef, docked } = useNavigationDocking({ open: navigationOpen, conversationsOpen: conversationPanelOpen, assistantExpanded });
   const [dialog, setDialog] = useState<Dialog>();
+  const [dialogSubmitted, setDialogSubmitted] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string>();
   const [sortAnnouncement, setSortAnnouncement] = useState("");
@@ -183,14 +183,16 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       return saved;
     } finally { commandPending.current = false; }
   }
-  const close = () => { if (!busy && !avatarBusy) setDialog(undefined); };
+  const close = () => { if (!busy && !avatarBusy) { setDialog(undefined); setDialogSubmitted(false); } };
+  useEffect(() => { setDialogSubmitted(false); }, [dialog?.type, dialog?.id]);
   async function perform(command: WorkspaceCommand) {
     if (commandPending.current) return;
     commandPending.current = true;
-    try { if (await execute(command)) setDialog(undefined); }
+    try { if (await execute(command)) { setDialog(undefined); setDialogSubmitted(false); } }
     finally { commandPending.current = false; }
   }
   function editAssistant(existing?: AssistantPreset) {
+    setDialogSubmitted(false);
     setDialog({ type: "assistant", id: existing?.id ?? crypto.randomUUID(), existing, input: existing ? structuredClone(existing) : {
       name: "", icon: "", defaultModelId: selectedAssistant?.defaultModelId ?? null, defaultConfig: defaultSessionConfig(),
     } });
@@ -199,6 +201,16 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
   const editorErrors = dialog?.type === "assistant"
     ? editorTarget ? validateRequestConfig(dialog.input.defaultConfig, editorTarget.connection.protocol, editorTarget.model.modelId)
       : validateSessionConfig(dialog.input.defaultConfig) : {};
+  const assistantGeneralError = Object.entries(editorErrors).find(
+    ([key, value]) => key !== "systemInstruction" && key !== "stored" && Boolean(value),
+  )?.[1];
+  const assistantGeneralBlocker = dialog?.type !== "assistant"
+    ? undefined
+    : !dialog.input.name.trim()
+      ? "请先在“常规配置”中填写助手名称后再保存。"
+      : assistantGeneralError
+        ? `请先在“常规配置”中修正配置错误后再保存：${assistantGeneralError}`
+        : undefined;
   const backgroundRuns = snapshot?.conversations.filter((item) => generatingIds.has(item.id) && item.id !== conversation?.id) ?? [];
   const editingConversation = dialog?.type === "conversation" ? snapshot?.conversations.find((item) => item.id === dialog.id) : undefined;
 
@@ -320,7 +332,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
       {toolbar}
     </div>
     {workspace.loadError && <div role="alert" className="error-banner">{workspace.loadError}<button className="settings-button" type="button" disabled={busy} onClick={workspace.retry}>重试加载</button></div>}
-    {workspace.operationError && <div role="alert" className="error-banner">{workspace.operationError}</div>}
+    {workspace.operationError && !(dialog && dialogSubmitted) && <div role="alert" className="error-banner">{workspace.operationError}</div>}
     {Object.keys(workspace.view.configErrors).length > 0 && selectedAssistant && <div role="alert" className="error-banner">
       当前配置需要调整：{Object.values(workspace.view.configErrors)[0]}
       <button className="settings-button" type="button" disabled={busy} onClick={() => conversation ? setDialog({ type: "conversation", id: conversation.id }) : editAssistant(selectedAssistant)}>调整配置</button>
@@ -429,50 +441,55 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
     {menu.state && (menuAssistant || menuConversation) && <ActionMenu state={menu.state}
       label={`${menuAssistant?.name ?? menuConversation?.title}的管理菜单`} items={menuItems}
       note={menuAssistant?.id === DEFAULT_ASSISTANT_ID ? "默认助手不可删除" : undefined} onClose={menu.close} />}
-    {editingConversation && <ConversationSettings key={editingConversation.id} workspace={workspace} conversation={editingConversation} settings={settings} onClose={close} />}
+    {editingConversation && <ConversationSettings key={editingConversation.id} workspace={workspace} conversation={editingConversation} settings={settings} onSaveAttempt={() => setDialogSubmitted(true)} onClose={close} />}
     {dialog?.type === "assistant" && <SessionConfigPanel presentation="modal" disabled={busy} title={dialog.existing ? "编辑助手" : "新建助手"} description="作为新对话的默认设置，已有对话保持不变。"
       initialFocusId={!dialog.existing ? "assistant-name" : undefined}
       config={dialog.input.defaultConfig} errors={editorErrors} protocol={editorTarget?.connection.protocol} model={editorTarget?.model.modelId ?? ""}
+      generalBlocker={assistantGeneralBlocker}
+      globalError={dialogSubmitted && workspace.operationError ? workspace.operationError : undefined}
+      resetHint="恢复默认配置仅重置默认参数、能力与系统提示词，不改助手名称、头像和默认模型，保存后生效。"
       onChange={(config) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: config } })}
       onReset={() => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig: defaultSessionConfig() } })} onClose={close}
       footer={<><button className="settings-button" type="button" disabled={busy || avatarBusy} onClick={close}>取消</button><button className="settings-button settings-button-primary" type="button" disabled={busy || avatarBusy || !dialog.input.name.trim() || Object.keys(editorErrors).length > 0}
-        onClick={() => void perform({ type: dialog.existing ? "edit-assistant" : "create-assistant", id: dialog.id, input: dialog.input })}>{dialog.existing ? "保存助手" : "创建助手"}</button></>}>
+        onClick={() => { setDialogSubmitted(true); void perform({ type: dialog.existing ? "edit-assistant" : "create-assistant", id: dialog.id, input: dialog.input }); }}>{dialog.existing ? "保存助手" : "创建助手"}</button></>}>
       <section className="session-config-section assistant-config-basics">
-        <h3>基本信息</h3>
         <div className="assistant-config-identity">
-        <div className="assistant-config-name">
-        <label htmlFor="assistant-name">助手名称</label>
-        <div className="assistant-identity-row">
-        <input id="assistant-name" placeholder="例如：写作助手" required value={dialog.input.name} disabled={busy || dialog.existing?.id === DEFAULT_ASSISTANT_ID} maxLength={100}
-          onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, name: event.target.value } })} />
-        </div>
-        </div>
-        <AssistantAvatarEditor assistantName={dialog.input.name} assistantId={dialog.id} value={dialog.input.avatar} defaultAvatar={dialog.input.defaultAvatar} legacyIcon={dialog.input.icon} disabled={busy}
-          onBusyChange={setAvatarBusy}
-          onChange={(avatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, avatar } } : current)}
-          onDefaultChange={(defaultAvatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, defaultAvatar, icon: "" } } : current)} />
+          <AssistantAvatarEditor assistantName={dialog.input.name} assistantId={dialog.id} value={dialog.input.avatar} defaultAvatar={dialog.input.defaultAvatar} legacyIcon={dialog.input.icon} disabled={busy}
+            onBusyChange={setAvatarBusy}
+            onChange={(avatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, avatar } } : current)}
+            onDefaultChange={(defaultAvatar) => setDialog((current) => current?.type === "assistant" ? { ...current, input: { ...current.input, defaultAvatar, icon: "" } } : current)} />
+          <div className="assistant-config-name">
+            <label htmlFor="assistant-name">助手名称</label>
+            <input id="assistant-name" placeholder="例如：写作助手" required value={dialog.input.name} disabled={busy || dialog.existing?.id === DEFAULT_ASSISTANT_ID} maxLength={100}
+              onChange={(event) => setDialog({ ...dialog, input: { ...dialog.input, name: event.target.value } })} />
+          </div>
         </div>
       </section>
       <section className="session-config-section assistant-config-model">
         <h3>模型与能力</h3>
-        <label htmlFor="assistant-model">默认模型 / 连接</label><ModelSelectField id="assistant-model" label="默认模型 / 连接"
-          settings={settings} selectedModelId={dialog.input.defaultModelId} disabled={busy} hint="仅修改配置草稿，点击创建或保存助手后生效。"
-          onSelect={async value => {
-            const defaultModelId = value || null;
-            const next = getActiveTarget({ ...settings, activeModelId: defaultModelId });
-            setDialog({ ...dialog, input: { ...dialog.input, defaultModelId,
-              defaultConfig: next ? switchThinkingProtocol(dialog.input.defaultConfig, editorTarget?.connection.protocol, next.connection.protocol) : dialog.input.defaultConfig } });
-            return true;
-          }} />
-        <div className="session-config-capabilities">
-        <WebSearchControl config={dialog.input.defaultConfig} disabled={busy} customSelect
-          onChange={(defaultConfig) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig } })} />
-        {editorTarget && <ThinkingControl
-          key={`${editorTarget.connection.protocol}-${editorTarget.model.modelId}-${getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)?.budget}`}
-          protocol={editorTarget.connection.protocol} model={editorTarget.model.modelId} value={getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)}
-          disabled={busy} hint=""
-          onChange={(thinking) => setDialog({ ...dialog, input: { ...dialog.input,
-            defaultConfig: withThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol, thinking) } })} />}
+        <div className="session-config-capabilities" data-has-thinking={editorTarget ? "true" : undefined}>
+          <div className="session-config-field session-config-model-field">
+            <label htmlFor="assistant-model">默认模型</label>
+            <ModelSelectField id="assistant-model" label="默认模型"
+              settings={settings} selectedModelId={dialog.input.defaultModelId} disabled={busy} hint="仅修改配置草稿，点击创建或保存助手后生效。"
+              onSelect={async value => {
+                const defaultModelId = value || null;
+                const next = getActiveTarget({ ...settings, activeModelId: defaultModelId });
+                setDialog({ ...dialog, input: { ...dialog.input, defaultModelId,
+                  defaultConfig: next ? switchThinkingProtocol(dialog.input.defaultConfig, editorTarget?.connection.protocol, next.connection.protocol) : dialog.input.defaultConfig } });
+                return true;
+              }} />
+          </div>
+          <WebSearchControl config={dialog.input.defaultConfig} disabled={busy} customSelect
+            onChange={(defaultConfig) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig } })} />
+          {editorTarget && (
+            <ThinkingControl
+              key={`${editorTarget.connection.protocol}-${editorTarget.model.modelId}-${getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)?.budget}`}
+              protocol={editorTarget.connection.protocol} model={editorTarget.model.modelId} value={getThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol)}
+              disabled={busy} hint=""
+              onChange={(thinking) => setDialog({ ...dialog, input: { ...dialog.input,
+                defaultConfig: withThinkingSettings(dialog.input.defaultConfig, editorTarget.connection.protocol, thinking) } })} />
+          )}
         </div>
         {editorErrors.thinking && <p className="session-config-error" role="alert">{editorErrors.thinking}</p>}
       </section>
