@@ -29,6 +29,16 @@ Complete authorized local edits and relevant checks without asking again for rou
 - Do not commit, push, open or merge a PR, close an Issue, or publish a release unless the user explicitly requests that remote or Git action.
 - Preserve unrelated user changes in a dirty worktree. Never use destructive reset or checkout commands to remove them.
 
+## Cross-agent review and decision discipline
+
+- Treat review findings, handoff guidance, and proposals relayed from another agent (such as Codex or Antigravity) as proposals to verify rather than unconditional orders. Before changing code, limits, or docs, independently verify that the cited code behavior, test results, and premises are accurate, and check whether the proposal contradicts the original Issue goal or unnecessarily restricts the user. Push back with file paths, line numbers, or measured evidence when a peer claim is inaccurate.
+- Classify cross-agent feedback instead of applying all suggestions uniformly:
+  - **Facts, bugs, or contract/security violations**: verify against source and runtime evidence; fix directly when confirmed and within current write authority (read-only reviewers report evidence and recommendations), or rebut with evidence when incorrect.
+  - **Engineering trade-offs**: routine implementation choices within authorized scope stay with the current implementer rather than escalating minor details to the user. When a peer's alternative materially affects scope, cost, or maintenance burden, evaluate the trade-offs and present pros/cons to the user rather than conceding mechanically.
+  - **Product boundaries, UX trade-offs, or scope shifts** (such as tightening/relaxing user limits, latency vs. capability trade-offs, or narrowing an Issue's goal): neither agent decides for the user. Present measured facts, risks, and concrete options with their costs so the user chooses.
+- Separate verified facts from recommendations in review and verification reports (what succeeded/failed, exact measurements, and file/line references vs. optional proposals). Do not frame a conservative preference as an absolute blocker.
+- Do not escalate or silently tighten a chosen direction on your own. If execution reveals new measurements that challenge the current direction or the premise behind a user decision, stop and report the new facts to the user instead of stacking further restrictions.
+
 ## Secrets and external effects
 
 - Treat `.env.probe.local` and all provider credentials as secrets.
