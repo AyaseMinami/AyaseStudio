@@ -1921,7 +1921,7 @@ textarea:disabled {
 
 .user-message-group .message-actions { justify-content: flex-end; max-width: 100%; }
 .user-message-group .message-copy-feedback { text-align: right; }
-.user-message-group:has(.message-editor) { width: 100%; }
+.user-message-group:has(.message-editor) { width: 100%; max-width: 100%; }
 
 .user-message {
   max-width: 100%;
@@ -1994,8 +1994,6 @@ textarea:disabled {
 .user-message:has(.message-editor) .message-edited { color: rgb(var(--color-muted)); }
 .message-editor label, .user-message .message-editor label { color: rgb(var(--color-text)); }
 .message-editor .message-editor-hint { margin: 0; color: rgb(var(--color-text-soft)); font-size: var(--font-small); }
-.message-editor textarea { width: 100%; min-height: 7rem; resize: vertical; border: 1px solid rgb(var(--color-border-strong)); border-radius: 0.5rem; padding: 0.55rem; background: rgb(var(--color-input)); color: rgb(var(--color-text)); line-height: 1.45rem; }
-.message-editor > div { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .message-editor button { display: inline-flex; align-items: center; justify-content: center; min-height: 0; padding: 0.25rem 0.7rem; border: 1px solid rgb(var(--color-border-strong)); border-radius: 0.5rem; background: rgb(var(--color-elevated)); color: rgb(var(--color-text)); font-size: var(--font-small); font-weight: 500; line-height: 1.5; cursor: pointer; }
 .message-editor button:hover:not(:disabled) { background: rgb(var(--color-hover)); }
 .message-editor button:disabled { opacity: 0.5; cursor: default; }

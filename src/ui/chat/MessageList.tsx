@@ -1,4 +1,4 @@
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Copy, GitBranch, LoaderCircle, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
 
 import type { StoredChatMessage } from "../../chat/repository";
@@ -144,9 +144,34 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
     });
   };
 
+  const ensureEditorVisible = useCallback((editorEl: HTMLElement) => {
+    const region = scrollRegionRef.current;
+    if (!region) return;
+    const regionRect = region.getBoundingClientRect();
+    const editorRect = editorEl.getBoundingClientRect();
+    if (regionRect.height > 0 && editorRect.height > 0) {
+      const visibleTop = regionRect.top + 8;
+      const visibleBottom = regionRect.bottom - 12;
+      let safeDelta = 0;
+      if (editorRect.top < visibleTop) {
+        safeDelta = editorRect.top - visibleTop;
+      } else if (editorRect.bottom > visibleBottom) {
+        const neededDelta = editorRect.bottom - visibleBottom;
+        const maxDelta = Math.max(0, editorRect.top - visibleTop);
+        safeDelta = Math.min(neededDelta, maxDelta);
+      }
+      if (safeDelta !== 0) region.scrollTop += safeDelta;
+    }
+    previousScrollTopRef.current = region.scrollTop;
+  }, []);
+
   return <div className="message-scroll-region" ref={scrollRegionRef}
     onWheel={(event) => {
-      if (!preview && !confirmation && event.deltaY < 0 && !event.ctrlKey) followingRef.current = false;
+      if (!preview && !confirmation && event.deltaY < 0 && !event.ctrlKey) {
+        const textarea = event.target instanceof Element ? event.target.closest<HTMLTextAreaElement>(".message-editor textarea") : null;
+        if (textarea && textarea.scrollHeight > textarea.clientHeight && textarea.scrollTop > 0) return;
+        followingRef.current = false;
+      }
     }}
     onScroll={(event) => {
       const region = event.currentTarget;
@@ -175,6 +200,7 @@ export function MessageList({ messages, assistant, userAvatarUrl, onReadAttachme
           {isEditing ? <MessageEditor key={editing.id} base={editing.base} latestRound={index >= messages.length - 2}
             disabled={actionsDisabled || !!pending} busyOnly={busyOnly} onReadAttachment={onReadAttachment}
             onCancel={() => setEditing(undefined)} onSubmittingChange={setEditorSubmitting}
+            onEnsureVisible={ensureEditorVisible}
             onSave={(content, draft, send) => send ? actions!.editAndSend(message.id, content, draft) : actions!.edit(message.id, content, draft)} />
             : <>{message.role === "assistant" ? (message.content ? <SafeMarkdown search={message.search}>{message.content}</SafeMarkdown>
             : message.status === "streaming" ? <span className="typing-indicator" aria-label="正在生成"><i className="typing-dot" /><i className="typing-dot" /><i className="typing-dot" /></span>
