@@ -50,7 +50,7 @@
 .avatar-preview-user img, img.message-user-avatar { background: transparent; }
 .message-user-avatar svg { width: 25px; height: 25px; }
 .message-avatar-fallback { display: inline-flex; align-items: center; justify-content: center; background: rgb(var(--color-hover)); color: rgb(var(--color-muted)); }
-.avatar-preview-bubble { background: rgb(var(--color-user-message) / var(--message-bubble-opacity)); color: rgb(var(--color-user-message-text)); border-radius: 12px; padding: 10px 14px; font-size: var(--font-ui); }
+.avatar-preview-bubble { background: rgb(var(--color-user-message)); color: rgb(var(--color-user-message-text)); border-radius: 12px; padding: 10px 14px; font-size: var(--font-ui); }
 .avatar-preview-reply { width: fit-content; max-width: 100%; margin-top: 20px; font-size: var(--font-ui); }
 .avatar-preview-reply > .message-body { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
 .avatar-preview .message-surface { padding-bottom: 0.875rem; }

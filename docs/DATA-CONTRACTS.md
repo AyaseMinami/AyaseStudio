@@ -1,5 +1,11 @@
 # 持久数据契约
 
+## 助手气泡显示模式与透明度解耦 #138（2026-11-25）
+
+外观偏好新增 `assistantBubbleMode: "auto" | "always" | "off"`，默认 `"auto"`；现有字段 `assistantBubbleTransparency` 保持字段名兼容，默认值由 `12` 调整为 `25`（即有壁纸显示助手气泡时默认 `75%` 不透明），且不再耦合用户消息气泡透明度。原存储键 `ayase-studio.appearance.v1`、Dexie schema v9、备份文档 v5／信封 v1、凭据与背景资源所有权保持不变。旧本机记录与旧备份缺失 `assistantBubbleMode` 时由共享纯克隆读入口 `readAppearancePreferences` 纯读取回填 `"auto"`，缺失 `assistantBubbleTransparency` 回填 `25`，零自动写回；已有显式保存值（包括旧默认 `12`、`6` 及任意合法 `0–100` 整数）保持不变；「恢复当前主题默认外观」将显示模式恢复为 `"auto"` 并将助手气泡透明度恢复为 `25`，而重置统一透明度滑块仅恢复四个区域透明度默认值（不改变 `assistantBubbleMode`）。非法枚举值、未知字段与损坏 JSON 在保存与恢复写入前拒绝并保留原文。
+
+`appearance` 模块升级为 v4／最低读者 4，`assistantBubbleMode` 在 `dataPolicies.appearance` 注册为 `backup` 并由真实外观备份投影导出。旧 v1–v3 备份及 appearance v1–v3 模块缺失新字段可重复稳定读取并按 v4 再导出；原始声明为旧文档 v1–v3 或 appearance 模块低于 v4 却携带 `assistantBubbleMode` 的备份在版本重标与任何耐久写入前拒绝。旧客户端通过最低读者 4 拒绝新包，不保证降级读取。恢复策略、私有恢复日志与回滚继续沿用既有完整外观偏好路径。
+
 ## OpenAI SVG／GIF 绘图输出（2026-11-09）
 
 绘图设置模块升为 v5／最低读者 5，排除于可移植备份的 drawingHistory 升为 v3。OpenAI 草稿组及冻结参数新增可选 `outputFormat`、`svgModel`、`frameCount`、`frameDurationMs`。缺失格式按 PNG 执行，其余缺失字段省略请求，纯读取不补写。草稿保留切换格式前的选项，任务和请求只冻结当前格式相关字段。旧历史读取和复用保持兼容，非法值、未知字段在耐久写入前拒绝并保留原文。字段策略、真实设置投影和共享克隆读入口同步更新。
@@ -126,7 +132,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、绘图设置模块 v5（最低读者 5）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v3（最低读者 3），其余当前备份模块 v1；排除于可移植备份的模块为 `general` v2、`drawingHistory` v3、`recovery` v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、绘图设置模块 v5（最低读者 5）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v4（最低读者 4），其余当前备份模块 v1；排除于可移植备份的模块为 `general` v2、`drawingHistory` v3、`recovery` v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 

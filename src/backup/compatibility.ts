@@ -84,7 +84,8 @@ function validateAppearanceCompatibility(raw: Record<string, unknown>): void {
   dataCheck(typeof encoded === "string");
   const appearance: unknown = JSON.parse(encoded);
   dataRecord(appearance);
-  const minimumVersion = "chromeTransparency" in appearance ? 3
+  const minimumVersion = "assistantBubbleMode" in appearance ? 4
+    : "chromeTransparency" in appearance ? 3
     : "sidebarGlassEnabled" in appearance || "composerGlassEnabled" in appearance ? 2 : 1;
   if (minimumVersion === 1) return;
   dataCheck(raw.version === 4 || raw.version === 5, "外观字段与外观模块版本不匹配，请升级应用。");

@@ -81,7 +81,7 @@ export const dataPolicies = {
   appearance: {
     colorPreset: "backup", themeMode: "backup", accentColor: "backup", userBubbleColor: "backup", unifiedThemeColor: "backup",
     canvasColor: "backup", assistantBubbleColor: "backup", unifiedTransparency: "backup", chromeTransparency: "backup", sidebarTransparency: "backup",
-    composerTransparency: "backup", assistantBubbleTransparency: "backup", backgroundReference: "resource", backgroundFocus: "backup",
+    composerTransparency: "backup", assistantBubbleMode: "backup", assistantBubbleTransparency: "backup", backgroundReference: "resource", backgroundFocus: "backup",
     sidebarGlassEnabled: "backup", composerGlassEnabled: "backup",
     backgroundFit: "backup", backgroundMask: "backup", backgroundBlur: "backup", backgroundLibrary: "resource", backgroundEnabled: "backup", backgroundName: "backup",
   } satisfies FieldPolicy<AppearancePreferences>,

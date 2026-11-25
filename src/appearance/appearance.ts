@@ -7,6 +7,7 @@ export type { ColorPreset } from "./colorPresets";
 export type ThemeMode = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<ThemeMode, "system">;
 export type BackgroundFit = "cover" | "contain";
+export type AssistantBubbleMode = "auto" | "always" | "off";
 
 export interface BackgroundLibraryEntry {
   id: string;
@@ -34,7 +35,7 @@ export interface AppearancePreferences {
   composerTransparency: number;
   sidebarGlassEnabled: boolean;
   composerGlassEnabled: boolean;
-  // Shared by user and assistant message backgrounds; assistant color remains separate.
+  assistantBubbleMode: AssistantBubbleMode;
   assistantBubbleTransparency: number;
   backgroundReference: string | null;
   backgroundFocus: BackgroundFocus | null;
@@ -121,6 +122,7 @@ export interface AppearanceController {
   setComposerTransparency(transparency: number): void;
   setSidebarGlassEnabled(enabled: boolean): void;
   setComposerGlassEnabled(enabled: boolean): void;
+  setAssistantBubbleMode(mode: AssistantBubbleMode): void;
   setAssistantBubbleTransparency(transparency: number): void;
   setBackgroundFit(fit: BackgroundFit): void;
   setBackgroundMask(mask: number): void;
@@ -157,7 +159,8 @@ export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   composerTransparency: 0,
   sidebarGlassEnabled: false,
   composerGlassEnabled: true,
-  assistantBubbleTransparency: 12,
+  assistantBubbleMode: "auto",
+  assistantBubbleTransparency: 25,
   backgroundReference: null,
   backgroundFocus: null,
   backgroundFit: "cover",
@@ -202,6 +205,12 @@ function transparencyInRange(value: unknown, fallback: number): number {
     ? value : fallback;
 }
 
+function isAssistantBubbleMode(value: unknown): value is AssistantBubbleMode {
+  return value === "auto" || value === "always" || value === "off";
+}
+
+const USER_BUBBLE_WALLPAPER_TRANSPARENCY = 12;
+
 export function loadAppearancePreferences(
   storage: AppearanceStorage,
 ): AppearancePreferences {
@@ -241,6 +250,7 @@ export function loadAppearancePreferences(
       composerTransparency,
       sidebarGlassEnabled: typeof stored.sidebarGlassEnabled === "boolean" ? stored.sidebarGlassEnabled : defaultAppearancePreferences.sidebarGlassEnabled,
       composerGlassEnabled: typeof stored.composerGlassEnabled === "boolean" ? stored.composerGlassEnabled : defaultAppearancePreferences.composerGlassEnabled,
+      assistantBubbleMode: isAssistantBubbleMode(stored.assistantBubbleMode) ? stored.assistantBubbleMode : defaultAppearancePreferences.assistantBubbleMode,
       assistantBubbleTransparency,
       backgroundReference: isBackgroundReference(stored.backgroundReference)
         ? stored.backgroundReference
@@ -327,6 +337,7 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
   optional(stored, "backgroundEnabled", value => typeof value === "boolean");
   for (const key of ["sidebarGlassEnabled", "composerGlassEnabled"])
     optional(stored, key, value => typeof value === "boolean");
+  optional(stored, "assistantBubbleMode", isAssistantBubbleMode);
   optional(stored, "backgroundName", value => value === null || typeof value === "string" && value.length <= 100);
   if (stored.backgroundCrop !== undefined && stored.backgroundCrop !== null) {
     dataRecord(stored.backgroundCrop); supported(stored.backgroundCrop, ["x", "y", "width", "height"]);
@@ -373,19 +384,21 @@ type Rgb = readonly [number, number, number];
 
 const basePalette: Record<
   ResolvedTheme,
-  { accent: Rgb; canvas: Rgb; panel: Rgb; text: Rgb }
+  { accent: Rgb; canvas: Rgb; panel: Rgb; text: Rgb; textSoft: Rgb }
 > = {
   light: {
     accent: [37, 99, 235],
     canvas: [250, 250, 250],
     panel: [255, 255, 255],
     text: [41, 42, 45],
+    textSoft: [41, 42, 45],
   },
   dark: {
     accent: [147, 197, 253],
     canvas: [12, 10, 9],
     panel: [28, 25, 23],
     text: [245, 245, 244],
+    textSoft: [231, 229, 228],
   },
 };
 
@@ -404,6 +417,7 @@ const customizableProperties = [
   "--color-on-accent",
   "--color-user-message",
   "--color-user-message-text",
+  "--color-user-message-text-solid",
   "--color-focus",
   "--color-code-inline-text",
   "--color-assistant-bubble",
@@ -478,6 +492,7 @@ function userBubbleColorFor(preferences: AppearancePreferences, theme: ResolvedT
 function deriveAppearanceVariables(
   preferences: AppearancePreferences,
   resolvedTheme: ResolvedTheme,
+  hasBackground = false,
 ): {
   variables: Map<string, string>;
   readabilityWarnings: string[];
@@ -567,15 +582,37 @@ function deriveAppearanceVariables(
     variables.set("--color-code-inline-text", rgbValue(accentText));
   }
 
-  // The blue user bubble can become darker than its original foreground as it
-  // fades into a dark canvas. Preserve that foreground when readable, otherwise
-  // choose black/white against the composited solid canvas. Arbitrary images
-  // still require the user's background mask; we do not sample private images.
-  const userBackground = mixColor(effectiveUserBackground, effectiveCanvas, preferences.assistantBubbleTransparency / 100);
-  if (contrastRatio(effectiveUserText, userBackground) < 4.5) {
+  // User bubble opacity is independent of assistant bubble transparency: solid on a
+  // solid canvas (and under prefers-reduced-transparency) and 88% opaque over wallpaper.
+  const pickUserText = (background: Rgb): Rgb | null => {
+    if (contrastRatio(effectiveUserText, background) >= 4.5) return null;
     const black: Rgb = [0, 0, 0];
     const white: Rgb = [255, 255, 255];
-    variables.set("--color-user-message-text", rgbValue(contrastRatio(black, userBackground) >= contrastRatio(white, userBackground) ? black : white));
+    return contrastRatio(black, background) >= contrastRatio(white, background) ? black : white;
+  };
+  const userBackground = hasBackground
+    ? mixColor(effectiveUserBackground, effectiveCanvas, USER_BUBBLE_WALLPAPER_TRANSPARENCY / 100)
+    : effectiveUserBackground;
+  const activeUserText = pickUserText(userBackground);
+  if (activeUserText) variables.set("--color-user-message-text", rgbValue(activeUserText));
+  const solidUserText = hasBackground ? pickUserText(effectiveUserBackground) : activeUserText;
+  if (solidUserText) variables.set("--color-user-message-text-solid", rgbValue(solidUserText));
+
+  const assistantBubbleShown = preferences.assistantBubbleTransparency < 100 && (
+    preferences.assistantBubbleMode === "always" || (preferences.assistantBubbleMode === "auto" && hasBackground)
+  );
+  if (preferences.assistantBubbleColor && assistantBubbleShown) {
+    const requestedAssistant = parseHexColor(preferences.assistantBubbleColor);
+    const assistantBackground = hasBackground
+      ? mixColor(requestedAssistant, effectiveCanvas, preferences.assistantBubbleTransparency / 100)
+      : requestedAssistant;
+    // Check both the composited and solid surface (used under prefers-reduced-transparency)
+    // against --color-text-soft, which is the actual assistant message foreground token.
+    if (contrastRatio(base.textSoft, requestedAssistant) < 4.5 || contrastRatio(base.textSoft, assistantBackground) < 4.5) {
+      readabilityWarnings.push(
+        "助手消息气泡颜色与当前主题文字对比度偏低，建议调整颜色。",
+      );
+    }
   }
 
   return {
@@ -590,6 +627,7 @@ function applyAppearanceVariables(
   target: ThemeTarget,
   preferences: AppearancePreferences,
   resolvedTheme: ResolvedTheme,
+  hasBackground = false,
 ): {
   readabilityWarnings: string[];
   effectiveAccentColor: string;
@@ -603,6 +641,7 @@ function applyAppearanceVariables(
   } = deriveAppearanceVariables(
     preferences,
     resolvedTheme,
+    hasBackground,
   );
   customizableProperties.forEach((property) => {
     const value = variables.get(property);
@@ -615,9 +654,11 @@ function applyAppearanceVariables(
   target.style.setProperty("--chrome-background-opacity", String(1 - preferences.chromeTransparency / 100));
   target.style.setProperty("--sidebar-background-opacity", String(1 - preferences.sidebarTransparency / 100));
   target.style.setProperty("--composer-background-opacity", String(1 - preferences.composerTransparency / 100));
-  target.style.setProperty("--message-bubble-opacity", String(1 - preferences.assistantBubbleTransparency / 100));
+  target.style.setProperty("--assistant-bubble-opacity", String(1 - preferences.assistantBubbleTransparency / 100));
   target.setAttribute("data-sidebar-glass", String(preferences.sidebarGlassEnabled));
   target.setAttribute("data-composer-glass", String(preferences.composerGlassEnabled));
+  target.setAttribute("data-assistant-bubble-mode", preferences.assistantBubbleMode);
+  target.setAttribute("data-assistant-bubble-transparent", String(preferences.assistantBubbleTransparency === 100));
   return {
     readabilityWarnings,
     effectiveAccentColor,
@@ -697,6 +738,7 @@ function createSnapshot(
     target,
     preferences,
     resolvedTheme,
+    Boolean(backgroundRuntime.backgroundUrl),
   );
   applyBackgroundVariables(target, preferences, backgroundRuntime);
   return {
@@ -757,6 +799,7 @@ export function createAppearanceController({
     composerTransparency: snapshot.composerTransparency,
     sidebarGlassEnabled: snapshot.sidebarGlassEnabled,
     composerGlassEnabled: snapshot.composerGlassEnabled,
+    assistantBubbleMode: snapshot.assistantBubbleMode,
     assistantBubbleTransparency: snapshot.assistantBubbleTransparency,
     backgroundReference: snapshot.backgroundReference,
     backgroundFocus: snapshot.backgroundFocus,
@@ -1028,6 +1071,11 @@ export function createAppearanceController({
     },
     setComposerGlassEnabled(enabled) {
       updatePreferences({ ...preferences, composerGlassEnabled: enabled });
+    },
+    setAssistantBubbleMode(mode) {
+      if (isAssistantBubbleMode(mode) && mode !== preferences.assistantBubbleMode) {
+        updatePreferences({ ...preferences, assistantBubbleMode: mode });
+      }
     },
     setSidebarTransparency(transparency) {
       if (Number.isFinite(transparency)) {

@@ -25,6 +25,7 @@ const unsupported = [
   JSON.stringify({ ...defaultAppearancePreferences, sidebarTransparency: 101 }),
   JSON.stringify({ ...defaultAppearancePreferences, sidebarGlassEnabled: "true" }),
   JSON.stringify({ ...defaultAppearancePreferences, composerGlassEnabled: null }),
+  ...["never", "", null, true, 123].map(assistantBubbleMode => JSON.stringify({ ...defaultAppearancePreferences, assistantBubbleMode })),
   ...[-1, 101, 15.5, "85", null].map(chromeTransparency => JSON.stringify({ ...defaultAppearancePreferences, chromeTransparency })),
 ];
 
@@ -49,27 +50,32 @@ describe("appearance durable compatibility boundary", () => {
       expect(original.setItem).not.toHaveBeenCalled();
     }
   });
-  it("applies the tuned alpha before first render in either theme without writes", () => {
+  it("applies the tuned alpha and bubble attributes before first render in either theme without writes", () => {
     for (const systemPrefersDark of [false, true]) {
       const original = storage(null);
       const properties = new Map<string, string>();
+      const attributes = new Map<string, string>();
       applyInitialAppearance({ storage: original, systemPrefersDark,
-        target: { style: { colorScheme: "", setProperty: (key, value) => { properties.set(key, value); }, removeProperty() {} }, setAttribute() {}, removeAttribute() {} },
+        target: { style: { colorScheme: "", setProperty: (key, value) => { properties.set(key, value); }, removeProperty() {} },
+          setAttribute: (key, value) => { attributes.set(key, value); }, removeAttribute: key => { attributes.delete(key); } },
       });
       expect(properties.get("--chrome-background-opacity")).toBe("0.6");
       expect(properties.get("--sidebar-background-opacity")).toBe("0.5");
-      expect(properties.get("--message-bubble-opacity")).toBe("0.88");
+      expect(properties.get("--assistant-bubble-opacity")).toBe("0.75");
+      expect(properties.has("--message-bubble-opacity")).toBe(false);
+      expect(attributes.get("data-assistant-bubble-mode")).toBe("auto");
+      expect(attributes.get("data-assistant-bubble-transparent")).toBe("false");
       expect(original.setItem).not.toHaveBeenCalled();
     }
   });
-  it.each([[85, 0, 6], [75, 20, 6]])("uses missing-field defaults without overwriting saved %s/%s/%s choices", (chromeTransparency, sidebarTransparency, assistantBubbleTransparency) => {
+  it.each([[85, 0, 6], [75, 20, 6], [40, 50, 12]])("uses missing-field defaults without overwriting saved %s/%s/%s choices", (chromeTransparency, sidebarTransparency, assistantBubbleTransparency) => {
     const empty = storage(null);
-    expect(readAppearancePreferences(empty)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, assistantBubbleTransparency: 12 });
+    expect(readAppearancePreferences(empty)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, assistantBubbleMode: "auto", assistantBubbleTransparency: 25 });
     expect(empty.setItem).not.toHaveBeenCalled();
     const encoded = JSON.stringify({ chromeTransparency, sidebarTransparency, assistantBubbleTransparency });
     const existing = storage(encoded);
-    expect(readAppearancePreferences(existing)).toMatchObject({ chromeTransparency, sidebarTransparency, assistantBubbleTransparency });
-    expect(loadAppearancePreferences(existing)).toMatchObject({ chromeTransparency, sidebarTransparency, assistantBubbleTransparency });
+    expect(readAppearancePreferences(existing)).toMatchObject({ chromeTransparency, sidebarTransparency, assistantBubbleMode: "auto", assistantBubbleTransparency });
+    expect(loadAppearancePreferences(existing)).toMatchObject({ chromeTransparency, sidebarTransparency, assistantBubbleMode: "auto", assistantBubbleTransparency });
     expect(existing.getItem()).toBe(encoded);
     expect(existing.setItem).not.toHaveBeenCalled();
   });
@@ -97,10 +103,10 @@ describe("appearance durable compatibility boundary", () => {
       controller.setSidebarTransparency(40); controller.setComposerTransparency(40); controller.setAssistantBubbleTransparency(40);
       expect(readAppearancePreferences(original).unifiedTransparency).toBe(40);
       controller.setUnifiedTransparency(null);
-      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
+      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 25 });
       controller.setChromeTransparency(45);
       await controller.resetCustomAppearance();
-      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, assistantBubbleTransparency: 12 });
+      expect(readAppearancePreferences(original)).toMatchObject({ chromeTransparency: 40, sidebarTransparency: 50, assistantBubbleMode: "auto", assistantBubbleTransparency: 25 });
     } finally { controller.destroy(); }
   });
 
@@ -137,6 +143,60 @@ describe("appearance durable compatibility boundary", () => {
       expect(reloaded.getSnapshot()).toMatchObject({ sidebarGlassEnabled: false, composerGlassEnabled: true });
     } finally { reloaded.destroy(); }
   });
+  it.each(["auto", "always", "off"] as const)("persists explicit assistantBubbleMode %s across reload and background toggles without overwriting saved color/transparency", async mode => {
+    const original = storage(JSON.stringify({
+      ...defaultAppearancePreferences,
+      backgroundReference: reference,
+      backgroundEnabled: true,
+      assistantBubbleColor: "#e6eef8",
+      assistantBubbleTransparency: 33,
+      assistantBubbleMode: mode,
+    }));
+    const attributes = new Map<string, string>();
+    const create = () => createAppearanceController({
+      storage: original,
+      systemTheme: { isDark: () => false, subscribe: () => () => {} },
+      target: {
+        style: { colorScheme: "", setProperty() {}, removeProperty() {} },
+        setAttribute: (key, value) => { attributes.set(key, value); },
+        removeAttribute: key => { attributes.delete(key); },
+      },
+      backgroundResources: {
+        selectAndImport: async () => null,
+        resolve: async ref => ({ reference: ref, url: "asset://localhost/private/bg.png" }),
+        cleanup: async () => {},
+      },
+    });
+    const controller = create();
+    await controller.ready;
+    try {
+      expect(controller.getSnapshot()).toMatchObject({ assistantBubbleMode: mode, assistantBubbleColor: "#e6eef8", assistantBubbleTransparency: 33 });
+      expect(attributes.get("data-assistant-bubble-mode")).toBe(mode);
+      expect(attributes.get("data-assistant-bubble-transparent")).toBe("false");
+      expect(attributes.get("data-has-background")).toBe("true");
+      await controller.removeBackground();
+      expect(attributes.has("data-has-background")).toBe(false);
+      expect(controller.getSnapshot()).toMatchObject({ assistantBubbleMode: mode, assistantBubbleColor: "#e6eef8", assistantBubbleTransparency: 33, backgroundEnabled: false });
+      await controller.restoreBackground();
+      expect(attributes.get("data-has-background")).toBe("true");
+      expect(controller.getSnapshot()).toMatchObject({ assistantBubbleMode: mode, assistantBubbleColor: "#e6eef8", assistantBubbleTransparency: 33, backgroundEnabled: true });
+      controller.setAssistantBubbleTransparency(100);
+      expect(attributes.get("data-assistant-bubble-transparent")).toBe("true");
+      controller.setAssistantBubbleTransparency(33);
+      expect(attributes.get("data-assistant-bubble-transparent")).toBe("false");
+      controller.setAssistantBubbleMode("invalid" as never);
+      expect(controller.getSnapshot().assistantBubbleMode).toBe(mode);
+    } finally { controller.destroy(); }
+    const reloaded = create();
+    await reloaded.ready;
+    try {
+      expect(reloaded.getSnapshot()).toMatchObject({ assistantBubbleMode: mode, assistantBubbleColor: "#e6eef8", assistantBubbleTransparency: 33 });
+      await reloaded.resetCustomAppearance();
+      expect(reloaded.getSnapshot()).toMatchObject({ assistantBubbleMode: "auto", assistantBubbleColor: null, assistantBubbleTransparency: 25 });
+      expect(attributes.get("data-assistant-bubble-mode")).toBe("auto");
+    } finally { reloaded.destroy(); }
+  });
+
   it.each([false, true])("preserves an explicit composer glass choice %s across reads", enabled => {
     const encoded = JSON.stringify({ ...defaultAppearancePreferences, composerGlassEnabled: enabled });
     const original = storage(encoded);

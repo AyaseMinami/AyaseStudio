@@ -225,9 +225,21 @@ export async function validateDocument(raw: unknown): Promise<void> {
   if (appearance !== null) {
     text(appearance); const parsed = JSON.parse(appearance); object(parsed);
     const normalized = readAppearancePreferences({ getItem: () => appearance });
-    check(canonical({ chromeTransparency: defaultAppearancePreferences.chromeTransparency,
+    const filled: JsonRecord = {
+      assistantBubbleMode: defaultAppearancePreferences.assistantBubbleMode,
+      assistantBubbleTransparency: defaultAppearancePreferences.assistantBubbleTransparency,
+      chromeTransparency: defaultAppearancePreferences.chromeTransparency,
       sidebarGlassEnabled: defaultAppearancePreferences.sidebarGlassEnabled,
-      composerGlassEnabled: defaultAppearancePreferences.composerGlassEnabled, ...parsed }) === canonical(normalized), "外观配置损坏或包含不支持字段。");
+      composerGlassEnabled: defaultAppearancePreferences.composerGlassEnabled,
+      ...parsed,
+    };
+    if ((parsed.chromeTransparency === undefined || parsed.assistantBubbleTransparency === undefined)
+      && filled.chromeTransparency === filled.sidebarTransparency
+      && filled.sidebarTransparency === filled.composerTransparency
+      && filled.composerTransparency === filled.assistantBubbleTransparency) {
+      filled.unifiedTransparency = filled.sidebarTransparency;
+    }
+    check(canonical(filled) === canonical(normalized), "外观配置损坏或包含不支持字段。");
     if (normalized.backgroundReference) resource(normalized.backgroundReference, "backgrounds/");
     normalized.backgroundLibrary.forEach(b => resource(b.reference, "backgrounds/"));
   }

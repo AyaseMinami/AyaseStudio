@@ -25,7 +25,7 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     onUnifiedThemeColorChange: vi.fn(), onUserBubbleColorChange: vi.fn(),
     onColorPresetChange: vi.fn(),
     onThemeModeChange: vi.fn(), onAccentColorChange: vi.fn(), onCanvasColorChange: vi.fn(),
-    onAssistantBubbleColorChange: vi.fn(), onAssistantBubbleTransparencyChange: vi.fn(), onEditBackgroundFocus: vi.fn(),
+    onAssistantBubbleColorChange: vi.fn(), onAssistantBubbleModeChange: vi.fn(), onAssistantBubbleTransparencyChange: vi.fn(), onEditBackgroundFocus: vi.fn(),
     onUnifiedTransparencyChange: vi.fn(), onSidebarTransparencyChange: vi.fn(), onComposerTransparencyChange: vi.fn(),
     onChromeTransparencyChange: vi.fn(),
     onSidebarGlassEnabledChange: vi.fn(), onComposerGlassEnabledChange: vi.fn(),
@@ -42,7 +42,7 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
     assistantBubbleColor: "#123456", unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0,
     chromeTransparency: 40,
     sidebarGlassEnabled: false, composerGlassEnabled: false,
-    assistantBubbleTransparency: 6, effectiveAccentColor: "#6d28d9", effectiveCanvasColor: "#fafaf9",
+    assistantBubbleMode: "auto", assistantBubbleTransparency: 25, effectiveAccentColor: "#6d28d9", effectiveCanvasColor: "#fafaf9",
     backgroundReference: "backgrounds/example.webp", backgroundUrl: "asset://localhost/example.webp", backgroundFocus: null, backgroundFit: "cover",
     backgroundLibrary: [], backgroundEnabled: true, backgroundName: "example.webp",
     backgroundMask: 65, backgroundBlur: 0, backgroundBusy: false, backgroundError: null, readabilityWarnings: [],
@@ -103,13 +103,36 @@ describe("AppearanceSettings", () => {
     expect(handlers.onChromeTransparencyChange).not.toHaveBeenCalled();
   });
 
-  it("resets message bubble transparency to the tuned default independently", async () => {
+  it("resets assistant bubble transparency to the tuned default independently", async () => {
     const { handlers } = await render({ assistantBubbleTransparency: 30 });
-    const reset = host!.querySelector<HTMLButtonElement>('button[aria-label="恢复消息气泡透明度默认值"]')!;
+    const reset = host!.querySelector<HTMLButtonElement>('button[aria-label="恢复助手气泡透明度默认值"]')!;
     await act(async () => reset.click());
-    expect(handlers.onAssistantBubbleTransparencyChange).toHaveBeenLastCalledWith(12);
+    expect(handlers.onAssistantBubbleTransparencyChange).toHaveBeenLastCalledWith(25);
     expect(handlers.onSidebarTransparencyChange).not.toHaveBeenCalled();
     expect(handlers.onChromeTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it("switches assistant bubble mode across three segmented states and provides contextual help tooltips", async () => {
+    const { handlers } = await render({ assistantBubbleMode: "auto" });
+    const modes = host!.querySelectorAll<HTMLInputElement>('input[name="assistant-bubble-mode"]');
+    expect([...modes].map((input) => input.value)).toEqual(["auto", "always", "off"]);
+    expect([...modes].map((input) => input.parentElement!.textContent)).toEqual(["仅背景图", "始终显示", "关闭"]);
+    expect(modes[0].checked).toBe(true);
+    await act(async () => modes[1].click());
+    expect(handlers.onAssistantBubbleModeChange).toHaveBeenCalledWith("always");
+    await act(async () => modes[2].click());
+    expect(handlers.onAssistantBubbleModeChange).toHaveBeenCalledWith("off");
+    expect(handlers.onAssistantBubbleTransparencyChange).not.toHaveBeenCalled();
+    expect(handlers.onAssistantBubbleColorChange).not.toHaveBeenCalled();
+    for (const label of ["助手气泡显示说明", "助手消息气泡颜色说明", "助手气泡透明度说明"]) {
+      const help = host!.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+      expect(help).not.toBeNull();
+      await act(async () => help.focus());
+      const tooltipId = help.getAttribute("aria-describedby")!;
+      expect(document.getElementById(tooltipId)?.textContent).toContain("纯色画布下助手回复默认采用无气泡文档流");
+      expect(document.getElementById(tooltipId)?.textContent).toContain("调至 100% 即隐藏气泡");
+      await act(async () => help.blur());
+    }
   });
 
   it.each([false, true])("toggles each glass region independently from %s without changing stored transparency", async enabled => {
@@ -256,7 +279,7 @@ describe("AppearanceSettings", () => {
   it("sends numeric range values for transparency and background controls", async () => {
     const { handlers } = await render();
     await act(async () => {
-      changeRange(host!.querySelector<HTMLInputElement>('[aria-label="消息气泡透明度"]')!, "42");
+      changeRange(host!.querySelector<HTMLInputElement>('[aria-label="助手气泡透明度"]')!, "42");
       changeRange(host!.querySelector<HTMLInputElement>('[aria-label="背景遮罩强度"]')!, "57");
     });
     expect(handlers.onAssistantBubbleTransparencyChange).toHaveBeenCalledWith(42);
@@ -274,7 +297,7 @@ describe("AppearanceSettings", () => {
     await act(async () => help.focus());
     const tooltipId = help.getAttribute("aria-describedby");
     expect(tooltipId).toBeTruthy();
-    expect(document.getElementById(tooltipId!)?.textContent).toBe("各区域透明度不同，调整统一滑块将覆盖四个区域的设置。");
+    expect(document.getElementById(tooltipId!)?.textContent).toBe("各区域透明度不同，调整统一滑块将覆盖顶栏与功能栏、侧栏、输入区域及助手气泡四个区域的设置（不影响用户消息气泡）。");
     expect(host!.querySelector('[role="tooltip"]')).toBeNull();
     await act(async () => help.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(help.hasAttribute("aria-describedby")).toBe(false);
