@@ -23,11 +23,13 @@
 
 2026-11-22 进度更新（#133 用户实机确认）：B01 新建／编辑助手与 B02 编辑对话已完成视觉样式、样式表收口、可访问性与信息排布整改——顶部拆为「常规配置／系统提示词」双页签，常规页统一 3 列对齐栅格（模型仅展示型号名、思考控件同行归组、采样／上下文与流式开关 3×2 对齐、2K 一屏免滚动），系统提示词独立全高编辑并带字素计数；保留全部既有显式保存、取消丢弃、恢复默认、校验与嵌套头像弹窗隔离边界，详见 [UI-DESIGN.md](UI-DESIGN.md)。
 
+2026-11-25 进度更新（#137 试调与隔离浏览器验收）：B03 聊天模型选择已从通用 `SearchChoiceDialog` 解耦为独立 [ModelPicker.tsx](../src/ui/chat/ModelPicker.tsx) 与 [ModelPicker.css](../src/ui/chat/ModelPicker.css)（覆盖聊天输入区、B01 助手与 B02 对话三处入口；绘图模型、提示词预设与复制连接保持共用 `SearchSelectField`）。采用三段式固定框架、顶部供应商筛选胶囊（≥ 2 家聊天供应商显示）、结构化三层去重分组、36px 单行紧凑模型行与四态反馈、多词跨字段 Combobox 搜索、底栏「设为未选择」与异步失败反馈，并保留嵌套模态隔离边界；待用户桌面端视觉确认，详见 [UI-DESIGN.md](UI-DESIGN.md)。
+
 | 编号 | 用户可见窗口／变体 | 触发入口 | 实现 |
 | --- | --- | --- | --- |
 | B01 | 新建助手、编辑助手 | 助手栏新建／管理菜单编辑 | [ConversationNavigation.tsx](../src/ui/chat/ConversationNavigation.tsx) → [SessionConfigPanel.tsx](../src/ui/chat/SessionConfigPanel.tsx)。大表单、模型与思考参数、头像、固定操作区。 |
 | B02 | 编辑当前对话配置 | 对话列表编辑／调整配置 | [ConversationSettings.tsx](../src/ui/chat/ConversationSettings.tsx) → 同一 SessionConfigPanel。与助手共用外壳，保存对象不同。 |
-| B03 | 聊天模型选择 | 输入区模型入口 | [ModelPicker.tsx](../src/ui/chat/ModelPicker.tsx)。搜索、分组、当前选择、失效模型及保存状态。 |
+| B03 | 聊天模型选择 | 输入区模型入口、B01／B02 模型字段 | [ModelPicker.tsx](../src/ui/chat/ModelPicker.tsx)、[ModelPicker.css](../src/ui/chat/ModelPicker.css)。三段式固定框架、供应商筛选胶囊、结构化三层分组、多词跨字段 Combobox 搜索、当前选择、失效模型与异步失败反馈。 |
 | B04 | 已发送附件预览 | 消息附件入口 | [SentAttachmentPreview.tsx](../src/ui/chat/SentAttachmentPreview.tsx)。图片切换、PDF、文本／Markdown，以及不支持正文预览的文件信息状态。 |
 | B05 | 助手头像选择 | 助手编辑器头像入口 | [AssistantAvatarEditor.tsx](../src/ui/chat/AssistantAvatarEditor.tsx)、[AvatarLibrary.tsx](../src/ui/avatar/AvatarLibrary.tsx) 的 AssistantAvatarSelector／AvatarModal。 |
 | B06 | 供应商头像选择 | 连接配置 → 供应商头像操作 | [ConnectionSettings.tsx](../src/ui/settings/ConnectionSettings.tsx) → 同一 AvatarModal／AvatarLibraryPanel。 |
