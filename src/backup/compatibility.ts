@@ -43,10 +43,12 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
   const modern = raw.version === 4 || raw.version === 5;
   let permitted = false;
   let modelPermitted = false;
+  let responsesReplayPermitted = false;
   if (modern) {
     dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.chat);
     permitted = (raw.compatibility.modules.chat.version as number) >= 2;
     modelPermitted = (raw.compatibility.modules.chat.version as number) >= 3;
+    responsesReplayPermitted = (raw.compatibility.modules.chat.version as number) >= 4;
     if (raw.connections !== undefined && raw.connections !== null) {
       dataRecord(raw.connections); dataCheck(Array.isArray(raw.connections.providers));
       for (const provider of raw.connections.providers) {
@@ -65,6 +67,12 @@ export function validateGenerationMetricsCompatibility(raw: unknown): void {
     dataRecord(message);
     if ("generationMetrics" in message) dataCheck(permitted, "生成统计与聊天模块版本不匹配，请升级应用。");
     if (message.generationModel !== undefined) dataCheck(modelPermitted, "回复模型快照与聊天模块版本不匹配，请升级应用。");
+    if (message.providerReplay !== undefined) {
+      dataRecord(message.providerReplay);
+      if (message.providerReplay.protocol === "openai-responses") {
+        dataCheck(responsesReplayPermitted, "Responses 网页回放与聊天模块版本不匹配，请升级应用。");
+      }
+    }
     readMessageGenerationMetrics(message);
     if (message.roundVersions !== undefined) {
       dataRecord(message.roundVersions); dataCheck(Array.isArray(message.roundVersions.pairs));
@@ -84,7 +92,8 @@ function validateAppearanceCompatibility(raw: Record<string, unknown>): void {
   dataCheck(typeof encoded === "string");
   const appearance: unknown = JSON.parse(encoded);
   dataRecord(appearance);
-  const minimumVersion = "chromeTransparency" in appearance ? 3
+  const minimumVersion = "assistantBubbleMode" in appearance ? 4
+    : "chromeTransparency" in appearance ? 3
     : "sidebarGlassEnabled" in appearance || "composerGlassEnabled" in appearance ? 2 : 1;
   if (minimumVersion === 1) return;
   dataCheck(raw.version === 4 || raw.version === 5, "外观字段与外观模块版本不匹配，请升级应用。");
@@ -96,28 +105,34 @@ function validateAppearanceCompatibility(raw: Record<string, unknown>): void {
 /** The search module owns provider identities wherever selections/results are stored. */
 function validateAdditionalSearchCompatibility(raw: Record<string, unknown>): void {
   const modern = raw.version === 4 || raw.version === 5;
-  let permitted = false;
+  let searchVersion = 0;
   if (modern) {
     dataRecord(raw.compatibility); dataRecord(raw.compatibility.modules); dataRecord(raw.compatibility.modules.search);
-    permitted = typeof raw.compatibility.modules.search.version === "number" && raw.compatibility.modules.search.version >= 3;
+    if (typeof raw.compatibility.modules.search.version === "number") searchVersion = raw.compatibility.modules.search.version;
   }
-  const newProvider = (value: unknown) => value === "tavily" || value === "zhipu";
-  const requireSupport = () => dataCheck(permitted, "新增搜索服务与搜索模块版本不匹配，请升级应用。");
+  const requireVersion = (minimum: number) => dataCheck(searchVersion >= minimum, "新增搜索服务与搜索模块版本不匹配，请升级应用。");
+  const checkProvider = (value: unknown) => {
+    if (value === "tavily" || value === "zhipu") requireVersion(3);
+    if (value === "deepseek") requireVersion(4);
+    if (value === "deepseek-server") requireVersion(5);
+  };
   if (raw.searchSettings !== undefined) {
     dataRecord(raw.searchSettings);
-    if (raw.searchSettings.version === 3 || "tavily" in raw.searchSettings || "zhipu" in raw.searchSettings) requireSupport();
+    if (raw.searchSettings.version === 3 || "tavily" in raw.searchSettings || "zhipu" in raw.searchSettings) requireVersion(3);
+    if (raw.searchSettings.version === 4 || "deepseek" in raw.searchSettings) requireVersion(4);
   }
   dataRecord(raw.rows);
   function config(value: unknown) {
     if (value === undefined) return;
     dataRecord(value);
-    if (newProvider(value.webSearchProvider)) requireSupport();
+    checkProvider(value.webSearchProvider);
+    if ("deepseekWebTools" in value) requireVersion(5);
   }
   function message(value: unknown) {
     dataRecord(value);
     if (value.search !== undefined) {
       dataRecord(value.search);
-      if (newProvider(value.search.provider)) requireSupport();
+      checkProvider(value.search.provider);
     }
     if (value.roundVersions !== undefined) {
       dataRecord(value.roundVersions); dataCheck(Array.isArray(value.roundVersions.pairs));

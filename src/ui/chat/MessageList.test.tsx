@@ -587,3 +587,154 @@ it("supports editor shortcuts without submitting composition, repeated or modifi
     expect(host.querySelector("textarea")).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it("applies minimal visibility scroll on edit open/expand without corrupting followingRef", async () => {
+  const { host, root, handlers } = setup();
+  let streamChunk = 0;
+  let currentMessages: StoredChatMessage[] = [
+    { id: "u1", role: "user", content: "Question", status: "complete", replyToId: null },
+    { id: "a1", role: "assistant", content: "Answer", status: "streaming", replyToId: "u1" },
+  ];
+  const renderList = () => root.render(<MessageList messages={currentMessages} actions={handlers} />);
+  try {
+    await act(async () => renderList());
+    const region = host.querySelector<HTMLDivElement>(".message-scroll-region")!;
+    let scrollHeight = 1200;
+    let scrollTop = 0;
+    Object.defineProperties(region, {
+      clientHeight: { configurable: true, get: () => 500 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: { configurable: true, get: () => scrollTop, set: (v: number) => { scrollTop = Math.max(0, Math.min(v, scrollHeight - 500)); } },
+    });
+    vi.spyOn(region, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 500, left: 0, right: 800, width: 800, height: 500, x: 0, y: 0, toJSON: () => ({}) });
+
+    // Position at bottom first so previousScrollTopRef is 700, then scroll up to 600 (100px from bottom) to pause followingRef.
+    currentMessages = [...currentMessages];
+    await act(async () => renderList());
+    expect(region.scrollTop).toBe(700);
+    await act(async () => {
+      region.scrollTop = 600;
+      region.dispatchEvent(new Event("scroll"));
+    });
+
+    // Simulate editor clipped below bottom (including 12px fade mask): bottom=560 > 488 -> needs delta 72.
+    // Moving 600 -> 672 lands within 48px of bottom (28px); baseline sync must keep followingRef false.
+    let editorTop = 320;
+    let editorBottom = 560;
+    const origGetRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("message-editor")) {
+        return { top: editorTop, bottom: editorBottom, left: 0, right: 600, width: 600, height: editorBottom - editorTop, x: 0, y: editorTop, toJSON: () => ({}) };
+      }
+      return origGetRect.call(this);
+    });
+
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
+    expect(region.scrollTop).toBe(672);
+
+    // Browser async scroll event after programmatic scroll into the 48px bottom zone must NOT resume followingRef.
+    await act(async () => region.dispatchEvent(new Event("scroll")));
+    scrollHeight += 100;
+    currentMessages = [currentMessages[0], { ...currentMessages[1], content: `Answer ${++streamChunk}` }];
+    await act(async () => renderList());
+    expect(region.scrollTop).toBe(672);
+
+    // Expanding when clipped past both top clamp and bottom clamps delta to editorTop - (regionTop + 8).
+    editorTop = 60;
+    editorBottom = 600;
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+    expect(region.scrollTop).toBe(672 + (60 - 8));
+
+    // Collapsing does not scroll.
+    const afterExpand = region.scrollTop;
+    editorTop = 320;
+    editorBottom = 560;
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+    expect(region.scrollTop).toBe(afterExpand);
+
+    // Cancel and re-open when a tall non-last message collapses above the viewport (editorTop < regionTop + 8).
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-actions button")!.click());
+    editorTop = -192;
+    editorBottom = 108;
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
+    expect(region.scrollTop).toBe(afterExpand - 200);
+    await act(async () => region.dispatchEvent(new Event("scroll")));
+    scrollHeight += 100;
+    currentMessages = [currentMessages[0], { ...currentMessages[1], content: `Answer ${++streamChunk}` }];
+    await act(async () => renderList());
+    expect(region.scrollTop).toBe(afterExpand - 200);
+
+    // Resume following at the bottom, then open a tall bottom message whose editor shrinks scrollHeight
+    // and clamps scrollTop downward while safeDelta === 0: followingRef must stay true.
+    await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-actions button")!.click());
+    await act(async () => {
+      region.scrollTop = scrollHeight - 500;
+      region.dispatchEvent(new Event("scroll"));
+    });
+    editorTop = 120;
+    editorBottom = 420;
+    scrollHeight = 850;
+    region.scrollTop = 350; // Simulate browser clamping scrollTop when tall message turns into shorter editor.
+    await act(async () => host.querySelector<HTMLButtonElement>("article:nth-child(2) [aria-label='编辑']")!.click());
+    await act(async () => region.dispatchEvent(new Event("scroll")));
+    scrollHeight += 120;
+    currentMessages = [currentMessages[0], { ...currentMessages[1], content: `Answer ${++streamChunk}` }];
+    await act(async () => renderList());
+    expect(region.scrollTop).toBe(470);
+  } finally {
+    vi.restoreAllMocks();
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("keeps auto-following active when wheeling upward inside a scrolled editor textarea, and pauses at textarea top", async () => {
+  const { host, root, handlers } = setup();
+  let streamChunk = 0;
+  let currentMessages: StoredChatMessage[] = [
+    { id: "u1", role: "user", content: "long\n".repeat(40), status: "complete", replyToId: null },
+    { id: "a1", role: "assistant", content: "Streaming", status: "streaming", replyToId: "u1" },
+  ];
+  const renderList = () => root.render(<MessageList messages={currentMessages} actions={handlers} />);
+  try {
+    await act(async () => renderList());
+    const region = host.querySelector<HTMLDivElement>(".message-scroll-region")!;
+    let scrollHeight = 1000;
+    let scrollTop = 0;
+    Object.defineProperties(region, {
+      clientHeight: { configurable: true, get: () => 400 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: { configurable: true, get: () => scrollTop, set: (v: number) => { scrollTop = Math.max(0, Math.min(v, scrollHeight - 400)); } },
+    });
+    const grow = async () => {
+      scrollHeight += 100;
+      currentMessages = [currentMessages[0], { ...currentMessages[1], content: `Streaming ${++streamChunk}` }];
+      await act(async () => renderList());
+    };
+    await grow();
+    expect(region.scrollTop).toBe(700);
+
+    await act(async () => host.querySelector<HTMLButtonElement>("article:first-child [aria-label='编辑']")!.click());
+    const textarea = host.querySelector<HTMLTextAreaElement>(".message-editor textarea")!;
+    let textareaTop = 120;
+    Object.defineProperties(textarea, {
+      clientHeight: { configurable: true, get: () => 200 },
+      scrollHeight: { configurable: true, get: () => 600 },
+      scrollTop: { configurable: true, get: () => textareaTop, set: (v: number) => { textareaTop = v; } },
+    });
+
+    // Upward wheel while textarea still has scrollTop > 0 must NOT pause followingRef.
+    await act(async () => textarea.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -40 })));
+    await grow();
+    expect(region.scrollTop).toBe(800);
+
+    // Upward wheel once textarea reaches scrollTop === 0 DOES pause followingRef.
+    textareaTop = 0;
+    await act(async () => textarea.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -40 })));
+    await grow();
+    expect(region.scrollTop).toBe(800);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

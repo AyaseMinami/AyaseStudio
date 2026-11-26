@@ -1,5 +1,17 @@
 # Ayase Studio v0.1 Plan
 
+## DeepSeek 专项收口 #139（2026-11-26）
+
+2026-11-26 完成 DeepSeek 搜索兼容与新 API 能力接入优化专项（Epic `#139`）收口：`#140`（独立 Search API）、`#141`（Responses / Anthropic 服务端联网工具）、`#142`（三协议内联 Vision 核验与文档边界）、`#143`（思考强度核验与 Anthropic `thinking_tokens` 统计）与 `#145`（`deepseek-ai/chat-demo` 源码调研）均已实施并关闭；`#144`（独立 Fetch API）经产品边界评估暂不纳入当前范围并以 `not planned` 关闭；历史 `#40` 已依据 `#143` 核对的现行官方 `reasoning_effort: "none"` 合同关闭；Epic `#139` 已正式关闭。同日执行项目收尾清理，移除忽略目录中的历史过程缓存、验证截图、日志与旧测试安装包，保留源码、文档、本机凭据与真实用户绘图素材。
+
+## DeepSeek 思考强度控制核验与 Anthropic 思考 Token 用量统计 #143（2026-11-26）
+
+按已复核定稿的 [设计案](ISSUE-143-DESIGN.md) 在本地实施 `#143`：在 `src/chat/usage.ts` 的 `anthropic-native` 归一化分支补齐 `output_tokens_details.thinking_tokens` → `reasoningTokens`（保留显式 `0`、忽略 `safety_tokens`、拦截 `thinking_tokens > output_tokens` 及缺少或非法 `output_tokens` 时的无主 `thinking_tokens`），并在 `mergeTokenUsage`、`AnthropicNativeTransport` 与 `GenerationMeasurement` 实施 Anthropic 输出/思考成对替换与 `message_stop` 终态确认（含溢出联动清理），防止早期 `message_delta` 的旧思考数或溢出帧思考数泄漏到终态指标。零 Dexie schema、数据字段策略、备份版本或 UI 变更；针对 DeepSeek V4 / V4.1 文档化协议形态补齐 Chat Completions、Responses 与 Anthropic Messages 的思考控制映射与思维链解码合成确定性回归测试，并同步更新 [PROTOCOLS.md](PROTOCOLS.md) 与 [#107 用量字段表](ISSUE-107-IMPLEMENTATION.md)。2026-11-26 用户确认 `#143` 验收通过并授权提交、推送及关闭远端 Issue；实际交付以 Git 历史与远端 Issue 状态为准。
+
+## DeepSeek 服务端联网工具 #141（2026-11-26）
+
+按用户 2026-11-26 确认的 [设计案](ISSUE-141-DESIGN.md)（命名「DeepSeek 服务端联网」，选定 A1 + B1 + C1）在本地实施 `deepseek_web_search` 与 `deepseek_read_url` 双协议（`anthropic-native` 与 `openai-responses`）支持。`openai-chat` 与 `gemini-native` 禁用新选并在普通发送、重新生成与编辑并发送的统一预检中零请求拦截，保留 `openai-chat` 原生 `web_search_options` 不变。补齐双协议解码、按内容块归并的 Unicode 码点引用换算、有界来源 ID 与摘要预算、签名 `read_link` 多轮回传与上下文预算同步、仅保存用户编辑失效关联回放、DeepSeek 流式安全占位落盘、拒答原子终态清理与续写全量守卫，并将备份模块升级为 `search v5` + `chat v4`（`session` 保持 v1）。本地确定性测试与代码审查不代替真实供应商实测、原生桌面交互验收或远端 Issue 关闭。
+
 ## SVG／GIF 绘图输出（2026-11-09）
 
 用户在当前任务中要求实现 OpenAI Images 的 SVG 和 GIF 支持。范围包含格式选择、SVG author model、GIF 帧数／间隔、冻结参数、旧设置兼容、原件保存与恢复、预览、原格式及 PNG 导出。SVG/GIF 使用文生图，参考输入冲突显式阻止。验收覆盖安全内容拒绝、旧数据、设置备份恢复、离线全链路、隔离浏览器与原生启动。供应商实测和正式发布分别记录。
@@ -158,7 +170,7 @@ Build a fast, local-first desktop chat client with a deliberately small feature 
 
 ### Issue #19 chat content width
 
-聊天标题栏的展开/收窄按钮同步调整消息列与输入框。默认窄屏居中（最大 48rem），宽屏占满聊天工作区并保留左右留白；空间不足时均随可用宽度收缩。布局作为本机全局偏好保存，切换助手、对话或设置页及重启均保留；不改变侧栏状态、窗口尺寸或生成状态。
+聊天标题栏的展开/收窄按钮同步调整消息列与输入框。默认窄屏居中（最大 55rem，2026-11-25 由 48rem 调宽以补偿外留白、气泡内边距与左侧头像列占位），宽屏占满聊天工作区并保留左右留白；空间不足时均随可用宽度收缩。布局作为本机全局偏好保存，切换助手、对话或设置页及重启均保留；不改变侧栏状态、窗口尺寸或生成状态。
 
 ## v0.1 scope
 

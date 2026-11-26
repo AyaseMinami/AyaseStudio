@@ -40,7 +40,7 @@ describe("historical reply model backup contract", () => {
   it("exports chat v3 and retains exact main/round snapshots through actual restore and re-export", async () => {
     const input = state(), original = structuredClone(input), io = files();
     const document = await createBackupDocument(input, options, io);
-    expect(document.compatibility!.modules.chat).toEqual({ version: 3, minimumReaderVersion: 3, requiredCapabilities: [] });
+    expect(document.compatibility!.modules.chat).toEqual({ version: 4, minimumReaderVersion: 4, requiredCapabilities: [] });
     const read = (await decodeBackup(await encodeBackup(document))).document;
     const { repository, before } = await target();
     await repository.restore(createRestorePlan(read, before, "replace"), before, io);

@@ -54,14 +54,34 @@ function validated(usage: TokenUsage): TokenUsage | undefined {
   return Object.keys(result).length ? result : undefined;
 }
 
+export interface MergeTokenUsageOptions {
+  /** When next supplies a valid outputTokens, replace output-level details together instead of carrying stale reasoningTokens forward. */
+  replaceOutput?: boolean;
+}
+
 /** Usage snapshots are cumulative observations, never increments to add together. */
-export function mergeTokenUsage(previous: TokenUsage | undefined, next: TokenUsage | undefined): TokenUsage | undefined {
+export function mergeTokenUsage(
+  previous: TokenUsage | undefined,
+  next: TokenUsage | undefined,
+  options?: MergeTokenUsageOptions,
+): TokenUsage | undefined {
   const supplied: TokenUsage = {};
   for (const key of Object.keys(next ?? {}) as Array<keyof TokenUsage>) {
     const value = count(next?.[key]);
     if (value !== undefined) supplied[key] = value;
   }
-  return validated({ ...previous, ...supplied });
+  if (options?.replaceOutput && supplied.outputTokens === undefined) {
+    delete supplied.reasoningTokens;
+  }
+  const base = options?.replaceOutput && supplied.outputTokens !== undefined && previous
+    ? { ...previous, reasoningTokens: undefined }
+    : previous;
+  const merged = validated({ ...base, ...supplied });
+  if (options?.replaceOutput && merged && merged.outputTokens === undefined && merged.reasoningTokens !== undefined) {
+    delete merged.reasoningTokens;
+    return Object.keys(merged).length ? merged : undefined;
+  }
+  return merged;
 }
 
 /** Malformed optional metadata must never make otherwise readable output fail. */
@@ -87,9 +107,14 @@ export function normalizeTokenUsage(protocol: ChatProtocol, value: unknown): Tok
     });
   }
   if (protocol === "anthropic-native") {
+    const outputDetails = record(raw.output_tokens_details);
+    const outputTokens = count(raw.output_tokens);
     return validated({
-      uncachedInputTokens: count(raw.input_tokens), outputTokens: count(raw.output_tokens),
-      cacheReadTokens: count(raw.cache_read_input_tokens), cacheWriteTokens: count(raw.cache_creation_input_tokens),
+      uncachedInputTokens: count(raw.input_tokens),
+      outputTokens,
+      cacheReadTokens: count(raw.cache_read_input_tokens),
+      cacheWriteTokens: count(raw.cache_creation_input_tokens),
+      reasoningTokens: outputTokens !== undefined ? count(outputDetails.thinking_tokens) : undefined,
     });
   }
   const inputTokens = count(raw.promptTokenCount);

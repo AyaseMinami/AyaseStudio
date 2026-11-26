@@ -5,23 +5,25 @@ export interface SearchSettings {
   numResults: number;
 }
 
-export type ExternalSearchProvider = "exa-mcp" | "exa-api" | "tavily" | "zhipu";
+export type ExternalSearchProvider = "exa-mcp" | "exa-api" | "tavily" | "zhipu" | "deepseek";
 export interface TavilySearchSettings extends SearchSettings { enabled: boolean; searchDepth: "basic" | "advanced" }
 export type ZhipuSearchEngine = "search_std" | "search_pro" | "search_pro_sogou" | "search_pro_quark";
 export interface ZhipuSearchSettings extends SearchSettings { enabled: boolean; searchEngine: ZhipuSearchEngine }
-export type SearchProfile = SearchSettings | TavilySearchSettings | ZhipuSearchSettings;
+export interface DeepSeekSearchSettings extends SearchSettings { enabled: boolean }
+export type SearchProfile = SearchSettings | TavilySearchSettings | ZhipuSearchSettings | DeepSeekSearchSettings;
 export interface SearchConfiguration {
-  version: 3;
+  version: 4;
   exaMcp: SearchSettings;
   exaApi: SearchSettings;
   tavily: TavilySearchSettings;
   zhipu: ZhipuSearchSettings;
+  deepseek: DeepSeekSearchSettings;
 }
 
 export const SEARCH_SETTINGS_KEY = "ayase-studio.search.v1";
 export const SEARCH_SETTINGS_CHANGED = "ayase-search-settings-changed";
-export const searchProfileKeys = { "exa-api": "exaApi", "exa-mcp": "exaMcp", tavily: "tavily", zhipu: "zhipu" } as const;
-export const searchProviderNames: Record<ExternalSearchProvider, string> = { "exa-api": "Exa API", "exa-mcp": "Exa MCP", tavily: "Tavily", zhipu: "智谱" };
+export const searchProfileKeys = { "exa-api": "exaApi", "exa-mcp": "exaMcp", tavily: "tavily", zhipu: "zhipu", deepseek: "deepseek" } as const;
+export const searchProviderNames: Record<ExternalSearchProvider, string> = { "exa-api": "Exa API", "exa-mcp": "Exa MCP", tavily: "Tavily", zhipu: "智谱", deepseek: "DeepSeek" };
 
 type SettingsStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -29,29 +31,47 @@ export function defaultSearchSettings(provider: "exa-mcp" | "exa-api" = "exa-mcp
   return { version: 1, baseUrl: provider === "exa-api" ? "https://api.exa.ai" : "https://mcp.exa.ai/mcp", apiKey: "", numResults: 5 };
 }
 
+function defaultTavilySettings(): TavilySearchSettings {
+  return { version: 1, baseUrl: "https://api.tavily.com", apiKey: "", numResults: 5, enabled: false, searchDepth: "basic" };
+}
+
+function defaultZhipuSettings(): ZhipuSearchSettings {
+  return { version: 1, baseUrl: "https://open.bigmodel.cn", apiKey: "", numResults: 5, enabled: false, searchEngine: "search_std" };
+}
+
+function defaultDeepSeekSettings(): DeepSeekSearchSettings {
+  return { version: 1, baseUrl: "https://api.deepseek.com", apiKey: "", numResults: 5, enabled: false };
+}
+
 export function defaultSearchConfiguration(): SearchConfiguration {
-  return { version: 3, exaMcp: defaultSearchSettings(), exaApi: defaultSearchSettings("exa-api"),
-    tavily: { version: 1, baseUrl: "https://api.tavily.com", apiKey: "", numResults: 5, enabled: false, searchDepth: "basic" },
-    zhipu: { version: 1, baseUrl: "https://open.bigmodel.cn", apiKey: "", numResults: 5, enabled: false, searchEngine: "search_std" } };
+  return { version: 4, exaMcp: defaultSearchSettings(), exaApi: defaultSearchSettings("exa-api"),
+    tavily: defaultTavilySettings(), zhipu: defaultZhipuSettings(), deepseek: defaultDeepSeekSettings() };
 }
 
 export function validateSearchConfiguration(raw: unknown): SearchConfiguration {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("网络搜索配置格式无效。");
   const value = migrateData(raw, searchDataMigration);
-  if (value.version !== 3 || Object.keys(value).some(key => !backupFields(dataPolicies.search, true).includes(key))) {
+  if (value.version !== 4 || Object.keys(value).some(key => !backupFields(dataPolicies.search, true).includes(key))) {
     throw new Error("网络搜索配置版本或字段不受支持。");
   }
-  return { version: 3, exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi),
-    tavily: validateTavilySettings(value.tavily), zhipu: validateZhipuSettings(value.zhipu) };
+  return { version: 4, exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi),
+    tavily: validateTavilySettings(value.tavily), zhipu: validateZhipuSettings(value.zhipu),
+    deepseek: validateDeepSeekSettings(value.deepseek) };
 }
 
 export const searchDataMigration: DataMigration = {
-  version: 3, oldestVersion: 1,
+  version: 4, oldestVersion: 1,
   migrations: {
     1: value => ({ version: 2, exaMcp: validateSearchSettings(value), exaApi: defaultSearchSettings("exa-api") }),
     2: value => {
       if (Object.keys(value).some(key => !["version", "exaMcp", "exaApi"].includes(key))) throw new Error("网络搜索配置字段不受支持。");
-      return { ...defaultSearchConfiguration(), exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi) };
+      return { version: 3, exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi),
+        tavily: defaultTavilySettings(), zhipu: defaultZhipuSettings() };
+    },
+    3: value => {
+      if (Object.keys(value).some(key => !["version", "exaMcp", "exaApi", "tavily", "zhipu"].includes(key))) throw new Error("网络搜索配置字段不受支持。");
+      return { ...defaultSearchConfiguration(), exaMcp: validateSearchSettings(value.exaMcp), exaApi: validateSearchSettings(value.exaApi),
+        tavily: validateTavilySettings(value.tavily), zhipu: validateZhipuSettings(value.zhipu) };
     },
   },
 };
@@ -60,7 +80,7 @@ export function searchSettingsFor(config: SearchConfiguration, provider: Externa
   return config[searchProfileKeys[provider]];
 }
 
-function validateAdditionalSettings(raw: unknown, policy: typeof dataPolicies.tavilyProfile | typeof dataPolicies.zhipuProfile) {
+function validateAdditionalSettings(raw: unknown, policy: typeof dataPolicies.tavilyProfile | typeof dataPolicies.zhipuProfile | typeof dataPolicies.deepseekProfile) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("网络搜索配置格式无效。");
   const value = raw as Record<string, unknown>;
   if (Object.keys(value).some(key => !backupFields(policy, true).includes(key))) throw new Error("网络搜索配置字段不受支持。");
@@ -83,8 +103,13 @@ export function validateZhipuSettings(raw: unknown): ZhipuSearchSettings {
   return { ...base, enabled, searchEngine: value.searchEngine as ZhipuSearchEngine };
 }
 
+export function validateDeepSeekSettings(raw: unknown): DeepSeekSearchSettings {
+  const { base, enabled } = validateAdditionalSettings(raw, dataPolicies.deepseekProfile);
+  return { ...base, enabled };
+}
+
 export function assertSearchEnabled(provider: ExternalSearchProvider, settings: SearchProfile): void {
-  if ((provider === "tavily" || provider === "zhipu") && (!("enabled" in settings) || !settings.enabled)) {
+  if ((provider === "tavily" || provider === "zhipu" || provider === "deepseek") && (!("enabled" in settings) || !settings.enabled)) {
     throw new Error(`${searchProviderNames[provider]} 搜索已关闭，请在网络搜索设置中启用并保存，或重新选择搜索方式。`);
   }
 }
@@ -151,8 +176,18 @@ export function saveSearchSettings(settings: SearchSettings, storage?: SettingsS
   return validated;
 }
 
+const searchWhitespace = /^[\p{White_Space}\uFEFF]$/u;
+
+export function trimSearchQuery(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && searchWhitespace.test(text[start])) start++;
+  while (end > start && searchWhitespace.test(text[end - 1])) end--;
+  return text.slice(start, end);
+}
+
 export function validateSearchQuery(text: string): string {
-  const query = text.trim();
+  const query = trimSearchQuery(text);
   if (!query) throw new Error("请输入搜索问题，或关闭外部搜索。");
   if (Array.from(query).length > 2000) throw new Error("搜索问题不能超过 2000 个字符，请缩短后重试。");
   return query;

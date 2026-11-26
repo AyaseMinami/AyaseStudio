@@ -18,8 +18,10 @@ function keyCount(preview: BackupPreview) {
   if (!preview.document.options.credentials) return 0;
   const search = preview.document.searchSettings;
   const searchKeys = !search ? [] : search.version === 1 ? [search.apiKey]
-    : [search.exaApi.apiKey, search.exaMcp.apiKey, ...(search.version === 3 ? [search.tavily.apiKey, search.zhipu.apiKey] : [])];
-  const searchCount = searchKeys.filter((key) => typeof key === "string" && key.length > 0).length;
+    : [search.exaApi.apiKey, search.exaMcp.apiKey,
+      ...(search.version === 3 || search.version === 4 ? [search.tavily.apiKey, search.zhipu.apiKey] : []),
+      ...(search.version === 4 ? [search.deepseek.apiKey] : [])];
+  const searchCount = searchKeys.filter((key) => typeof key === "string" && key.trim().length > 0).length;
   const config = preview.document.connections;
   if (!config || typeof config !== "object" || !("providers" in config) || !Array.isArray(config.providers)) return searchCount;
   return config.providers.reduce((count: number, provider: unknown) => {
@@ -39,7 +41,8 @@ function PreviewSummary({ preview }: { preview: BackupPreview }) {
     <div><dt>文件资源</dt><dd>{preview.counts.files}</dd></div>
     <div><dt>连接配置</dt><dd>{preview.document.options.connections ? `包含 · ${preview.counts.connections} 个连接` : "不包含"}</dd></div>
     <div><dt>网络搜索配置</dt><dd>{preview.document.searchSettings
-      ? preview.document.searchSettings.version === 3 ? "包含 · Exa API、Exa MCP、Tavily 与智谱"
+      ? preview.document.searchSettings.version === 4 ? "包含 · Exa API、Exa MCP、Tavily、智谱与 DeepSeek"
+        : preview.document.searchSettings.version === 3 ? "包含 · Exa API、Exa MCP、Tavily 与智谱"
         : preview.document.searchSettings.version === 2 ? "包含 · Exa API 与 Exa MCP" : "包含 · Exa MCP（旧配置），保留本机 Exa API 设置与 Key"
       : "不包含（旧备份），保留本机搜索设置与 Key"}</dd></div>
     <div><dt>API Key</dt><dd>{preview.document.options.credentials ? `包含 · ${keyCount(preview)} 个` : "不包含"}</dd></div>
@@ -132,7 +135,7 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
       </nav>
       <section className="settings-card backup-card" inert={recoveryLocked || undefined} aria-labelledby={`${modeName}-export`}>
         <h2 id={`${modeName}-export`}>导出 Ayase 备份</h2>
-        <p className="muted-text">包含助手、对话、消息、保存的附件、头像快照与背景原图、应用偏好、Exa API 与 Exa MCP 搜索设置、连接配置和 API Key，以及显式保存的绘图提示词预设与绘图设置。绘图自动草稿提示词、任务历史和图片、聊天未发送草稿、缓存及派生背景缩略图不纳入。新版备份需使用支持版本 5 的 Ayase 恢复；旧版备份仍可读取。</p>
+        <p className="muted-text">包含助手、对话、消息、保存的附件、头像快照与背景原图、应用偏好、网络搜索设置、连接配置和 API Key，以及显式保存的绘图提示词预设与绘图设置。绘图自动草稿提示词、任务历史和图片、聊天未发送草稿、缓存及派生背景缩略图不纳入。新版备份需使用支持文档 v5 与当前模块版本的 Ayase 恢复；旧版备份仍可读取。</p>
         <div className="backup-encryption">
           <span id={`${modeName}-encryption`}>加密备份</span>
           <button type="button" role="switch" aria-labelledby={`${modeName}-encryption`} aria-checked={encrypted} className="backup-switch ui-switch" disabled={busy} onClick={() => {
@@ -182,7 +185,7 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
             {currentConflicts.warnings.length > 0 && <ul>{currentConflicts.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
           </div>}
           <label className="backup-check"><input className="ui-checkbox" type="checkbox" checked={confirmed} disabled={busy || !currentConflicts} onChange={(event) => { if (!operation.current) setConfirmed(event.currentTarget.checked); }} />我已确认导入策略{mode === "replace" ? "，同意替换当前数据" : ""}</label>
-          {replaceKeys && <label className="backup-check"><input className="ui-checkbox" type="checkbox" checked={keysConfirmed} disabled={busy || !currentConflicts} onChange={(event) => { if (!operation.current) setKeysConfirmed(event.currentTarget.checked); }} />我同意覆盖当前连接配置和 API Key（含 Exa API / MCP 搜索 Key）</label>}
+          {replaceKeys && <label className="backup-check"><input className="ui-checkbox" type="checkbox" checked={keysConfirmed} disabled={busy || !currentConflicts} onChange={(event) => { if (!operation.current) setKeysConfirmed(event.currentTarget.checked); }} />我同意覆盖当前连接配置和 API Key（含网络搜索 Key）</label>}
           <button type="button" className={`settings-button ${mode === "replace" ? "settings-button-danger" : "settings-button-primary"}`} disabled={busy || !canRestore} onClick={() => {
             if (!canRestore) return;
             void run(async () => {

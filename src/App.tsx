@@ -8,6 +8,7 @@ import { BackgroundFocusDialog } from "./ui/settings/BackgroundFocusDialog";
 import { BackgroundImage } from "./ui/settings/BackgroundImage";
 import { useChatSession } from "./chat/useChatSession";
 import { getThinkingSettings } from "./chat/thinking";
+import { resolveDeepSeekWebTools } from "./search/mode";
 import { AppShell, type AppPage } from "./ui/AppShell";
 import { ChatWorkspace } from "./ui/chat/ChatWorkspace";
 import { DrawingWorkspace } from "./ui/drawing/DrawingWorkspace";
@@ -135,6 +136,8 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
           onThinkingChange={(value) => void chat.setThinking(value)}
           searchMode={chat.searchMode}
           onSearchModeChange={(mode) => void chat.setSearchMode(mode)}
+          deepseekWebTools={resolveDeepSeekWebTools(chat.sessionConfig)}
+          onDeepSeekWebToolsChange={(tools) => void chat.setDeepSeekWebTools(tools)}
           protocol={chat.activeConnection?.protocol}
           protocolLabel={modelLabel}
           modelLabel={chat.activeModel?.displayName || chat.activeModel?.modelId || (chat.workspace.effective.modelId ? "模型已失效" : "选择模型")}
@@ -216,6 +219,7 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
             composerTransparency: appearance.composerTransparency,
             sidebarGlassEnabled: appearance.sidebarGlassEnabled,
             composerGlassEnabled: appearance.composerGlassEnabled,
+            assistantBubbleMode: appearance.assistantBubbleMode,
             assistantBubbleTransparency: appearance.assistantBubbleTransparency,
             effectiveAccentColor: appearance.effectiveAccentColor,
             effectiveCanvasColor: appearance.effectiveCanvasColor,
@@ -243,6 +247,7 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
             onComposerTransparencyChange: appearance.setComposerTransparency,
             onSidebarGlassEnabledChange: appearance.setSidebarGlassEnabled,
             onComposerGlassEnabledChange: appearance.setComposerGlassEnabled,
+            onAssistantBubbleModeChange: appearance.setAssistantBubbleMode,
             onAssistantBubbleTransparencyChange: appearance.setAssistantBubbleTransparency,
             onEditBackgroundFocus: appearance.editBackgroundFocus,
             onBackgroundFitChange: appearance.setBackgroundFit,

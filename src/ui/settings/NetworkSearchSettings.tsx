@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Eye, EyeOff, RotateCcw, X } from "lucide-react";
-import { defaultSearchConfiguration, loadSearchConfiguration, saveSearchConfiguration, searchProfileKeys, searchProviderNames, validateSearchSettings, validateTavilySettings, validateZhipuSettings, type SearchProfile, type SearchConfiguration, type ExternalSearchProvider } from "../../search/settings";
+import { defaultSearchConfiguration, loadSearchConfiguration, saveSearchConfiguration, searchProfileKeys, searchProviderNames, validateDeepSeekSettings, validateSearchSettings, validateTavilySettings, validateZhipuSettings, type SearchProfile, type SearchConfiguration, type ExternalSearchProvider } from "../../search/settings";
 import { searchExa } from "../../search/runtime";
 import { validateExaApiSettings } from "../../search/exaApi";
 import { validateTavilyApiSettings } from "../../search/tavily";
 import { validateZhipuApiSettings } from "../../search/zhipu";
+import { validateDeepSeekApiSettings } from "../../search/deepseek";
 import { openExternal } from "../../chat/externalLinks";
 import type { SearchRecord } from "../../chat/nativeSearch";
 import { SearchResults } from "../chat/SearchResults";
@@ -30,7 +31,7 @@ function SearchProfileCard({ provider, initial, onSave }: {
   const mounted = useRef(false);
   const name = searchProviderNames[provider];
   const api = provider === "exa-api";
-  const additional = provider === "tavily" || provider === "zhipu";
+  const additional = provider === "tavily" || provider === "zhipu" || provider === "deepseek";
   const keyRequired = api || ("enabled" in draft && draft.enabled);
   const testQuery = additional ? PROVIDER_TEST_QUERY : TEST_QUERY;
   const id = provider;
@@ -49,6 +50,10 @@ function SearchProfileCard({ provider, initial, onSave }: {
       if (provider === "zhipu") {
         const settings = validateZhipuSettings(candidate);
         return forTest || settings.enabled ? validateZhipuApiSettings(settings) : settings;
+      }
+      if (provider === "deepseek") {
+        const settings = validateDeepSeekSettings(candidate);
+        return forTest || settings.enabled ? validateDeepSeekApiSettings(settings) : settings;
       }
       return api ? validateExaApiSettings(candidate) : validateSearchSettings(candidate);
     } catch (cause) {
@@ -107,7 +112,7 @@ function SearchProfileCard({ provider, initial, onSave }: {
       </div><p className="network-search-service-description">{additional ? "启用并保存后，可在聊天中选择" : api ? "使用 API Key 连接 Exa 搜索" : "支持匿名搜索，也可填写独立 Key"}</p></div>
       {"enabled" in draft && <div className="settings-label-help">
         <label className="network-search-enable" htmlFor={id + "-enabled"}><input id={id + "-enabled"} className="ui-switch" type="checkbox" role="switch" checked={draft.enabled} disabled={busy}
-          onChange={(event) => { setDraft({ ...draft, enabled: event.target.checked }); setFeedback(""); }} />启用{name === "Tavily" ? " Tavily " : name}搜索</label>
+          onChange={(event) => { setDraft({ ...draft, enabled: event.target.checked }); setFeedback(""); }} />启用{name === "Tavily" || name === "DeepSeek" ? ` ${name} ` : name}搜索</label>
         <SettingsHelp label={name + "启用"}>启用并保存后出现在聊天搜索菜单；关闭后保存即可隐藏。测试搜索也需要 API Key。</SettingsHelp>
       </div>}
     </header>
@@ -173,6 +178,10 @@ function SearchProfileCard({ provider, initial, onSave }: {
       <span className="settings-label-help">按量计费 · ¥0.01–0.05/次<SettingsHelp label="智谱计费与限制">search_std ¥0.01/次；search_pro ¥0.03/次；search_pro_sogou 与 search_pro_quark ¥0.05/次。Coding Plan 的 MCP 搜索与此处按量计费的搜索 API 分开，不代表包含本接口额度。搜索问题最多 70 个字符；Sogou 请求 10 条后按设置数量显示。</SettingsHelp></span>
       {officialLink("https://bigmodel.cn", "获取智谱 API Key")}{officialLink("https://docs.bigmodel.cn/cn/guide/tools/web-search", "智谱官方搜索文档")}
     </div>}
+    {provider === "deepseek" && <div className="network-search-provider-info">
+      <span className="settings-label-help">按量计费 · ¥5/1,000 次<SettingsHelp label="DeepSeek 计费与限制">仅对成功且返回非空结果的请求计费（¥5 / 1,000 次，账户级 100 QPS）；空结果、失败或超时不计费，且单次费用与返回条数无关。搜索问题支持 1–128 个字符，原样透传 site:、-site: 与引号等语法。此接口为独立外部搜索，与 DeepSeek 聊天连接密钥分开配置，可供任意模型共用。</SettingsHelp></span>
+      {officialLink("https://platform.deepseek.com/api_keys", "获取 DeepSeek API Key")}{officialLink("https://api-docs.deepseek.com/zh-cn/guides/search/", "DeepSeek 官方搜索文档")}
+    </div>}
     {error && <p className="error-banner" role="alert">{error}</p>}
     {feedback && <p className="muted-text" role="status">{feedback}</p>}
     {test && <div aria-label={name + " 测试搜索结果"}><SearchResults search={test} showCitationNotice={false} /></div>}
@@ -219,6 +228,7 @@ export function NetworkSearchSettings() {
       <SearchProfileCard provider="exa-mcp" initial={initial.exaMcp} onSave={(profile) => saveProfile("exa-mcp", profile)} />
       <SearchProfileCard provider="tavily" initial={initial.tavily} onSave={(profile) => saveProfile("tavily", profile)} />
       <SearchProfileCard provider="zhipu" initial={initial.zhipu} onSave={(profile) => saveProfile("zhipu", profile)} />
+      <SearchProfileCard provider="deepseek" initial={initial.deepseek} onSave={(profile) => saveProfile("deepseek", profile)} />
     </div>}
   </section>;
 }

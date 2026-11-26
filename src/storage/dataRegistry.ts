@@ -4,13 +4,13 @@ import type { DataVersion } from "./dataContract";
 /** Module data versions are independent of application, Dexie schema and backup envelope versions. */
 export const dataModules = {
   general: { version: 2, capabilities: [], resources: "device-local residency, exit confirmation and startup update checks; intentionally excluded from portable backup" },
-  chat: { version: 3, capabilities: [], resources: "managed attachments; scoped provider replay; per-invocation generation metrics v1; exact requested API model snapshots; no runtime continuation" },
+  chat: { version: 4, capabilities: [], resources: "managed attachments; scoped Anthropic and OpenAI Responses read_link provider replay; per-invocation generation metrics v1; exact requested API model snapshots; no runtime continuation" },
   session: { version: 1, capabilities: [], resources: "none; parameter compatibility only" },
   workspace: { version: 1, capabilities: [], resources: "model/assistant/conversation IDs remapped by restore plan" },
   avatars: { version: 1, capabilities: [], resources: "encoded Blobs and library ownership" },
-  appearance: { version: 3, capabilities: [], resources: "shared titlebar/rail transparency defaults to 40%, sidebar to 50%, message bubbles to 12%; independent glass flags default sidebar off/composer on; managed background originals; derived thumbnails excluded" },
+  appearance: { version: 4, capabilities: [], resources: "shared titlebar/rail transparency defaults to 40%, sidebar to 50%, assistant bubble mode to auto and assistant bubble transparency to 25% (user bubble opacity decoupled); independent glass flags default sidebar off/composer on; managed background originals; derived thumbnails excluded" },
   connections: { version: 6, capabilities: [], resources: "connection-scoped model groups and explicit model membership; built-in preset identities and initialization marker; bundled brand IDs; immutable provider avatar snapshots exported only with selected connections; local record remains v3" },
-  search: { version: 3, capabilities: [], resources: "independent Exa/Tavily/Zhipu credentials; disabled new providers; v1 MCP and v2 Exa migrate without writes; governs new provider selections and records across modules" },
+  search: { version: 5, capabilities: [], resources: "independent Exa/Tavily/Zhipu/DeepSeek credentials; disabled new providers; v1 MCP, v2 Exa and v3 Tavily/Zhipu migrate without writes; governs new provider selections, DeepSeek server web tools mode/selection and records across modules" },
   drawingSettings: { version: 5, capabilities: [], resources: "allowlisted OpenAI PNG/SVG/GIF and Gemini/Grok/Seedream controls; no prompt or image bindings" },
   drawingPresets: { version: 1, capabilities: [], resources: "explicit text only; dedicated drawing.presets projection" },
   drawingHistory: { version: 3, capabilities: [], resources: "excluded; stable logical image references; native layout v2 stores new originals in drawing root and journals in drawing/meta, legacy task directories remain readable; OpenAI PNG/SVG/GIF and Grok/Seedream frozen parameters; #110 session selections excluded, legacy draft bindings retained until explicit removal" },

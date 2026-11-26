@@ -35,8 +35,12 @@ export class GenerationMeasurement {
     if (this.streaming && event.type === "text-delta" && event.text.trim()) this.firstTextMs ??= elapsed;
     if (this.streaming && event.type === "thinking-delta" && event.text.trim()) this.firstThinkingMs ??= elapsed;
     if (event.type === "usage-update" || event.type === "completed") {
-      if (event.usage) this.usage = mergeTokenUsage(this.usage, event.usage);
-      if (event.type === "completed") this.usageComplete = mergeTokenUsage(undefined, event.usage)?.outputTokens !== undefined;
+      const replaceOutput = this.protocol === "anthropic-native" && this.streaming;
+      if (event.usage) this.usage = mergeTokenUsage(this.usage, event.usage, { replaceOutput });
+      if (event.type === "completed") {
+        this.usageComplete = this.usage?.outputTokens !== undefined
+          && mergeTokenUsage(undefined, event.usage)?.outputTokens !== undefined;
+      }
     }
     if (["completed", "failed", "aborted"].includes(event.type)) this.finishedAt ??= this.now();
   }

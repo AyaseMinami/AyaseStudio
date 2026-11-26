@@ -89,6 +89,92 @@ describe("protocol request mapping", () => {
     ] }]);
   });
 
+  it("maps DeepSeek inline Base64 PNG, JPEG, and WebP images across all three protocols without model-ID blocking (#142)", () => {
+    const png = { name: "diagram.png", mimeType: "image/png" as const, size: 3, data: "iVBORw==" };
+    const jpeg = { name: "photo.jpg", mimeType: "image/jpeg" as const, size: 3, data: "/9j/4A==" };
+    const webp = { name: "shot.webp", mimeType: "image/webp" as const, size: 4, data: "UklGRg==" };
+    const multiTurnRequest: ChatRequest = {
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "synthetic",
+      model: "deepseek-flash",
+      messages: [
+        { role: "user", content: "", attachments: [png] },
+        { role: "assistant", content: "I see a diagram." },
+        { role: "user", content: "Compare these two", attachments: [jpeg, webp] },
+      ],
+    };
+
+    const chat = buildProtocolBody("openai-chat", multiTurnRequest);
+    expect(chat.model).toBe("deepseek-flash");
+    expect(chat.messages).toEqual([
+      { role: "user", content: [
+        { type: "text", text: "" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw==" } },
+      ] },
+      { role: "assistant", content: "I see a diagram." },
+      { role: "user", content: [
+        { type: "text", text: "Compare these two" },
+        { type: "image_url", image_url: { url: "data:image/jpeg;base64,/9j/4A==" } },
+        { type: "image_url", image_url: { url: "data:image/webp;base64,UklGRg==" } },
+      ] },
+    ]);
+
+    const responses = buildProtocolBody("openai-responses", multiTurnRequest);
+    expect(responses.store).toBe(false);
+    expect(responses.input).toEqual([
+      { role: "user", content: [
+        { type: "input_text", text: "" },
+        { type: "input_image", image_url: "data:image/png;base64,iVBORw==" },
+      ] },
+      { role: "assistant", content: "I see a diagram." },
+      { role: "user", content: [
+        { type: "input_text", text: "Compare these two" },
+        { type: "input_image", image_url: "data:image/jpeg;base64,/9j/4A==" },
+        { type: "input_image", image_url: "data:image/webp;base64,UklGRg==" },
+      ] },
+    ]);
+
+    const anthropic = buildProtocolBody("anthropic-native", {
+      ...multiTurnRequest,
+      baseUrl: "https://api.deepseek.com/anthropic",
+    });
+    expect(anthropic.messages).toEqual([
+      { role: "user", content: [
+        { type: "text", text: "" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw==" } },
+      ] },
+      { role: "assistant", content: "I see a diagram." },
+      { role: "user", content: [
+        { type: "text", text: "Compare these two" },
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "/9j/4A==" } },
+        { type: "image", source: { type: "base64", media_type: "image/webp", data: "UklGRg==" } },
+      ] },
+    ]);
+
+    // Protocol neutrality: do not block deepseek-v4-pro by model ID locally;
+    // openai-chat/openai-responses leave DeepSeek's 32/48 MiB limits to upstream,
+    // while anthropic-native keeps its uniform protocol-level 10 MB Base64 image cap.
+    const overAnthropicImage = { name: "large.webp", mimeType: "image/webp" as const, size: 7_500_001, data: "A".repeat(10_000_001) };
+    for (const protocol of ["openai-chat", "openai-responses", "anthropic-native"] as const) {
+      expect(() => buildProtocolBody(protocol, {
+        ...multiTurnRequest,
+        model: "deepseek-v4-pro",
+        messages: [{ role: "user", content: "describe", attachments: [png] }],
+      })).not.toThrow();
+    }
+    for (const protocol of ["openai-chat", "openai-responses"] as const) {
+      expect(() => buildProtocolBody(protocol, {
+        ...multiTurnRequest,
+        messages: [{ role: "user", content: "describe", attachments: [overAnthropicImage] }],
+      })).not.toThrow();
+    }
+    expect(() => buildProtocolBody("anthropic-native", {
+      ...multiTurnRequest,
+      baseUrl: "https://api.deepseek.com/anthropic",
+      messages: [{ role: "user", content: "describe", attachments: [overAnthropicImage] }],
+    })).toThrow(/Anthropic.*10 MB/);
+  });
+
   it("rejects a reference without loaded bytes and enforces Anthropic's 128 MB total request limit", () => {
     expect(() => buildProtocolBody("openai-chat", { ...request, messages: [{ role: "user", content: "hi",
       attachments: [{ reference: "attachments/test.pdf", name: "test.pdf", mimeType: "application/pdf", size: 1 }] }] })).toThrow(RequestConfigError);

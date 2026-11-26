@@ -5,12 +5,13 @@ import { isAssistantDefaultAvatar, readAssistantAvatarSelection } from "../avata
 import { isThinkingSettings } from "../chat/thinking";
 import { isGeminiThinkingSettings } from "../chat/geminiThinking";
 import { defaultAppearancePreferences, readAppearancePreferences } from "../appearance/appearance";
-import { validateSearchConfiguration, validateSearchSettings, validateTavilySettings, validateZhipuSettings } from "../search/settings";
+import { validateDeepSeekSettings, validateSearchConfiguration, validateSearchSettings, validateTavilySettings, validateZhipuSettings } from "../search/settings";
 import { dataPolicies } from "../storage/dataPolicies";
 import { backupFields } from "../storage/dataContract";
 import { validateBackupCompatibility, validateGenerationMetricsCompatibility } from "./compatibility";
 import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
 import { readMessageData } from "../chat/messageData";
+import { isValidResponsesReadLinkItem } from "../chat/deepseekReplay";
 import { readDrawingPromptPresetData, readDrawingSettingsData } from "../drawing/settingsData";
 import { isBrandId } from "../avatar/brandIds";
 import { getConnectionTemplate } from "../chat/providerPresets";
@@ -43,14 +44,18 @@ function list(value: unknown, max = 100000): asserts value is any[] { check(Arra
 function optional(value: JsonRecord, key: string, validator: (value: unknown) => void) { if (key in value) validator(value[key]); }
 function model(value: unknown) { if (value !== null) id(value); }
 function config(value: unknown, version: 1 | 2 | 3 | 4 | 5) {
-  fields(value, backupFields(dataPolicies.session).filter(key => version >= 2 || key !== "webSearchProvider"),
+  fields(value, backupFields(dataPolicies.session).filter(key => (version >= 2 || key !== "webSearchProvider") && (version >= 4 || key !== "deepseekWebTools")),
     ["version", "systemInstruction", "temperature", "topP", "topK", "contextBudget", "maxOutput", "stream", "dualSamplingConfirmed", "customJson"]);
   check(value.version === 1 && typeof value.dualSamplingConfirmed === "boolean"); text(value.systemInstruction);
   for (const k of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) { fields(value[k], backupFields(dataPolicies.numeric), ["mode"]); check(["auto", "custom"].includes(value[k].mode)); if (value[k].mode === "custom") text(value[k].value, 100); }
   fields(value.customJson, ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"]);
   Object.values(value.customJson).forEach(v => text(v));
   optional(value, "webSearch", v => check(typeof v === "boolean"));
-  optional(value, "webSearchProvider", v => check(["native", "exa-mcp", ...(version >= 3 ? ["exa-api"] : []), ...(version >= 4 ? ["tavily", "zhipu"] : [])].includes(v as string)));
+  optional(value, "webSearchProvider", v => check(["native", "exa-mcp", ...(version >= 3 ? ["exa-api"] : []), ...(version >= 4 ? ["tavily", "zhipu", "deepseek", "deepseek-server"] : [])].includes(v as string)));
+  optional(value, "deepseekWebTools", v => {
+    fields(v, backupFields(dataPolicies.deepseekWebTools));
+    check(typeof v.search === "boolean" && typeof v.readUrl === "boolean" && (v.search || v.readUrl));
+  });
   optional(value, "invalidStoredConfig", text);
   // Thinking is plain option data, never connection configuration or runtime requests.
   if (value.geminiThinking !== undefined) { fields(value.geminiThinking, backupFields(dataPolicies.geminiThinking)); check(isGeminiThinkingSettings(value.geminiThinking)); }
@@ -124,22 +129,23 @@ export async function validateDocument(raw: unknown): Promise<void> {
   fields(raw.options, ["connections", "credentials"]); check(typeof raw.options.connections === "boolean" && typeof raw.options.credentials === "boolean" && (!raw.options.credentials || raw.options.connections));
   const credentials = raw.options.credentials;
   list(raw.assets, 2000);
-  function searchProfile(value: unknown, provider: "exa" | "tavily" | "zhipu" = "exa") {
-    fields(value, backupFields(provider === "tavily" ? dataPolicies.tavilyProfile : provider === "zhipu" ? dataPolicies.zhipuProfile : dataPolicies.searchProfile, credentials));
+  function searchProfile(value: unknown, provider: "exa" | "tavily" | "zhipu" | "deepseek" = "exa") {
+    fields(value, backupFields(provider === "tavily" ? dataPolicies.tavilyProfile : provider === "zhipu" ? dataPolicies.zhipuProfile : provider === "deepseek" ? dataPolicies.deepseekProfile : dataPolicies.searchProfile, credentials));
     text(value.baseUrl, 2048);
     if (credentials) text(value.apiKey, 4096);
     const profile = { ...value, apiKey: credentials ? value.apiKey : "" };
-    return provider === "tavily" ? validateTavilySettings(profile) : provider === "zhipu" ? validateZhipuSettings(profile) : validateSearchSettings(profile);
+    return provider === "tavily" ? validateTavilySettings(profile) : provider === "zhipu" ? validateZhipuSettings(profile) : provider === "deepseek" ? validateDeepSeekSettings(profile) : validateSearchSettings(profile);
   }
   if (raw.searchSettings !== undefined) {
     if (version === 2) searchProfile(raw.searchSettings);
     else {
       object(raw.searchSettings);
-      const modern = raw.searchSettings.version === 3;
-      check(raw.searchSettings.version === 2 || (version >= 4 && modern));
-      fields(raw.searchSettings, modern ? backupFields(dataPolicies.search) : ["version", "exaMcp", "exaApi"]);
-      validateSearchConfiguration({ version: raw.searchSettings.version, exaMcp: searchProfile(raw.searchSettings.exaMcp), exaApi: searchProfile(raw.searchSettings.exaApi),
-        ...(modern ? { tavily: searchProfile(raw.searchSettings.tavily, "tavily"), zhipu: searchProfile(raw.searchSettings.zhipu, "zhipu") } : {}) });
+      const searchVersion = raw.searchSettings.version;
+      check(searchVersion === 2 || (version >= 4 && (searchVersion === 3 || searchVersion === 4)));
+      fields(raw.searchSettings, searchVersion === 4 ? backupFields(dataPolicies.search) : searchVersion === 3 ? ["version", "exaMcp", "exaApi", "tavily", "zhipu"] : ["version", "exaMcp", "exaApi"]);
+      validateSearchConfiguration({ version: searchVersion, exaMcp: searchProfile(raw.searchSettings.exaMcp), exaApi: searchProfile(raw.searchSettings.exaApi),
+        ...(searchVersion >= 3 ? { tavily: searchProfile(raw.searchSettings.tavily, "tavily"), zhipu: searchProfile(raw.searchSettings.zhipu, "zhipu") } : {}),
+        ...(searchVersion === 4 ? { deepseek: searchProfile(raw.searchSettings.deepseek, "deepseek") } : {}) });
     }
   }
   const assets = new Map<string, JsonRecord>(); let bytesTotal = 0;
@@ -185,8 +191,8 @@ export async function validateDocument(raw: unknown): Promise<void> {
     if (v.attachments) { list(v.attachments, 2000); for (const a of v.attachments) { fields(a, backupFields(dataPolicies.attachment)); resource(a.reference, "attachments/"); text(a.name, 4096); check(a.name && !/[\\/\p{Cc}]/u.test(a.name)); check(a.size === assets.get(a.reference)?.size && a.mimeType === assets.get(a.reference)?.mime); } }
     if (v.search) { fields(v.search, backupFields(dataPolicies.searchRecord).filter(key => version >= 2 || !["provider", "warning"].includes(key)), ["enabled", "status", "sources", "citations", "queries"]);
       check(typeof v.search.enabled === "boolean" && ["pending", "searching", "completed", "not-used", "failed", "cancelled"].includes(v.search.status));
-      optional(v.search, "provider", p => check(p === "exa-mcp" || (version >= 3 && p === "exa-api") || (version >= 4 && ["tavily", "zhipu"].includes(p as string)))); optional(v.search, "warning", w => unicodeText(w, 1000));
-      const external = ["exa-mcp", "exa-api", "tavily", "zhipu"].includes(v.search.provider);
+      optional(v.search, "provider", p => check(p === "exa-mcp" || (version >= 3 && p === "exa-api") || (version >= 4 && ["tavily", "zhipu", "deepseek"].includes(p as string)))); optional(v.search, "warning", w => unicodeText(w, 1000));
+      const external = ["exa-mcp", "exa-api", "tavily", "zhipu", "deepseek"].includes(v.search.provider);
       list(v.search.sources, external ? 10 : 100000); list(v.search.citations); list(v.search.queries, external ? 1 : 100000);
       let excerptCharacters = 0;
       for (const s of v.search.sources) { fields(s, backupFields(dataPolicies.searchSource).filter(key => version >= 2 || key !== "excerpt"), ["id", "url", "title"]); id(s.id); text(s.url, external ? 2048 : 32768);
@@ -195,8 +201,17 @@ export async function validateDocument(raw: unknown): Promise<void> {
       for (const c of v.search.citations) { fields(c, backupFields(dataPolicies.citation)); time(c.start); time(c.end); check(c.end >= c.start && c.end <= v.content.length); list(c.sourceIds); c.sourceIds.forEach(id); }
       v.search.queries.forEach((q: unknown) => external ? unicodeText(q, 2000) : text(q)); optional(v.search, "error", text); optional(v.search, "suggestionHtml", text);
     }
-    if (v.providerReplay) { fields(v.providerReplay, backupFields(dataPolicies.replay), ["protocol", "scope", "content"]); check(v.providerReplay.protocol === "anthropic-native"); text(v.providerReplay.scope, 32768); list(v.providerReplay.content); v.providerReplay.content.forEach(object);
-      if (v.providerReplay.responses) { list(v.providerReplay.responses); v.providerReplay.responses.forEach((r: unknown) => { list(r); r.forEach(object); }); } }
+    if (v.providerReplay) {
+      fields(v.providerReplay, backupFields(dataPolicies.replay), ["protocol", "scope", "content"]);
+      check(v.providerReplay.protocol === "anthropic-native" || v.providerReplay.protocol === "openai-responses");
+      text(v.providerReplay.scope, 32768); list(v.providerReplay.content); v.providerReplay.content.forEach(object);
+      if (v.providerReplay.protocol === "openai-responses") {
+        check(v.role === "assistant" && v.providerReplay.responses === undefined
+          && v.providerReplay.content.length > 0 && v.providerReplay.content.every(isValidResponsesReadLinkItem));
+      } else if (v.providerReplay.responses) {
+        list(v.providerReplay.responses); v.providerReplay.responses.forEach((r: unknown) => { list(r); r.forEach(object); });
+      }
+    }
     if (v.roundVersions) { fields(v.roundVersions, backupFields(dataPolicies.roundVersions)); list(v.roundVersions.pairs, 1000); time(v.roundVersions.selected); check(v.roundVersions.pairs.length && v.roundVersions.selected < v.roundVersions.pairs.length);
       for (const p of v.roundVersions.pairs) { list(p, 2); check(p.length === 2); p.forEach((m: unknown) => message(m, true)); check(p[0].role === "user" && p[1].role === "assistant" && p[1].replyToId === p[0].id); } }
   }
@@ -225,9 +240,21 @@ export async function validateDocument(raw: unknown): Promise<void> {
   if (appearance !== null) {
     text(appearance); const parsed = JSON.parse(appearance); object(parsed);
     const normalized = readAppearancePreferences({ getItem: () => appearance });
-    check(canonical({ chromeTransparency: defaultAppearancePreferences.chromeTransparency,
+    const filled: JsonRecord = {
+      assistantBubbleMode: defaultAppearancePreferences.assistantBubbleMode,
+      assistantBubbleTransparency: defaultAppearancePreferences.assistantBubbleTransparency,
+      chromeTransparency: defaultAppearancePreferences.chromeTransparency,
       sidebarGlassEnabled: defaultAppearancePreferences.sidebarGlassEnabled,
-      composerGlassEnabled: defaultAppearancePreferences.composerGlassEnabled, ...parsed }) === canonical(normalized), "外观配置损坏或包含不支持字段。");
+      composerGlassEnabled: defaultAppearancePreferences.composerGlassEnabled,
+      ...parsed,
+    };
+    if ((parsed.chromeTransparency === undefined || parsed.assistantBubbleTransparency === undefined)
+      && filled.chromeTransparency === filled.sidebarTransparency
+      && filled.sidebarTransparency === filled.composerTransparency
+      && filled.composerTransparency === filled.assistantBubbleTransparency) {
+      filled.unifiedTransparency = filled.sidebarTransparency;
+    }
+    check(canonical(filled) === canonical(normalized), "外观配置损坏或包含不支持字段。");
     if (normalized.backgroundReference) resource(normalized.backgroundReference, "backgrounds/");
     normalized.backgroundLibrary.forEach(b => resource(b.reference, "backgrounds/"));
   }

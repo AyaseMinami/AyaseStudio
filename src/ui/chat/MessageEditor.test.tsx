@@ -235,3 +235,220 @@ it("freezes the edit base across rerenders and blocks system edit entry", async 
   await act(async () => root.render(<MessageList messages={[{ ...base, id: "s", role: "system" }]} actions={actions} />));
   expect(host.querySelector('[aria-label="编辑"]')).toBeNull();
 });
+
+it("toggles inline expand/collapse without unmounting textarea, disables only while submitting, and cancels on single Escape", async () => {
+  const saved = deferred<boolean | import("../../chat/messageEditTypes").MessageEditResult>();
+  const onSave = vi.fn<MessageEditorProps["onSave"]>().mockReturnValue(saved.promise);
+  const { host, root, props, button, key, onCancel, parentDrop, parentPaste } = await setup({ onSave, disabled: true, busyOnly: true });
+  const editor = host.querySelector<HTMLElement>(".message-editor")!;
+  const textarea = host.querySelector<HTMLTextAreaElement>("textarea")!;
+  const expand = host.querySelector<HTMLButtonElement>(".message-editor-expand")!;
+  expect(expand.closest(".message-editor-actions")).toBeNull();
+  expect(expand.classList.contains("settings-button")).toBe(false);
+  expect(expand.disabled).toBe(false);
+  expect(expand.getAttribute("aria-expanded")).toBe("false");
+  expect(expand.getAttribute("aria-label")).toBe("展开编辑框");
+  expect(expand.title).toBe("展开编辑框");
+  expect(editor.classList.contains("is-expanded")).toBe(false);
+
+  await act(async () => expand.click());
+  expect(host.querySelector("textarea")).toBe(textarea);
+  expect(expand.getAttribute("aria-expanded")).toBe("true");
+  expect(expand.getAttribute("aria-label")).toBe("收起编辑框");
+  expect(expand.title).toBe("收起编辑框");
+  expect(editor.classList.contains("is-expanded")).toBe(true);
+
+  await act(async () => expand.click());
+  expect(host.querySelector("textarea")).toBe(textarea);
+  expect(expand.getAttribute("aria-expanded")).toBe("false");
+  expect(editor.classList.contains("is-expanded")).toBe(false);
+
+  // Re-enable editing without unmounting, type content, expand, then verify submitting locks expand & Escape.
+  await act(async () => root.render(<div onDrop={parentDrop} onPaste={parentPaste}><MessageEditor {...props} onSave={onSave} disabled={false} busyOnly={false} /></div>));
+  expect(host.querySelector("textarea")).toBe(textarea);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "draft with edits");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => expand.click());
+  expect(textarea.value).toBe("draft with edits");
+  expect(editor.classList.contains("is-expanded")).toBe(true);
+
+  await act(async () => button("保存").click());
+  expect(expand.disabled).toBe(true);
+  await key({ key: "Escape" });
+  expect(onCancel).not.toHaveBeenCalled();
+
+  await act(async () => saved.resolve({ status: "notSaved", error: "保存失败" }));
+  expect(expand.disabled).toBe(false);
+  expect(editor.classList.contains("is-expanded")).toBe(true);
+
+  // Single Escape cancels directly even when expanded.
+  await key({ key: "Escape" });
+  expect(onCancel).toHaveBeenCalledOnce();
+});
+
+it("prioritizes closing attachment preview on Escape even when expanded", async () => {
+  const read = vi.fn(async () => ({ ...old, data: "SGVsbG8=" }));
+  const { host, onCancel } = await setup({ onReadAttachment: read });
+  await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+  expect(host.querySelector(".message-editor")?.classList.contains("is-expanded")).toBe(true);
+  const opener = host.querySelector<HTMLButtonElement>('[aria-label="预览附件 original.txt"]')!;
+  await act(async () => opener.click());
+  const dialog = host.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog).not.toBeNull();
+  await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(onCancel).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(opener);
+  expect(host.querySelector(".message-editor")?.classList.contains("is-expanded")).toBe(true);
+});
+
+it("computes scroll-region height budget and fallback sizing without collapsing wrapper height", async () => {
+  const cssMock = vi.fn(() => false);
+  const originalCSS = globalThis.CSS;
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: { supports: cssMock } });
+  const host = document.createElement("div");
+  const scrollRegion = document.createElement("div");
+  scrollRegion.className = "message-scroll-region";
+  host.append(scrollRegion);
+  document.body.append(host);
+  const root = createRoot(scrollRegion);
+  mounted.push(async () => {
+    await act(async () => root.unmount());
+    host.remove();
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: originalCSS });
+  });
+
+  let regionHeight = 600;
+  let chromeHeight = 140;
+  let measuredScrollHeight = 180;
+  let observedBodyMinHeightDuringMeasure = "";
+  let observedOverflowDuringMeasure = "";
+
+  Object.defineProperty(scrollRegion, "clientHeight", { configurable: true, get: () => regionHeight });
+  const onEnsureVisible = vi.fn();
+  const onSave = vi.fn<MessageEditorProps["onSave"]>().mockResolvedValue(false);
+  const onCancel = vi.fn();
+
+  await act(async () => root.render(<MessageEditor base={base} latestRound onSave={onSave} onCancel={onCancel} onEnsureVisible={onEnsureVisible} />));
+  const editor = scrollRegion.querySelector<HTMLDivElement>(".message-editor")!;
+  const bodyEl = scrollRegion.querySelector<HTMLDivElement>(".message-editor-body")!;
+  const textarea = scrollRegion.querySelector<HTMLTextAreaElement>("textarea")!;
+  textarea.style.fontSize = "15px";
+  textarea.style.paddingTop = "4px";
+  textarea.style.paddingBottom = "4px";
+
+  expect(onEnsureVisible).toHaveBeenCalledOnce();
+  Object.defineProperty(bodyEl, "offsetHeight", { configurable: true, get: () => 100 });
+  Object.defineProperty(editor, "offsetHeight", { configurable: true, get: () => 100 + chromeHeight });
+  Object.defineProperty(textarea, "scrollHeight", {
+    configurable: true,
+    get: () => {
+      observedBodyMinHeightDuringMeasure = bodyEl.style.minHeight;
+      observedOverflowDuringMeasure = textarea.style.overflowY;
+      return measuredScrollHeight;
+    },
+  });
+
+  // Type content to trigger fallback measurement: 180px fits within autoMax = min(round(600*0.55)=330, 600-140-16=444) = 330px.
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "medium\n".repeat(8));
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(observedBodyMinHeightDuringMeasure).toBe("100px");
+  expect(observedOverflowDuringMeasure).toBe("hidden");
+  expect(bodyEl.style.minHeight).toBe("");
+  expect(editor.style.getPropertyValue("--message-editor-max-height")).toBe("330px");
+  expect(textarea.style.height).toBe("180px");
+  expect(textarea.style.overflowY).toBe("hidden");
+
+  // Very long text clamps to autoMax (330px) with overflowY: auto, then shortening re-measures with overflowY: hidden (no scrollbar hysteresis).
+  measuredScrollHeight = 900;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "long\n".repeat(60));
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(textarea.style.height).toBe("330px");
+  expect(textarea.style.overflowY).toBe("auto");
+
+  measuredScrollHeight = 200;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "shortened");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(observedOverflowDuringMeasure).toBe("hidden");
+  expect(textarea.style.height).toBe("200px");
+  expect(textarea.style.overflowY).toBe("hidden");
+
+  // Expand switches budget to expandedMax = min(round(600*0.82)=492, 600-140-16=444) = 444px and re-checks visibility.
+  await act(async () => scrollRegion.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+  expect(editor.style.getPropertyValue("--message-editor-max-height")).toBe("444px");
+  expect(textarea.style.height).toBe("444px");
+  expect(textarea.style.overflowY).toBe("auto");
+  expect(onEnsureVisible).toHaveBeenCalledTimes(2);
+
+  // Collapse restores auto-fit height without triggering ensureVisible again.
+  measuredScrollHeight = 40;
+  await act(async () => scrollRegion.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+  expect(editor.style.getPropertyValue("--message-editor-max-height")).toBe("330px");
+  expect(textarea.style.height).toBe("58px");
+  expect(textarea.style.overflowY).toBe("hidden");
+  expect(onEnsureVisible).toHaveBeenCalledTimes(2);
+
+  // Extreme short window (available < minHeight) preserves minHeight floor (58px).
+  regionHeight = 180;
+  chromeHeight = 160;
+  await act(async () => scrollRegion.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+  expect(editor.style.getPropertyValue("--message-editor-max-height")).toBe("58px");
+  expect(textarea.style.height).toBe("58px");
+});
+
+it("uses native field-sizing path without inline height overrides when supported", async () => {
+  const originalCSS = globalThis.CSS;
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: { supports: (prop: string, val: string) => prop === "field-sizing" && val === "content" } });
+  const host = document.createElement("div");
+  const scrollRegion = document.createElement("div");
+  scrollRegion.className = "message-scroll-region";
+  Object.defineProperty(scrollRegion, "clientHeight", { configurable: true, get: () => 800 });
+  host.append(scrollRegion);
+  document.body.append(host);
+  const root = createRoot(scrollRegion);
+  mounted.push(async () => {
+    await act(async () => root.unmount());
+    host.remove();
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: originalCSS });
+  });
+
+  await act(async () => root.render(<MessageEditor base={base} latestRound onSave={vi.fn(async () => false)} onCancel={vi.fn()} />));
+  const editor = scrollRegion.querySelector<HTMLDivElement>(".message-editor")!;
+  const textarea = scrollRegion.querySelector<HTMLTextAreaElement>("textarea")!;
+  expect(editor.style.getPropertyValue("--message-editor-max-height")).toBe("440px");
+  expect(textarea.style.height).toBe("");
+  expect(textarea.style.overflowY).toBe("");
+
+  await act(async () => scrollRegion.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+  expect(editor.style.getPropertyValue("--message-editor-max-height")).toBe("656px");
+  expect(textarea.style.height).toBe("");
+});
+
+it("updates standalone fallback height when window height changes without a scroll region", async () => {
+  const originalCSS = globalThis.CSS;
+  const originalInnerHeight = window.innerHeight;
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: { supports: () => false } });
+  let viewportHeight = 600;
+  Object.defineProperty(window, "innerHeight", { configurable: true, get: () => viewportHeight });
+  mounted.push(async () => {
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: originalCSS });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: originalInnerHeight });
+  });
+
+  const { host } = await setup();
+  const textarea = host.querySelector<HTMLTextAreaElement>("textarea")!;
+  await act(async () => host.querySelector<HTMLButtonElement>(".message-editor-expand")!.click());
+  expect(textarea.style.height).toBe("492px");
+
+  viewportHeight = 800;
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(textarea.style.height).toBe("656px");
+});

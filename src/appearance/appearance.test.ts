@@ -31,7 +31,8 @@ const expectedDefaultPreferences = {
   composerTransparency: 0,
   sidebarGlassEnabled: false,
   composerGlassEnabled: true,
-  assistantBubbleTransparency: 12,
+  assistantBubbleMode: "auto" as const,
+  assistantBubbleTransparency: 25,
   backgroundReference: null,
   backgroundFocus: null,
   backgroundFit: "cover" as const,
@@ -153,8 +154,10 @@ describe("appearance preferences", () => {
       expect(contrast(value("--color-focus", dark ? "147 197 253" : "37 99 235"), value("--color-panel", dark ? "28 25 23" : "255 255 255"))).toBeGreaterThanOrEqual(3);
       for (const transparency of [0, 6, 25, 50, 75, 100]) {
         controller.setAssistantBubbleTransparency(transparency);
-        const background = rgb(palette.userBubble).map((c, i) => Math.round(c * (1 - transparency / 100) + rgb(palette.canvas)[i] * transparency / 100));
-        expect(contrast(value("--color-user-message-text", dark ? "15 23 42" : "41 42 45"), background)).toBeGreaterThanOrEqual(4.5);
+        for (const userWallpaperAlpha of [0, 0.12]) {
+          const background = rgb(palette.userBubble).map((c, i) => Math.round(c * (1 - userWallpaperAlpha) + rgb(palette.canvas)[i] * userWallpaperAlpha));
+          expect(contrast(value("--color-user-message-text", dark ? "15 23 42" : "41 42 45"), background)).toBeGreaterThanOrEqual(4.5);
+        }
       }
       controller.destroy();
     }
@@ -188,7 +191,7 @@ describe("appearance preferences", () => {
     controller.destroy();
   });
 
-  it("keeps user text readable as its bubble fades into either solid canvas", () => {
+  it("keeps user text readable independently of assistant bubble transparency and warns on low-contrast visible assistant bubbles", async () => {
     function brightness(rgb: number[]) {
       const linear = rgb.map(channel => channel / 255 <= 0.04045 ? channel / 255 / 12.92 : ((channel / 255 + 0.055) / 1.055) ** 2.4);
       return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
@@ -198,20 +201,76 @@ describe("appearance preferences", () => {
       const controller = createAppearanceController({ storage: { getItem: () => null, setItem: () => {} }, systemTheme: harness.systemTheme, target: harness.target });
       for (const custom of [false, true]) {
         controller.setAccentColor(custom ? "#802040" : null);
+        controller.setUserBubbleColor(custom ? "#717171" : null);
         controller.setCanvasColor(custom ? "#345678" : null);
-        for (let transparency = 0; transparency <= 100; transparency++) {
+        const baselineUserText = harness.styleProperties.get("--color-user-message-text");
+        for (const transparency of [0, 25, 50, 100]) {
           controller.setAssistantBubbleTransparency(transparency);
+          expect(harness.styleProperties.get("--color-user-message-text")).toBe(baselineUserText);
           const vars = harness.styleProperties;
           const accent = (vars.get("--color-user-message") ?? (dark ? "147 197 253" : "210 227 247")).split(" ").map(Number);
-          const canvas = (vars.get("--color-canvas") ?? (dark ? "12 10 9" : "250 250 250")).split(" ").map(Number);
           const foreground = (vars.get("--color-user-message-text") ?? (dark ? "15 23 42" : "41 42 45")).split(" ").map(Number);
-          const background = accent.map((channel, index) => Math.round(channel * (1 - transparency / 100) + canvas[index] * transparency / 100));
-          const a = brightness(foreground), b = brightness(background);
+          const a = brightness(foreground), b = brightness(accent);
           expect((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)).toBeGreaterThanOrEqual(4.5);
         }
       }
       controller.destroy();
     }
+    // Mid-gray #717171 on light solid canvas must choose white (4.88:1 >= 4.5), not black (4.30:1).
+    const midGrayHarness = createThemeHarness(false);
+    const midGrayController = createAppearanceController({ storage: { getItem: () => null, setItem: () => {} }, systemTheme: midGrayHarness.systemTheme, target: midGrayHarness.target });
+    try {
+      midGrayController.setUserBubbleColor("#717171");
+      expect(midGrayHarness.styleProperties.get("--color-user-message-text")).toBe("255 255 255");
+    } finally { midGrayController.destroy(); }
+    // Light theme with active wallpaper + #646464 computes readable black for 88% blend and readable white for solid reduced-transparency fallback.
+    const solidFallbackHarness = createThemeHarness(false);
+    const solidFallbackController = createAppearanceController({
+      storage: { getItem: () => JSON.stringify({ ...expectedDefaultPreferences, backgroundReference: "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png", backgroundEnabled: true, userBubbleColor: "#646464" }), setItem: () => {} },
+      systemTheme: solidFallbackHarness.systemTheme,
+      target: solidFallbackHarness.target,
+      backgroundResources: { selectAndImport: async () => null, resolve: async ref => ({ reference: ref, url: "asset://localhost/bg.png" }), cleanup: async () => {} },
+    });
+    try {
+      await solidFallbackController.ready;
+      expect(solidFallbackHarness.styleProperties.get("--color-user-message-text")).toBe("0 0 0");
+      expect(solidFallbackHarness.styleProperties.get("--color-user-message-text-solid")).toBe("255 255 255");
+    } finally { solidFallbackController.destroy(); }
+    const harness = createThemeHarness(false);
+    const controller = createAppearanceController({ storage: { getItem: () => null, setItem: () => {} }, systemTheme: harness.systemTheme, target: harness.target });
+    try {
+      await controller.ready;
+      controller.setAssistantBubbleColor("#111111");
+      // In auto mode without wallpaper, the assistant bubble is hidden so no false warning is emitted.
+      expect(controller.getSnapshot().readabilityWarnings).toEqual([]);
+      controller.setAssistantBubbleMode("always");
+      expect(controller.getSnapshot().readabilityWarnings).toEqual(["助手消息气泡颜色与当前主题文字对比度偏低，建议调整颜色。"]);
+      controller.setAssistantBubbleTransparency(100);
+      expect(controller.getSnapshot().readabilityWarnings).toEqual([]);
+      controller.setAssistantBubbleTransparency(25);
+      controller.setAssistantBubbleMode("off");
+      expect(controller.getSnapshot().readabilityWarnings).toEqual([]);
+      // Dark theme checks actual --color-text-soft (231 229 228), where #686868 falls below 4.5:1.
+      controller.setThemeMode("dark");
+      controller.setAssistantBubbleMode("always");
+      controller.setAssistantBubbleColor("#686868");
+      expect(controller.getSnapshot().readabilityWarnings).toEqual(["助手消息气泡颜色与当前主题文字对比度偏低，建议调整颜色。"]);
+    } finally { controller.destroy(); }
+    // Light theme with active wallpaper + #000000 at 99% still warns (reduced-transparency uses solid fill), while 100% hides the bubble.
+    const bgHarness = createThemeHarness(false);
+    const reference = "backgrounds/01234567-89ab-4cde-8fab-0123456789ab.png";
+    const bgController = createAppearanceController({
+      storage: { getItem: () => JSON.stringify({ ...expectedDefaultPreferences, backgroundReference: reference, backgroundEnabled: true, assistantBubbleColor: "#000000", assistantBubbleTransparency: 99 }), setItem: () => {} },
+      systemTheme: bgHarness.systemTheme,
+      target: bgHarness.target,
+      backgroundResources: { selectAndImport: async () => null, resolve: async ref => ({ reference: ref, url: "asset://localhost/bg.png" }), cleanup: async () => {} },
+    });
+    try {
+      await bgController.ready;
+      expect(bgController.getSnapshot().readabilityWarnings).toEqual(["助手消息气泡颜色与当前主题文字对比度偏低，建议调整颜色。"]);
+      bgController.setAssistantBubbleTransparency(100);
+      expect(bgController.getSnapshot().readabilityWarnings).toEqual([]);
+    } finally { bgController.destroy(); }
   });
 
   it("applies one unified adjustment atomically, then lets individual adjustments win and converge", async () => {
@@ -234,10 +293,10 @@ describe("appearance preferences", () => {
     await restarted.ready;
     expect(restarted.getSnapshot()).toMatchObject({ unifiedTransparency: 22, sidebarTransparency: 22, composerTransparency: 22, assistantBubbleTransparency: 22 });
     controller.setUnifiedTransparency(100);
-    expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("0");
+    expect(harness.styleProperties.get("--assistant-bubble-opacity")).toBe("0");
     expect(harness.styleProperties.get("--composer-background-opacity")).toBe("0");
     await controller.resetCustomAppearance();
-    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 25 });
   });
 
   it("uses per-field defaults for old, missing, and invalid transparency values", () => {
@@ -245,11 +304,11 @@ describe("appearance preferences", () => {
     const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
     expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 37 });
     saved = JSON.stringify({ unifiedTransparency: -1, sidebarTransparency: 101, composerTransparency: 9.5, assistantBubbleTransparency: "42" });
-    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 25 });
     saved = JSON.stringify({ unifiedTransparency: -1, chromeTransparency: 40, sidebarTransparency: 40, composerTransparency: 40, assistantBubbleTransparency: 40 });
     expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 40, sidebarTransparency: 40, composerTransparency: 40, assistantBubbleTransparency: 40 });
     saved = "{";
-    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 12 });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ unifiedTransparency: 0, sidebarTransparency: 50, composerTransparency: 0, assistantBubbleTransparency: 25 });
   });
 
   it("persists independent bubble color and transparency including both endpoints, and resets them", async () => {
@@ -259,16 +318,18 @@ describe("appearance preferences", () => {
     const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
     controller.setAssistantBubbleColor("#123456");
     controller.setAssistantBubbleTransparency(100);
-    expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("0");
+    expect(harness.styleProperties.get("--assistant-bubble-opacity")).toBe("0");
+    expect(harness.attributes.get("data-assistant-bubble-transparent")).toBe("true");
     expect(harness.styleProperties.get("--color-assistant-bubble")).toBe("18 52 86");
     expect(harness.styleProperties.has("--color-user-message")).toBe(false);
     controller.setThemeMode("dark");
     const restored = applyInitialAppearance({ storage, systemPrefersDark: false, target: harness.target });
     expect(restored).toMatchObject({ assistantBubbleColor: "#123456", assistantBubbleTransparency: 100, backgroundMask: 50 });
     controller.setAssistantBubbleTransparency(0);
-    expect(harness.styleProperties.get("--message-bubble-opacity")).toBe("1");
+    expect(harness.styleProperties.get("--assistant-bubble-opacity")).toBe("1");
+    expect(harness.attributes.get("data-assistant-bubble-transparent")).toBe("false");
     await controller.resetCustomAppearance();
-    expect(loadAppearancePreferences(storage)).toMatchObject({ assistantBubbleColor: null, assistantBubbleTransparency: 12, themeMode: "dark" });
+    expect(loadAppearancePreferences(storage)).toMatchObject({ assistantBubbleColor: null, assistantBubbleMode: "auto", assistantBubbleTransparency: 25, themeMode: "dark" });
     expect(harness.styleProperties.has("--color-assistant-bubble")).toBe(false);
   });
 

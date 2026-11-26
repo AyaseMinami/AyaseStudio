@@ -5,6 +5,7 @@ import type { Conversation } from "../../chat/workspace";
 import { getActiveTarget, type ConnectionSettingsState } from "../../chat/settings";
 import { ModelSelectField } from "./ModelSelectField";
 import { validateRequestConfig } from "../../chat/requestMapping";
+import { validateSessionConfig } from "../../chat/sessionConfig";
 import { getThinkingSettings, withThinkingSettings, switchThinkingProtocol } from "../../chat/thinking";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ThinkingControl } from "./ThinkingControl";
@@ -21,7 +22,9 @@ export function ConversationSettings({ workspace, conversation, settings, onClos
   const assistant = workspace.snapshot?.assistants.find((item) => item.id === conversation.assistantId);
   const target = getActiveTarget({ ...settings, activeModelId: draft.modelId });
   const protocol = target?.connection.protocol;
-  const errors = validateRequestConfig(draft.config, protocol ?? "openai-chat", target?.model.modelId ?? "");
+  const errors = protocol
+    ? validateRequestConfig(draft.config, protocol, target?.model.modelId ?? "")
+    : validateSessionConfig(draft.config);
   async function save() {
     setSubmitted(true);
     onSaveAttempt?.();
@@ -60,7 +63,7 @@ export function ConversationSettings({ workspace, conversation, settings, onClos
             return true;
           }} />
         </div>
-        <WebSearchControl config={draft.config} disabled={workspace.busy}
+        <WebSearchControl config={draft.config} disabled={workspace.busy} protocol={protocol}
           onChange={(config) => setDraft({ ...draft, config })} />
         {protocol && target && (
           <ThinkingControl key={`${resetCount}-${protocol}-${getThinkingSettings(draft.config, protocol)?.budget}`} protocol={protocol} model={target.model.modelId}

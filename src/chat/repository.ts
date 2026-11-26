@@ -6,6 +6,7 @@ import { titleFromText } from "./conversationTitle";
 import { copyAssistantConfig, resolveConversationConfig, assertLegacyOverrides, readConversationConfigData } from "./conversationConfig";
 import { copyBranchMessages, withReplyLinks } from "./messageOperations";
 import { readMessagesGenerationMetrics } from "./generationMetricsData";
+import { readMessagesProviderReplay } from "./deepseekReplay";
 import { editedMessage, readEditTranscript, sameTranscriptValue } from "./messageData";
 
 import type { ChatMessage } from "./types";
@@ -59,7 +60,7 @@ class DexieChatRepository implements WorkspaceRepository {
 
   async load(id: string): Promise<ChatSnapshot | undefined> {
     const snapshot = await this.database.chats.get(id);
-    return snapshot && { ...snapshot, messages: readMessagesGenerationMetrics(snapshot.messages) };
+    return snapshot && { ...snapshot, messages: readMessagesProviderReplay(readMessagesGenerationMetrics(snapshot.messages)) };
   }
 
   async attachmentReferences(): Promise<string[]> {
@@ -69,7 +70,7 @@ class DexieChatRepository implements WorkspaceRepository {
   }
 
   async save(snapshot: ChatSnapshot): Promise<void> {
-    snapshot = { ...snapshot, messages: readMessagesGenerationMetrics(snapshot.messages) };
+    snapshot = { ...snapshot, messages: readMessagesProviderReplay(readMessagesGenerationMetrics(snapshot.messages)) };
     const db = this.database;
     await db.transaction("rw", [db.chats, db.conversations, db.workspace], async () => {
       const conversation = await db.conversations.get(snapshot.id);
@@ -133,7 +134,7 @@ class DexieChatRepository implements WorkspaceRepository {
       const previous = await db.workspace.get("selection");
       // Reject unsupported data before initialization can publish defaults or repair any rows.
       // The enclosing transaction also rolls back any later migration/selection failure.
-      for (const chat of await db.chats.toArray()) readMessagesGenerationMetrics(chat.messages);
+      for (const chat of await db.chats.toArray()) readMessagesProviderReplay(readMessagesGenerationMetrics(chat.messages));
       for (const assistant of await db.assistants.toArray()) {
         readSessionConfigData(assistant.defaultConfig);
         readAssistantAvatarSelection(assistant);
@@ -384,7 +385,21 @@ class DexieChatRepository implements WorkspaceRepository {
               const message = messages[index];
               readEditTranscript(messages);
               if (action.base && !sameTranscriptValue(message, action.base)) throw new Error("消息已变化，请重新打开编辑。");
-              next = [...messages.slice(0, index), editedMessage(message, action.content, action.attachments, now), ...messages.slice(index + 1)];
+              const linked = withReplyLinks(messages);
+              next = messages.map((item, position) => {
+                if (position === index) return editedMessage(message, action.content, action.attachments, now);
+                if (message.role === "user" && item.role === "assistant"
+                  && (item.providerReplay !== undefined || item.continuation !== undefined || item.status === "paused")
+                  && linked[position]?.replyToId === message.id) {
+                  return {
+                    ...item,
+                    providerReplay: undefined,
+                    continuation: undefined,
+                    ...(item.status === "paused" ? { status: "incomplete" as const } : {}),
+                  };
+                }
+                return item;
+              });
             } else next = messages.filter((message) => message.id !== action.messageId).map((message) =>
               message.status === "paused" ? { ...message, status: "incomplete" as const, continuation: undefined } : message);
             if (action.type === "delete-message" && index >= messages.length - 2) next = next.map(withoutVersions);

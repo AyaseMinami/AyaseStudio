@@ -1,7 +1,7 @@
 import { BookOpen, Check, CircleAlert, ImagePlus, Monitor, Moon, RotateCcw, Sun, UserRound } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { BackgroundFocus } from "../../appearance/backgroundFocus";
-import type { BackgroundFit, BackgroundLibraryEdit, BackgroundLibraryEntry, BackgroundResource, ColorPreset, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
+import type { AssistantBubbleMode, BackgroundFit, BackgroundLibraryEdit, BackgroundLibraryEntry, BackgroundResource, ColorPreset, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
 import { defaultAppearancePreferences } from "../../appearance/appearance";
 import { colorPresets, getColorPresetPalette } from "../../appearance/colorPresets";
 import { AppearanceChatPreview } from "./AppearanceChatPreview";
@@ -17,19 +17,27 @@ const themeOptions: readonly { value: ThemeMode; label: string; description: str
   { value: "dark", label: "深色", description: "始终使用低亮度的深色界面配色。", icon: <Moon size={16} /> },
 ];
 
+const assistantBubbleModeOptions: readonly { value: AssistantBubbleMode; label: string; description: string }[] = [
+  { value: "auto", label: "仅背景图", description: "纯色画布采用无气泡文档流，启用背景图片时自动显示带柔和磨砂的半透明助手气泡。" },
+  { value: "always", label: "始终显示", description: "纯色画布下也显示实底助手气泡，启用背景图片时显示带柔和磨砂的半透明气泡。" },
+  { value: "off", label: "关闭", description: "无论是否启用背景图片均不显示助手气泡，始终保持无气泡文档流。" },
+];
+
+const assistantBubbleHelpText = "纯色画布下助手回复默认采用无气泡文档流；启用背景图片后将自动显示带柔和磨砂的半透明气泡承托文字，可在此切换显示模式或调节颜色与透明度（调至 100% 即隐藏气泡）。";
+
 export interface AppearanceSettingsProps {
   unifiedThemeColor: string | null; effectiveUserBubbleColor: string;
   onUnifiedThemeColorChange(color: string | null): void; onUserBubbleColorChange(color: string | null): void;
   colorPreset: ColorPreset; onColorPresetChange(preset: ColorPreset): void;
   themeMode: ThemeMode; resolvedTheme: ResolvedTheme; accentColor: string | null; canvasColor: string | null;
-  assistantBubbleColor: string | null; assistantBubbleTransparency: number; effectiveAccentColor: string; effectiveCanvasColor: string;
+  assistantBubbleColor: string | null; assistantBubbleMode: AssistantBubbleMode; assistantBubbleTransparency: number; effectiveAccentColor: string; effectiveCanvasColor: string;
   unifiedTransparency: number; chromeTransparency: number; sidebarTransparency: number; composerTransparency: number;
   sidebarGlassEnabled: boolean; composerGlassEnabled: boolean;
   backgroundReference: string | null; backgroundUrl: string | null; backgroundFocus: BackgroundFocus | null; backgroundFit: BackgroundFit;
   backgroundLibrary: BackgroundLibraryEntry[]; backgroundEnabled: boolean; backgroundName: string | null;
   backgroundMask: number; backgroundBlur: number; backgroundBusy: boolean; backgroundError: string | null; readabilityWarnings: string[];
   onThemeModeChange(themeMode: ThemeMode): void; onAccentColorChange(color: string | null): void; onCanvasColorChange(color: string | null): void;
-  onAssistantBubbleColorChange(color: string | null): void; onAssistantBubbleTransparencyChange(value: number): void; onEditBackgroundFocus(): void;
+  onAssistantBubbleColorChange(color: string | null): void; onAssistantBubbleModeChange(mode: AssistantBubbleMode): void; onAssistantBubbleTransparencyChange(value: number): void; onEditBackgroundFocus(): void;
   onUnifiedTransparencyChange(value: number | null): void; onSidebarTransparencyChange(value: number): void; onComposerTransparencyChange(value: number): void;
   onChromeTransparencyChange(value: number): void;
   onSidebarGlassEnabledChange(enabled: boolean): void; onComposerGlassEnabledChange(enabled: boolean): void;
@@ -47,13 +55,13 @@ export interface AppearanceSettingsProps {
 export function AppearanceSettings({
   unifiedThemeColor, effectiveUserBubbleColor, onUnifiedThemeColorChange, onUserBubbleColorChange,
   colorPreset, onColorPresetChange,
-  themeMode, resolvedTheme, accentColor, canvasColor, assistantBubbleColor, assistantBubbleTransparency,
+  themeMode, resolvedTheme, accentColor, canvasColor, assistantBubbleColor, assistantBubbleMode, assistantBubbleTransparency,
   unifiedTransparency, chromeTransparency, sidebarTransparency, composerTransparency,
   sidebarGlassEnabled, composerGlassEnabled,
   effectiveAccentColor, effectiveCanvasColor, backgroundReference, backgroundUrl, backgroundFocus, backgroundFit,
   backgroundLibrary, backgroundEnabled, backgroundName,
   backgroundMask, backgroundBlur, backgroundBusy, backgroundError, readabilityWarnings, onThemeModeChange,
-  onAccentColorChange, onCanvasColorChange, onAssistantBubbleColorChange, onAssistantBubbleTransparencyChange,
+  onAccentColorChange, onCanvasColorChange, onAssistantBubbleColorChange, onAssistantBubbleModeChange, onAssistantBubbleTransparencyChange,
   onUnifiedTransparencyChange, onSidebarTransparencyChange, onComposerTransparencyChange,
   onChromeTransparencyChange,
   onSidebarGlassEnabledChange, onComposerGlassEnabledChange,
@@ -121,7 +129,7 @@ export function AppearanceSettings({
         <div className="appearance-row"><span className="appearance-row-copy"><strong>统一主题色</strong>{mixedThemeColor && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="主题色差异" icon={<CircleAlert size={15} aria-hidden="true" />}>组件和用户消息气泡颜色不同。修改统一主题色会覆盖这两项，不影响助手气泡和画布背景。</SettingsHelp></span></span>}</span><ColorControl label="统一主题色" value={mixedThemeColor ? unifiedThemeColor ?? effectiveAccentColor : effectiveAccentColor} onChange={onUnifiedThemeColorChange} /></div>
         <div className="appearance-row appearance-color-child"><RowCopy title="组件颜色" /><ColorControl label="组件颜色" value={accentColor ?? effectiveAccentColor} onChange={onAccentColorChange} /></div>
         <div className="appearance-row appearance-color-child"><RowCopy title="用户消息气泡颜色" /><ColorControl label="用户消息气泡颜色" value={effectiveUserBubbleColor} onChange={onUserBubbleColorChange} /></div>
-        <div className="appearance-row"><RowCopy title="助手消息气泡颜色" /><ColorControl label="助手回复气泡颜色" value={assistantBubbleColor ?? presetPalette.assistantBubble} onChange={onAssistantBubbleColorChange} /></div>
+        <div className="appearance-row"><RowCopy title="助手消息气泡颜色" help={{ label: "助手消息气泡颜色", text: assistantBubbleHelpText }} /><ColorControl label="助手回复气泡颜色" value={assistantBubbleColor ?? presetPalette.assistantBubble} onChange={onAssistantBubbleColorChange} /></div>
         <div className="appearance-row"><RowCopy title="画布背景色" /><ColorControl label="自定义画布背景色" value={canvasColor ?? effectiveCanvasColor} onChange={onCanvasColorChange} /></div>
       </div>
       {readabilityWarnings.map((warning) => <p className="notice notice-warning appearance-inline-notice" key={warning}>{warning}</p>)}
@@ -140,9 +148,9 @@ export function AppearanceSettings({
     </section>
 
     <section className="appearance-group appearance-group-card appearance-transparency-group" aria-labelledby="appearance-transparency-title">
-      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。顶栏与最左功能栏共用背景透明度；侧栏透明度控制聊天的助手栏、对话栏和设置分类导航（存在背景图时设置分类导航保留至少 76% 不透明底色以保证可读性，无壁纸时使用实底）。未开启玻璃效果时，浮层侧栏会增强底色，避免下方聊天文字干扰导航。</GroupHeading>
+      <GroupHeading id="appearance-transparency-title" title="区域透明度">只改变区域背景，文字和操作控件保持清晰。顶栏与最左功能栏共用背景透明度；侧栏透明度控制聊天的助手栏、对话栏和设置分类导航（存在背景图时设置分类导航保留至少 76% 不透明底色以保证可读性，无壁纸时使用实底）。未开启玻璃效果时，浮层侧栏会增强底色，避免下方聊天文字干扰导航。助手气泡透明度仅作用于助手回复气泡，用户消息气泡保持独立可读底色。</GroupHeading>
       <div className="appearance-rows">
-        <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖四个区域的设置。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
+        <div className="appearance-row appearance-range-row"><span className="appearance-row-copy"><strong>统一透明度</strong>{mixedTransparency && <span className="appearance-mixed-indicator"><span>已分别调整</span><span className="appearance-mixed-help"><SettingsHelp label="区域透明度差异" icon={<CircleAlert size={15} aria-hidden="true" />}>各区域透明度不同，调整统一滑块将覆盖顶栏与功能栏、侧栏、输入区域及助手气泡四个区域的设置（不影响用户消息气泡）。</SettingsHelp></span></span>}</span><RangeControl value={mixedTransparency ? "各项不同" : `${unifiedTransparency}%`} ariaLabel="统一透明度" valueNumber={unifiedTransparency} onChange={onUnifiedTransparencyChange} onReset={() => onUnifiedTransparencyChange(null)} max="100" min="0" /></div>
         <div className="appearance-row appearance-range-row"><RowCopy title="顶栏与功能栏背景透明度" /><RangeControl value={`${chromeTransparency}%`} ariaLabel="顶栏与功能栏背景透明度" valueNumber={chromeTransparency} onChange={onChromeTransparencyChange} onReset={() => onChromeTransparencyChange(defaultAppearancePreferences.chromeTransparency)} max="100" min="0" /></div>
         <div className="appearance-row appearance-switch-row"><RowCopy title="侧栏玻璃效果" /><input type="checkbox" role="switch" className="ui-switch" aria-label="侧栏玻璃效果" checked={sidebarGlassEnabled} onChange={(event) => onSidebarGlassEnabledChange(event.target.checked)} /></div>
         <p className="muted-text">仅作用于聊天助手栏和对话栏，不影响设置分类导航。</p>
@@ -151,12 +159,21 @@ export function AppearanceSettings({
         <div className="appearance-row appearance-switch-row"><RowCopy title="输入区域玻璃效果" /><input type="checkbox" role="switch" className="ui-switch" aria-label="输入区域玻璃效果" checked={composerGlassEnabled} onChange={(event) => onComposerGlassEnabledChange(event.target.checked)} /></div>
         {composerGlassEnabled && <p className="notice appearance-inline-notice">输入区域玻璃效果已开启，覆盖输入区域透明度；下方数值仍会保存，关闭效果后使用。</p>}
         <div className="appearance-row appearance-range-row"><RowCopy title="输入区域透明度" /><RangeControl value={`${composerTransparency}%`} ariaLabel="输入区域透明度" valueNumber={composerTransparency} onChange={onComposerTransparencyChange} onReset={() => onComposerTransparencyChange(defaultAppearancePreferences.composerTransparency)} max="100" min="0" /></div>
-        <div className="appearance-row appearance-range-row"><RowCopy title="消息气泡透明度" /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="消息气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} onReset={() => onAssistantBubbleTransparencyChange(defaultAppearancePreferences.assistantBubbleTransparency)} max="100" min="0" /></div>
+        <fieldset className="appearance-theme-group appearance-bubble-mode-group">
+          <legend><span>助手气泡显示</span><SettingsHelp label="助手气泡显示">{assistantBubbleHelpText}</SettingsHelp></legend>
+          <div className="appearance-theme-options appearance-bubble-mode-options">
+            {assistantBubbleModeOptions.map((option) => <label className="appearance-theme-option" data-selected={assistantBubbleMode === option.value ? "true" : undefined} key={option.value} title={option.description}>
+              <input type="radio" name="assistant-bubble-mode" value={option.value} checked={assistantBubbleMode === option.value} onChange={() => onAssistantBubbleModeChange(option.value)} />
+              <span>{option.label}</span>
+            </label>)}
+          </div>
+        </fieldset>
+        <div className="appearance-row appearance-range-row"><RowCopy title="助手气泡透明度" help={{ label: "助手气泡透明度", text: assistantBubbleHelpText }} /><RangeControl value={`${assistantBubbleTransparency}%`} ariaLabel="助手气泡透明度" valueNumber={assistantBubbleTransparency} onChange={onAssistantBubbleTransparencyChange} onReset={() => onAssistantBubbleTransparencyChange(defaultAppearancePreferences.assistantBubbleTransparency)} max="100" min="0" /></div>
       </div>
     </section>
 
     <section className="appearance-group appearance-group-card appearance-reset-group" aria-labelledby="appearance-reset-title">
-      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、各区域透明度和背景设置；侧栏玻璃关闭、输入区域玻璃开启，保留背景库图片。</GroupHeading>
+      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、各区域透明度、助手气泡模式（仅背景图）和背景设置；侧栏玻璃关闭、输入区域玻璃开启，保留背景库图片。</GroupHeading>
       <button className="settings-button" disabled={backgroundBusy} onClick={() => void onResetCustomAppearance()} type="button"><RotateCcw size={15} />恢复当前主题默认外观</button>
     </section>
     </div>
@@ -189,8 +206,8 @@ function GroupHeading({ children, id, title }: { children: string; id: string; t
   return <div className="appearance-group-heading"><h3 id={id}>{title}</h3><SettingsHelp label={title}>{children}</SettingsHelp></div>;
 }
 
-function RowCopy({ title }: { title: string }) {
-  return <span className="appearance-row-copy"><strong>{title}</strong></span>;
+function RowCopy({ title, help }: { title: string; help?: { label: string; text: string } }) {
+  return <span className="appearance-row-copy"><span className="appearance-row-title"><strong>{title}</strong>{help && <SettingsHelp label={help.label}>{help.text}</SettingsHelp>}</span></span>;
 }
 
 function ColorControl({ label, value, onChange }: { label: string; value: string; onChange(color: string | null): void }) {

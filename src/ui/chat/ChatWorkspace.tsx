@@ -14,7 +14,7 @@ import { MessageList, type MessageActions } from "./MessageList";
 import { ThinkingToolbarControl } from "./ThinkingControl";
 import type { ThinkingSettings } from "../../chat/thinking";
 import { WebSearchToolbarControl } from "./WebSearchControl";
-import type { SearchMode } from "../../search/mode";
+import type { DeepSeekWebToolsSelection, SearchMode } from "../../search/mode";
 import type { ChatLayout } from "./useChatLayout";
 import type { AssistantPreset } from "../../chat/workspace";
 
@@ -26,6 +26,8 @@ export interface ChatWorkspaceProps {
   onToggleLayout?(): void;
   searchMode?: SearchMode;
   onSearchModeChange?(mode: SearchMode): void;
+  deepseekWebTools?: DeepSeekWebToolsSelection;
+  onDeepSeekWebToolsChange?(tools: DeepSeekWebToolsSelection): void;
   thinking?: ThinkingSettings;
   onThinkingChange?(value: ThinkingSettings): void;
   title: string;
@@ -69,6 +71,8 @@ export function ChatWorkspace({
   onToggleLayout,
   searchMode = "off",
   onSearchModeChange,
+  deepseekWebTools,
+  onDeepSeekWebToolsChange,
   thinking,
   onThinkingChange,
   title,
@@ -162,6 +166,7 @@ export function ChatWorkspace({
           ? <ModelSelector label={modelLabel ?? "选择模型"} fullLabel={protocolLabel} {...modelPicker} />
           : <span className="composer-model-label">{protocolLabel}</span>}
         searchControl={onSearchModeChange ? <WebSearchToolbarControl mode={searchMode}
+          protocol={protocol} deepseekWebTools={deepseekWebTools} onDeepSeekWebToolsChange={onDeepSeekWebToolsChange}
           disabled={!isHydrated} busyOnly={isWorkspaceBusy && !isHydrated} onChange={onSearchModeChange} /> : undefined}
         thinkingControl={protocol && onThinkingChange ? <ThinkingToolbarControl
           key={`${protocol}-${modelId}`} protocol={protocol} model={modelId ?? ""} value={thinking}

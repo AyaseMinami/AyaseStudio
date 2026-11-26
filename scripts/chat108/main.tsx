@@ -185,7 +185,7 @@ function Review() {
       onThemeModeChange={appearanceController.setThemeMode} onColorPresetChange={appearanceController.setColorPreset}
       onUnifiedThemeColorChange={appearanceController.setUnifiedThemeColor} onUserBubbleColorChange={appearanceController.setUserBubbleColor}
       onAccentColorChange={appearanceController.setAccentColor} onCanvasColorChange={appearanceController.setCanvasColor}
-      onAssistantBubbleColorChange={appearanceController.setAssistantBubbleColor} onAssistantBubbleTransparencyChange={appearanceController.setAssistantBubbleTransparency}
+      onAssistantBubbleColorChange={appearanceController.setAssistantBubbleColor} onAssistantBubbleModeChange={appearanceController.setAssistantBubbleMode} onAssistantBubbleTransparencyChange={appearanceController.setAssistantBubbleTransparency}
       onUnifiedTransparencyChange={appearanceController.setUnifiedTransparency} onChromeTransparencyChange={appearanceController.setChromeTransparency}
       onSidebarTransparencyChange={appearanceController.setSidebarTransparency} onComposerTransparencyChange={appearanceController.setComposerTransparency}
       onSidebarGlassEnabledChange={appearanceController.setSidebarGlassEnabled} onComposerGlassEnabledChange={appearanceController.setComposerGlassEnabled}

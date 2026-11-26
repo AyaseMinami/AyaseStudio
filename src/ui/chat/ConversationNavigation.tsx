@@ -480,7 +480,7 @@ export function ConversationNavigation({ workspace, settings, generatingIds, chi
                 return true;
               }} />
           </div>
-          <WebSearchControl config={dialog.input.defaultConfig} disabled={busy} customSelect
+          <WebSearchControl config={dialog.input.defaultConfig} disabled={busy} protocol={editorTarget?.connection.protocol} customSelect
             onChange={(defaultConfig) => setDialog({ ...dialog, input: { ...dialog.input, defaultConfig } })} />
           {editorTarget && (
             <ThinkingControl

@@ -11,7 +11,8 @@ import { geminiThinkingBody } from "./geminiThinking";
 import { getThinkingSettings, validateThinkingSelection, protocolThinkingBody } from "./thinking";
 import { attachmentCapabilityFailure, isOfficeAttachment, safeTextAttachment, type RequestAttachment } from "./attachments";
 import { searchRequestBody } from "./nativeSearch";
-import { resolveSearchMode } from "../search/mode";
+import { eligibleProviderReplay, expandAnthropicReplay, expandResponsesReplay } from "./deepseekReplay";
+import { isValidDeepSeekWebTools, resolveDeepSeekWebTools, resolveSearchMode, supportsDeepSeekServerSearch } from "../search/mode";
 
 export class RequestConfigError extends Error {
   constructor(readonly errors: ConfigErrors) {
@@ -66,13 +67,15 @@ export type ParameterSupport = "supported" | "unsupported" | "unknown";
 export interface ParameterCapability {
   support: ParameterSupport;
   reason: string;
+  /** Informational UI hint that does not block sending existing custom numeric values. */
+  advisory?: boolean;
 }
 
 export function parameterCapability(
   protocol: ChatProtocol,
   _model: string,
   field: NumericField,
-  _config?: SessionConfig,
+  config?: SessionConfig,
 ): ParameterCapability {
   if (field === "contextBudget") {
     return { support: "supported", reason: "Ayase 本地输入历史预算，不是供应商请求参数。" };
@@ -80,6 +83,18 @@ export function parameterCapability(
   if (field === "maxOutput") return { support: "supported", reason: "由当前协议映射到输出上限。" };
   if (field === "topK" && (protocol === "openai-chat" || protocol === "openai-responses")) {
     return { support: "unsupported", reason: "OpenAI API 不提供 Top-K 请求字段。" };
+  }
+  if (
+    config
+    && resolveSearchMode(config) === "deepseek-server"
+    && supportsDeepSeekServerSearch(protocol)
+    && (field === "temperature" || field === "topP" || field === "topK")
+  ) {
+    return {
+      support: "unknown",
+      reason: "DeepSeek 服务端联网模式下服务端会忽略采样参数。",
+      advisory: true,
+    };
   }
   return { support: "unknown", reason: "按当前协议发送，参数支持情况由供应商判断。" };
 }
@@ -178,6 +193,16 @@ export function validateRequestConfig(config: SessionConfig, protocol: ChatProto
   if (config.thinking !== undefined && (!config.thinking || typeof config.thinking !== "object" || Array.isArray(config.thinking))) {
     errors.thinking = "思考配置无效，请恢复默认配置。";
   }
+  const searchMode = resolveSearchMode(config);
+  if (searchMode === "deepseek-server") {
+    if (protocol === "openai-chat") {
+      errors.webSearch = "Chat Completions 不支持 DeepSeek 服务端联网工具；请改用 Responses / Anthropic 连接，或改用 DeepSeek Search API。";
+    } else if (!supportsDeepSeekServerSearch(protocol)) {
+      errors.webSearch = "当前协议不支持 DeepSeek 服务端联网工具；仅支持 Responses 与 Anthropic 协议。";
+    } else if (!isValidDeepSeekWebTools(resolveDeepSeekWebTools(config))) {
+      errors.webSearch = "请至少保留一项 DeepSeek 服务端联网工具。";
+    }
+  }
   for (const field of ["temperature", "topP", "topK"] as NumericField[]) {
     if (config[field]?.mode === "custom" && parameterCapability(protocol, model, field, config).support === "unsupported") {
       errors[field] = parameterCapability(protocol, model, field, config).reason;
@@ -249,10 +274,12 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
     attachments.some((item) => item.mimeType.startsWith("image/") && item.data.length > 10_000_000))) {
     throw new RequestConfigError({ customJson: "Anthropic 内联图片的 Base64 数据不能超过官方 10 MB 上限；请减少图片大小。" });
   }
+  const searchMode = resolveSearchMode(config);
+  const deepseekTools = resolveDeepSeekWebTools(config);
   if (protocol === "openai-chat") {
     return checkedInlineBody(protocol, {
       ...custom,
-      ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
+      ...searchRequestBody(protocol, searchMode, deepseekTools),
       ...thinkingBody,
       model: request.model,
       messages: system ? [{ role: "system", content: system }, ...mapped.map(({ message, attachments }) => ({
@@ -286,18 +313,24 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   if (protocol === "openai-responses") {
     return checkedInlineBody(protocol, {
       ...custom,
-      ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
+      ...searchRequestBody(protocol, searchMode, deepseekTools),
       ...thinkingBody,
       model: request.model,
-      input: mapped.map(({ message, attachments }) => ({ role: message.role,
-        content: !attachments.length ? message.content : [
-          { type: "input_text", text: message.content },
-          ...attachments.map((item) => item.mimeType.startsWith("text/")
-            ? { type: "input_text", text: documentText(item) }
-            : item.mimeType === "application/pdf" || isOfficeAttachment(item)
-              ? { type: "input_file", filename: item.name, file_data: `data:${item.mimeType};base64,${item.data}` }
-              : { type: "input_image", image_url: `data:${item.mimeType};base64,${item.data}` }),
-        ] })),
+      input: mapped.flatMap(({ message, attachments }): Record<string, unknown>[] => {
+        const replay = eligibleProviderReplay(message, "openai-responses", request.replayScope);
+        if (replay) return expandResponsesReplay(message, replay);
+        return [{
+          role: message.role,
+          content: !attachments.length ? message.content : [
+            { type: "input_text", text: message.content },
+            ...attachments.map((item) => item.mimeType.startsWith("text/")
+              ? { type: "input_text", text: documentText(item) }
+              : item.mimeType === "application/pdf" || isOfficeAttachment(item)
+                ? { type: "input_file", filename: item.name, file_data: `data:${item.mimeType};base64,${item.data}` }
+                : { type: "input_image", image_url: `data:${item.mimeType};base64,${item.data}` }),
+          ],
+        }];
+      }),
       ...(system ? { instructions: system } : {}),
       store: false,
       stream,
@@ -318,7 +351,7 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
       ...(maxOutput !== undefined ? { maxOutputTokens: maxOutput } : {}),
     };
     return checkedInlineBody(protocol, {
-      ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
+      ...searchRequestBody(protocol, searchMode, deepseekTools),
       contents: mapped.map(({ message, attachments }) => ({
         role: message.role === "assistant" ? "model" : "user",
         parts: [{ text: message.content }, ...attachments.map((item) => item.mimeType.startsWith("text/")
@@ -330,16 +363,15 @@ export function buildProtocolBody(protocol: ChatProtocol, request: ChatRequest):
   }
   const body = {
     ...custom,
-    ...searchRequestBody(protocol, resolveSearchMode(config) === "native"),
+    ...searchRequestBody(protocol, searchMode, deepseekTools),
     ...thinkingBody,
     model: request.model,
     max_tokens: maxOutput ?? 4096,
     stream,
     ...(system ? { system } : {}),
     messages: mapped.flatMap(({ message, attachments }): Array<{ role: typeof message.role; content: unknown }> => {
-      const replay = message.role === "assistant" && request.replayScope && message.providerReplay?.scope === request.replayScope
-        ? (message.providerReplay.responses ?? [message.providerReplay.content]) : undefined;
-      if (replay) return replay.map((content) => ({ role: message.role, content }));
+      const replay = eligibleProviderReplay(message, "anthropic-native", request.replayScope);
+      if (replay) return expandAnthropicReplay(replay).map((content) => ({ role: message.role, content }));
       return [{ role: message.role, content: !attachments.length ? message.content : [
         { type: "text", text: message.content },
         ...attachments.map((item) => item.mimeType.startsWith("text/")

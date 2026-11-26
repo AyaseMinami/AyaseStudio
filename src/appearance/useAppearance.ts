@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import type { BackgroundFit, ColorPreset, ThemeMode } from "./appearance";
+import type { AssistantBubbleMode, BackgroundFit, ColorPreset, ThemeMode } from "./appearance";
 import type { BackgroundFocus } from "./backgroundFocus";
 import { getBrowserAppearanceController } from "./browser";
 
@@ -29,6 +29,7 @@ export function useAppearance() {
     setComposerTransparency: (value: number) => controller.setComposerTransparency(value),
     setSidebarGlassEnabled: (enabled: boolean) => controller.setSidebarGlassEnabled(enabled),
     setComposerGlassEnabled: (enabled: boolean) => controller.setComposerGlassEnabled(enabled),
+    setAssistantBubbleMode: (mode: AssistantBubbleMode) => controller.setAssistantBubbleMode(mode),
     setAssistantBubbleTransparency: (value: number) => controller.setAssistantBubbleTransparency(value),
     setBackgroundFit: (fit: BackgroundFit) =>
       controller.setBackgroundFit(fit),

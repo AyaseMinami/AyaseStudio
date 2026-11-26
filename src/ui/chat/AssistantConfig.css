@@ -524,6 +524,7 @@
   display: contents;
 }
 
+.session-config-capabilities .web-search-details,
 .session-config-capabilities .thinking-budget-field,
 .session-config-capabilities .thinking-hint,
 .session-config-capabilities .thinking-notice,

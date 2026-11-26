@@ -14,12 +14,24 @@ import type { CherryBackup, CherryImportPlan } from "../import/cherryTypes";
 
 import type { DiscoveredModel } from "./modelCatalog";
 import { initialSearch, finishSearch, mergeSearch } from "./nativeSearch";
-import { isExternalSearch, resolveSearchMode, withSearchMode, type SearchMode } from "../search/mode";
+import {
+  freezeTransportSearchConfig,
+  isDeepSeekServerSearch,
+  isExternalSearch,
+  resolveSearchMode,
+  withDeepSeekWebTools,
+  withSearchMode,
+  type DeepSeekWebToolsSelection,
+  type SearchMode,
+} from "../search/mode";
+import { containsDeepSeekToolBlocks, eligibleProviderReplay } from "./deepseekReplay";
+import { validateSessionConfig } from "./sessionConfig";
 import { assertSearchEnabled, loadSearchSettings, validateSearchQuery, type SearchProfile, type ExternalSearchProvider } from "../search/settings";
 import { searchExa } from "../search/runtime";
 import { validateExaApiSettings } from "../search/exaApi";
 import { validateTavilyApiSettings } from "../search/tavily";
 import { validateZhipuApiSettings, validateZhipuSearchQuery } from "../search/zhipu";
+import { validateDeepSeekApiSettings, validateDeepSeekSearchQuery } from "../search/deepseek";
 import { prepareSearchContext, projectSearchHistory } from "../search/context";
 import { externalCitations } from "../search/citations";
 import { ContextBudgetError, planContextBudget,
@@ -83,7 +95,7 @@ import {
   type ConnectionProfile,
   type ConnectionSettingsState,
 } from "./settings";
-import type { ChatProtocol } from "./types";
+import type { ChatProtocol, RefusalInfo } from "./types";
 import {
   resolveGenerationEndpoint,
   resolveModelCatalogEndpoint,
@@ -99,13 +111,57 @@ async function cleanupAttachments(): Promise<void> {
   await attachmentLifecycle.cleanup();
 }
 
-function completionStatus(protocol: ChatProtocol, reason?: string): StoredMessageStatus {
-  if (protocol === "anthropic-native" && reason === "pause_turn") return "paused";
+function completionStatus(protocol: ChatProtocol, reason?: string, canPause = true): StoredMessageStatus {
+  if (protocol === "anthropic-native" && reason === "pause_turn") {
+    return canPause ? "paused" : "incomplete";
+  }
   if (!reason) return "complete";
   if (protocol === "openai-responses") return reason.startsWith("incomplete:") ? "incomplete" : "complete";
   if (protocol === "openai-chat") return reason === "stop" ? "complete" : "incomplete";
   if (protocol === "gemini-native") return reason === "STOP" ? "complete" : "incomplete";
   return reason === "end_turn" || reason === "stop_sequence" ? "complete" : "incomplete";
+}
+
+function refusalMessageText(refusal?: RefusalInfo): string {
+  const explanation = refusal?.explanation?.trim();
+  return explanation ? `该回复因内容安全审核被拒答。\n\n${explanation}` : "该回复因内容安全审核被拒答。";
+}
+
+function applyRefusalCleanup(
+  messages: StoredChatMessage[],
+  id: string,
+  status: StoredMessageStatus,
+  refusal?: RefusalInfo,
+): StoredChatMessage[] {
+  const outcome = status === "aborted" ? "aborted" : status === "failed" ? "failed" : "completed";
+  return messages.map((message) => {
+    if (message.id !== id) return message;
+    const finishedSearch = finishSearch(message.search, outcome);
+    return {
+      ...message,
+      content: refusalMessageText(refusal),
+      status,
+      thinkingSummary: undefined,
+      providerReplay: undefined,
+      continuation: undefined,
+      search: finishedSearch ? { ...finishedSearch, citations: [] } : undefined,
+    };
+  });
+}
+
+function safeDeepSeekStreamingSnapshot(messages: StoredChatMessage[], id: string): StoredChatMessage[] {
+  return messages.map((message) => {
+    if (message.id !== id) return message;
+    return {
+      ...message,
+      content: "",
+      status: "streaming",
+      thinkingSummary: undefined,
+      providerReplay: undefined,
+      continuation: undefined,
+      ...(message.search ? { search: { ...message.search, citations: [] } } : {}),
+    };
+  });
 }
 
 export interface ModelCatalogViewState {
@@ -297,12 +353,15 @@ export function useChatSession({
     return workspace.execute({ type: "configure-conversation", id: workspace.conversation.id,
       settings: { modelId: workspace.effective.modelId, config: withSearchMode(sessionConfig, mode) } });
   }
+  async function setDeepSeekWebTools(tools: DeepSeekWebToolsSelection): Promise<boolean> {
+    if (!workspace.conversation || !workspace.canSend()) return false;
+    return workspace.execute({ type: "configure-conversation", id: workspace.conversation.id,
+      settings: { modelId: workspace.effective.modelId, config: withDeepSeekWebTools(sessionConfig, tools) } });
+  }
   useEffect(() => {
-    setConfigErrors(validateRequestConfig(
-      sessionConfig,
-      activeConnection?.protocol ?? "openai-chat",
-      activeModel?.modelId ?? "",
-    ));
+    setConfigErrors(activeConnection?.protocol
+      ? validateRequestConfig(sessionConfig, activeConnection.protocol, activeModel?.modelId ?? "")
+      : validateSessionConfig(sessionConfig));
   }, [sessionConfig, activeConnection?.protocol, activeModel?.modelId, workspace.conversation?.id]);
 
   useEffect(() => {
@@ -864,8 +923,19 @@ export function useChatSession({
     const requestConnection = structuredClone(activeTarget.connection);
     const requestModelId = activeTarget.model.modelId;
     const replayScope = `${requestConnection.id}|${requestConnection.baseUrl}`;
-    if (resume?.continuation && (resume.continuation.scope !== replayScope || resume.continuation.model !== activeTarget.model.modelId || requestConnection.protocol !== "anthropic-native")) {
-      setError("请切回这条回复使用的连接和模型后继续生成。"); return;
+    if (resume?.continuation) {
+      if (
+        resolveSearchMode(resume.continuation.config) === "deepseek-server"
+        || resume.providerReplay?.protocol !== "anthropic-native"
+        || containsDeepSeekToolBlocks(resume.providerReplay?.content)
+        || Boolean(resume.providerReplay?.responses?.some(containsDeepSeekToolBlocks))
+      ) {
+        setError("该回复使用了 DeepSeek 联网工具，不支持继续生成，请重新发送。");
+        return;
+      }
+      if (resume.continuation.scope !== replayScope || resume.continuation.model !== activeTarget.model.modelId || requestConnection.protocol !== "anthropic-native") {
+        setError("请切回这条回复使用的连接和模型后继续生成。"); return;
+      }
     }
     const capabilityError = attachmentCapabilityFailure(requestConnection.protocol,
       activeTarget.model.modelId, [...frozenAttachments, ...existingAttachments]);
@@ -890,11 +960,11 @@ export function useChatSession({
 
     const requestStore = sessionStore;
 
-    const frozenConfig = structuredClone(resume?.continuation?.config ?? sessionConfig);
-    const searchMode = isExternalSearch(resume?.search?.provider) ? resume.search.provider : resolveSearchMode(frozenConfig);
+    const sourceConfig = resume?.continuation?.config ?? sessionConfig;
+    const searchMode = isExternalSearch(resume?.search?.provider) ? resume.search.provider : resolveSearchMode(sourceConfig);
     const externalSearch = isExternalSearch(searchMode);
-    // Keep transport configuration native-only; external data is prepared by the session.
-    frozenConfig.webSearch = searchMode === "native";
+    const serverSearch = searchMode === "native" || searchMode === "deepseek-server";
+    const frozenConfig = freezeTransportSearchConfig(sourceConfig, searchMode);
     let searchSettings: SearchProfile | undefined;
     let searchQuery: string | undefined;
     if (externalSearch && !resume) {
@@ -904,14 +974,18 @@ export function useChatSession({
         if (searchMode === "exa-api") searchSettings = validateExaApiSettings(searchSettings);
         if (searchMode === "tavily") searchSettings = validateTavilyApiSettings(searchSettings as import("../search/settings").TavilySearchSettings);
         if (searchMode === "zhipu") searchSettings = validateZhipuApiSettings(searchSettings as import("../search/settings").ZhipuSearchSettings);
-        searchQuery = searchMode === "zhipu" ? validateZhipuSearchQuery(content) : validateSearchQuery(content);
+        if (searchMode === "deepseek") searchSettings = validateDeepSeekApiSettings(searchSettings as import("../search/settings").DeepSeekSearchSettings);
+        searchQuery = searchMode === "zhipu" ? validateZhipuSearchQuery(content)
+          : searchMode === "deepseek" ? validateDeepSeekSearchQuery(content) : validateSearchQuery(content);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "外部搜索配置无效。");
         return;
       }
     }
-    const requestHistory = projectSearchHistory(history).map(message => message.providerReplay?.scope === replayScope
-      ? message : { ...message, providerReplay: undefined });
+    const requestHistory = projectSearchHistory(history).map((message) =>
+      eligibleProviderReplay(message, requestConnection.protocol, replayScope)
+        ? message
+        : { ...message, providerReplay: undefined });
     const errors = validateRequestConfig(
       frozenConfig,
       requestConnection.protocol,
@@ -942,6 +1016,7 @@ export function useChatSession({
           requestHistory, content, frozenConfig,
           requestConnection.protocol, activeTarget.model.modelId, undefined,
           [...frozenAttachments, ...existingAttachments].map((item) => ({ name: item.name, mimeType: item.mimeType, size: item.size, data: "" })),
+          replayScope,
         );
         if (controller.signal.aborted) {
           return;
@@ -1046,8 +1121,8 @@ export function useChatSession({
         content: resume?.content ?? "",
         status: "streaming",
         search: resume?.search ?? (externalSearch ? { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "searching", queries: [searchQuery!] }
-          : frozenConfig.webSearch ? initialSearch(true) : undefined),
-        ...(requestConnection.protocol === "anthropic-native" ? { continuation: resume?.continuation ?? {
+          : serverSearch ? initialSearch(true) : undefined),
+        ...(requestConnection.protocol === "anthropic-native" && !isDeepSeekServerSearch(searchMode) ? { continuation: resume?.continuation ?? {
           config: frozenConfig, model: activeTarget.model.modelId, baseUrl: requestConnection.baseUrl, scope: replayScope,
           messages: planned.messages.map((message, index) => index === planned.messages.length - 1
             ? { role: "user" as const, content, ...(userMessage.attachments?.length ? { attachments: userMessage.attachments } : {}) } : message),
@@ -1148,6 +1223,7 @@ export function useChatSession({
       searchSettings, searchQuery, searchMode, requestHistory, content, replayScope, userMessage, assistantId,
       startTitleNaming, setMessages, setError, setContextPlan, setSendStatus } = input;
     let { requestMessages, workingMessages, planned } = input;
+    const isDeepSeekServer = isDeepSeekServerSearch(searchMode);
     let persistChain = Promise.resolve();
     let persistenceFailed = false;
     let measurement: GenerationMeasurement | undefined;
@@ -1158,22 +1234,26 @@ export function useChatSession({
       workingMessages = workingMessages.map(message => message.id === assistantId
         ? { ...message, generationMetrics: [...earlierMetrics, metrics] } : message);
     }
-    function queuePersist(snapshotMessages: StoredChatMessage[]) {
+    function queuePersist(snapshotMessages: StoredChatMessage[], streaming = false) {
+      const payload = streaming && isDeepSeekServer
+        ? safeDeepSeekStreamingSnapshot(snapshotMessages, assistantId)
+        : snapshotMessages;
       persistChain = persistChain
         .then(() =>
-          requestStore.updateMessages(snapshotMessages),
+          requestStore.updateMessages(payload),
         )
         .catch(() => {
           persistenceFailed = true;
         });
     }
-    queuePersist(workingMessages);
+    queuePersist(workingMessages, true);
 
     let assistantText = resume?.content ?? "";
     const resumeOffset = assistantText.length;
     let lastPaint = 0;
     let lastPersist = 0;
     let terminalSeen = false;
+    let receivedReplayThisTurn = false;
     try {
       if (externalSearch && !resume) {
         setSendStatus("正在检索外部资料…");
@@ -1223,7 +1303,7 @@ export function useChatSession({
       if (controller.signal.aborted) throw new Error("生成已停止。");
       measurement = new GenerationMeasurement(requestConnection.protocol, frozenConfig.stream);
       updateGenerationMetrics("streaming");
-      setMessages(workingMessages); queuePersist(workingMessages);
+      setMessages(workingMessages); queuePersist(workingMessages, true);
       for await (const event of transport.stream({
         baseUrl: requestConnection.baseUrl,
         apiKey: requestConnection.apiKey,
@@ -1237,18 +1317,21 @@ export function useChatSession({
         measurement.observe(event);
         if (event.type === "usage-update") {
           updateGenerationMetrics("streaming");
-          setMessages(workingMessages); queuePersist(workingMessages); continue;
+          setMessages(workingMessages); queuePersist(workingMessages, true); continue;
         }
         if (event.type === "search-update") {
           if (externalSearch) continue;
           workingMessages = workingMessages.map((message) => message.id === assistantId
             ? { ...message, search: mergeSearch(resume?.search, event.search, resumeOffset) } : message);
-          setMessages(workingMessages); queuePersist(workingMessages); continue;
+          setMessages(workingMessages); queuePersist(workingMessages, true); continue;
         }
         if (event.type === "provider-replay") {
+          receivedReplayThisTurn = true;
           const earlier = resume?.providerReplay;
-          const replay = earlier ? { ...event.replay, content: [...earlier.content, ...event.replay.content],
-            responses: [...(earlier.responses ?? [earlier.content]), event.replay.content] } : event.replay;
+          const replay = earlier && earlier.protocol === "anthropic-native" && event.replay.protocol === "anthropic-native"
+            ? { ...event.replay, content: [...earlier.content, ...event.replay.content],
+              responses: [...(earlier.responses ?? [earlier.content]), event.replay.content] }
+            : event.replay;
           workingMessages = workingMessages.map((message) => message.id === assistantId ? { ...message, providerReplay: replay } : message);
           continue;
         }
@@ -1272,7 +1355,7 @@ export function useChatSession({
             lastPaint = now;
           }
           if (now - lastPersist >= 500) {
-            queuePersist(workingMessages);
+            queuePersist(workingMessages, true);
             lastPersist = now;
           }
           continue;
@@ -1280,29 +1363,40 @@ export function useChatSession({
 
         if (event.type === "completed") {
           terminalSeen = true;
-          workingMessages = replaceAssistant(
-            workingMessages,
-            assistantId,
-            assistantText,
-            completionStatus(requestConnection.protocol, event.finishReason),
-          );
+          const currentAssistant = workingMessages.find((message) => message.id === assistantId);
+          const canPause = !isDeepSeekServer
+            && receivedReplayThisTurn
+            && !!currentAssistant?.providerReplay
+            && !containsDeepSeekToolBlocks(currentAssistant.providerReplay.content);
+          workingMessages = event.refusal
+            ? applyRefusalCleanup(workingMessages, assistantId, "incomplete", event.refusal)
+            : replaceAssistant(
+              workingMessages,
+              assistantId,
+              assistantText,
+              completionStatus(requestConnection.protocol, event.finishReason, canPause),
+            );
         } else if (event.type === "aborted") {
           terminalSeen = true;
-          workingMessages = replaceAssistant(
-            workingMessages,
-            assistantId,
-            assistantText,
-            "aborted",
-          );
+          workingMessages = event.clearRefusedContent
+            ? applyRefusalCleanup(workingMessages, assistantId, "aborted", event.refusal)
+            : replaceAssistant(
+              workingMessages,
+              assistantId,
+              assistantText,
+              "aborted",
+            );
         } else {
           terminalSeen = true;
           setSendStatus(undefined);
-          workingMessages = replaceAssistant(
-            workingMessages,
-            assistantId,
-            assistantText,
-            "failed",
-          );
+          workingMessages = event.clearRefusedContent
+            ? applyRefusalCleanup(workingMessages, assistantId, "failed", event.refusal)
+            : replaceAssistant(
+              workingMessages,
+              assistantId,
+              assistantText,
+              "failed",
+            );
           setError(formatFailureError(event.error));
         }
         updateGenerationMetrics(workingMessages.find(message => message.id === assistantId)!.status);
@@ -1358,6 +1452,23 @@ export function useChatSession({
     const conversationId = sessionStore.id;
     const frozenTarget = activeTarget && structuredClone(activeTarget);
     const config = structuredClone(sessionConfig);
+    const searchMode = resolveSearchMode(config);
+    const externalSearch = isExternalSearch(searchMode);
+    let searchSnapshot: { settings: SearchProfile; query: string } | undefined;
+    function prepareExternalSearch() {
+      if (!externalSearch) return undefined;
+      if (searchSnapshot) return searchSnapshot;
+      let settings = structuredClone(loadSearchSettings(undefined, searchMode as ExternalSearchProvider));
+      assertSearchEnabled(searchMode as ExternalSearchProvider, settings);
+      if (searchMode === "exa-api") settings = validateExaApiSettings(settings);
+      if (searchMode === "tavily") settings = validateTavilyApiSettings(settings as import("../search/settings").TavilySearchSettings);
+      if (searchMode === "zhipu") settings = validateZhipuApiSettings(settings as import("../search/settings").ZhipuSearchSettings);
+      if (searchMode === "deepseek") settings = validateDeepSeekApiSettings(settings as import("../search/settings").DeepSeekSearchSettings);
+      const query = searchMode === "zhipu" ? validateZhipuSearchQuery(content)
+        : searchMode === "deepseek" ? validateDeepSeekSearchQuery(content) : validateSearchQuery(content);
+      searchSnapshot = { settings, query };
+      return searchSnapshot;
+    }
     let task: import("./generationTasks").GenerationTask | undefined;
     let startedGeneration = false;
     let paintedPreparing = false;
@@ -1376,32 +1487,26 @@ export function useChatSession({
       resolveGenerationEndpoint(requestConnection.protocol, requestConnection.baseUrl, requestModelId);
       const capability = attachmentCapabilityFailure(requestConnection.protocol, requestModelId, user.attachments ?? []);
       if (capability) throw new Error(capability);
-      const frozenConfig = config;
-      const searchMode = resolveSearchMode(frozenConfig);
-      const externalSearch = isExternalSearch(searchMode);
-      frozenConfig.webSearch = searchMode === "native";
+      const frozenConfig = freezeTransportSearchConfig(config, searchMode);
+      const serverSearch = searchMode === "native" || searchMode === "deepseek-server";
       const errors = validateRequestConfig(frozenConfig, requestConnection.protocol, requestModelId);
       if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
-      let searchSettings: SearchProfile | undefined, searchQuery: string | undefined;
-      if (externalSearch) {
-        searchSettings = structuredClone(loadSearchSettings(undefined, searchMode as ExternalSearchProvider));
-        assertSearchEnabled(searchMode as ExternalSearchProvider, searchSettings);
-        if (searchMode === "exa-api") searchSettings = validateExaApiSettings(searchSettings);
-        if (searchMode === "tavily") searchSettings = validateTavilyApiSettings(searchSettings as import("../search/settings").TavilySearchSettings);
-        if (searchMode === "zhipu") searchSettings = validateZhipuApiSettings(searchSettings as import("../search/settings").ZhipuSearchSettings);
-        searchQuery = searchMode === "zhipu" ? validateZhipuSearchQuery(content) : validateSearchQuery(content);
-      }
+      const preparedSearch = prepareExternalSearch();
+      const searchSettings = preparedSearch?.settings;
+      const searchQuery = preparedSearch?.query;
       const replayScope = `${requestConnection.id}|${requestConnection.baseUrl}`;
       const index = before.findIndex(message => message.id === id);
       const history = withReplyLinks(before.slice(0, index)).map(withoutVersions);
-      const requestHistory = projectSearchHistory(history).map(message => message.providerReplay?.scope === replayScope
-        ? message : { ...message, providerReplay: undefined });
+      const requestHistory = projectSearchHistory(history).map((message) =>
+        eligibleProviderReplay(message, requestConnection.protocol, replayScope)
+          ? message
+          : { ...message, providerReplay: undefined });
       const attachments = user.attachments ?? [];
       if (attachments.length > 0 || requestHistory.some((message) => !!message.attachments?.length)) {
         await paintPreparingStatus();
       }
       const planned = await planContextBudget(requestHistory, content, frozenConfig, requestConnection.protocol, requestModelId,
-        undefined, attachments.map(item => ({ ...item, data: "" })));
+        undefined, attachments.map(item => ({ ...item, data: "" })), replayScope);
       const requestMessages: import("./types").ChatMessage[] = [];
       for (const [position, message] of planned.messages.entries()) {
         const source = position === planned.messages.length - 1 ? attachments : message.attachments ?? [];
@@ -1415,8 +1520,8 @@ export function useChatSession({
       const answer: StoredChatMessage = { id: assistantId, role: "assistant", content: "", replyToId: user.id,
         generationModel: requestModelId, status: "streaming", search: externalSearch
           ? { ...initialSearch(true), provider: searchMode as ExternalSearchProvider, status: "searching", queries: [searchQuery!] }
-          : frozenConfig.webSearch ? initialSearch(true) : undefined,
-        ...(requestConnection.protocol === "anthropic-native" ? { continuation: { config: frozenConfig, model: requestModelId,
+          : serverSearch ? initialSearch(true) : undefined,
+        ...(requestConnection.protocol === "anthropic-native" && !isDeepSeekServerSearch(searchMode) ? { continuation: { config: frozenConfig, model: requestModelId,
           baseUrl: requestConnection.baseUrl, scope: replayScope, messages: planned.messages.map((message, position) =>
             position === planned.messages.length - 1 ? { role: "user" as const, content, ...(attachments.length ? { attachments } : {}) } : message) } } : {}) };
       const userMessage = appendRoundVersion(withReplyLinks(before), user, answer);
@@ -1446,7 +1551,11 @@ export function useChatSession({
             });
         },
       };
-    }, paintPreparingStatus);
+    }, async () => {
+      // Validate external search before staging added attachment files to disk.
+      prepareExternalSearch();
+      await paintPreparingStatus();
+    });
     if (paintedPreparing && !startedGeneration) workspace.setSendStatusAt(conversationId, undefined);
     return result;
   }
@@ -1636,6 +1745,7 @@ export function useChatSession({
     setWebSearch,
     searchMode: resolveSearchMode(sessionConfig),
     setSearchMode,
+    setDeepSeekWebTools,
     setActiveModel,
     setConversationModel,
     stopGeneration,

@@ -11,8 +11,8 @@ const base: ChatRequest = { baseUrl: "https://synthetic.example", apiKey: "synth
 function request(protocol: ChatProtocol, model: string, settings: Partial<ThinkingSettings> = {}, stream = true): ChatRequest {
   return { ...base, model, config: withThinkingSettings({ ...defaultSessionConfig(), stream }, protocol, { ...defaultThinking, ...settings }) };
 }
-async function decode(protocol: ChatProtocol, payload: unknown, streaming = true, includeSummary = true) {
-  const req = request(protocol, protocol === "anthropic-native" ? "claude-sonnet-4-6" : "gpt-5.2", { includeSummary }, streaming);
+async function decode(protocol: ChatProtocol, payload: unknown, streaming = true, includeSummary = true, model?: string) {
+  const req = request(protocol, model ?? (protocol === "anthropic-native" ? "claude-sonnet-4-6" : "gpt-5.2"), { includeSummary }, streaming);
   const fetch = async () => new Response(streaming ? (payload as unknown[]).map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") : JSON.stringify(payload), {
     headers: { "content-type": streaming ? "text/event-stream" : "application/json" },
   });
@@ -308,5 +308,195 @@ describe("readable summary decoding", () => {
     for (const protocol of ["openai-chat", "openai-responses", "anthropic-native"] as const) {
       expect(JSON.stringify(buildProtocolBody(protocol, { ...base, messages: plan.messages }))).not.toContain("private summary");
     }
+  });
+});
+
+describe("DeepSeek V4 thinking controls and decoding contracts (#143)", () => {
+  it.each([
+    ["default", undefined],
+    ["off", "none"],
+    ["minimal", "minimal"],
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"],
+    ["max", "max"],
+  ] as const)("maps DeepSeek Chat Completions choice=%s without non-standard thinking field", (choice, expectedEffort) => {
+    for (const model of ["deepseek-chat", "deepseek-flash", "deepseek-v4-pro"] as const) {
+      const body = buildProtocolBody("openai-chat", request("openai-chat", model, { choice }));
+      expect(body).not.toHaveProperty("thinking");
+      if (expectedEffort === undefined) {
+        expect(body).not.toHaveProperty("reasoning_effort");
+      } else {
+        expect(body).toMatchObject({ model, reasoning_effort: expectedEffort });
+      }
+    }
+  });
+
+  it("decodes DeepSeek Chat Completions stream with reasoning_content and combined final finish_reason + usage chunk", async () => {
+    const events = await decode("openai-chat", [
+      { choices: [{ index: 0, delta: { reasoning_content: "step 1" }, finish_reason: null }] },
+      { choices: [{ index: 0, delta: { content: "final answer" }, finish_reason: null }] },
+      {
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: {
+          prompt_tokens: 12, completion_tokens: 20, total_tokens: 32,
+          prompt_cache_hit_tokens: 8,
+          completion_tokens_details: { reasoning_tokens: 11 },
+        },
+      },
+    ], true, true, "deepseek-v4-pro");
+    expect(text(events, "thinking-delta")).toBe("step 1");
+    expect(text(events, "text-delta")).toBe("final answer");
+    const expectedUsage = { inputTokens: 12, outputTokens: 20, totalTokens: 32, cacheReadTokens: 8, reasoningTokens: 11 };
+    expect(events).toContainEqual({ type: "usage-update", usage: expectedUsage });
+    expect(events[events.length - 1]).toEqual({ type: "completed", finishReason: "stop", usage: expectedUsage });
+  });
+
+  it.each([
+    ["default", undefined],
+    ["off", "none"],
+    ["low", "low"],
+    ["high", "high"],
+    ["max", "max"],
+  ] as const)("maps DeepSeek Responses choice=%s with store:false", (choice, expectedEffort) => {
+    for (const model of ["deepseek-flash", "deepseek-v4-pro"] as const) {
+      const body = buildProtocolBody("openai-responses", request("openai-responses", model, { choice, includeSummary: false }));
+      expect(body).toMatchObject({ model, store: false });
+      if (expectedEffort === undefined) {
+        expect(body).not.toHaveProperty("reasoning");
+      } else {
+        expect(body).toMatchObject({ reasoning: { effort: expectedEffort } });
+      }
+      const withSummary = buildProtocolBody("openai-responses", request("openai-responses", model, { choice, includeSummary: true }));
+      expect(withSummary).toMatchObject({
+        model,
+        store: false,
+        reasoning: expectedEffort === undefined ? { summary: "auto" } : { effort: expectedEffort, summary: "auto" },
+      });
+    }
+  });
+
+  it("decodes DeepSeek Responses streaming incrementally across reasoning_text.delta, .done, and multiple items", async () => {
+    const item1 = { id: "r1", type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "first chain!" }], encrypted_content: "opaque-1" };
+    const item2 = { id: "r2", type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "second chain" }], encrypted_content: "opaque-2" };
+    const response = {
+      id: "resp_ds", object: "response", status: "completed",
+      output: [item1, item2, { id: "m1", type: "message", role: "assistant", content: [{ type: "output_text", text: "done", annotations: [] }] }],
+      usage: { input_tokens: 10, output_tokens: 30, total_tokens: 40, output_tokens_details: { reasoning_tokens: 19 } },
+    };
+    const expectedUsage = { inputTokens: 10, outputTokens: 30, totalTokens: 40, reasoningTokens: 19 };
+    const events = await decode("openai-responses", [
+      { type: "response.reasoning_text.delta", item_id: "r1", content_index: 0, delta: "first ", sequence_number: 1 },
+      { type: "response.reasoning_text.delta", item_id: "r1", content_index: 0, delta: "chain", sequence_number: 2 },
+      // .done supplies the unique suffix "!" before output_item.done / response.completed arrive
+      { type: "response.reasoning_text.done", item_id: "r1", content_index: 0, text: "first chain!", sequence_number: 3 },
+      { type: "response.reasoning_text.delta", item_id: "r2", content_index: 0, delta: "second ", sequence_number: 4 },
+      { type: "response.reasoning_text.done", item_id: "r2", content_index: 0, text: "second chain", sequence_number: 5 },
+      { type: "response.output_text.delta", delta: "do", sequence_number: 6 },
+      { type: "response.output_item.done", item: item1, sequence_number: 7 },
+      { type: "response.output_item.done", item: item2, sequence_number: 8 },
+      { type: "response.output_text.delta", delta: "ne", sequence_number: 9 },
+      { type: "response.completed", response, sequence_number: 10 },
+    ], true, true, "deepseek-v4-pro");
+    expect(events).toEqual([
+      { type: "thinking-delta", text: "first " },
+      { type: "thinking-delta", text: "chain" },
+      { type: "thinking-delta", text: "!" },
+      { type: "thinking-delta", text: "\n\nsecond " },
+      { type: "thinking-delta", text: "chain" },
+      { type: "text-delta", text: "do" },
+      { type: "text-delta", text: "ne" },
+      { type: "usage-update", usage: expectedUsage },
+      { type: "completed", usage: expectedUsage },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("opaque");
+  });
+
+  it("decodes DeepSeek non-streaming Responses without top-level output_text including reasoning-only max_output_tokens", async () => {
+    const standard = {
+      id: "resp_ds_nonstream", object: "response", status: "completed",
+      output: [
+        { id: "r1", type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "deep thought" }] },
+        { id: "m1", type: "message", role: "assistant", content: [{ type: "output_text", text: "synthesized answer", annotations: [] }] },
+      ],
+      usage: { input_tokens: 15, output_tokens: 25, total_tokens: 40, output_tokens_details: { reasoning_tokens: 12 } },
+    };
+    const events = await decode("openai-responses", standard, false, true, "deepseek-v4-pro");
+    expect(text(events, "thinking-delta")).toBe("deep thought");
+    expect(text(events, "text-delta")).toBe("synthesized answer");
+    expect(events[events.length - 1]).toEqual({
+      type: "completed",
+      usage: { inputTokens: 15, outputTokens: 25, totalTokens: 40, reasoningTokens: 12 },
+    });
+
+    const reasoningOnly = {
+      id: "resp_ds_truncated", object: "response", status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [
+        { id: "r1", type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "truncated thought" }] },
+      ],
+      usage: { input_tokens: 15, output_tokens: 64, total_tokens: 79, output_tokens_details: { reasoning_tokens: 64 } },
+    };
+    const truncatedEvents = await decode("openai-responses", reasoningOnly, false, true, "deepseek-flash");
+    expect(text(truncatedEvents, "thinking-delta")).toBe("truncated thought");
+    expect(text(truncatedEvents, "text-delta")).toBe("");
+    expect(truncatedEvents[truncatedEvents.length - 1]).toEqual({
+      type: "completed", finishReason: "incomplete:max_output_tokens",
+      usage: { inputTokens: 15, outputTokens: 64, totalTokens: 79, reasoningTokens: 64 },
+    });
+  });
+
+  it("maps DeepSeek Anthropic thinking modes and independent effort, and decodes thinking blocks", async () => {
+    const omitted = buildProtocolBody("anthropic-native", request("anthropic-native", "deepseek-v4-pro"));
+    expect(omitted).not.toHaveProperty("thinking");
+    expect(omitted).not.toHaveProperty("output_config");
+
+    for (const effort of ["low", "high", "max"] as const) {
+      const defaultWithEffort = buildProtocolBody("anthropic-native", request("anthropic-native", "deepseek-v4-pro", { choice: "default", effort }));
+      expect(defaultWithEffort).not.toHaveProperty("thinking");
+      expect(defaultWithEffort).toMatchObject({ model: "deepseek-v4-pro", output_config: { effort } });
+    }
+
+    expect(buildProtocolBody("anthropic-native", request("anthropic-native", "deepseek-v4-pro", { choice: "off", effort: "high" }))).toMatchObject({
+      model: "deepseek-v4-pro", thinking: { type: "disabled" }, output_config: { effort: "high" },
+    });
+    expect(buildProtocolBody("anthropic-native", request("anthropic-native", "deepseek-v4-pro", { choice: "adaptive", effort: "max", includeSummary: true }))).toMatchObject({
+      model: "deepseek-v4-pro", thinking: { type: "adaptive", display: "summarized" }, output_config: { effort: "max" },
+    });
+    expect(buildProtocolBody("anthropic-native", request("anthropic-native", "deepseek-flash", { choice: "budget", budget: "2048", effort: "low", includeSummary: false }))).toMatchObject({
+      model: "deepseek-flash", thinking: { type: "enabled", budget_tokens: 2048, display: "omitted" }, output_config: { effort: "low" },
+    });
+
+    const streamEvents = await decode("anthropic-native", [
+      { type: "message_start", message: { usage: { input_tokens: 8, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 } } },
+      { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "ds thought" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "content_block_start", index: 1, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "ds answer" } },
+      { type: "content_block_stop", index: 1 },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 15, output_tokens_details: { thinking_tokens: 9 } } },
+      { type: "message_stop" },
+    ], true, true, "deepseek-v4-pro");
+    expect(text(streamEvents, "thinking-delta")).toBe("ds thought");
+    expect(text(streamEvents, "text-delta")).toBe("ds answer");
+    expect(streamEvents[streamEvents.length - 1]).toMatchObject({
+      type: "completed", finishReason: "end_turn",
+      usage: { uncachedInputTokens: 8, inputTokens: 8, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 15, reasoningTokens: 9 },
+    });
+
+    const nonStreamEvents = await decode("anthropic-native", {
+      type: "message",
+      content: [{ type: "thinking", thinking: "ds thought" }, { type: "text", text: "ds answer" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 8, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 15, output_tokens_details: { thinking_tokens: 9 } },
+    }, false, true, "deepseek-v4-pro");
+    expect(text(nonStreamEvents, "thinking-delta")).toBe("ds thought");
+    expect(text(nonStreamEvents, "text-delta")).toBe("ds answer");
+    expect(nonStreamEvents[nonStreamEvents.length - 1]).toMatchObject({
+      type: "completed", finishReason: "end_turn",
+      usage: { uncachedInputTokens: 8, inputTokens: 8, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 15, reasoningTokens: 9 },
+    });
   });
 });

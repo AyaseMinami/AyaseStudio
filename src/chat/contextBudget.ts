@@ -3,6 +3,7 @@ import type { StoredChatMessage } from "./repository";
 import type { ChatMessage, ChatProtocol } from "./types";
 import type { RequestAttachment } from "./attachments";
 import { withReplyLinks } from "./messageOperations";
+import { eligibleProviderReplay, expandAnthropicReplay, expandResponsesReplay } from "./deepseekReplay";
 
 export class ContextBudgetError extends Error {
   constructor(readonly mandatoryTokens: number, readonly budget: number) {
@@ -122,15 +123,28 @@ export async function planContextBudget(
   model: string,
   counterOverride?: TokenCounter,
   latestAttachments: RequestAttachment[] = [],
+  replayScope?: string,
 ): Promise<ContextPlan> {
   const selected = counterOverride
     ? { count: counterOverride, label: "测试计数器 + 每条消息估算开销" }
     : await selectTokenCounter(protocol, model);
   const count = selected.count;
+  const replayFor = (message: ChatMessage) => eligibleProviderReplay(message, protocol, replayScope);
   // Media tokenization is provider-dependent; include a local, labelled size estimate.
-  const messageTokens = (message: ChatMessage) => count(protocol === "anthropic-native" && message.providerReplay
-    ? JSON.stringify(message.providerReplay.content) : message.content) + 8 +
-    (message.attachments ?? []).reduce((cost, attachment) => cost + Math.ceil(attachment.size / 4), 0);
+  const messageTokens = (message: ChatMessage) => {
+    const replay = replayFor(message);
+    let serialized = message.content;
+    if (replay) {
+      if (protocol === "anthropic-native") {
+        const turns = expandAnthropicReplay(replay);
+        serialized = JSON.stringify(turns.length === 1 ? turns[0] : turns);
+      } else if (protocol === "openai-responses") {
+        serialized = JSON.stringify(expandResponsesReplay(message, replay));
+      }
+    }
+    return count(serialized) + 8 +
+      (message.attachments ?? []).reduce((cost, attachment) => cost + Math.ceil(attachment.size / 4), 0);
+  };
   const system: ChatMessage | undefined = config.systemInstruction.trim()
     ? { role: "system", content: config.systemInstruction.trim() } : undefined;
   const latest: ChatMessage = { role: "user", content: latestUser,
@@ -155,7 +169,7 @@ export async function planContextBudget(
         { role: "user" as const, content: round.user.content,
           ...(round.user.attachments?.length ? { attachments: round.user.attachments } : {}) },
         { role: "assistant" as const, content: round.assistant.content,
-          ...(protocol === "anthropic-native" && round.assistant.providerReplay ? { providerReplay: round.assistant.providerReplay } : {}) },
+          ...(replayFor(round.assistant) ? { providerReplay: round.assistant.providerReplay } : {}) },
       ]),
       latest,
     ],

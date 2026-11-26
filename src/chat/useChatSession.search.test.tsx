@@ -37,7 +37,8 @@ describe("external search in session generation", () => {
     saveSearchConfiguration({ ...loadSearchConfiguration(), exaApi: { ...defaultSearchSettings("exa-api"), apiKey: "synthetic-api-key", numResults: 2 } });
     const searchConfig = loadSearchConfiguration();
     saveSearchConfiguration({ ...searchConfig, tavily: { ...searchConfig.tavily, enabled: true, apiKey: "synthetic-tavily-key" },
-      zhipu: { ...searchConfig.zhipu, enabled: true, apiKey: "synthetic-zhipu-key" } });
+      zhipu: { ...searchConfig.zhipu, enabled: true, apiKey: "synthetic-zhipu-key" },
+      deepseek: { ...searchConfig.deepseek, enabled: true, apiKey: "synthetic-deepseek-key" } });
     await repo.initializeWorkspace("m", ["m"]);
     container = document.createElement("div"); document.body.append(container); root = createRoot(container);
     function Probe() { session = useChatSession({ onConfigurationRequired: () => undefined }); return null; }
@@ -59,7 +60,7 @@ describe("external search in session generation", () => {
     } } satisfies ChatTransport);
   }
   async function draft(value = "current question") { await act(async () => session.setDraft(value)); }
-  it.each((["exa-mcp", "exa-api", "tavily", "zhipu"] as ExternalSearchProvider[]).flatMap(provider =>
+  it.each((["exa-mcp", "exa-api", "tavily", "zhipu", "deepseek"] as ExternalSearchProvider[]).flatMap(provider =>
     (["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] as ChatProtocol[]).map(protocol => ({ provider, protocol }))))("retrieves once via $provider before $protocol answer and keeps credentials separate", async ({ provider, protocol }) => {
     await act(async () => { await session.setSearchMode(provider); });
     await act(async () => { await session.updateConnection("c", "protocol", protocol); });
@@ -76,13 +77,14 @@ describe("external search in session generation", () => {
     expect(JSON.stringify(answer.messages)).not.toContain("synthetic-api-key");
     expect(JSON.stringify(answer.messages)).not.toContain("synthetic-tavily-key");
     expect(JSON.stringify(answer.messages)).not.toContain("synthetic-zhipu-key");
+    expect(JSON.stringify(answer.messages)).not.toContain("synthetic-deepseek-key");
     expect(session.messages[0].content).toBe("current question");
     expect(session.messages[1].search?.status).toBe("completed");
     expect(session.messages[1].search?.provider).toBe(provider);
     expect(session.messages[1].search?.citations).toHaveLength(1);
     expect(JSON.stringify((await repo.load("current"))?.messages)).not.toContain("synthetic-search-key");
   });
-  it.each(["tavily", "zhipu"] as const)("blocks disabled %s before durable messages or requests, without changing selection", async provider => {
+  it.each(["tavily", "zhipu", "deepseek"] as const)("blocks disabled %s before durable messages or requests, without changing selection", async provider => {
     const configuration = loadSearchConfiguration();
     saveSearchConfiguration({ ...configuration, [provider]: { ...configuration[provider], enabled: false } });
     await act(async () => session.setSearchMode(provider));
@@ -96,6 +98,44 @@ describe("external search in session generation", () => {
     const text = "🙂".repeat(71); await draft(text); await act(async () => session.sendMessage());
     expect(session.error).toContain("70"); expect(session.draft).toBe(text); expect(session.messages).toHaveLength(0);
     expect(mocks.searchExa).not.toHaveBeenCalled(); expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+  });
+  it("rejects overlong and Unicode-whitespace DeepSeek queries before writes or attachment staging, and forwards search syntax verbatim", async () => {
+    await act(async () => session.setSearchMode("deepseek"));
+    const overlong = "🙂".repeat(129);
+    await draft(overlong); await act(async () => session.sendMessage());
+    expect(session.error).toContain("128"); expect(session.draft).toBe(overlong); expect(session.messages).toHaveLength(0);
+    expect(mocks.searchExa).not.toHaveBeenCalled(); expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+
+    await draft("\u0085"); await act(async () => session.sendMessage());
+    expect(session.error).toContain("请输入"); expect(session.draft).toBe("\u0085"); expect(session.messages).toHaveLength(0);
+    expect(mocks.searchExa).not.toHaveBeenCalled(); expect(mocks.createRuntimeChatTransport).not.toHaveBeenCalled();
+
+    const operatorQuery = 'site:deepseek.com -site:example.test "Search API"';
+    await draft(operatorQuery); await act(async () => session.sendMessage());
+    expect(mocks.searchExa).toHaveBeenCalledTimes(1);
+    expect(mocks.searchExa.mock.calls[0][1]).toBe(operatorQuery);
+    expect(mocks.searchExa.mock.calls[0][3]).toBe("deepseek");
+    expect(session.messages[1].search).toMatchObject({ provider: "deepseek", status: "completed", queries: [operatorQuery] });
+
+    const originalUser = session.messages[0];
+    const addedAttachment = { id: "draft-1", name: "note.txt", mimeType: "text/plain" as const, size: 2, file: new File(["hi"], "note.txt", { type: "text/plain" }) };
+    let editResult!: Awaited<ReturnType<typeof session.editAndSendMessage>>;
+    await act(async () => {
+      editResult = await session.editAndSendMessage(originalUser.id, overlong, { base: originalUser, attachments: [{ kind: "added", attachment: addedAttachment }] });
+    });
+    expect(editResult).toMatchObject({ status: "notSaved", error: expect.stringContaining("128") });
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.searchExa).toHaveBeenCalledTimes(1);
+    expect((await repo.load("current"))?.messages[0].content).toBe(operatorQuery);
+
+    const configuration = loadSearchConfiguration();
+    saveSearchConfiguration({ ...configuration, deepseek: { ...configuration.deepseek, enabled: false } });
+    await act(async () => {
+      editResult = await session.editAndSendMessage(originalUser.id, "short query", { base: originalUser, attachments: [{ kind: "added", attachment: addedAttachment }] });
+    });
+    expect(editResult).toMatchObject({ status: "notSaved", error: expect.stringContaining("已关闭") });
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.searchExa).toHaveBeenCalledTimes(1);
   });
   it("rejects an unconfigured API profile before search, model, title or message writes", async () => {
     const config = loadSearchConfiguration();
@@ -157,7 +197,7 @@ describe("external search in session generation", () => {
     expect(session.messages[1].search?.status).toBe("completed"); expect(session.messages[1].status).toBe("failed");
   });
   it.each<{ provider: ExternalSearchProvider; legacy: boolean }>([
-    { provider: "exa-mcp", legacy: false }, { provider: "exa-api", legacy: false },
+    { provider: "exa-mcp", legacy: false }, { provider: "exa-api", legacy: false }, { provider: "deepseek", legacy: false },
     { provider: "exa-mcp", legacy: true }, { provider: "exa-api", legacy: true },
   ])("continues paused Anthropic via $provider with preserved snapshots (legacy=$legacy)", async ({ provider, legacy }) => {
     await act(async () => { await session.setSearchMode(provider); });
@@ -182,6 +222,10 @@ describe("external search in session generation", () => {
     const paused = session.messages[1];
     expect(paused.status).toBe("paused"); expect(paused.continuation?.messages[0].content).toContain("Retrieved material");
     saveSearchSettings({ ...defaultSearchSettings(), apiKey: "changed" });
+    if (provider === "deepseek") {
+      const current = loadSearchConfiguration();
+      saveSearchConfiguration({ ...current, deepseek: { ...current.deepseek, enabled: false } });
+    }
     await act(async () => { await session.setSearchMode("off"); });
     await act(async () => { await session.continueMessage(paused.id); });
     expect(session.error).toBeUndefined();

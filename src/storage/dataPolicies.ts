@@ -2,7 +2,8 @@ import type { SessionConfig, NumericSetting } from "../chat/sessionConfig";
 import type { AssistantPreset, Conversation, WorkspaceSelection } from "../chat/workspace";
 import type { StoredChatMessage, ChatSnapshot } from "../chat/repository";
 import type { ConnectionSettingsState, ProviderGroup, ConnectionProfile, ConfiguredModel, ConfiguredModelGroup } from "../chat/settings";
-import type { SearchSettings, SearchConfiguration, TavilySearchSettings, ZhipuSearchSettings } from "../search/settings";
+import type { SearchSettings, SearchConfiguration, TavilySearchSettings, ZhipuSearchSettings, DeepSeekSearchSettings } from "../search/settings";
+import type { DeepSeekWebToolsSelection } from "../search/mode";
 import type { SearchRecord, SearchSource, SearchCitation, ProviderReplay, SearchContinuation } from "../chat/nativeSearch";
 import type { ChatMessage } from "../chat/types";
 import type { ThinkingSettings } from "../chat/thinking";
@@ -35,8 +36,9 @@ export const dataPolicies = {
   session: {
     version: "backup", systemInstruction: "backup", temperature: "backup", topP: "backup", topK: "backup",
     contextBudget: "backup", maxOutput: "backup", stream: "backup", dualSamplingConfirmed: "backup", customJson: "backup",
-    webSearch: "backup", webSearchProvider: "backup", geminiThinking: "backup", thinking: "backup", invalidStoredConfig: "backup",
+    webSearch: "backup", webSearchProvider: "backup", deepseekWebTools: "backup", geminiThinking: "backup", thinking: "backup", invalidStoredConfig: "backup",
   } satisfies FieldPolicy<SessionConfig>,
+  deepseekWebTools: { search: "backup", readUrl: "backup" } satisfies FieldPolicy<DeepSeekWebToolsSelection>,
   numeric: { mode: "backup", value: "backup" } satisfies FieldPolicy<NumericSetting>,
   thinking: { choice: "backup", budget: "backup", includeSummary: "backup", effort: "backup" } satisfies FieldPolicy<ThinkingSettings>,
   geminiThinking: { choice: "backup", budget: "backup", includeSummary: "backup" } satisfies FieldPolicy<GeminiThinkingSettings>,
@@ -66,10 +68,11 @@ export const dataPolicies = {
   connection: { id: "backup", name: "backup", protocol: "backup", baseUrl: "backup", apiKey: "credential", models: "backup", modelGroups: "backup", presetProtocol: "backup" } satisfies FieldPolicy<ConnectionProfile>,
   model: { id: "backup", modelId: "backup", displayName: "backup", groupId: "backup" } satisfies FieldPolicy<ConfiguredModel>,
   modelGroup: { id: "backup", name: "backup" } satisfies FieldPolicy<ConfiguredModelGroup>,
-  search: { version: "backup", exaMcp: "backup", exaApi: "backup", tavily: "backup", zhipu: "backup" } satisfies FieldPolicy<SearchConfiguration>,
+  search: { version: "backup", exaMcp: "backup", exaApi: "backup", tavily: "backup", zhipu: "backup", deepseek: "backup" } satisfies FieldPolicy<SearchConfiguration>,
   searchProfile: { version: "backup", baseUrl: "backup", apiKey: "credential", numResults: "backup" } satisfies FieldPolicy<SearchSettings>,
   tavilyProfile: { version: "backup", baseUrl: "backup", apiKey: "credential", numResults: "backup", enabled: "backup", searchDepth: "backup" } satisfies FieldPolicy<TavilySearchSettings>,
   zhipuProfile: { version: "backup", baseUrl: "backup", apiKey: "credential", numResults: "backup", enabled: "backup", searchEngine: "backup" } satisfies FieldPolicy<ZhipuSearchSettings>,
+  deepseekProfile: { version: "backup", baseUrl: "backup", apiKey: "credential", numResults: "backup", enabled: "backup" } satisfies FieldPolicy<DeepSeekSearchSettings>,
   searchRecord: { provider: "backup", warning: "backup", enabled: "backup", status: "backup", sources: "backup", citations: "backup", queries: "backup", suggestionHtml: "backup", error: "backup" } satisfies FieldPolicy<SearchRecord>,
   searchSource: { id: "backup", url: "backup", title: "backup", excerpt: "backup" } satisfies FieldPolicy<SearchSource>,
   citation: { start: "backup", end: "backup", sourceIds: "backup" } satisfies FieldPolicy<SearchCitation>,
@@ -81,7 +84,7 @@ export const dataPolicies = {
   appearance: {
     colorPreset: "backup", themeMode: "backup", accentColor: "backup", userBubbleColor: "backup", unifiedThemeColor: "backup",
     canvasColor: "backup", assistantBubbleColor: "backup", unifiedTransparency: "backup", chromeTransparency: "backup", sidebarTransparency: "backup",
-    composerTransparency: "backup", assistantBubbleTransparency: "backup", backgroundReference: "resource", backgroundFocus: "backup",
+    composerTransparency: "backup", assistantBubbleMode: "backup", assistantBubbleTransparency: "backup", backgroundReference: "resource", backgroundFocus: "backup",
     sidebarGlassEnabled: "backup", composerGlassEnabled: "backup",
     backgroundFit: "backup", backgroundMask: "backup", backgroundBlur: "backup", backgroundLibrary: "resource", backgroundEnabled: "backup", backgroundName: "backup",
   } satisfies FieldPolicy<AppearancePreferences>,

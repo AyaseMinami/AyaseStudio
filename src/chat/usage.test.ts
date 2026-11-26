@@ -79,4 +79,106 @@ describe("token usage normalization", () => {
     const raw = { prompt_tokens: "1", input_tokens: Number.MAX_SAFE_INTEGER + 1, promptTokenCount: NaN, output_tokens: -1, completion_tokens: null, candidatesTokenCount: false };
     expect(normalizeTokenUsage(protocol, raw)).toBeUndefined();
   });
+
+  it("normalizes Anthropic output_tokens_details.thinking_tokens and ignores safety_tokens", () => {
+    expect(normalizeTokenUsage("anthropic-native", {
+      input_tokens: 10, cache_read_input_tokens: 6, cache_creation_input_tokens: 0, output_tokens: 50,
+      output_tokens_details: { thinking_tokens: 18, safety_tokens: 4 },
+    })).toEqual({
+      uncachedInputTokens: 10, inputTokens: 16, cacheReadTokens: 6, cacheWriteTokens: 0, outputTokens: 50, reasoningTokens: 18,
+    });
+    expect(normalizeTokenUsage("anthropic-native", {
+      output_tokens: 50, output_tokens_details: { thinking_tokens: 0 },
+    })).toEqual({ outputTokens: 50, reasoningTokens: 0 });
+    expect(normalizeTokenUsage("anthropic-native", {
+      output_tokens: 0, output_tokens_details: { thinking_tokens: 0 },
+    })).toEqual({ outputTokens: 0, reasoningTokens: 0 });
+    expect(normalizeTokenUsage("anthropic-native", {
+      output_tokens: 18, output_tokens_details: { thinking_tokens: 18 },
+    })).toEqual({ outputTokens: 18, reasoningTokens: 18 });
+    expect(normalizeTokenUsage("anthropic-native", { output_tokens: 50 })).toEqual({ outputTokens: 50 });
+    expect(normalizeTokenUsage("anthropic-native", {
+      output_tokens: 50, output_tokens_details: { safety_tokens: 4 },
+    })).toEqual({ outputTokens: 50 });
+  });
+
+  it("rejects invalid, out-of-range, or unanchored Anthropic thinking_tokens", () => {
+    for (const details of [
+      { thinking_tokens: -1 },
+      { thinking_tokens: 1.5 },
+      { thinking_tokens: "5" },
+      { thinking_tokens: Number.MAX_SAFE_INTEGER + 1 },
+      { thinking_tokens: 51 },
+      null,
+      "bad",
+      [],
+      42,
+    ]) {
+      expect(normalizeTokenUsage("anthropic-native", { output_tokens: 50, output_tokens_details: details }))
+        .toEqual({ outputTokens: 50 });
+    }
+    expect(normalizeTokenUsage("anthropic-native", {
+      output_tokens: -1, output_tokens_details: { thinking_tokens: 18 },
+    })).toBeUndefined();
+    expect(normalizeTokenUsage("anthropic-native", {
+      output_tokens: "5", output_tokens_details: { thinking_tokens: 3 },
+    })).toBeUndefined();
+    expect(normalizeTokenUsage("anthropic-native", {
+      output_tokens_details: { thinking_tokens: 18 },
+    })).toBeUndefined();
+    expect(normalizeTokenUsage("anthropic-native", {
+      input_tokens: 12, output_tokens: -1, output_tokens_details: { thinking_tokens: 18 },
+    })).toEqual({ uncachedInputTokens: 12 });
+    expect(normalizeTokenUsage("anthropic-native", {
+      input_tokens: 12, output_tokens_details: { thinking_tokens: 18 },
+    })).toEqual({ uncachedInputTokens: 12 });
+  });
+
+  it("replaces Anthropic output-level details atomically when replaceOutput is enabled", () => {
+    const start = normalizeTokenUsage("anthropic-native", {
+      input_tokens: 3, cache_read_input_tokens: 6, cache_creation_input_tokens: 1, output_tokens: 0,
+    });
+    const firstDelta = mergeTokenUsage(start, normalizeTokenUsage("anthropic-native", {
+      output_tokens: 20, output_tokens_details: { thinking_tokens: 5 },
+    }), { replaceOutput: true });
+    expect(firstDelta).toEqual({
+      uncachedInputTokens: 3, inputTokens: 10, cacheReadTokens: 6, cacheWriteTokens: 1, outputTokens: 20, reasoningTokens: 5,
+    });
+
+    const cleared = mergeTokenUsage(firstDelta, normalizeTokenUsage("anthropic-native", { output_tokens: 50 }), { replaceOutput: true });
+    expect(cleared).toEqual({
+      uncachedInputTokens: 3, inputTokens: 10, cacheReadTokens: 6, cacheWriteTokens: 1, outputTokens: 50,
+    });
+    expect(cleared).not.toHaveProperty("reasoningTokens");
+
+    const zeroed = mergeTokenUsage(firstDelta, normalizeTokenUsage("anthropic-native", {
+      output_tokens: 50, output_tokens_details: { thinking_tokens: 0 },
+    }), { replaceOutput: true });
+    expect(zeroed).toEqual({
+      uncachedInputTokens: 3, inputTokens: 10, cacheReadTokens: 6, cacheWriteTokens: 1, outputTokens: 50, reasoningTokens: 0,
+    });
+
+    const preserved = mergeTokenUsage(firstDelta, { uncachedInputTokens: 4, outputTokens: NaN, reasoningTokens: 18 }, { replaceOutput: true });
+    expect(preserved).toEqual({
+      uncachedInputTokens: 4, inputTokens: 11, cacheReadTokens: 6, cacheWriteTokens: 1, outputTokens: 20, reasoningTokens: 5,
+    });
+
+    const overflowed = mergeTokenUsage(
+      { uncachedInputTokens: Number.MAX_SAFE_INTEGER - 30, inputTokens: Number.MAX_SAFE_INTEGER - 30, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 20, reasoningTokens: 5 },
+      { outputTokens: 50, reasoningTokens: 10 },
+      { replaceOutput: true },
+    );
+    expect(overflowed).toEqual({
+      uncachedInputTokens: Number.MAX_SAFE_INTEGER - 30, inputTokens: Number.MAX_SAFE_INTEGER - 30, cacheReadTokens: 0, cacheWriteTokens: 0,
+    });
+    expect(overflowed).not.toHaveProperty("outputTokens");
+    expect(overflowed).not.toHaveProperty("reasoningTokens");
+
+    for (const usage of [firstDelta, cleared, zeroed, preserved, overflowed]) {
+      expect(() => readGenerationMetricsData({
+        version: 1, protocol: "anthropic-native", streaming: true, status: "complete", elapsedMs: 10,
+        usageComplete: usage?.outputTokens !== undefined, usage,
+      })).not.toThrow();
+    }
+  });
 });

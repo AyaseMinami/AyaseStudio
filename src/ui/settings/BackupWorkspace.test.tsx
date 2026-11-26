@@ -119,18 +119,44 @@ describe("BackupWorkspace", () => {
     await toggle("我同意覆盖当前连接配置和 API Key"); await click("确认导入");
     expect(api.restore).toHaveBeenCalledWith(valid, "replace");
   });
-  it("describes all four current search profiles without promising local credential preservation", async () => {
+  it("describes all five current search profiles without promising local credential preservation", async () => {
+    const valid = preview(true, false); valid.document.version = 5;
+    const search = defaultSearchConfiguration();
+    for (const key of ["exaApi", "exaMcp", "tavily", "zhipu", "deepseek"] as const) search[key].apiKey = `PRIVATE-${key}`;
+    valid.document.searchSettings = search;
+    await render({ inspect: vi.fn().mockResolvedValue(valid) });
+    await click("选择备份文件");
+    const summary = host!.querySelector('[aria-label="已校验的备份预览"]')!;
+    expect(summary.textContent).toContain("网络搜索配置包含 · Exa API、Exa MCP、Tavily、智谱与 DeepSeek");
+    expect(summary.textContent).toContain("API Key包含 · 5 个");
+    expect(summary.textContent).not.toContain("旧配置");
+    expect(summary.textContent).not.toContain("保留本机 Exa API");
+    expect(summary.textContent).not.toContain("PRIVATE-");
+  });
+
+  it("does not count whitespace-only search keys in preview", async () => {
+    const valid = preview(true, false); valid.document.version = 5;
+    const search = defaultSearchConfiguration();
+    search.deepseek.apiKey = "   ";
+    search.tavily.apiKey = "PRIVATE-tavily";
+    valid.document.searchSettings = search;
+    await render({ inspect: vi.fn().mockResolvedValue(valid) });
+    await click("选择备份文件");
+    const summary = host!.querySelector('[aria-label="已校验的备份预览"]')!;
+    expect(summary.textContent).toContain("API Key包含 · 1 个");
+    expect(summary.textContent).not.toContain("PRIVATE-");
+  });
+
+  it("describes legacy v3 four-profile search backups accurately", async () => {
     const valid = preview(true, false); valid.document.version = 5;
     const search = defaultSearchConfiguration();
     for (const key of ["exaApi", "exaMcp", "tavily", "zhipu"] as const) search[key].apiKey = `PRIVATE-${key}`;
-    valid.document.searchSettings = search;
+    valid.document.searchSettings = { version: 3, exaApi: search.exaApi, exaMcp: search.exaMcp, tavily: search.tavily, zhipu: search.zhipu };
     await render({ inspect: vi.fn().mockResolvedValue(valid) });
     await click("选择备份文件");
     const summary = host!.querySelector('[aria-label="已校验的备份预览"]')!;
     expect(summary.textContent).toContain("网络搜索配置包含 · Exa API、Exa MCP、Tavily 与智谱");
     expect(summary.textContent).toContain("API Key包含 · 4 个");
-    expect(summary.textContent).not.toContain("旧配置");
-    expect(summary.textContent).not.toContain("保留本机 Exa API");
     expect(summary.textContent).not.toContain("PRIVATE-");
   });
 

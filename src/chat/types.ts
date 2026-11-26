@@ -52,15 +52,20 @@ export interface ChatFailure {
   retryable: boolean;
 }
 
+export interface RefusalInfo {
+  reason: "refusal" | "content_filter";
+  explanation?: string;
+}
+
 export type ChatEvent =
   | { type: "text-delta"; text: string }
   | { type: "thinking-delta"; text: string }
   | { type: "search-update"; search: import("./nativeSearch").SearchRecord }
   | { type: "provider-replay"; replay: import("./nativeSearch").ProviderReplay }
   | { type: "usage-update"; usage: TokenUsage }
-  | { type: "completed"; finishReason?: string; usage?: TokenUsage }
-  | { type: "failed"; error: ChatFailure }
-  | { type: "aborted" };
+  | { type: "completed"; finishReason?: string; usage?: TokenUsage; refusal?: RefusalInfo }
+  | { type: "failed"; error: ChatFailure; clearRefusedContent?: boolean; refusal?: RefusalInfo }
+  | { type: "aborted"; clearRefusedContent?: boolean; refusal?: RefusalInfo };
 
 export interface ChatTransport {
   stream(request: ChatRequest): AsyncIterable<ChatEvent>;

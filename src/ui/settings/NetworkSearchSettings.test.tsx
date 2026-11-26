@@ -163,7 +163,7 @@ it("tests a current draft snapshot with a fixed public query without saving or c
   } finally { await ui.cleanup(); }
 });
 
-it.each<ExternalSearchProvider>(["exa-mcp", "exa-api", "tavily", "zhipu"])("stops %s promptly and ignores its late result", async (provider) => {
+it.each<ExternalSearchProvider>(["exa-mcp", "exa-api", "tavily", "zhipu", "deepseek"])("stops %s promptly and ignores its late result", async (provider) => {
   let finish!: (value: Awaited<ReturnType<typeof searchExa>>) => void;
   vi.mocked(searchExa).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
   const ui = await mount();
@@ -171,7 +171,7 @@ it.each<ExternalSearchProvider>(["exa-mcp", "exa-api", "tavily", "zhipu"])("stop
     if (provider !== "exa-mcp") await ui.change("api-key", "synthetic-api-secret", provider);
     await ui.click("测试搜索", provider);
     const signal = vi.mocked(searchExa).mock.calls[0][2]!;
-    expect(ui.card(provider).textContent).toContain("正在搜索 · " + ({ "exa-api": "Exa API", "exa-mcp": "Exa MCP", tavily: "Tavily", zhipu: "智谱" })[provider]);
+    expect(ui.card(provider).textContent).toContain("正在搜索 · " + ({ "exa-api": "Exa API", "exa-mcp": "Exa MCP", tavily: "Tavily", zhipu: "智谱", deepseek: "DeepSeek" })[provider]);
     expect(ui.card(provider === "exa-api" ? "exa-mcp" : "exa-api").querySelector("fieldset")!.disabled).toBe(false);
     await ui.click("停止测试", provider);
     expect(signal.aborted).toBe(true); expect(ui.card(provider).textContent).toContain("搜索已取消");
@@ -224,13 +224,13 @@ it("recovers corrupted configuration as explicit default drafts with no automati
   } finally { await ui.cleanup(); }
 });
 
-it.each<"tavily" | "zhipu">(["tavily", "zhipu"])("defaults %s off and saves a blank-key disabled draft without requests", async (provider) => {
+it.each<"tavily" | "zhipu" | "deepseek">(["tavily", "zhipu", "deepseek"])("defaults %s off and saves a blank-key disabled draft without requests", async (provider) => {
   const ui = await mount();
   try {
     expect(ui.field("enabled", provider).checked).toBe(false);
     expect(ui.field("api-key", provider).type).toBe("password");
     expect(ui.field("api-key", provider).required).toBe(false);
-    expect(await ui.help((provider === "tavily" ? "Tavily" : "智谱") + "启用")).toContain("启用并保存后出现在聊天搜索菜单");
+    expect(await ui.help(({ tavily: "Tavily", zhipu: "智谱", deepseek: "DeepSeek" })[provider] + "启用")).toContain("启用并保存后出现在聊天搜索菜单");
     await ui.click("保存搜索设置", provider);
     expect(saveSearchConfiguration).toHaveBeenCalledOnce();
     expect(vi.mocked(saveSearchConfiguration).mock.calls[0][0][provider]).toMatchObject({ enabled: false, apiKey: "" });
@@ -244,7 +244,7 @@ it.each<"tavily" | "zhipu">(["tavily", "zhipu"])("defaults %s off and saves a bl
   } finally { await ui.cleanup(); }
 });
 
-it.each<"tavily" | "zhipu">(["tavily", "zhipu"])("requires a key for explicit %s tests while disabled and tests only its draft", async (provider) => {
+it.each<"tavily" | "zhipu" | "deepseek">(["tavily", "zhipu", "deepseek"])("requires a key for explicit %s tests while disabled and tests only its draft", async (provider) => {
   const ui = await mount();
   try {
     await ui.click("测试搜索", provider);
@@ -314,18 +314,25 @@ it("merges a card into freshly saved configuration without overwriting external 
 it("shows provider prices and opens only clicked official links safely", async () => {
   const ui = await mount();
   try {
-    const tavily = ui.card("tavily"); const zhipu = ui.card("zhipu");
+    const tavily = ui.card("tavily"); const zhipu = ui.card("zhipu"); const deepseek = ui.card("deepseek");
     expect(tavily.textContent).toContain("1,000 credits");
+    expect(deepseek.textContent).toContain("¥5/1,000 次");
     const tavilyPricing = await ui.help("Tavily 计费");
     const zhipuPricing = await ui.help("智谱计费与限制");
+    const deepseekPricing = await ui.help("DeepSeek 计费与限制");
     for (const text of ["$0.008/credit", "$8/1,000", "$16/1,000", "不会自动升级"]) expect(tavilyPricing).toContain(text);
     for (const text of ["¥0.01/次", "¥0.03/次", "¥0.05/次", "Coding Plan", "不代表包含本接口额度", "70 个字符"]) expect(zhipuPricing).toContain(text);
+    for (const text of ["¥5 / 1,000 次", "100 QPS", "不计费", "1–128 个字符", "site:", "分开配置"]) expect(deepseekPricing).toContain(text);
     await act(async () => tavily.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
     const depthOptions = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
     expect(depthOptions.map(option => option.textContent)).toEqual(["Basic（1 credit/次）", "Advanced（2 credits/次）"]);
     await act(async () => depthOptions[0].click());
-    const links = [...tavily.querySelectorAll("a"), ...zhipu.querySelectorAll("a")];
-    expect(links.map(link => link.getAttribute("href"))).toEqual(["https://app.tavily.com", "https://docs.tavily.com/documentation/api-credits", "https://bigmodel.cn", "https://docs.bigmodel.cn/cn/guide/tools/web-search"]);
+    const links = [...tavily.querySelectorAll("a"), ...zhipu.querySelectorAll("a"), ...deepseek.querySelectorAll("a")];
+    expect(links.map(link => link.getAttribute("href"))).toEqual([
+      "https://app.tavily.com", "https://docs.tavily.com/documentation/api-credits",
+      "https://bigmodel.cn", "https://docs.bigmodel.cn/cn/guide/tools/web-search",
+      "https://platform.deepseek.com/api_keys", "https://api-docs.deepseek.com/zh-cn/guides/search/",
+    ]);
     expect(openExternal).not.toHaveBeenCalled();
     for (const link of links) {
       await act(async () => link.click());
@@ -340,7 +347,7 @@ it("shows provider prices and opens only clicked official links safely", async (
   } finally { await ui.cleanup(); }
 });
 
-it.each<ExternalSearchProvider>(["tavily", "zhipu"])("keeps %s test errors and retry results isolated", async (provider) => {
+it.each<ExternalSearchProvider>(["tavily", "zhipu", "deepseek"])("keeps %s test errors and retry results isolated", async (provider) => {
   vi.mocked(searchExa).mockRejectedValueOnce(new Error("测试服务请求失败（HTTP 429），未自动重试。"));
   const ui = await mount();
   try {
@@ -353,5 +360,23 @@ it.each<ExternalSearchProvider>(["tavily", "zhipu"])("keeps %s test errors and r
     await ui.click("测试搜索", provider);
     expect(ui.card(provider).textContent).toContain("已检索 · 1 个来源");
     expect(searchExa).toHaveBeenCalledTimes(2);
+  } finally { await ui.cleanup(); }
+});
+
+it("persists DeepSeek enable toggle and count without touching other provider drafts", async () => {
+  const ui = await mount();
+  try {
+    expect(ui.field("base-url", "deepseek").value).toBe("https://api.deepseek.com");
+    await ui.change("api-key", "synthetic-deepseek", "deepseek");
+    await ui.change("num-results", "8", "deepseek");
+    await ui.toggle("deepseek");
+    await ui.change("api-key", "unsaved-zhipu", "zhipu");
+    await ui.click("保存搜索设置", "deepseek");
+    expect(saveSearchConfiguration).toHaveBeenLastCalledWith({
+      ...defaultSearchConfiguration(),
+      deepseek: { ...defaultSearchConfiguration().deepseek, baseUrl: "https://api.deepseek.com/", apiKey: "synthetic-deepseek", numResults: 8, enabled: true },
+    });
+    expect(ui.field("api-key", "zhipu").value).toBe("unsaved-zhipu");
+    expect(searchExa).not.toHaveBeenCalled();
   } finally { await ui.cleanup(); }
 });
