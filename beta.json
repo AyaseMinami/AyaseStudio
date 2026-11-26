@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0-beta.10",
-  "notes": "## 本版更新\n\n- 助手与对话配置新增「常规配置」和「系统提示词」页签。长提示词可以整页编辑并查看字数，模型、思考、联网搜索和生成参数集中在常规页。\n- Gemini 原生连接支持直接发送 Word、Excel 和 PowerPoint 文件（DOCX、XLSX、PPTX）。发送或编辑后重发附件时会显示准备提示，流式回复意外中断时会提示发送结果待确认，由你决定是否重试。\n- 优化聊天与设置界面的列表、头像和操作按钮。绘图工作区调整了提示词预设、参考图和 Gemini 高级参数布局，宽窗下可在一行查看任务状态、参数、提示词和耗时。\n- 减少绘图文件保存与恢复时的重复磁盘操作，优化 Cherry 备份导入时的数据扫描，并改进附件和背景文件处理。\n\n本版面向 Windows x64。安装包带有 Tauri 应用内更新签名，尚未提供 Windows Authenticode 签名。全新安装、同版重装、旧版升级后的数据保留及应用内更新全流程仍待实机验证。\n",
-  "pub_date": "2026-11-22T16:18:10.011Z",
+  "version": "0.1.0-beta.11",
+  "notes": "## 本版更新\n\n- 聊天消息编辑器支持高度自适应与内联展开，编辑长消息更从容。\n- 模型选择器重构，新增供应商筛选与更清晰的结构化层级展示。\n- 外观新增助手无气泡阅读模式、壁纸磨砂背景效果及窄栏阅读宽度调整。\n- 新增 DeepSeek 独立 Search API 支持，以及 OpenAI Responses 与 Anthropic 原生协议的 DeepSeek 服务端联网搜索和网页读取工具。\n- 补齐 Anthropic 原生协议思考 Token 用量统计与终态合并，并完善 DeepSeek 思考强度控制与原生图片内联映射的协议兼容性。\n\n本版面向 Windows x64（Beta 测试发布）。安装包带有 Tauri 应用内更新签名，尚未提供 Windows Authenticode 签名。全新安装、同版重装、旧版升级后的数据保留及应用内更新全流程仍待实机验证。",
+  "pub_date": "2026-11-26T10:23:45.156Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUlkWmIydDNZaFhCd2tkQW9EYUhtWUNiblZnK3R5YnRPUGU1cCtUQ0NKdDZuSnZJZFYyZFNKK2JUY0ExcUdpSUdOVmFIZXVnV3pZMGpVTDBuaFduVGdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MzY0Mjg3CWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuMTBfeDY0LXNldHVwLmV4ZQpjaDFKdjdUb1pDSDREUGJ6NlFmSkd5NHMzeGdrOTdZOU9hSVM1M3EyQ2Qya0o4akhLcWJ5U1BRT1BMZm1uMkdLbnIvV0FFVzJjYVB1WFdhdG80TjZBQT09Cg==",
-      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.10/Ayase.Studio_0.1.0-beta.10_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUZGcWlwS3hNVmw2K3p6Q3pHY0FnOEtCZ3FQcGdUUmJvWkFINzRINmVrcVpjdGppeEplbkdmYmlXT2tQVDZYWGJKR2YzZXpFMkR5QjVDVVR0bDNtVVFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1Njg4NjIyCWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuMTFfeDY0LXNldHVwLmV4ZQpna0QwMEtBVSsrWkhlK0NGV09wSTFBWE4zMkNZRVlvOWQrTWM3RUkvam8yZGhqbC9tSGd0c0dEcGU3VWVHV3dUY3p4TlNkdmFBamlsSWxmdnhsSHRCUT09Cg==",
+      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.11/Ayase.Studio_0.1.0-beta.11_x64-setup.exe"
     }
   }
 }
