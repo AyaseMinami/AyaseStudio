@@ -10,7 +10,7 @@
 | OpenAI Responses | input_tokens / output_tokens / total_tokens；终态取 response.usage | input_tokens_details.cached_tokens / cache_write_tokens；output_tokens_details.reasoning_tokens |
 | DeepSeek Chat 兼容 | 优先标准计数 | 标准 cached_tokens 优先，兼容 prompt_cache_hit_tokens；miss 字段不单独转换 |
 | Gemini 原生 | promptTokenCount；candidatesTokenCount + thoughtsTokenCount，或可验证的 totalTokenCount − promptTokenCount；totalTokenCount | cachedContentTokenCount / thoughtsTokenCount；无法确定时不补零 |
-| Anthropic 原生 | input_tokens 为普通输入；已知时加 cache_read_input_tokens + cache_creation_input_tokens 得总输入；output_tokens 为累积输出 | 分别保留普通输入、缓存读取与写入；message_delta 累积更新不相加 |
+| Anthropic 原生 | input_tokens 为普通输入；已知时加 cache_read_input_tokens + cache_creation_input_tokens 得总输入；output_tokens 为累积输出 | 分别保留普通输入、缓存读取与写入；#143 补齐 output_tokens_details.thinking_tokens（忽略 safety_tokens）；message_delta 累积更新不相加且按输出/思考成对替换 |
 
 官方合同：[OpenAI Prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching)、[Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[DeepSeek](https://api-docs.deepseek.com/api/create-chat-completion/)、[Gemini UsageMetadata](https://ai.google.dev/api/generate-content#UsageMetadata)、[Anthropic Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)。
 

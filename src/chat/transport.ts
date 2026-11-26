@@ -974,6 +974,7 @@ class AnthropicNativeTransport implements ChatTransport {
       let finishReason: string | undefined;
       let usage: TokenUsage | undefined;
       let terminalOutputTokens: number | undefined;
+      let terminalReasoningTokens: number | undefined;
       const thinkingBlocks = new Set<number>();
       const startedBlocks = new Set<number>();
       const replayBlocks = new Map<number, Record<string, unknown>>();
@@ -1015,8 +1016,8 @@ class AnthropicNativeTransport implements ChatTransport {
           if ("usage" in payload && payload.usage) {
             const snapshot = normalizeTokenUsage("anthropic-native", payload.usage);
             if (snapshot) {
-              usage = mergeTokenUsage(usage, snapshot);
-              yield { type: "usage-update", usage: usage! };
+              usage = mergeTokenUsage(usage, snapshot, { replaceOutput: true });
+              if (usage) yield { type: "usage-update", usage };
               if (request.signal?.aborted) {
                 yield { type: "aborted", ...(refused ? { clearRefusedContent: true, refusal: refused } : {}) };
                 return;
@@ -1080,8 +1081,8 @@ class AnthropicNativeTransport implements ChatTransport {
         if (payload.type === "message_start" && "message" in payload) {
           const snapshot = normalizeTokenUsage("anthropic-native", payload.message?.usage);
           if (snapshot) {
-            usage = mergeTokenUsage(usage, snapshot);
-            yield { type: "usage-update", usage: usage! };
+            usage = mergeTokenUsage(usage, snapshot, { replaceOutput: true });
+            if (usage) yield { type: "usage-update", usage };
             if (request.signal?.aborted) {
               yield { type: "aborted", ...(refused ? { clearRefusedContent: true, refusal: refused } : {}) };
               return;
@@ -1126,14 +1127,15 @@ class AnthropicNativeTransport implements ChatTransport {
           if ("delta" in payload && payload.delta?.stop_reason) {
             finishReason = payload.delta.stop_reason;
             terminalOutputTokens = snapshot?.outputTokens;
+            terminalReasoningTokens = snapshot?.outputTokens !== undefined ? snapshot.reasoningTokens : undefined;
             if (finishReason === "refusal") {
               const explanation = extractAnthropicRefusalExplanation(payload.delta.stop_details, request.apiKey);
               refused = { reason: "refusal", ...(explanation ? { explanation } : {}) };
             }
           }
           if (snapshot) {
-            usage = mergeTokenUsage(usage, snapshot);
-            yield { type: "usage-update", usage: usage! };
+            usage = mergeTokenUsage(usage, snapshot, { replaceOutput: true });
+            if (usage) yield { type: "usage-update", usage };
             if (request.signal?.aborted) {
               yield { type: "aborted", ...(refused ? { clearRefusedContent: true, refusal: refused } : {}) };
               return;
@@ -1153,9 +1155,13 @@ class AnthropicNativeTransport implements ChatTransport {
           }
           const finalObservation = { ...usage };
           delete finalObservation.outputTokens;
+          delete finalObservation.reasoningTokens;
           delete finalObservation.totalTokens;
-          if (terminalOutputTokens !== undefined) finalObservation.outputTokens = terminalOutputTokens;
-          const terminalUsage = mergeTokenUsage(undefined, finalObservation);
+          if (terminalOutputTokens !== undefined) {
+            finalObservation.outputTokens = terminalOutputTokens;
+            if (terminalReasoningTokens !== undefined) finalObservation.reasoningTokens = terminalReasoningTokens;
+          }
+          const terminalUsage = mergeTokenUsage(undefined, finalObservation, { replaceOutput: true });
           if (refused) {
             search.clearCitations();
             const update = search.complete();

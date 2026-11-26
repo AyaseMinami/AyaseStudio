@@ -1,5 +1,9 @@
 # Ayase Studio v0.1 Plan
 
+## DeepSeek 思考强度控制核验与 Anthropic 思考 Token 用量统计 #143（2026-11-26）
+
+按已复核定稿的 [设计案](ISSUE-143-DESIGN.md) 在本地实施 `#143`：在 `src/chat/usage.ts` 的 `anthropic-native` 归一化分支补齐 `output_tokens_details.thinking_tokens` → `reasoningTokens`（保留显式 `0`、忽略 `safety_tokens`、拦截 `thinking_tokens > output_tokens` 及缺少或非法 `output_tokens` 时的无主 `thinking_tokens`），并在 `mergeTokenUsage`、`AnthropicNativeTransport` 与 `GenerationMeasurement` 实施 Anthropic 输出/思考成对替换与 `message_stop` 终态确认（含溢出联动清理），防止早期 `message_delta` 的旧思考数或溢出帧思考数泄漏到终态指标。零 Dexie schema、数据字段策略、备份版本或 UI 变更；针对 DeepSeek V4 / V4.1 文档化协议形态补齐 Chat Completions、Responses 与 Anthropic Messages 的思考控制映射与思维链解码合成确定性回归测试，并同步更新 [PROTOCOLS.md](PROTOCOLS.md) 与 [#107 用量字段表](ISSUE-107-IMPLEMENTATION.md)。2026-11-26 用户确认 `#143` 验收通过并授权提交、推送及关闭远端 Issue；实际交付以 Git 历史与远端 Issue 状态为准。
+
 ## DeepSeek 服务端联网工具 #141（2026-11-26）
 
 按用户 2026-11-26 确认的 [设计案](ISSUE-141-DESIGN.md)（命名「DeepSeek 服务端联网」，选定 A1 + B1 + C1）在本地实施 `deepseek_web_search` 与 `deepseek_read_url` 双协议（`anthropic-native` 与 `openai-responses`）支持。`openai-chat` 与 `gemini-native` 禁用新选并在普通发送、重新生成与编辑并发送的统一预检中零请求拦截，保留 `openai-chat` 原生 `web_search_options` 不变。补齐双协议解码、按内容块归并的 Unicode 码点引用换算、有界来源 ID 与摘要预算、签名 `read_link` 多轮回传与上下文预算同步、仅保存用户编辑失效关联回放、DeepSeek 流式安全占位落盘、拒答原子终态清理与续写全量守卫，并将备份模块升级为 `search v5` + `chat v4`（`session` 保持 v1）。本地确定性测试与代码审查不代替真实供应商实测、原生桌面交互验收或远端 Issue 关闭。
