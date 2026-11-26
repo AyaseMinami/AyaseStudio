@@ -1,5 +1,9 @@
 # Ayase Studio v0.1 Plan
 
+## DeepSeek 专项收口 #139（2026-11-26）
+
+2026-11-26 完成 DeepSeek 搜索兼容与新 API 能力接入优化专项（Epic `#139`）收口：`#140`（独立 Search API）、`#141`（Responses / Anthropic 服务端联网工具）、`#142`（三协议内联 Vision 核验与文档边界）、`#143`（思考强度核验与 Anthropic `thinking_tokens` 统计）与 `#145`（`deepseek-ai/chat-demo` 源码调研）均已实施并关闭；`#144`（独立 Fetch API）经产品边界评估暂不纳入当前范围并以 `not planned` 关闭；历史 `#40` 已依据 `#143` 核对的现行官方 `reasoning_effort: "none"` 合同关闭；Epic `#139` 已正式关闭。同日执行项目收尾清理，移除忽略目录中的历史过程缓存、验证截图、日志与旧测试安装包，保留源码、文档、本机凭据与真实用户绘图素材。
+
 ## DeepSeek 思考强度控制核验与 Anthropic 思考 Token 用量统计 #143（2026-11-26）
 
 按已复核定稿的 [设计案](ISSUE-143-DESIGN.md) 在本地实施 `#143`：在 `src/chat/usage.ts` 的 `anthropic-native` 归一化分支补齐 `output_tokens_details.thinking_tokens` → `reasoningTokens`（保留显式 `0`、忽略 `safety_tokens`、拦截 `thinking_tokens > output_tokens` 及缺少或非法 `output_tokens` 时的无主 `thinking_tokens`），并在 `mergeTokenUsage`、`AnthropicNativeTransport` 与 `GenerationMeasurement` 实施 Anthropic 输出/思考成对替换与 `message_stop` 终态确认（含溢出联动清理），防止早期 `message_delta` 的旧思考数或溢出帧思考数泄漏到终态指标。零 Dexie schema、数据字段策略、备份版本或 UI 变更；针对 DeepSeek V4 / V4.1 文档化协议形态补齐 Chat Completions、Responses 与 Anthropic Messages 的思考控制映射与思维链解码合成确定性回归测试，并同步更新 [PROTOCOLS.md](PROTOCOLS.md) 与 [#107 用量字段表](ISSUE-107-IMPLEMENTATION.md)。2026-11-26 用户确认 `#143` 验收通过并授权提交、推送及关闭远端 Issue；实际交付以 Git 历史与远端 Issue 状态为准。

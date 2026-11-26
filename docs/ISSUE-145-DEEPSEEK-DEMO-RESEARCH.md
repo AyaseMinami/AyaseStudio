@@ -128,7 +128,7 @@
    - 消息采用自增整数 `id` + `parent_id` 构成消息树（角色严格交替、根为 `USER`），含 `status`（`FINISHED | INCOMPLETE | WIP | FAILED | CONTEXT_LENGTH_EXCEEDED | TIMEOUT | CONTENT_FILTER`）、`thinking_enabled`、`search_enabled` 与有序 `fragments[]`。
    - `fragments` 涵盖 `REQUEST`、`RESPONSE`（引用标记已剥除）、`THINK`（含 `elapsed_secs`）、`TEMPLATE_RESPONSE`、`TOOL_SEARCH`、`TOOL_OPEN`、`TOOL_FIND`、`READ_LINK`（含 `signature` 与可选 `url`/`title`）、`FILE`（仅图片带 `export_path` 原件，非图片仅元数据），以及展示层忽略的 `TIP`、`CONTENT_RISK`、`PARTIAL_FILE_READ`、`TOOL_IMAGE_SEARCH`。
 3. **未来在 Ayase 单独立项“导入 DeepSeek 历史记录”（对标 `#77`）的可行性**
-   - **可行性高**：格式版本明确、校验规则在 MIT 参考源码中完全公开；消息树分支可参照 `#77`（[PLAN.md](PLAN.md#L113-L115)）将历史分支拆分为独立对话。
+   - **可行性高**：格式版本明确、校验规则在 MIT 参考源码中完全公开；消息树分支可参照 `#77`（[PLAN.md](PLAN.md#cherry-chat-backup-import-77-2026-09-30)）将历史分支拆分为独立对话。
    - **数据契约边界**：Ayase 当前消息来源校验仅接受 `source === "cherry"`（[messageData.ts](../src/chat/messageData.ts#L72-L77)、[validation.ts](../src/backup/validation.ts#L184-L185)），因此非图片缺失原件虽可复用现有 `unavailableAttachments` 展示能力，但**须单独定义新的导入来源数据契约与备份模块版本**，而非直接复用 `"cherry"` 字段。归档不含 API Key/模型配置/行内引用角标/用量明细，`READ_LINK.signature` 亦不得在无模型绑定状态下跨供应商回放。建议后续按需单独立项，不混入 `#141`。
 
 ---

@@ -164,9 +164,9 @@
 - **数据契约与备份**：`TokenUsage.reasoningTokens` 已在 [types.ts](../src/chat/types.ts#L37)、[dataPolicies.ts](../src/storage/dataPolicies.ts#L50)（`"backup"`）与 [generationMetricsData.ts](../src/chat/generationMetricsData.ts#L30-L31) 中全协议注册并校验。**零表变更、零偏好变更、零备份版本变更、零迁移变更**。
 - **UI**：[GenerationStats.tsx](../src/ui/chat/GenerationStats.tsx#L65) 已展示 `["思考 Token", count(usage?.reasoningTokens)]`，无需改动 UI 组件与样式。
 - **文档同步**：
-  1. [docs/PROTOCOLS.md](PROTOCOLS.md#L82-L85)：在 `#107` 统计段落补记 `#143` 对 Anthropic `output_tokens_details.thinking_tokens` 及输出/思考成对终态合并规则；
-  2. [docs/PROTOCOLS.md](PROTOCOLS.md#L273-L277)：保留 2026-09-21 历史记录上下文，同时补充 2026-11-26 `#143` 更新说明——DeepSeek 现行 Chat Completions 文档已确认省略 `thinking` 时 `reasoning_effort: "none"` 可直接关闭思考，避免继续误导后续开发者；
-  3. [docs/ISSUE-107-IMPLEMENTATION.md](ISSUE-107-IMPLEMENTATION.md#L7-L14)：在协议字段表 Anthropic 行补充 `#143` 备注（`output_tokens_details.thinking_tokens`）；
+  1. [docs/PROTOCOLS.md](PROTOCOLS.md#chat-generation-statistics-107-updated-by-143)：在 `#107` 统计段落补记 `#143` 对 Anthropic `output_tokens_details.thinking_tokens` 及输出/思考成对终态合并规则；
+  2. [docs/PROTOCOLS.md](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries)：保留 2026-09-21 历史记录上下文，同时补充 2026-11-26 `#143` 更新说明——DeepSeek 现行 Chat Completions 文档已确认省略 `thinking` 时 `reasoning_effort: "none"` 可直接关闭思考，避免继续误导后续开发者；
+  3. [docs/ISSUE-107-IMPLEMENTATION.md](ISSUE-107-IMPLEMENTATION.md#协议与来源)：在协议字段表 Anthropic 行补充 `#143` 备注（`output_tokens_details.thinking_tokens`）；
   4. [docs/PLAN.md](PLAN.md)：在本地实现与全量门禁完成后补记 `#143` 实施摘要（开工前不提前写入完成状态）。
 
 ---
@@ -197,7 +197,7 @@ git status --short --branch
 - **复核方式**：通过 `codex-review`（只读沙箱）对照本地干净基线 `dev@fb0383d` 源码、基线 6 个相关测试文件（168 项全通过）及内存合成 SSE 复现验证，并由主代理逐项独立核实源码与官方文档后吸收修订：
   - **已确认并吸收的 A 类项**：
     1. **P2（流式思考 Token 跨帧残留）**：核实 `usage.ts` L58–L65、`generationMetrics.ts` L37–L40 与 `GenerationStats.tsx` L95 确存在早期 delta 旧 `reasoningTokens` 混入终态及同帧 `-1/18` 跨帧拼接问题，已修订为 Anthropic 输出成对替换 + 同帧非法 `output_tokens` 守卫 + `GenerationMeasurement` 同步处理；
-    2. **P3（过时协议文档）**：核实 [PROTOCOLS.md L273](PROTOCOLS.md#L273) 仍写着 2026-09-21 旧口径“DeepSeek Chat 关闭思考要求 `thinking.type=disabled`”且 [#107 字段表](ISSUE-107-IMPLEMENTATION.md#L7-L14) 未含 `thinking_tokens`，已纳入本次文档同步。
+    2. **P3（过时协议文档）**：核实 [PROTOCOLS.md](PROTOCOLS.md#issue-16-thinking-controls-and-readable-summaries) 仍写着 2026-09-21 旧口径“DeepSeek Chat 关闭思考要求 `thinking.type=disabled`”且 [#107 字段表](ISSUE-107-IMPLEMENTATION.md#协议与来源) 未含 `thinking_tokens`，已纳入本次文档同步。
   - **已吸收的 B 类工程建议**：补齐 `message_stop` 溢出联动清理 `reasoningTokens`、Chat 末帧同带 `finish_reason+usage`、Responses 非流式无顶层 `output_text` / 仅思考截断、Anthropic 隐藏思考仍统计 Token、以及中途 `error` / `refusal` 含用量用例。
   - **C 类产品边界**：双方确认无新增产品决策。
 - **实施阶段复核修订（2026-11-26）**：实施后经两轮 `codex-review` 独立只读复核，进一步收紧两处边界并同步至本设计案与代码：
