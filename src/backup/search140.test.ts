@@ -127,6 +127,7 @@ describe("Issue 140 DeepSeek search backup compatibility", () => {
     const appearance = JSON.parse(raw.preferences["ayase-studio.appearance.v1"]);
     delete appearance.sidebarGlassEnabled; delete appearance.composerGlassEnabled;
     delete appearance.chromeTransparency; delete appearance.assistantBubbleMode;
+    delete appearance.fontScale;
     raw.preferences["ayase-studio.appearance.v1"] = JSON.stringify(appearance);
     delete raw.compatibility; delete raw.drawing; delete raw.searchSettings;
     await expect(readBackupDocument(raw)).rejects.toThrow("搜索模块");

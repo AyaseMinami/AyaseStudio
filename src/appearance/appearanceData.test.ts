@@ -26,6 +26,7 @@ const unsupported = [
   JSON.stringify({ ...defaultAppearancePreferences, sidebarGlassEnabled: "true" }),
   JSON.stringify({ ...defaultAppearancePreferences, composerGlassEnabled: null }),
   ...["never", "", null, true, 123].map(assistantBubbleMode => JSON.stringify({ ...defaultAppearancePreferences, assistantBubbleMode })),
+  ...[85, 105, 1.1, "100", null, true].map(fontScale => JSON.stringify({ ...defaultAppearancePreferences, fontScale })),
   ...[-1, 101, 15.5, "85", null].map(chromeTransparency => JSON.stringify({ ...defaultAppearancePreferences, chromeTransparency })),
 ];
 
@@ -62,6 +63,7 @@ describe("appearance durable compatibility boundary", () => {
       expect(properties.get("--chrome-background-opacity")).toBe("0.6");
       expect(properties.get("--sidebar-background-opacity")).toBe("0.5");
       expect(properties.get("--assistant-bubble-opacity")).toBe("0.75");
+      expect(properties.get("--font-scale")).toBe("1");
       expect(properties.has("--message-bubble-opacity")).toBe(false);
       expect(attributes.get("data-assistant-bubble-mode")).toBe("auto");
       expect(attributes.get("data-assistant-bubble-transparent")).toBe("false");
@@ -255,5 +257,84 @@ describe("appearance durable compatibility boundary", () => {
     original.setItem.mockClear();
     expect(() => saveAppearancePreferences(original, structuredClone(defaultAppearancePreferences))).toThrow();
     expect(original.setItem).not.toHaveBeenCalled();
+  });
+
+  it("defaults omitted fontScale to 100 without writes and preserves last saved state on setFontScale save failure", async () => {
+    const legacy = storage(JSON.stringify({ themeMode: "light" }));
+    expect(readAppearancePreferences(legacy).fontScale).toBe(100);
+    expect(readAppearancePreferences(legacy).fontScale).toBe(100);
+    expect(legacy.setItem).not.toHaveBeenCalled();
+
+    // Corrupt record: setFontScale keeps display fallback 100, does not write, surfaces fontScaleError
+    const corruptEncoded = JSON.stringify({ ...defaultAppearancePreferences, fontScale: 105 });
+    const corrupt = storage(corruptEncoded);
+    const corruptProps = new Map<string, string>();
+    const corruptController = createAppearanceController({
+      storage: corrupt,
+      systemTheme: { isDark: () => false, subscribe: () => () => {} },
+      target: { style: { colorScheme: "", setProperty: (k, v) => { corruptProps.set(k, v); }, removeProperty() {} }, setAttribute() {}, removeAttribute() {} },
+    });
+    try {
+      await corruptController.ready;
+      corruptController.setFontScale(125);
+      expect(corruptController.getSnapshot().fontScale).toBe(100);
+      expect(corruptProps.get("--font-scale")).toBe("1");
+      expect(corruptController.getSnapshot().fontScaleError).toContain("外观配置");
+      expect(corrupt.setItem).not.toHaveBeenCalled();
+      expect(corrupt.getItem()).toBe(corruptEncoded);
+    } finally { corruptController.destroy(); }
+
+    // Unknown field alongside a valid non-default fontScale: strict read rejects, bootstrap display falls back to 100% with zero writes while preserving theme fallback
+    const unknownWithValidScaleEncoded = JSON.stringify({ ...defaultAppearancePreferences, themeMode: "dark", fontScale: 125, futureDisplayToken: true });
+    const unknownWithValidScale = storage(unknownWithValidScaleEncoded);
+    expect(() => readAppearancePreferences(unknownWithValidScale)).toThrow();
+    const fallbackProps = new Map<string, string>();
+    const fallbackAttributes = new Map<string, string>();
+    const fallbackInitial = applyInitialAppearance({
+      storage: unknownWithValidScale,
+      systemPrefersDark: false,
+      target: {
+        style: { colorScheme: "", setProperty: (k, v) => { fallbackProps.set(k, v); }, removeProperty() {} },
+        setAttribute: (k, v) => { fallbackAttributes.set(k, v); },
+        removeAttribute: k => { fallbackAttributes.delete(k); },
+      },
+    });
+    expect(fallbackInitial.fontScale).toBe(100);
+    expect(fallbackInitial.themeMode).toBe("dark");
+    expect(fallbackProps.get("--font-scale")).toBe("1");
+    expect(fallbackAttributes.get("data-theme")).toBe("dark");
+    expect(unknownWithValidScale.setItem).not.toHaveBeenCalled();
+    expect(unknownWithValidScale.getItem()).toBe(unknownWithValidScaleEncoded);
+
+    // Storage write rejection: retains previous saved fontScale and clears error after retry succeeds
+    let raw: string | null = JSON.stringify({ ...defaultAppearancePreferences, fontScale: 110 });
+    let failWrites = true;
+    const flaky = {
+      getItem: vi.fn(() => raw),
+      setItem: vi.fn((_key: string, next: string) => {
+        if (failWrites) throw new Error("QuotaExceededError");
+        raw = next;
+      }),
+    };
+    const props = new Map<string, string>();
+    const controller = createAppearanceController({
+      storage: flaky,
+      systemTheme: { isDark: () => false, subscribe: () => () => {} },
+      target: { style: { colorScheme: "", setProperty: (k, v) => { props.set(k, v); }, removeProperty() {} }, setAttribute() {}, removeAttribute() {} },
+    });
+    try {
+      await controller.ready;
+      expect(controller.getSnapshot().fontScale).toBe(110);
+      expect(props.get("--font-scale")).toBe("1.1");
+      controller.setFontScale(125);
+      expect(controller.getSnapshot().fontScale).toBe(110);
+      expect(props.get("--font-scale")).toBe("1.1");
+      expect(controller.getSnapshot().fontScaleError).toContain("无法保存字体比例设置");
+      failWrites = false;
+      controller.setFontScale(125);
+      expect(controller.getSnapshot().fontScale).toBe(125);
+      expect(props.get("--font-scale")).toBe("1.25");
+      expect(controller.getSnapshot().fontScaleError).toBeNull();
+    } finally { controller.destroy(); }
   });
 });

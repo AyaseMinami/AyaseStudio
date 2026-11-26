@@ -122,7 +122,8 @@
 .chat-model-picker .chat-model-picker-search input {
   flex: 1;
   min-width: 0;
-  height: 36px;
+  min-height: 36px;
+  padding-block: 6px;
   border: 0;
   background: transparent;
   color: rgb(var(--color-text));
@@ -192,8 +193,8 @@
   align-items: center;
   flex-shrink: 0;
   gap: 6px;
-  height: 28px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 4px 10px;
   border: 1px solid rgb(var(--color-border) / 0.8);
   border-radius: 999px;
   background: transparent;
@@ -398,7 +399,7 @@
   border-radius: 4px;
   background: rgb(var(--color-accent) / 0.1);
   color: rgb(var(--color-accent-text));
-  font-size: calc(0.6875rem * var(--font-scale));
+  font-size: var(--font-caption);
   font-weight: 500;
   line-height: 1.5;
 }

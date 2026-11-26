@@ -182,7 +182,7 @@ function Review() {
   const toggleLayout = () => setLayout(current => current === "wide" ? "narrow" : "wide");
   const preview = <div className="settings-workspace"><header className="settings-header" data-tauri-drag-region><WindowControls /></header><div className="settings-page-scroll">
     <AppearanceSettings {...appearance} backgroundUrl={wallpaper ? displayedWallpaper : null}
-      onThemeModeChange={appearanceController.setThemeMode} onColorPresetChange={appearanceController.setColorPreset}
+      onThemeModeChange={appearanceController.setThemeMode} onFontScaleChange={appearanceController.setFontScale} onColorPresetChange={appearanceController.setColorPreset}
       onUnifiedThemeColorChange={appearanceController.setUnifiedThemeColor} onUserBubbleColorChange={appearanceController.setUserBubbleColor}
       onAccentColorChange={appearanceController.setAccentColor} onCanvasColorChange={appearanceController.setCanvasColor}
       onAssistantBubbleColorChange={appearanceController.setAssistantBubbleColor} onAssistantBubbleModeChange={appearanceController.setAssistantBubbleMode} onAssistantBubbleTransparencyChange={appearanceController.setAssistantBubbleTransparency}

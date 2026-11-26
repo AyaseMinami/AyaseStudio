@@ -206,6 +206,8 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
           appearance={{
             themeMode: appearance.themeMode,
             resolvedTheme: appearance.resolvedTheme,
+            fontScale: appearance.fontScale,
+            fontScaleError: appearance.fontScaleError,
             accentColor: appearance.accentColor,
             unifiedThemeColor: appearance.unifiedThemeColor,
             effectiveUserBubbleColor: appearance.effectiveUserBubbleColor,
@@ -236,6 +238,7 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
             backgroundError: appearance.backgroundError,
             readabilityWarnings: appearance.readabilityWarnings,
             onThemeModeChange: appearance.setThemeMode,
+            onFontScaleChange: appearance.setFontScale,
             colorPreset: appearance.colorPreset,
             onColorPresetChange: appearance.setColorPreset,
             onAccentColorChange: appearance.setAccentColor,

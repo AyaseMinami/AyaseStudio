@@ -1,8 +1,8 @@
 import { BookOpen, Check, CircleAlert, ImagePlus, Monitor, Moon, RotateCcw, Sun, UserRound } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { BackgroundFocus } from "../../appearance/backgroundFocus";
-import type { AssistantBubbleMode, BackgroundFit, BackgroundLibraryEdit, BackgroundLibraryEntry, BackgroundResource, ColorPreset, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
-import { defaultAppearancePreferences } from "../../appearance/appearance";
+import type { AssistantBubbleMode, BackgroundFit, BackgroundLibraryEdit, BackgroundLibraryEntry, BackgroundResource, ColorPreset, FontScale, ResolvedTheme, ThemeMode } from "../../appearance/appearance";
+import { defaultAppearancePreferences, FONT_SCALE_OPTIONS } from "../../appearance/appearance";
 import { colorPresets, getColorPresetPalette } from "../../appearance/colorPresets";
 import { AppearanceChatPreview } from "./AppearanceChatPreview";
 import { BackgroundLibraryDialog } from "./BackgroundLibraryDialog";
@@ -24,19 +24,22 @@ const assistantBubbleModeOptions: readonly { value: AssistantBubbleMode; label: 
 ];
 
 const assistantBubbleHelpText = "纯色画布下助手回复默认采用无气泡文档流；启用背景图片后将自动显示带柔和磨砂的半透明气泡承托文字，可在此切换显示模式或调节颜色与透明度（调至 100% 即隐藏气泡）。";
+const fontScaleHelpText = "全局按比例缩放聊天、侧栏、绘图、设置与弹窗中的文字大小；不改变图片缩放、图标尺寸或系统显示缩放。";
 
 export interface AppearanceSettingsProps {
   unifiedThemeColor: string | null; effectiveUserBubbleColor: string;
   onUnifiedThemeColorChange(color: string | null): void; onUserBubbleColorChange(color: string | null): void;
   colorPreset: ColorPreset; onColorPresetChange(preset: ColorPreset): void;
-  themeMode: ThemeMode; resolvedTheme: ResolvedTheme; accentColor: string | null; canvasColor: string | null;
+  themeMode: ThemeMode; resolvedTheme: ResolvedTheme; fontScale: FontScale; fontScaleError?: string | null;
+  accentColor: string | null; canvasColor: string | null;
   assistantBubbleColor: string | null; assistantBubbleMode: AssistantBubbleMode; assistantBubbleTransparency: number; effectiveAccentColor: string; effectiveCanvasColor: string;
   unifiedTransparency: number; chromeTransparency: number; sidebarTransparency: number; composerTransparency: number;
   sidebarGlassEnabled: boolean; composerGlassEnabled: boolean;
   backgroundReference: string | null; backgroundUrl: string | null; backgroundFocus: BackgroundFocus | null; backgroundFit: BackgroundFit;
   backgroundLibrary: BackgroundLibraryEntry[]; backgroundEnabled: boolean; backgroundName: string | null;
   backgroundMask: number; backgroundBlur: number; backgroundBusy: boolean; backgroundError: string | null; readabilityWarnings: string[];
-  onThemeModeChange(themeMode: ThemeMode): void; onAccentColorChange(color: string | null): void; onCanvasColorChange(color: string | null): void;
+  onThemeModeChange(themeMode: ThemeMode): void; onFontScaleChange(scale: FontScale): void;
+  onAccentColorChange(color: string | null): void; onCanvasColorChange(color: string | null): void;
   onAssistantBubbleColorChange(color: string | null): void; onAssistantBubbleModeChange(mode: AssistantBubbleMode): void; onAssistantBubbleTransparencyChange(value: number): void; onEditBackgroundFocus(): void;
   onUnifiedTransparencyChange(value: number | null): void; onSidebarTransparencyChange(value: number): void; onComposerTransparencyChange(value: number): void;
   onChromeTransparencyChange(value: number): void;
@@ -55,12 +58,12 @@ export interface AppearanceSettingsProps {
 export function AppearanceSettings({
   unifiedThemeColor, effectiveUserBubbleColor, onUnifiedThemeColorChange, onUserBubbleColorChange,
   colorPreset, onColorPresetChange,
-  themeMode, resolvedTheme, accentColor, canvasColor, assistantBubbleColor, assistantBubbleMode, assistantBubbleTransparency,
+  themeMode, resolvedTheme, fontScale, fontScaleError = null, accentColor, canvasColor, assistantBubbleColor, assistantBubbleMode, assistantBubbleTransparency,
   unifiedTransparency, chromeTransparency, sidebarTransparency, composerTransparency,
   sidebarGlassEnabled, composerGlassEnabled,
   effectiveAccentColor, effectiveCanvasColor, backgroundReference, backgroundUrl, backgroundFocus, backgroundFit,
   backgroundLibrary, backgroundEnabled, backgroundName,
-  backgroundMask, backgroundBlur, backgroundBusy, backgroundError, readabilityWarnings, onThemeModeChange,
+  backgroundMask, backgroundBlur, backgroundBusy, backgroundError, readabilityWarnings, onThemeModeChange, onFontScaleChange,
   onAccentColorChange, onCanvasColorChange, onAssistantBubbleColorChange, onAssistantBubbleModeChange, onAssistantBubbleTransparencyChange,
   onUnifiedTransparencyChange, onSidebarTransparencyChange, onComposerTransparencyChange,
   onChromeTransparencyChange,
@@ -105,7 +108,7 @@ export function AppearanceSettings({
       </div>
     </fieldset>
     <fieldset className="appearance-theme-group appearance-preset-group" aria-labelledby="appearance-preset-title">
-      <legend className="appearance-preset-heading"><span id="appearance-preset-title">配色方案</span><button className="settings-button appearance-secondary-action" type="button" title="清除自定义颜色，恢复当前方案配色；保留背景图片和透明度。" onClick={() => onColorPresetChange(colorPreset)}><RotateCcw size={15} aria-hidden="true" />恢复方案配色</button></legend>
+      <legend className="appearance-preset-heading"><span id="appearance-preset-title">配色方案</span><button className="settings-button appearance-secondary-action" type="button" title="清除自定义颜色，恢复当前方案配色；保留背景图片和透明度，以及字体比例。" onClick={() => onColorPresetChange(colorPreset)}><RotateCcw size={15} aria-hidden="true" />恢复方案配色</button></legend>
       <div className="appearance-preset-options">
         {colorPresets.map((preset) => {
           const palette = getColorPresetPalette(preset.id, resolvedTheme);
@@ -121,6 +124,35 @@ export function AppearanceSettings({
         })}
       </div>
     </fieldset>
+    </section>
+
+    <section className="appearance-group appearance-group-card appearance-font-scale-group" aria-labelledby="appearance-font-scale-title">
+      <div className="appearance-group-heading appearance-font-scale-heading">
+        <div className="appearance-font-scale-title">
+          <h3 id="appearance-font-scale-title">文字与字号</h3>
+          <SettingsHelp label="文字与字号">{fontScaleHelpText}</SettingsHelp>
+        </div>
+        <div className="appearance-font-scale-actions">
+          <span className="appearance-font-scale-value" aria-live="polite">当前 {fontScale}%</span>
+          <button className="settings-button appearance-secondary-action" type="button"
+            disabled={fontScale === defaultAppearancePreferences.fontScale && !fontScaleError}
+            title="恢复默认字体比例（100%）"
+            onClick={() => onFontScaleChange(defaultAppearancePreferences.fontScale)}>
+            <RotateCcw size={15} aria-hidden="true" />恢复默认
+          </button>
+        </div>
+      </div>
+      <fieldset className="appearance-theme-group">
+        <legend>全局字体比例</legend>
+        <div className="appearance-theme-options appearance-font-scale-options">
+          {FONT_SCALE_OPTIONS.map((option) => <label className="appearance-theme-option appearance-font-scale-option" data-selected={fontScale === option ? "true" : undefined} key={option}
+            title={option === defaultAppearancePreferences.fontScale ? "默认标准字号（100%）" : `将应用文字缩放至 ${option}%`}>
+            <input type="radio" name="font-scale" value={String(option)} checked={fontScale === option} onChange={() => onFontScaleChange(option)} />
+            <span>{option}%</span>
+          </label>)}
+        </div>
+      </fieldset>
+      {fontScaleError && <p className="notice notice-warning appearance-inline-notice" role="alert">{fontScaleError}</p>}
     </section>
 
     <section className="appearance-group appearance-group-card" aria-labelledby="appearance-colors-title">
@@ -173,7 +205,7 @@ export function AppearanceSettings({
     </section>
 
     <section className="appearance-group appearance-group-card appearance-reset-group" aria-labelledby="appearance-reset-title">
-      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、各区域透明度、助手气泡模式（仅背景图）和背景设置；侧栏玻璃关闭、输入区域玻璃开启，保留背景库图片。</GroupHeading>
+      <GroupHeading id="appearance-reset-title" title="恢复默认">恢复当前主题的默认颜色、各区域透明度、助手气泡模式（仅背景图）和背景设置；侧栏玻璃关闭、输入区域玻璃开启，保留当前字体比例与背景库图片。</GroupHeading>
       <button className="settings-button" disabled={backgroundBusy} onClick={() => void onResetCustomAppearance()} type="button"><RotateCcw size={15} />恢复当前主题默认外观</button>
     </section>
     </div>
@@ -190,7 +222,7 @@ export function AppearanceSettings({
           </div>
           <div className="assistant-message-group message-surface appearance-reading-assistant">
             <div className="message-identity"><AssistantAvatar className="message-assistant-avatar" assistantName="默认助手" assistantId="appearance-reading" /><span className="message-author">默认助手<span className="message-model"> · 示例回复</span></span></div>
-            <div className="assistant-message message-body"><strong>让重点更清晰</strong><p>先记录核心观点，再补充支持它的证据。留一点空间，写下值得继续思考的问题。</p></div>
+            <div className="assistant-message message-body markdown"><strong>让重点更清晰</strong><p>先记录核心观点，再补充支持它的证据，并用 <code>font-scale</code> 标记关键参数。留一点空间，写下值得继续思考的问题。</p></div>
           </div>
         </div>
       </section>

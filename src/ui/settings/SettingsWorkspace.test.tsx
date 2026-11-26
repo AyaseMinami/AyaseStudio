@@ -48,6 +48,8 @@ const sharedProps = {
     onColorPresetChange: () => undefined,
     themeMode: "system" as const,
     resolvedTheme: "light" as const,
+    fontScale: 100 as const,
+    fontScaleError: null,
     accentColor: null,
     canvasColor: null,
     assistantBubbleColor: null,
@@ -74,6 +76,7 @@ const sharedProps = {
     backgroundError: null,
     readabilityWarnings: [],
     onThemeModeChange: () => undefined,
+    onFontScaleChange: () => undefined,
     onAccentColorChange: () => undefined,
     onCanvasColorChange: () => undefined,
     onAssistantBubbleColorChange: () => undefined,
@@ -184,6 +187,8 @@ describe("SettingsWorkspace", () => {
       /<button[^>]*aria-label="外观"[^>]*aria-current="page"/,
     );
     expect(html).toContain("主题模式");
+    expect(html).toContain("文字与字号");
+    expect(html).toContain("全局字体比例");
     expect(html).toContain("跟随系统");
     expect(html).toContain("自定义配色");
     expect(html).toContain('type="color"');

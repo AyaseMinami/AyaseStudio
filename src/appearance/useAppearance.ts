@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import type { AssistantBubbleMode, BackgroundFit, ColorPreset, ThemeMode } from "./appearance";
+import type { AssistantBubbleMode, BackgroundFit, ColorPreset, FontScale, ThemeMode } from "./appearance";
 import type { BackgroundFocus } from "./backgroundFocus";
 import { getBrowserAppearanceController } from "./browser";
 
@@ -18,6 +18,7 @@ export function useAppearance() {
     setColorPreset: (preset: ColorPreset) => controller.setColorPreset(preset),
     setThemeMode: (themeMode: ThemeMode) =>
       controller.setThemeMode(themeMode),
+    setFontScale: (scale: FontScale) => controller.setFontScale(scale),
     setAccentColor: (color: string | null) =>
       controller.setAccentColor(color),
     setCanvasColor: (color: string | null) =>

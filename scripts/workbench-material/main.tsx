@@ -60,7 +60,7 @@ const tasks: DrawingTask[] = [1, 2, 3].map(index => ({ id: `sample-task-${index}
 const readSample = async () => sampleImage;
 
 function Review() {
-  const [generalPreferences, setGeneralPreferences] = useState({ version: 1 as const, backgroundResident: true, confirmBeforeExit: true });
+  const [generalPreferences, setGeneralPreferences] = useState({ version: 2 as const, backgroundResident: true, confirmBeforeExit: true, checkUpdatesOnStartup: true });
   const [page, setPage] = useState<AppPage>("settings");
   const [section, setSection] = useState<SettingsSection>("appearance");
   const [variant, setVariant] = useState("production");
@@ -76,7 +76,7 @@ function Review() {
   }, [background, variant, appearance]);
   const appearanceProps: AppearanceSettingsProps = {
     ...appearance, backgroundUrl: background ? wallpaper : null, backgroundEnabled: background,
-    onThemeModeChange: appearanceController.setThemeMode, onColorPresetChange: appearanceController.setColorPreset,
+    onThemeModeChange: appearanceController.setThemeMode, onFontScaleChange: appearanceController.setFontScale, onColorPresetChange: appearanceController.setColorPreset,
     onUnifiedThemeColorChange: appearanceController.setUnifiedThemeColor, onUserBubbleColorChange: appearanceController.setUserBubbleColor,
     onAccentColorChange: appearanceController.setAccentColor, onCanvasColorChange: appearanceController.setCanvasColor,
     onAssistantBubbleColorChange: appearanceController.setAssistantBubbleColor, onAssistantBubbleModeChange: appearanceController.setAssistantBubbleMode, onAssistantBubbleTransparencyChange: appearanceController.setAssistantBubbleTransparency,

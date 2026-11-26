@@ -58,9 +58,9 @@
 .drawing-prompt-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem 0.6rem; min-height: 1.95rem; }
 .drawing-presets { display: flex; align-items: center; min-width: 0; max-width: 100%; margin-left: auto; }
 .drawing-preset-controls { display: flex; align-items: center; gap: 0.35rem; min-width: 0; max-width: 100%; }
-.drawing-preset-controls .select-field { width: clamp(128px, 30cqi, 196px); min-width: 0; height: 1.95rem; min-height: 1.95rem; padding: 0.2rem 0.55rem; border-radius: 7px; font-size: var(--font-small); }
+.drawing-preset-controls .select-field { width: clamp(128px, 30cqi, 196px); min-width: 0; min-height: 1.95rem; padding: 0.2rem 0.55rem; border-radius: 7px; font-size: var(--font-small); }
 .drawing-presets .drawing-actions { flex-wrap: nowrap; gap: 0.3rem; flex-shrink: 0; }
-.drawing-presets .drawing-button { min-height: 1.95rem; height: 1.95rem; padding: 0.2rem 0.55rem; border-radius: 7px; }
+.drawing-presets .drawing-button { min-height: 1.95rem; padding: 0.2rem 0.55rem; border-radius: 7px; }
 .drawing-presets .drawing-preset-more { width: 1.95rem; padding: 0; }
 
 .drawing-preset-backdrop { color: rgb(var(--color-text)); font-size: var(--font-ui); }
@@ -70,7 +70,7 @@
 .drawing-preset-dialog > * { flex-shrink: 0; }
 .drawing-preset-dialog .drawing-field { gap: 8px; min-width: 0; }
 .drawing-preset-dialog .drawing-label { font-weight: 500; }
-.drawing-preset-dialog input { height: 36px; padding: 0 10px; border-radius: 6px; }
+.drawing-preset-dialog input { min-height: 36px; padding: 6px 10px; border-radius: 6px; }
 .drawing-preset-dialog textarea { min-height: 180px; padding: 12px; border-radius: 8px; line-height: 1.6; resize: vertical; }
 .drawing-preset-dialog .drawing-muted { color: rgb(var(--color-muted)); font-size: var(--font-small); }
 .drawing-preset-dialog > .drawing-actions { justify-content: flex-end; padding-top: 16px; border-top: 1px solid rgb(var(--color-border) / 0.6); gap: 8px; }
@@ -199,7 +199,7 @@
 .drawing-advanced-toggle[aria-expanded="true"] .drawing-advanced-chevron { transform: rotate(180deg); }
 .drawing-parameter-help-label { display: inline-flex; align-items: center; gap: 0.25rem; color: rgb(var(--color-muted)); font-size: var(--font-caption); }
 .drawing-parameter-tools .drawing-parameter-help-label,
-.drawing-parameter-tools .drawing-sound { min-height: 1.5rem; font-size: var(--font-caption); font-weight: 400; line-height: 1.25rem; color: rgb(var(--color-muted)); }
+.drawing-parameter-tools .drawing-sound { min-height: 1.5rem; font-size: var(--font-caption); font-weight: 400; line-height: 1.5; color: rgb(var(--color-muted)); }
 .drawing-parameter-tools .drawing-sound input { margin: 0; flex-shrink: 0; }
 .drawing-sound { display: flex; align-items: center; gap: 0.35rem; }
 
@@ -217,7 +217,7 @@
 .drawing-references[data-empty="true"] { max-height: 12.5rem; }
 .drawing-reference-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; min-height: 1.75rem; }
 .drawing-reference-heading-actions { display: flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
-.drawing-reference-heading .drawing-button { min-height: 1.7rem; height: 1.7rem; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: var(--font-caption); }
+.drawing-reference-heading .drawing-button { min-height: 1.7rem; padding: 0.2rem 0.45rem; border-radius: 6px; font-size: var(--font-caption); }
 .drawing-reference-heading .drawing-reference { border-style: solid; background: var(--workbench-surface); }
 .drawing-reference-heading .drawing-reference-clear { border-color: transparent; background: transparent; color: rgb(var(--color-muted)); }
 .drawing-reference-heading .drawing-reference-clear:hover:not(:disabled) { border-color: rgb(var(--color-border)); background: rgb(var(--color-hover)); color: rgb(var(--color-text-soft)); }
@@ -405,7 +405,7 @@
 .drawing-preview-stage:active img { cursor: grabbing; }
 .drawing-preview-stage:focus-visible { outline: 2px solid rgb(var(--color-focus)); outline-offset: 2px; }
 .drawing-preview-tools { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.45rem 0.65rem; margin-top: 0.6rem; }
-.drawing-preview-tools .drawing-button { flex-shrink: 0; height: 2rem; min-height: 2rem; line-height: 1.25rem; padding: 0 0.6rem; border-radius: 7px; }
+.drawing-preview-tools .drawing-button { flex-shrink: 0; min-height: 2rem; line-height: 1.4; padding: 0.25rem 0.6rem; border-radius: 7px; }
 .drawing-preview-tools > .drawing-actions { align-items: center; gap: 0.4rem; }
 .drawing-folder-action { border-color: rgb(var(--color-accent) / 0.35); background: rgb(var(--color-accent) / 0.12); color: rgb(var(--color-accent-text)); font-weight: 500; }
 .drawing-folder-action:hover:not(:disabled) { border-color: rgb(var(--color-accent)); background: rgb(var(--color-accent) / 0.2); }
@@ -438,7 +438,7 @@ details[open] > summary > .drawing-disclosure-icon { transform: rotate(90deg); }
 .drawing-workspace .drawing-history-heading { flex-shrink: 0; margin-top: 0.6rem; }
 .drawing-history-heading { flex-wrap: wrap; }
 .drawing-history-title-group { display: flex; align-items: center; gap: 0.45rem; }
-.drawing-count-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 1.35rem; height: 1.25rem; padding: 0 0.4rem; border-radius: 999px; background: rgb(var(--color-text) / 0.06); color: rgb(var(--color-muted)); font-size: var(--font-caption); }
+.drawing-count-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 1.35rem; min-height: 1.25rem; padding: 0.1rem 0.4rem; border-radius: 999px; background: rgb(var(--color-text) / 0.06); color: rgb(var(--color-muted)); font-size: var(--font-caption); }
 .drawing-history-heading .drawing-clear-history { margin-left: auto; min-height: 1.85rem; padding: 0.2rem 0.55rem; border-radius: 7px; border-color: rgb(var(--color-error-text) / 0.25); background: rgb(var(--color-error-text) / 0.07); color: rgb(var(--color-error-text)); font-size: var(--font-caption); }
 .drawing-history-heading .drawing-clear-history:hover:not(:disabled) { border-color: rgb(var(--color-error-text) / 0.45); background: rgb(var(--color-error-text) / 0.14); }
 .drawing-history-heading .drawing-clear-history:disabled { opacity: 0.45; }
@@ -528,10 +528,10 @@ details[open] > summary > .drawing-disclosure-icon { transform: rotate(90deg); }
 }
 .drawing-task-row:hover, .drawing-task-row:focus-within { background: rgb(var(--color-hover) / 0.65); }
 .drawing-task-row > :is(th, td) { display: block; min-width: 0; padding: 0; border: 0; text-align: left; font-weight: 400; overflow-wrap: anywhere; }
-.drawing-task-row > th { grid-area: id; line-height: 1.5rem; }
+.drawing-task-row > th { grid-area: id; line-height: 1.5; }
 .drawing-task-row > td:nth-child(2) { grid-area: status; display: flex; align-items: center; min-height: 1.5rem; }
-.drawing-task-row > td:nth-child(3) { grid-area: params; color: rgb(var(--color-muted)); font-size: var(--font-caption); line-height: 1.5rem; }
-.drawing-task-row > td:nth-child(4) { grid-area: time; color: rgb(var(--color-muted)); font-size: var(--font-caption); line-height: 1.5rem; min-width: 2.5em; text-align: right; }
+.drawing-task-row > td:nth-child(3) { grid-area: params; color: rgb(var(--color-muted)); font-size: var(--font-caption); line-height: 1.5; }
+.drawing-task-row > td:nth-child(4) { grid-area: time; color: rgb(var(--color-muted)); font-size: var(--font-caption); line-height: 1.5; min-width: 2.5em; text-align: right; }
 .drawing-task-row > td:nth-child(5) { grid-area: prompt; }
 .drawing-task-row > td:nth-child(6) { grid-area: actions; }
 
@@ -541,8 +541,8 @@ details[open] > summary > .drawing-disclosure-icon { transform: rotate(90deg); }
   align-items: center;
   justify-content: center;
   min-width: 5.2em;
-  height: 1.3rem;
-  padding: 0 0.42rem;
+  min-height: 1.3rem;
+  padding: 0.15rem 0.42rem;
   border-radius: 999px;
   font-size: var(--font-caption);
   font-weight: 500;
@@ -571,7 +571,7 @@ details[open] > summary > .drawing-disclosure-icon { transform: rotate(90deg); }
 .drawing-task-panel .drawing-task-text-action:hover:not(:disabled) { background: rgb(var(--color-accent) / 0.1); border-color: transparent; }
 .drawing-task-more { min-width: 0; flex: 0 0 auto; }
 .drawing-task-more[open] { flex: 1 0 100%; width: 0; min-width: 100%; }
-.drawing-task-more summary { display: inline-flex; align-items: center; gap: 0.15rem; min-height: 1.5rem; padding: 0 0.25rem; border-radius: 5px; list-style: none; line-height: 1.5rem; font-size: var(--font-caption); white-space: nowrap; cursor: pointer; color: rgb(var(--color-accent-text)); }
+.drawing-task-more summary { display: inline-flex; align-items: center; gap: 0.15rem; min-height: 1.5rem; padding: 0 0.25rem; border-radius: 5px; list-style: none; line-height: 1.5; font-size: var(--font-caption); white-space: nowrap; cursor: pointer; color: rgb(var(--color-accent-text)); }
 .drawing-task-more summary::-webkit-details-marker { display: none; }
 .drawing-task-more summary:hover { background: rgb(var(--color-accent) / 0.1); }
 .drawing-task-more .drawing-actions { flex-direction: column; gap: 0.25rem; padding-top: 0.35rem; }

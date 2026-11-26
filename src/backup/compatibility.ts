@@ -92,7 +92,8 @@ function validateAppearanceCompatibility(raw: Record<string, unknown>): void {
   dataCheck(typeof encoded === "string");
   const appearance: unknown = JSON.parse(encoded);
   dataRecord(appearance);
-  const minimumVersion = "assistantBubbleMode" in appearance ? 4
+  const minimumVersion = "fontScale" in appearance ? 5
+    : "assistantBubbleMode" in appearance ? 4
     : "chromeTransparency" in appearance ? 3
     : "sidebarGlassEnabled" in appearance || "composerGlassEnabled" in appearance ? 2 : 1;
   if (minimumVersion === 1) return;

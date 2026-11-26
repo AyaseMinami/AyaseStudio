@@ -241,6 +241,7 @@ export async function validateDocument(raw: unknown): Promise<void> {
     text(appearance); const parsed = JSON.parse(appearance); object(parsed);
     const normalized = readAppearancePreferences({ getItem: () => appearance });
     const filled: JsonRecord = {
+      fontScale: defaultAppearancePreferences.fontScale,
       assistantBubbleMode: defaultAppearancePreferences.assistantBubbleMode,
       assistantBubbleTransparency: defaultAppearancePreferences.assistantBubbleTransparency,
       chromeTransparency: defaultAppearancePreferences.chromeTransparency,

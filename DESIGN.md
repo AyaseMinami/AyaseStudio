@@ -104,7 +104,7 @@ components:
 
 ## Typography
 
-通过 `:root` 中的 `--font-sans`（Windows 11 优先 `"Segoe UI Variable Text"`，中文优先标准版 `"Microsoft YaHei"` 并回退 `"Microsoft YaHei UI"` 等系统中文字体）与 `--font-mono`（`"Cascadia Mono"`, `"Cascadia Code"`, `Consolas`, `ui-monospace`, `monospace`）统一界面与代码字族，托盘窗口同步复用同一无衬线字体栈。由于 Windows 微软雅黑可用字形（Light / Regular / Bold）缺少 Medium，按 CSS 字重匹配规则 `500` 会优先匹配 Regular 而 `600` 会跳至 Bold；因此页面标题（`--font-title`）、弹窗标题（`--font-dialog-title`）与分组标题（`--font-section`）统一使用 `font-weight: 500`，依靠字号、主／副字色与留白建立层级，仅在选中态、激活模型与 Markdown 强调处保留 `600`。所有语义字号均经 `--font-scale: 1` 统一派生，为 `#126` 全局字体比例开关提供干净的变量底座（默认视觉字号不变）。消息行高保持舒展，普通表单保持紧凑，不把缩小后的整体预览作为字号判断依据。
+通过 `:root` 中的 `--font-sans`（Windows 11 优先 `"Segoe UI Variable Text"`，中文优先标准版 `"Microsoft YaHei"` 并回退 `"Microsoft YaHei UI"` 等系统中文字体）与 `--font-mono`（`"Cascadia Mono"`, `"Cascadia Code"`, `Consolas`, `ui-monospace`, `monospace`）统一界面与代码字族，托盘窗口同步复用同一无衬线字体栈。由于 Windows 微软雅黑可用字形（Light / Regular / Bold）缺少 Medium，按 CSS 字重匹配规则 `500` 会优先匹配 Regular 而 `600` 会跳至 Bold；因此页面标题（`--font-title`）、弹窗标题（`--font-dialog-title`）与分组标题（`--font-section`）统一使用 `font-weight: 500`，依靠字号、主／副字色与留白建立层级，仅在选中态、激活模型与 Markdown 强调处保留 `600`。所有语义字号均经 `--font-scale` 统一派生，由外观页「文字与字号」卡片提供 5 档离散整数百分比选择（`90%` / `100%` / `110%` / `120%` / `125%`，默认 `100%`）；保持 `:root` `16px` 不变、`body` 继承 `var(--font-ui)`，全库改用无单位行高与含文本控件 `min-height` 防止高档裁切，1920×1080 整体预览舞台与固定尺寸头像/角标/托盘/沙箱 iframe 作为明确例外保持固定像素尺寸。消息行高保持舒展，普通表单保持紧凑，不把缩小后的整体预览作为字号判断依据。
 
 ## Layout
 

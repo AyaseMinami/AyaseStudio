@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AyaseDatabase } from "../storage/database";
 import { defaultSessionConfig } from "../chat/sessionConfig";
 import { connectionSettingsStorageKey, type ConnectionSettingsState } from "../chat/settings";
-import { defaultAppearancePreferences } from "../appearance/appearance";
+import { defaultAppearancePreferences, readAppearancePreferences } from "../appearance/appearance";
 import { BackupRepository, type BackupStorage } from "./repository";
 import { createRestorePlan } from "./restorePlan";
 import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
@@ -446,5 +446,48 @@ describe("multi-store restore journal", () => {
     await expect(test.repository.restore(plan, test.before, test.files)).rejects.toThrow("collision");
     expect(test.files.remove).not.toHaveBeenCalled(); expect(test.files.write).not.toHaveBeenCalled();
     expect(await test.db.backupJournal.count()).toBe(0); expect(test.saved.get(plan.writes[0]!.reference)).toBe("existing");
+  });
+  it("applies v5 fontScale on replace, retains local fontScale on merge/copy, defaults omitted/null on replace, and rolls back raw appearance on failure", async () => {
+    const test = await setup();
+    const localRaw = JSON.stringify({ ...defaultAppearancePreferences, fontScale: 120 });
+    test.store.setItem(preferenceKeys[0], localRaw);
+    const before = await test.repository.snapshot();
+
+    const docV5 = document();
+    docV5.version = 5;
+    docV5.compatibility = { minimumReaderVersion: 5, requiredCapabilities: [], modules: currentModuleVersions() };
+    docV5.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, fontScale: 90 });
+    const validatedV5 = (await decodeBackup(await encodeBackup(docV5))).document;
+
+    for (const mode of ["merge", "copy"] as const) {
+      const plan = createRestorePlan(validatedV5, before, mode);
+      expect(readAppearancePreferences({ getItem: () => plan.after.preferences[preferenceKeys[0]] }).fontScale).toBe(120);
+    }
+
+    const replacePlan = createRestorePlan(validatedV5, before, "replace");
+    expect(readAppearancePreferences({ getItem: () => replacePlan.after.preferences[preferenceKeys[0]] }).fontScale).toBe(90);
+    vi.spyOn(test.db.backupJournal, "delete").mockRejectedValueOnce(Error("injected commit failure"));
+    await expect(test.repository.restore(replacePlan, before, test.files)).rejects.toThrow("已回滚");
+    expect(test.store.getItem(preferenceKeys[0])).toBe(localRaw);
+
+    await test.repository.restore(replacePlan, before, test.files);
+    expect(readAppearancePreferences({ getItem: () => test.store.getItem(preferenceKeys[0]) }).fontScale).toBe(90);
+
+    // Replace with legacy v4 backup missing fontScale defaults to 100 on read
+    const docV4 = document();
+    docV4.version = 4;
+    const { fontScale: _omitted, ...legacyAppearance } = defaultAppearancePreferences;
+    docV4.preferences[preferenceKeys[0]] = JSON.stringify(legacyAppearance);
+    docV4.compatibility = { minimumReaderVersion: 4, requiredCapabilities: [], modules: { ...currentModuleVersions(), appearance: { version: 4, minimumReaderVersion: 4, requiredCapabilities: [] } } };
+    const validatedV4 = (await decodeBackup(await encodeBackup(docV4))).document;
+    const replaceLegacy = createRestorePlan(validatedV4, before, "replace");
+    expect(readAppearancePreferences({ getItem: () => replaceLegacy.after.preferences[preferenceKeys[0]] }).fontScale).toBe(100);
+
+    // Replace with null appearance defaults to 100 on read
+    const docNull = document();
+    docNull.preferences[preferenceKeys[0]] = null;
+    const replaceNull = createRestorePlan(docNull, before, "replace");
+    expect(replaceNull.after.preferences[preferenceKeys[0]]).toBeNull();
+    expect(readAppearancePreferences({ getItem: () => replaceNull.after.preferences[preferenceKeys[0]] }).fontScale).toBe(100);
   });
 });

@@ -108,6 +108,7 @@ describe("Issue 100 original connection module stamps", () => {
       const appearance = JSON.parse(raw.preferences[preferenceKeys[0]]);
       delete appearance.sidebarGlassEnabled; delete appearance.composerGlassEnabled;
       delete appearance.chromeTransparency; delete appearance.assistantBubbleMode;
+      delete appearance.fontScale;
       raw.preferences[preferenceKeys[0]] = JSON.stringify(appearance);
     }
     delete raw.connections.builtinsInitialized;
