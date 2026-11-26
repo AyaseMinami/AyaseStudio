@@ -1,5 +1,13 @@
 # Protocol Compatibility Contract
 
+## DeepSeek native vision compatibility (#142, 2026-11-26)
+
+DeepSeek `deepseek-flash` accepts inline Base64 images across all three DeepSeek-compatible protocols (`openai-chat` `image_url` data URL, `openai-responses` `input_image` data URL with `store: false`, and `anthropic-native` `image.source` Base64; official reference: [图像理解](https://api-docs.deepseek.com/zh-cn/guides/vision/)). Ayase sends original PNG, JPEG, and WebP bytes inline directly to the resolved protocol endpoint without Files API (`POST /files`) uploads, remote image-URL fetching, transcoding, or resizing. Chat attachments remain PNG/JPEG/WebP (`.gif` is intentionally deferred outside `#142` to avoid expanding persisted attachment MIME/extension and portable backup contracts).
+
+- **Official DeepSeek limits & model boundary**: DeepSeek documents `<= 32 MiB` per inline image, `<= 48 MiB` total request body, and `JPEG/PNG/GIF/WebP` detected from actual bytes; `deepseek-v4-pro` does not support vision input.
+- **Protocol-neutral client behavior**: Ayase does not hardcode model-ID blocking for `deepseek-flash` or `deepseek-v4-pro`, nor does it branch limits by Base URL. `openai-chat` and `openai-responses` impose no local image-size cap and let DeepSeek enforce its 32 MiB / 48 MiB and model-capability limits upstream; `anthropic-native` retains Anthropic's protocol-wide `<= 10 MB` per-image Base64 (and `<= 128 MB` total UTF-8 JSON) local preflight guard. Upstream rejections are surfaced as errors with zero automatic retries, fallbacks, or model switches.
+- **Verification**: Deterministic tests in `src/chat/requestMapping.test.ts` and `src/chat/transport.test.ts` cover all three protocols for PNG/JPEG/WebP inline payloads, multi-turn image history, model-ID pass-through, and upstream rejection semantics; live official/relay compatibility depends on actual provider/relay verification.
+
 ## DeepSeek server-side web tools (#141, 2026-11-26)
 
 Explicit mode `deepseek-server` (UI label `DeepSeek 服务端联网`, paired with `DeepSeek Search API` for `#140` external REST search) enables DeepSeek server-side web tools `deepseek_web_search` and `deepseek_read_url` (`deepseekWebTools?: { search: boolean; readUrl: boolean }`, default both enabled on pure read, at least one required). It is restricted to `anthropic-native` and `openai-responses`: `openai-chat` and `gemini-native` disable new selection and reject sends across regular send, retry, and edit-and-send preflight with zero network calls and no fallback to `web_search_options`. Standard `native` search behavior across all four protocols remains unchanged, and Base URL / model ID never implicitly rewrite standard requests.

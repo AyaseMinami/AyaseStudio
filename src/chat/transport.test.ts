@@ -680,6 +680,61 @@ describe("ChatTransport", () => {
     expect(events[0]?.type === "failed" && events[0].error.message).toContain("Synthetic stream limit");
   });
 
+  it("sends DeepSeek inline Base64 images directly to each official protocol endpoint without Files API or retries (#142)", async () => {
+    const attachments = [
+      { name: "a.png", mimeType: "image/png" as const, size: 3, data: "iVBORw==" },
+      { name: "b.jpg", mimeType: "image/jpeg" as const, size: 3, data: "/9j/4A==" },
+      { name: "c.webp", mimeType: "image/webp" as const, size: 4, data: "UklGRg==" },
+    ];
+    const cases = [
+      { protocol: "openai-chat" as const, baseUrl: "https://api.deepseek.com", expectedUrl: "https://api.deepseek.com/chat/completions" },
+      { protocol: "openai-responses" as const, baseUrl: "https://api.deepseek.com", expectedUrl: "https://api.deepseek.com/responses" },
+      { protocol: "anthropic-native" as const, baseUrl: "https://api.deepseek.com/anthropic", expectedUrl: "https://api.deepseek.com/anthropic/v1/messages" },
+    ];
+
+    for (const { protocol, baseUrl, expectedUrl } of cases) {
+      const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+      const fetch: FetchLike = async (input, init) => {
+        calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+        return new Response(JSON.stringify(syntheticNonStreaming[protocol]), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      };
+      const events = await collectEvents(protocol, fetch, {
+        baseUrl,
+        apiKey: "test-key",
+        model: "deepseek-flash",
+        config: nonStreamingConfig,
+        messages: [{ role: "user", content: "describe", attachments }],
+      });
+      expect(events).toMatchObject([{ type: "text-delta", text: "Full answer" }, { type: "completed" }]);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.url).toBe(expectedUrl);
+      expect(JSON.stringify(calls[0]?.body)).toContain("iVBORw==");
+      expect(JSON.stringify(calls[0]?.body)).toContain("/9j/4A==");
+      expect(JSON.stringify(calls[0]?.body)).toContain("UklGRg==");
+    }
+
+    // Upstream rejection for non-vision deepseek-v4-pro surfaces cleanly with a single request and no retry.
+    let proCalls = 0;
+    const proFetch: FetchLike = async () => {
+      proCalls += 1;
+      return new Response(JSON.stringify({ error: { message: "deepseek-v4-pro does not support image input" } }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    };
+    const proEvents = await collectEvents("openai-chat", proFetch, {
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "test-key",
+      model: "deepseek-v4-pro",
+      config: nonStreamingConfig,
+      messages: [{ role: "user", content: "describe", attachments: [attachments[0]] }],
+    });
+    expect(proCalls).toBe(1);
+    expect(proEvents).toMatchObject([{ type: "failed", error: { kind: "http", status: 400, retryable: false } }]);
+    expect(proEvents[0]?.type === "failed" && proEvents[0].error.message).toContain("does not support image input");
+  });
+
   it("keeps Gemini stream error fields while redacting credentials", async () => {
     const fetch: FetchLike = async () =>
       sseResponse([
