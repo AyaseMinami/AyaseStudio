@@ -4,6 +4,7 @@ import { backupFields } from "../storage/dataContract";
 import { dataPolicies } from "../storage/dataPolicies";
 import { isGeminiThinkingSettings } from "./geminiThinking";
 import { isThinkingSettings } from "./thinking";
+import { isValidDeepSeekWebTools } from "../search/mode";
 
 export type NumericSetting =
   | { mode: "auto" }
@@ -19,7 +20,8 @@ export type NumericField =
 export interface SessionConfig {
   version: 1;
   webSearch?: boolean;
-  webSearchProvider?: "native" | import("../search/settings").ExternalSearchProvider;
+  webSearchProvider?: "native" | "deepseek-server" | import("../search/settings").ExternalSearchProvider;
+  deepseekWebTools?: import("../search/mode").DeepSeekWebToolsSelection;
   geminiThinking?: import("./geminiThinking").GeminiThinkingSettings;
   thinking?: Partial<Record<Exclude<ChatProtocol, "gemini-native">, import("./thinking").ThinkingSettings>>;
   systemInstruction: string;
@@ -34,7 +36,7 @@ export interface SessionConfig {
   invalidStoredConfig?: string;
 }
 
-export type ConfigErrors = Partial<Record<NumericField | "systemInstruction" | "stream" | "customJson" | "dualSampling" | "stored" | "thinking", string>>;
+export type ConfigErrors = Partial<Record<NumericField | "systemInstruction" | "stream" | "customJson" | "dualSampling" | "stored" | "thinking" | "webSearch", string>>;
 
 const protocols: ChatProtocol[] = [
   "openai-chat",
@@ -91,7 +93,12 @@ export function readSessionConfigData(raw: unknown): SessionConfig {
     dataCheck(value[key].mode !== "custom" || typeof value[key].value === "string");
   }
   dataCheck(value.webSearch === undefined || typeof value.webSearch === "boolean");
-  dataCheck(value.webSearchProvider === undefined || ["native", "exa-mcp", "exa-api", "tavily", "zhipu"].includes(value.webSearchProvider as string));
+  dataCheck(value.webSearchProvider === undefined || ["native", "deepseek-server", "exa-mcp", "exa-api", "tavily", "zhipu", "deepseek"].includes(value.webSearchProvider as string));
+  if (value.deepseekWebTools !== undefined) {
+    dataRecord(value.deepseekWebTools);
+    dataCheck(Object.keys(value.deepseekWebTools).every(key => backupFields(dataPolicies.deepseekWebTools).includes(key))
+      && isValidDeepSeekWebTools(value.deepseekWebTools));
+  }
   dataCheck(value.invalidStoredConfig === undefined || typeof value.invalidStoredConfig === "string");
   if (value.geminiThinking !== undefined) {
     dataRecord(value.geminiThinking);
@@ -148,6 +155,9 @@ export function validateSessionConfig(config: SessionConfig, protocol?: ChatProt
   if (config.invalidStoredConfig) errors.stored = config.invalidStoredConfig;
   if (typeof config.systemInstruction !== "string") errors.systemInstruction = "系统指令必须是文本。";
   if (typeof config.stream !== "boolean") errors.stream = "流式开关必须是布尔值。";
+  if (config.deepseekWebTools !== undefined && !isValidDeepSeekWebTools(config.deepseekWebTools)) {
+    errors.webSearch = "请至少保留一项 DeepSeek 服务端联网工具。";
+  }
   for (const field of Object.keys(ranges) as NumericField[]) {
     const error = validateNumericSetting(field, config[field]);
     if (error) errors[field] = error;

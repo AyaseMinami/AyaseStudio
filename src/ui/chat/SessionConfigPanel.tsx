@@ -178,8 +178,8 @@ export function SessionConfigPanel({
     const unsupported = capability?.support === "unsupported";
     const fieldError = errors[field];
     const hasError = Boolean(fieldError);
-    const showUnsupportedHint = Boolean(unsupported && capability && fieldError !== capability.reason);
-    const hintId = showUnsupportedHint ? `config-${field}-hint` : undefined;
+    const showCapabilityHint = Boolean((unsupported || capability?.advisory) && capability && fieldError !== capability.reason);
+    const hintId = showCapabilityHint ? `config-${field}-hint` : undefined;
     const anthropicHintId = field === "maxOutput" && protocol === "anthropic-native" && setting.mode === "auto" ? "session-anthropic-max-output-hint" : undefined;
     const errorId = hasError ? `config-${field}-error` : undefined;
     const describedBy = [hintId, anthropicHintId, errorId].filter(Boolean).join(" ") || undefined;
@@ -212,7 +212,7 @@ export function SessionConfigPanel({
             />
           )}
         </div>
-        {showUnsupportedHint && capability && <small id={hintId} className="session-config-hint">{capability.reason}</small>}
+        {showCapabilityHint && capability && <small id={hintId} className="session-config-hint">{capability.reason}</small>}
         {fieldError && <small id={errorId} className="session-config-error" role="alert">{fieldError}</small>}
       </div>
     );

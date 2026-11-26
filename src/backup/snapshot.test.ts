@@ -84,9 +84,10 @@ describe("backup snapshot", () => {
     Object.assign(answer.search.sources[0], { apiKey: syntheticKey });
     const doc = await createBackupDocument(input, { connections: credentials, credentials }, files());
     expect(doc.version).toBe(5);
-    expect(doc.searchSettings).toMatchObject({ version: 3,
+    expect(doc.searchSettings).toMatchObject({ version: 4,
       exaMcp: { version: 1, baseUrl: "https://mcp.exa.ai/mcp", numResults: 7, ...(credentials ? { apiKey: "synthetic-search-key" } : {}) },
-      exaApi: { version: 1, baseUrl: "https://api.exa.ai/", numResults: 5, ...(credentials ? { apiKey: "" } : {}) } });
+      exaApi: { version: 1, baseUrl: "https://api.exa.ai/", numResults: 5, ...(credentials ? { apiKey: "" } : {}) },
+      deepseek: { version: 1, baseUrl: "https://api.deepseek.com/", numResults: 5, enabled: false, ...(credentials ? { apiKey: "" } : {}) } });
     expect((doc.rows.assistants[0] as any).defaultConfig.webSearchProvider).toBe("exa-mcp");
     expect((doc.rows.conversations[0] as any).settings.config.webSearchProvider).toBe("native");
     expect((doc.rows.conversations[0] as any).creationConfig.config.webSearchProvider).toBe("exa-mcp");
@@ -106,7 +107,7 @@ describe("backup snapshot", () => {
     input.rows.chats[0].messages[1].search = { enabled: true, provider: "exa-api", status: "completed", queries: ["query"], sources: [{ id: "s", title: "source", url: "https://example.invalid", excerpt: "bounded" }], citations: [] };
     const doc = await createBackupDocument(input, { connections: credentials, credentials }, files());
     const expected = validateSearchConfiguration(configuration) as any;
-    if (!credentials) for (const key of ["exaMcp", "exaApi", "tavily", "zhipu"]) delete expected[key].apiKey;
+    if (!credentials) for (const key of ["exaMcp", "exaApi", "tavily", "zhipu", "deepseek"]) delete expected[key].apiKey;
     expect(doc.searchSettings).toEqual(expected);
     const serialized = await encodeBackup(doc);
     expect(serialized.includes("synthetic-mcp-key")).toBe(credentials);

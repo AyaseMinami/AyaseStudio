@@ -1,6 +1,7 @@
 import { dataCheck, dataRecord } from "../storage/dataContract";
 import { dataPolicies } from "../storage/dataPolicies";
 import { readMessageGenerationMetrics } from "./generationMetricsData";
+import { assertValidProviderReplay } from "./deepseekReplay";
 import type { SentAttachment } from "./attachments";
 import type { StoredChatMessage } from "./repository";
 import { readSessionConfigData } from "./sessionConfig";
@@ -19,7 +20,7 @@ function strings(raw: unknown): void { dataCheck(Array.isArray(raw)); raw.forEac
 function search(raw: unknown): void {
   keys(raw, dataPolicies.searchRecord);
   dataCheck(typeof raw.enabled === "boolean" && ["pending", "searching", "completed", "not-used", "failed", "cancelled"].includes(raw.status as string));
-  if (raw.provider !== undefined) dataCheck(["exa-mcp", "exa-api", "tavily", "zhipu"].includes(raw.provider as string));
+  if (raw.provider !== undefined) dataCheck(["exa-mcp", "exa-api", "tavily", "zhipu", "deepseek"].includes(raw.provider as string));
   for (const name of ["warning", "suggestionHtml", "error"]) if (raw[name] !== undefined) string(raw[name]);
   strings(raw.queries); dataCheck(Array.isArray(raw.sources) && Array.isArray(raw.citations));
   raw.sources.forEach(item => {
@@ -31,12 +32,8 @@ function search(raw: unknown): void {
     dataCheck((item.start as number) <= (item.end as number)); strings(item.sourceIds);
   });
 }
-function replay(raw: unknown): void {
-  keys(raw, dataPolicies.replay); dataCheck(raw.protocol === "anthropic-native"); string(raw.scope);
-  dataCheck(Array.isArray(raw.content)); raw.content.forEach(dataRecord);
-  if (raw.responses !== undefined) {
-    dataCheck(Array.isArray(raw.responses)); raw.responses.forEach(response => { dataCheck(Array.isArray(response)); response.forEach(dataRecord); });
-  }
+function replay(raw: unknown, role?: string): void {
+  assertValidProviderReplay(raw, role);
   // Provider replay blocks intentionally retain provider-defined keys as opaque data.
 }
 function historyMessage(raw: unknown): void {
@@ -44,7 +41,7 @@ function historyMessage(raw: unknown): void {
   dataCheck(["system", "user", "assistant"].includes(raw.role as string)); string(raw.content);
   if (raw.attachments !== undefined) { dataCheck(Array.isArray(raw.attachments)); raw.attachments.forEach(readSentAttachment); }
   if (raw.search !== undefined) search(raw.search);
-  if (raw.providerReplay !== undefined) replay(raw.providerReplay);
+  if (raw.providerReplay !== undefined) replay(raw.providerReplay, raw.role as string);
 }
 export function readSentAttachment(raw: unknown): SentAttachment {
   const value = structuredClone(raw);
@@ -77,7 +74,7 @@ export function readMessageData(raw: unknown, pair = false): StoredChatMessage {
     }
   }
   if (value.search !== undefined) search(value.search);
-  if (value.providerReplay !== undefined) replay(value.providerReplay);
+  if (value.providerReplay !== undefined) replay(value.providerReplay, value.role as string);
   if (value.continuation !== undefined) {
     keys(value.continuation, dataPolicies.continuation);
     readSessionConfigData(value.continuation.config);

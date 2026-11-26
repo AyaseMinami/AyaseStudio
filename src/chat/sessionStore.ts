@@ -2,6 +2,7 @@ import type { ChatRepository, StoredChatMessage } from "./repository";
 import { withReplyLinks } from "./messageOperations";
 import { finishSearch } from "./nativeSearch";
 import { readMessagesGenerationMetrics } from "./generationMetricsData";
+import { readMessagesProviderReplay } from "./deepseekReplay";
 
 export interface SessionState {
   messages: StoredChatMessage[];
@@ -31,7 +32,7 @@ export class SessionStore {
         pairs: message.roundVersions.pairs.map(pair => pair.map(recover) as typeof pair) };
       return message;
     }
-    const recovered = readMessagesGenerationMetrics(snapshot.messages).map(recover);
+    const recovered = readMessagesProviderReplay(readMessagesGenerationMetrics(snapshot.messages)).map(recover);
     this.state = {
       messages: withReplyLinks(recovered),
     };
@@ -45,11 +46,11 @@ export class SessionStore {
 
   /** Adopt a transcript already durably committed and verified by the edit coordinator. */
   adoptConfirmed(messages: StoredChatMessage[]): void {
-    this.state = { messages: readMessagesGenerationMetrics(messages) };
+    this.state = { messages: readMessagesProviderReplay(readMessagesGenerationMetrics(messages)) };
   }
 
   async updateMessages(messages: StoredChatMessage[]): Promise<void> {
-    this.state = { ...this.state, messages: readMessagesGenerationMetrics(messages) };
+    this.state = { ...this.state, messages: readMessagesProviderReplay(readMessagesGenerationMetrics(messages)) };
     return this.enqueueSave();
   }
 

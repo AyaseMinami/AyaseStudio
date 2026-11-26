@@ -1,5 +1,9 @@
 # Ayase Studio v0.1 Plan
 
+## DeepSeek 服务端联网工具 #141（2026-11-26）
+
+按用户 2026-11-26 确认的 [设计案](ISSUE-141-DESIGN.md)（命名「DeepSeek 服务端联网」，选定 A1 + B1 + C1）在本地实施 `deepseek_web_search` 与 `deepseek_read_url` 双协议（`anthropic-native` 与 `openai-responses`）支持。`openai-chat` 与 `gemini-native` 禁用新选并在普通发送、重新生成与编辑并发送的统一预检中零请求拦截，保留 `openai-chat` 原生 `web_search_options` 不变。补齐双协议解码、按内容块归并的 Unicode 码点引用换算、有界来源 ID 与摘要预算、签名 `read_link` 多轮回传与上下文预算同步、仅保存用户编辑失效关联回放、DeepSeek 流式安全占位落盘、拒答原子终态清理与续写全量守卫，并将备份模块升级为 `search v5` + `chat v4`（`session` 保持 v1）。本地确定性测试与代码审查不代替真实供应商实测、原生桌面交互验收或远端 Issue 关闭。
+
 ## SVG／GIF 绘图输出（2026-11-09）
 
 用户在当前任务中要求实现 OpenAI Images 的 SVG 和 GIF 支持。范围包含格式选择、SVG author model、GIF 帧数／间隔、冻结参数、旧设置兼容、原件保存与恢复、预览、原格式及 PNG 导出。SVG/GIF 使用文生图，参考输入冲突显式阻止。验收覆盖安全内容拒绝、旧数据、设置备份恢复、离线全链路、隔离浏览器与原生启动。供应商实测和正式发布分别记录。

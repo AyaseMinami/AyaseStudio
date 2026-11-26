@@ -1,5 +1,24 @@
 # 持久数据契约
 
+## DeepSeek 服务端联网工具与双协议回放 #141（2026-11-26）
+
+`SessionConfig` 的 `webSearchProvider` 扩展支持显式模式 `"deepseek-server"`，并新增可选 `deepseekWebTools?: { search: boolean; readUrl: boolean }`（两项均须为布尔且至少一项为 `true`，禁止未知字段）；旧本机与旧备份缺失该字段时纯读取默认 `{ search: true, readUrl: true }`，零写回。`ProviderReplay.protocol` 扩展支持 `"anthropic-native" | "openai-responses"`；其中 `"openai-responses"` 仅允许挂在 `assistant` 消息上、禁止 `responses` 字段，且 `content` 仅接受带非空 `signature` 的已完成 `read_link` `web_search_call` 项。
+
+`dataPolicies.session` 新增 `deepseekWebTools: "backup"` 并注册穷尽 `dataPolicies.deepseekWebTools = { search: "backup", readUrl: "backup" }`；`snapshot.ts` 的真实会话投影与 `validation.ts`、`readSessionConfigData` 共用同一结构约束。`deepseekReplay.ts` 提供共享纯校验 `assertValidProviderReplay` / `readMessagesProviderReplay`，接入 `messageData.ts`、`repository.ts`（`load`/`save`/`initializeWorkspace`）、`sessionStore.ts`、`snapshot.ts` 与 `validation.ts`，确保非法回放结构在读取、保存及投影前拒绝并保留原文。
+
+模块版本策略采用 **`search` v5／最低读者 5** + **`chat` v4／最低读者 4** + **`session` 保持 v1**；本地 `ayase-studio.search.v1` 保持 v4，Dexie schema v9、备份文档 v5 与加密信封 v1 均保持不变：
+- `validateAdditionalSearchCompatibility` 在参数过滤与版本重标前检查助手 `defaultConfig`、对话 `settings`／`creationConfig` 与 `legacyConversationConfigs[].generationConfig`：凡出现 `webSearchProvider === "deepseek-server"` 或 `"deepseekWebTools" in config`（即使 `webSearch` 为 `false`），均要求原始声明 `modules.search.version >= 5`（旧 v1–v3 文档拒绝）；`dataContract.ts` 本身禁止过滤含 `tool` 的未知键，避免旧客户端静默丢弃。
+- `validateGenerationMetricsCompatibility` 在版本重标前递归遍历可见消息与 `roundVersions.pairs`：凡出现 `providerReplay.protocol === "openai-responses"` 均要求原始声明 `modules.chat.version >= 4`（旧 v1–v3 文档与 `chat` v1–v3 拒绝）。另存副本或不含连接的恢复继续递归清除 `providerReplay`。
+- 超 512 字符合法 HTTP(S) 来源 URL 分配确定性有界短 ID（≤ 512 UTF-16 码元）以满足 `validation.ts` `id()` 约束，且 `excerpt` 严格服从单条 ≤ 1500、单消息合计 ≤ 8000 码点；拒答终态置为 `incomplete` 并清空 `citations: []` 同时保留合法 `sources`/`queries`。确定性覆盖见 `src/chat/deepseekWebTools141.test.ts`、`src/backup/deepseekServer141.test.ts`、`src/chat/useChatSession.deepseek141.test.tsx` 与 `src/ui/chat/WebSearchControl.test.tsx`。
+
+## DeepSeek 独立搜索配置与模块 v4 #140（2026-11-26）
+
+`ayase-studio.search.v1` 键内配置由 v3 升为 v4，保留既有 Exa MCP／API、Tavily 与智谱 profile，新增独立 `deepseek` profile（`version: 1`、`baseUrl` 默认 `https://api.deepseek.com`、`apiKey` 默认空、`numResults` 默认 `5` 且限 `1–10` 整数、`enabled` 默认 `false`）。`searchDataMigration` 通过纯克隆逐级迁移 `v1→v2→v3→v4`，普通读取与重复读取零写回；旧本机 v1–v3 缺失 `deepseek` 时在内存补齐关闭与空 Key 默认值，不启用、不联网。未知版本（含 v5+）、v2/v3 混入未知字段、未知安全／凭据字段、非法开关或地址在读取、保存和备份导出／恢复前拒绝并保留原文。
+
+`dataPolicies.search` 新增 `deepseek: "backup"` 并注册穷尽 `dataPolicies.deepseekProfile`（`apiKey` 标为 `credential`，其余为 `backup`），真实备份投影与校验共用这些策略。不含凭据的备份省略五组 `apiKey`；替换恢复不含凭据时仅保留本机对应服务的 Key，不跨服务借用；替换旧 v1–v3 搜索备份保留本机 `deepseek` 设置、开关与 Key。仅完整 v4 且包含凭据的明确替换可修复损坏的本机搜索配置，先前原文由恢复日志保护并在提交前失败时精确回滚；合并／另存副本不覆盖本机网络搜索设置。
+
+`search` 模块升级为 v4／最低读者 4，统一拥有 `searchSettings` v4 及助手默认配置、对话配置／分支创建配置、历史旧配置与消息／轮次候选中的 `deepseek` provider 标识；chat v3、session v1、Dexie schema v9、备份文档 v5／信封 v1 与受管资源所有权均保持不变。文档 v4／v5 必须原始声明 `modules.search.version >= 4` 才接受 `deepseek` 配置、会话选择或搜索记录，检查先于兼容版本重标；旧 v1–v3 文档与 `modules.search` v2／v3 不能携带 `deepseek`。旧客户端通过最低读者 4 拒绝含新模块声明的备份，不保证降级读取。确定性覆盖见 `src/search/settings.test.ts`、`src/search/adapters.test.ts`、`src/search/runtime.test.ts`、`src/backup/search140.test.ts`、`src/chat/useChatSession.search.test.tsx` 及相关 UI 测试。
+
 ## 助手气泡显示模式与透明度解耦 #138（2026-11-25）
 
 外观偏好新增 `assistantBubbleMode: "auto" | "always" | "off"`，默认 `"auto"`；现有字段 `assistantBubbleTransparency` 保持字段名兼容，默认值由 `12` 调整为 `25`（即有壁纸显示助手气泡时默认 `75%` 不透明），且不再耦合用户消息气泡透明度。原存储键 `ayase-studio.appearance.v1`、Dexie schema v9、备份文档 v5／信封 v1、凭据与背景资源所有权保持不变。旧本机记录与旧备份缺失 `assistantBubbleMode` 时由共享纯克隆读入口 `readAppearancePreferences` 纯读取回填 `"auto"`，缺失 `assistantBubbleTransparency` 回填 `25`，零自动写回；已有显式保存值（包括旧默认 `12`、`6` 及任意合法 `0–100` 整数）保持不变；「恢复当前主题默认外观」将显示模式恢复为 `"auto"` 并将助手气泡透明度恢复为 `25`，而重置统一透明度滑块仅恢复四个区域透明度默认值（不改变 `assistantBubbleMode`）。非法枚举值、未知字段与损坏 JSON 在保存与恢复写入前拒绝并保留原文。
@@ -132,7 +151,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 | [`settingsData.ts`](../src/drawing/settingsData.ts) | 绘图本机草稿、可移植设置和显式预设的共享纯克隆读入口 |
 | [`check-data-contracts.mjs`](../scripts/check-data-contracts.mjs) | 不运行应用、不读用户数据的 TypeScript AST 覆盖检查 |
 
-应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、绘图设置模块 v5（最低读者 5）、搜索模块 v3（最低读者 3）、chat 模块 v3（最低读者 3）、外观模块 v4（最低读者 4），其余当前备份模块 v1；排除于可移植备份的模块为 `general` v2、`drawingHistory` v3、`recovery` v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
+应用版本、Dexie schema、模块数据版本、备份文档版本、加密信封版本各自独立。当前新导出是文档 v5／信封 v1；连接模块 v6（最低读者 6，本机记录仍 v3）、绘图设置模块 v5（最低读者 5）、搜索模块 v5（最低读者 5）、chat 模块 v4（最低读者 4）、外观模块 v4（最低读者 4），其余当前备份模块 v1；排除于可移植备份的模块为 `general` v2、`drawingHistory` v3、`recovery` v1。`minimumReaderVersion` 表示最低模块读者，`requiredCapabilities` 表示读者必须明确支持的能力。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`；`drawing.settings`／`drawing.presets` 分别存在时必须声明 `drawingSettings`／`drawingPresets`，不能以缺失代表空数据。新导出包含两类；旧 v4 固定原七模块，禁止绘图扩展。
 
 ## 注册所有持久入口
 
@@ -164,7 +183,7 @@ Dexie v8、workspace／avatars 模块 v1（最低读者 1）、备份文档 v5�
 
 `migrateData` 对输入做私有克隆，只接受已声明的起始版本，按连续迁移函数前进；每步必须恰好增加一个版本。缺少步骤、无效结构或不支持版本都失败。函数本身不写数据库、偏好或源文件，调用方在整次转换和校验成功后才提交。
 
-本机读取与备份读取复用同一迁移规则：搜索单配置 v1 → 双配置 v2 只将旧值保留为 MCP，并补齐 API 默认值，#82 再由 v2 → v3 补齐空 Key、关闭的 Tavily／智谱配置；连接 v2 → v3 保持既有配置含义；会话配置目前 v1，没有凭空制造的升级步骤。正常读取不自动写回，不改变协议／目标、不请求网络、不自动启用功能。
+本机读取与备份读取复用同一迁移规则：搜索单配置 v1 → 双配置 v2 只将旧值保留为 MCP，并补齐 API 默认值，#82 再由 v2 → v3 补齐空 Key、关闭的 Tavily／智谱配置，#140 再由 v3 → v4 补齐空 Key、关闭的 DeepSeek 配置；连接 v2 → v3 保持既有配置含义；会话配置目前 v1，没有凭空制造的升级步骤。正常读取不自动写回，不改变协议／目标、不请求网络、不自动启用功能。
 
 绘图设置当前模块 v3、最低读者 3，预设仍 v1；无版本本机记录保持共享纯克隆读入口，新增可选 Gemini 组缺失时温度／安全省略、输出 TEXT+IMAGE，不自动写回。新字段是附加设置，不转换原字段含义；v1 备份声明携带新组拒绝。缺失字段默认 auto 比例／分辨率、未选模型、OpenAI auto／auto、数量 1、并发 1、提示音开启；存在但非法的字段严格拒绝。本机草稿连同被排除的 prompt／references 结构在控制器任务恢复前校验，失败保留原数据。OpenAI 自定义尺寸沿用可编辑字符串合同，包括中间无效输入，不新增每字段长度限制；transport 在生成时验证能力和尺寸，备份总预算照常执行。
 

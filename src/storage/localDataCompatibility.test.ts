@@ -34,13 +34,13 @@ function legacyConnections() {
 }
 
 describe("shared local preference compatibility", () => {
-  it("migrates search v1 through v2 to v3 in memory, preserves MCP and leaves new providers disabled", () => {
+  it("migrates search v1 through v2 and v3 to v4 in memory, preserves MCP and leaves new providers disabled", () => {
     const legacy = { version: 1, baseUrl: "https://search.example.invalid/mcp", apiKey: "synthetic-search", numResults: 8 };
     const encoded = JSON.stringify(legacy);
     const storage = memoryStorage({ [SEARCH_SETTINGS_KEY]: encoded });
     const first = loadSearchConfiguration(storage);
     expect(first).toEqual(validateSearchConfiguration(legacy));
-    expect(first.tavily.enabled).toBe(false); expect(first.zhipu.enabled).toBe(false);
+    expect(first.tavily.enabled).toBe(false); expect(first.zhipu.enabled).toBe(false); expect(first.deepseek.enabled).toBe(false);
     first.exaApi.numResults = 1;
     first.exaMcp.apiKey = "modified-in-memory";
     expect(loadSearchConfiguration(storage)).toEqual(validateSearchConfiguration(legacy));
@@ -96,7 +96,7 @@ describe("shared local preference compatibility", () => {
     expect(configuration.exaApi.apiKey).toBe("  synthetic-api  ");
   });
 
-  it.each(["{broken", "null", JSON.stringify({ version: 3 }), JSON.stringify({ version: 2, exaMcp: {}, exaApi: {} })])(
+  it.each(["{broken", "null", JSON.stringify({ version: 3 }), JSON.stringify({ version: 4 }), JSON.stringify({ version: 5 }), JSON.stringify({ version: 2, exaMcp: {}, exaApi: {} })])(
     "rejects malformed or future search data without replacing it with defaults", encoded => {
       const storage = memoryStorage({ [SEARCH_SETTINGS_KEY]: encoded });
       expect(() => loadSearchConfiguration(storage)).toThrow();

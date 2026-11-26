@@ -20,7 +20,7 @@ describe("independent search settings", () => {
     expect(() => validateSearchConfiguration({ ...config, exaApi: { ...config.exaApi, baseUrl: "http://invalid.test" } })).toThrow();
     expect(() => validateSearchConfiguration({ ...config, exaMcp: undefined })).toThrow();
     expect(() => validateSearchConfiguration({ ...config, arbitraryService: config.exaApi })).toThrow();
-    expect(() => validateSearchConfiguration({ ...config, version: 4 })).toThrow();
+    expect(() => validateSearchConfiguration({ ...config, version: 5 })).toThrow();
   });
   it("uses anonymous defaults without writing and round trips explicit saves", () => {
     const values = new Map<string, string>();
@@ -64,30 +64,48 @@ describe("independent search settings", () => {
 
   it("counts Unicode codepoints, trims, and never silently truncates the query", () => {
     expect(validateSearchQuery(`  ${"😀".repeat(2000)}  `)).toBe("😀".repeat(2000));
+    expect(validateSearchQuery("\u0085\uFEFFhello\uFEFF\u0085")).toBe("hello");
     expect(() => validateSearchQuery("😀".repeat(2001))).toThrow("2000");
     expect(() => validateSearchQuery(" \n ")).toThrow("请输入");
+    expect(() => validateSearchQuery("\u0085\uFEFF\u0085")).toThrow("请输入");
+    const start = performance.now();
+    expect(() => validateSearchQuery(`x${" ".repeat(100_000)}x`)).toThrow("2000");
+    expect(performance.now() - start).toBeLessThan(500);
   });
 });
 
 describe("additional provider configuration migration", () => {
-  it.each([1, 2])("migrates v%s without writing or enabling new services and reads repeatedly", version => {
+  it.each([1, 2, 3])("migrates v%s without writing or enabling new services and reads repeatedly", version => {
     const legacy = { ...defaultSearchSettings(), apiKey: "synthetic-old" };
-    const raw = version === 1 ? legacy : { version: 2, exaMcp: legacy, exaApi: defaultSearchSettings("exa-api") };
+    const defaults = defaultSearchConfiguration();
+    const raw = version === 1 ? legacy
+      : version === 2 ? { version: 2, exaMcp: legacy, exaApi: defaultSearchSettings("exa-api") }
+      : { version: 3, exaMcp: legacy, exaApi: defaultSearchSettings("exa-api"),
+          tavily: { ...defaults.tavily, enabled: true, apiKey: "synthetic-tavily" },
+          zhipu: { ...defaults.zhipu, enabled: true, apiKey: "synthetic-zhipu" } };
     const encoded = JSON.stringify(raw); const setItem = vi.fn();
     const storage = { getItem: () => encoded, setItem };
     const loaded = loadSearchConfiguration(storage);
-    expect(loaded.version).toBe(3); expect(loaded.tavily.enabled).toBe(false); expect(loaded.zhipu.enabled).toBe(false);
-    expect(loaded.tavily.apiKey).toBe(""); expect(loaded.zhipu.apiKey).toBe("");
+    expect(loaded.version).toBe(4);
+    expect(loaded.tavily.enabled).toBe(version === 3); expect(loaded.zhipu.enabled).toBe(version === 3);
+    expect(loaded.deepseek.enabled).toBe(false); expect(loaded.deepseek.apiKey).toBe("");
+    expect(loaded.deepseek.baseUrl).toBe("https://api.deepseek.com/");
+    expect(loaded.tavily.apiKey).toBe(version === 3 ? "synthetic-tavily" : "");
+    expect(loaded.zhipu.apiKey).toBe(version === 3 ? "synthetic-zhipu" : "");
     expect(loadSearchConfiguration(storage)).toEqual(loaded); expect(validateSearchConfiguration(loaded)).toEqual(loaded);
     expect(setItem).not.toHaveBeenCalled(); expect(JSON.stringify(raw)).toBe(encoded);
   });
-  it.each(["future", "unknown legacy", "unknown profile", "missing", "wrong toggle", "wrong engine"])("preserves %s data on rejected saves", scenario => {
+  it.each(["future", "unknown legacy v2", "unknown legacy v3", "unknown profile", "unknown deepseek field", "missing", "missing deepseek", "wrong toggle", "wrong deepseek toggle", "wrong engine"])("preserves %s data on rejected saves", scenario => {
     const config = defaultSearchConfiguration(); let raw: unknown = config;
-    if (scenario === "future") raw = { ...config, version: 4 };
-    if (scenario === "unknown legacy") raw = { version: 2, exaMcp: config.exaMcp, exaApi: config.exaApi, security: { key: "synthetic" } };
+    if (scenario === "future") raw = { ...config, version: 5 };
+    if (scenario === "unknown legacy v2") raw = { version: 2, exaMcp: config.exaMcp, exaApi: config.exaApi, security: { key: "synthetic" } };
+    if (scenario === "unknown legacy v3") raw = { version: 3, exaMcp: config.exaMcp, exaApi: config.exaApi, tavily: config.tavily, zhipu: config.zhipu, deepseek: config.deepseek };
     if (scenario === "unknown profile") raw = { ...config, tavily: { ...config.tavily, token: "synthetic" } };
+    if (scenario === "unknown deepseek field") raw = { ...config, deepseek: { ...config.deepseek, needContent: true } };
     if (scenario === "missing") raw = { ...config, zhipu: undefined };
+    if (scenario === "missing deepseek") raw = { ...config, deepseek: undefined };
     if (scenario === "wrong toggle") raw = { ...config, tavily: { ...config.tavily, enabled: "false" } };
+    if (scenario === "wrong deepseek toggle") raw = { ...config, deepseek: { ...config.deepseek, enabled: "true" } };
     if (scenario === "wrong engine") raw = { ...config, zhipu: { ...config.zhipu, searchEngine: "future" } };
     const encoded = JSON.stringify(raw); const setItem = vi.fn(); const storage = { getItem: () => encoded, setItem };
     expect(() => loadSearchConfiguration(storage)).toThrow();

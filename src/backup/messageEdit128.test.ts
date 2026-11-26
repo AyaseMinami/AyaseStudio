@@ -100,7 +100,7 @@ describe("#128 edited attachment backup integration", () => {
   it("exports real edited rows, deduplicates shared candidate resources and keeps the existing format", async () => {
     const source = await editedSource();
     expect(source.exported.version).toBe(5);
-    expect(source.exported.compatibility!.modules.chat).toEqual({ version: 3, minimumReaderVersion: 3, requiredCapabilities: [] });
+    expect(source.exported.compatibility!.modules.chat).toEqual({ version: 4, minimumReaderVersion: 4, requiredCapabilities: [] });
     expect(JSON.parse(source.encoded).version).toBe(1);
     assertRuntimeAbsent(source.exported); assertRuntimeAbsent(source.snapshot);
     expect(source.runtimeDraft.attachments?.[0].kind).toBe("added");
@@ -143,7 +143,7 @@ describe("#128 edited attachment backup integration", () => {
     const reexported = await createBackupDocument(restored, options, target.files);
     const reread = (await decodeBackup(await encodeBackup(reexported))).document;
     expect(reread).toEqual(reexported); expect(reread.version).toBe(5);
-    expect(reread.compatibility!.modules.chat.version).toBe(3);
+    expect(reread.compatibility!.modules.chat.version).toBe(4);
     expect(reread.assets.map(asset => asset.id).sort()).toEqual([...references.values()].flatMap(value => [...value]).sort());
     assertRuntimeAbsent(reread);
     expect(target.files.write).toHaveBeenCalledTimes(3);

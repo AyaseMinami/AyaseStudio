@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { FetchLike } from "../chat/types";
 import { createTavilySearchClient, validateTavilyApiSettings } from "./tavily";
 import { createZhipuSearchClient, validateZhipuApiSettings, validateZhipuSearchQuery } from "./zhipu";
+import { createDeepSeekSearchClient, validateDeepSeekApiSettings, validateDeepSeekSearchQuery } from "./deepseek";
 import { defaultSearchConfiguration } from "./settings";
 import { ExaResultError } from "./results";
 
@@ -9,7 +10,11 @@ const secret = "synthetic-api-key";
 const entry = { title: "来源", url: "https://example.test/article", text: "中文😀资料" };
 const profiles = () => {
   const config = defaultSearchConfiguration();
-  return { tavily: { ...config.tavily, apiKey: secret }, zhipu: { ...config.zhipu, apiKey: secret } };
+  return {
+    tavily: { ...config.tavily, apiKey: secret },
+    zhipu: { ...config.zhipu, apiKey: secret },
+    deepseek: { ...config.deepseek, apiKey: secret },
+  };
 };
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
@@ -31,6 +36,13 @@ const providers = [
     entry: { title: entry.title, link: entry.url, content: entry.text },
     body: { search_engine: "search_std", search_query: "当轮问题", search_intent: false, count: 3, content_size: "medium" },
   },
+  {
+    name: "DeepSeek", endpoint: "https://api.deepseek.com/v1/tools/search",
+    settings: () => profiles().deepseek,
+    encode: (results: unknown[]) => ({ results }),
+    entry: { title: entry.title, url: entry.url, summary: entry.text, snippet: "short snippet", content: "", rerank_score: 2.1 },
+    body: { query: "当轮问题", count: 3, need_content: false },
+  },
 ] as const;
 
 // Each provider retains its specific settings type while sharing lifecycle assertions.
@@ -39,7 +51,9 @@ for (const provider of providers) {
     const settings = { ...provider.settings(), ...overrides };
     return provider.name === "Tavily"
       ? createTavilySearchClient(fetch, options).search({ ...profiles().tavily, ...settings }, query, signal)
-      : createZhipuSearchClient(fetch, options).search({ ...profiles().zhipu, ...settings }, query, signal);
+      : provider.name === "智谱"
+        ? createZhipuSearchClient(fetch, options).search({ ...profiles().zhipu, ...settings }, query, signal)
+        : createDeepSeekSearchClient(fetch, options).search({ ...profiles().deepseek, ...settings }, query, signal);
   };
   const json = (payload: unknown = provider.encode([provider.entry]), headers: Record<string, string> = {}) =>
     new Response(JSON.stringify(payload), { headers: { "content-type": "application/json; charset=utf-8", ...headers } });
@@ -86,16 +100,22 @@ for (const provider of providers) {
       const controller = new AbortController(); controller.abort(secret);
       await expect(search(fetch, {}, {}, "query", controller.signal)).rejects.toMatchObject({ name: "AbortError", message: "搜索已停止。" });
       await expect(search(fetch, {}, {}, " ")).rejects.toThrow("请输入");
-      await expect(search(fetch, {}, {}, "😀".repeat(2001))).rejects.toThrow("2000");
+      await expect(search(fetch, {}, {}, "\u0085")).rejects.toThrow("请输入");
+      await expect(search(fetch, {}, {}, "\u0085\uFEFF\u0085")).rejects.toThrow("请输入");
+      await expect(search(fetch, {}, {}, "😀".repeat(2001))).rejects.toThrow(provider.name === "DeepSeek" ? "128" : "2000");
+      const start = performance.now();
+      await expect(search(fetch, {}, {}, `x${" ".repeat(100_000)}x`)).rejects.toThrow(provider.name === "DeepSeek" ? "128" : "2000");
+      expect(performance.now() - start).toBeLessThan(500);
       expect(fetch).not.toHaveBeenCalled();
     });
 
-    it.each([400, 401, 403, 429, 500, 503])("redacts HTTP %s and never retries", async status => {
+    it.each([400, 401, 402, 403, 429, 500, 503])("redacts HTTP %s and never retries", async status => {
       const cancel = vi.fn();
       const fetch = vi.fn<FetchLike>(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(secret)); }, cancel }), { status }));
       const caught = await search(fetch).catch((error: Error) => error);
       expect(caught).toBeInstanceOf(Error);
       expect((caught as Error).message).not.toContain(secret);
+      if (status === 402) expect((caught as Error).message).toContain("余额不足");
       expect(fetch).toHaveBeenCalledOnce();
       expect(cancel).toHaveBeenCalledOnce();
     });
@@ -121,7 +141,8 @@ for (const provider of providers) {
     });
 
     it.each([{}, [], null, { error: { code: secret }, ...provider.encode([provider.entry]) }, provider.encode([]),
-      provider.encode([{ ...provider.entry, content: "" }]), provider.encode([{ ...provider.entry, title: "" }]),
+      provider.encode([provider.name === "DeepSeek" ? { ...provider.entry, summary: "", snippet: "" } : { ...provider.entry, content: "" }]),
+      provider.encode([{ ...provider.entry, title: "" }]),
     ])("rejects malformed, provider-declared or empty results", async payload => {
       const caught = await search(async () => json(payload)).catch((error: Error) => error);
       expect(caught).toBeInstanceOf(Error);
@@ -149,10 +170,11 @@ for (const provider of providers) {
     });
 
     it("filters malformed, duplicate and unsafe results and enforces shared source bounds", async () => {
-      const urlField = provider.name === "Tavily" ? "url" : "link";
+      const urlField = provider.name === "智谱" ? "link" : "url";
+      const textField = provider.name === "DeepSeek" ? "summary" : "content";
       const results = [provider.entry, null, [], { ...provider.entry, [urlField]: `${entry.url}#duplicate` },
         { ...provider.entry, [urlField]: "javascript:alert(1)" }, { ...provider.entry, [urlField]: "https://user:password@example.test" },
-        ...Array.from({ length: 12 }, (_, index) => ({ ...provider.entry, [urlField]: `https://example.test/${index}`, title: "😀".repeat(350), content: "😀".repeat(2000), ignored: secret }))];
+        ...Array.from({ length: 12 }, (_, index) => ({ ...provider.entry, [urlField]: `https://example.test/${index}`, title: "😀".repeat(350), [textField]: "😀".repeat(2000), ignored: secret }))];
       const fetch: FetchLike = async () => json(provider.encode(results));
       const result = await search(fetch, {}, { numResults: 10 });
       expect(result.sources[0].excerpt).toBe(entry.text);
@@ -239,6 +261,7 @@ describe("provider-specific contracts", () => {
   it("execution validators preserve provider fields", () => {
     expect(validateTavilyApiSettings(profiles().tavily)).toEqual({ ...profiles().tavily, baseUrl: "https://api.tavily.com/" });
     expect(validateZhipuApiSettings(profiles().zhipu)).toEqual({ ...profiles().zhipu, baseUrl: "https://open.bigmodel.cn/" });
+    expect(validateDeepSeekApiSettings(profiles().deepseek)).toEqual({ ...profiles().deepseek, baseUrl: "https://api.deepseek.com/" });
   });
   it.each([
     ["https://api.tavily.com/", "https://api.tavily.com/search"],
@@ -281,5 +304,49 @@ describe("provider-specific contracts", () => {
     expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ search_engine: searchEngine, search_query: "query", search_intent: false,
       count: searchEngine === "search_pro_sogou" ? 10 : 3, content_size: "medium" });
     expect(result.sources).toHaveLength(3);
+  });
+
+  it.each([
+    ["https://api.deepseek.com/", "https://api.deepseek.com/v1/tools/search"],
+    ["https://api.deepseek.com/v1/", "https://api.deepseek.com/v1/tools/search"],
+    ["https://api.deepseek.com/v1/tools/", "https://api.deepseek.com/v1/tools/search"],
+    ["https://api.deepseek.com/v1/tools/search/", "https://api.deepseek.com/v1/tools/search"],
+    ["https://relay.test/proxy///", "https://relay.test/proxy/v1/tools/search"],
+    ["https://relay.test/proxy/v1/", "https://relay.test/proxy/v1/tools/search"],
+  ])("resolves DeepSeek %s", async (baseUrl, endpoint) => {
+    const fetch = vi.fn<FetchLike>(async () => new Response(JSON.stringify({ results: [providers[2].entry] }), { headers: { "content-type": "application/json" } }));
+    await createDeepSeekSearchClient(fetch).search({ ...profiles().deepseek, baseUrl }, "query");
+    expect(String(fetch.mock.calls[0][0])).toBe(endpoint);
+  });
+
+  it("enforces DeepSeek 128-codepoint query limit without truncation and preserves search operators", async () => {
+    expect(validateDeepSeekSearchQuery(`  ${"😀".repeat(128)}  `)).toBe("😀".repeat(128));
+    const operatorQuery = 'site:deepseek.com -site:example.test "Search API"';
+    expect(validateDeepSeekSearchQuery(` ${operatorQuery} `)).toBe(operatorQuery);
+    const fetch = vi.fn<FetchLike>(async () => new Response(JSON.stringify({ results: [providers[2].entry] }), { headers: { "content-type": "application/json" } }));
+    await createDeepSeekSearchClient(fetch).search(profiles().deepseek, operatorQuery);
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ query: operatorQuery, count: 5, need_content: false });
+    fetch.mockClear();
+    await expect(createDeepSeekSearchClient(fetch).search(profiles().deepseek, "😀".repeat(129))).rejects.toThrow("128");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("prefers DeepSeek summary over snippet and falls back to snippet when summary is absent or blank", async () => {
+    const fetch: FetchLike = async () => new Response(JSON.stringify({
+      results: [
+        { title: "With summary", url: "https://example.test/1", summary: "Long model summary", snippet: "Short UI snippet", content: "" },
+        { title: "Fallback snippet", url: "https://example.test/2", summary: "   ", snippet: "Fallback short snippet", content: "" },
+        { title: "Missing summary", url: "https://example.test/3", snippet: "Only snippet", content: "" },
+      ],
+    }), { headers: { "content-type": "application/json" } });
+    const result = await createDeepSeekSearchClient(fetch).search({ ...profiles().deepseek, numResults: 5 }, "query");
+    expect(result.sources.map(source => source.excerpt)).toEqual(["Long model summary", "Fallback short snippet", "Only snippet"]);
+  });
+
+  it("rejects DeepSeek detail error even with apparently valid results", async () => {
+    const fetch: FetchLike = async () => new Response(JSON.stringify({ results: [providers[2].entry], detail: secret }), { headers: { "content-type": "application/json" } });
+    const caught = await createDeepSeekSearchClient(fetch).search(profiles().deepseek, "query").catch((error: Error) => error);
+    expect((caught as Error).message).toContain("返回搜索错误");
+    expect((caught as Error).message).not.toContain(secret);
   });
 });

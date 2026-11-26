@@ -2,7 +2,7 @@ import type { FetchLike } from "../chat/types";
 import { ExaResultError } from "./results";
 
 export type JsonSearchOptions = { timeoutMs?: number; maxResponseBytes?: number };
-type ProviderName = "Tavily" | "智谱";
+type ProviderName = "Tavily" | "智谱" | "DeepSeek";
 class JsonSearchError extends ExaResultError {}
 
 function cancelled(): DOMException { return new DOMException("搜索已停止。", "AbortError"); }
@@ -78,6 +78,7 @@ export async function requestSearchJson(fetch: FetchLike, provider: ProviderName
       || (response.url && response.url !== endpoint.href)) throw error(provider, "搜索服务重定向已拒绝。");
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) throw error(provider, "搜索认证失败，请检查搜索 API Key。");
+      if (response.status === 402) throw error(provider, "搜索账户余额不足（HTTP 402），请充值后再试。");
       if (response.status === 429) throw error(provider, "搜索已限流，请稍后显式重试。");
       if (response.status >= 500) throw error(provider, "搜索服务器错误，未重试请求。");
       throw error(provider, `搜索请求失败（HTTP ${response.status}）。`);

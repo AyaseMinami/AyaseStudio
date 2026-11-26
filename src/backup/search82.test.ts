@@ -36,10 +36,10 @@ describe("Issue 82 portable search compatibility", () => {
     const doc = await createBackupDocument(before, { connections: credentials, credentials }, resources);
     const encoded = await encodeBackup(doc), decoded = (await decodeBackup(encoded)).document;
     expect(decoded).toEqual(doc);
-    expect(doc.searchSettings).toMatchObject({ version: 3, tavily: { enabled: true, searchDepth: "advanced" },
-      zhipu: { enabled: true, searchEngine: "search_pro_sogou" } });
+    expect(doc.searchSettings).toMatchObject({ version: 4, tavily: { enabled: true, searchDepth: "advanced" },
+      zhipu: { enabled: true, searchEngine: "search_pro_sogou" }, deepseek: { enabled: false } });
     expect(doc.version).toBe(5);
-    expect(doc.compatibility?.modules.search.version).toBe(3);
+    expect(doc.compatibility?.modules.search.version).toBe(5);
     for (const suffix of ["mcp", "exa", "tavily", "zhipu"]) expect(encoded.includes(`synthetic-${suffix}-key`)).toBe(credentials);
     const current = snapshot(); current.preferences[SEARCH_SETTINGS_KEY] = JSON.stringify(configuration("current"));
     const plan = createRestorePlan(decoded, current, "replace");
@@ -99,7 +99,7 @@ describe("Issue 82 portable search compatibility", () => {
 
   it.each(["future", "unknown-credential", "invalid-engine"])("rejects %s before resource writes and preserves raw preferences", async variant => {
     const before = snapshot(), raw = JSON.parse(before.preferences[SEARCH_SETTINGS_KEY]!);
-    if (variant === "future") raw.version = 4;
+    if (variant === "future") raw.version = 5;
     if (variant === "unknown-credential") raw.tavily.authorization = "synthetic-unknown-key";
     if (variant === "invalid-engine") raw.zhipu.searchEngine = "future-engine";
     before.preferences[SEARCH_SETTINGS_KEY] = JSON.stringify(raw);

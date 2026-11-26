@@ -17,6 +17,7 @@ import type { DrawingDraft } from "../drawing/types";
 import type { DrawingPromptPreset } from "../drawing/presets";
 import { projectDrawingSettings, readDrawingPromptPresetData } from "../drawing/settingsData";
 import { readMessageGenerationMetrics } from "../chat/generationMetricsData";
+import { readMessageProviderReplay } from "../chat/deepseekReplay";
 
 // Device-only preferences are outside both portable backups and private rollback.
 export const allPreferenceKeys = Object.entries(persistentPreferences)
@@ -32,6 +33,7 @@ function session(v: Record<string, any>) {
   const result = pick(v, backupFields(dataPolicies.session));
   for (const key of ["temperature", "topP", "topK", "contextBudget", "maxOutput"]) result[key] = pick(v[key], backupFields(dataPolicies.numeric));
   result.customJson = pick(v.customJson, ["openai-chat", "openai-responses", "gemini-native", "anthropic-native"]);
+  if (v.deepseekWebTools) result.deepseekWebTools = pick(v.deepseekWebTools, backupFields(dataPolicies.deepseekWebTools));
   if (v.geminiThinking) result.geminiThinking = pick(v.geminiThinking, backupFields(dataPolicies.geminiThinking));
   if (v.thinking) result.thinking = Object.fromEntries(["openai-chat", "openai-responses", "anthropic-native"].filter(k => v.thinking[k]).map(k => [k, pick(v.thinking[k], backupFields(dataPolicies.thinking))]));
   return readSessionConfigData(result);
@@ -39,7 +41,7 @@ function session(v: Record<string, any>) {
 function settings(v: Record<string, any>) { readConversationConfigData(v); return { ...pick(v, backupFields(dataPolicies.conversationConfig)), config: session(v.config) }; }
 function avatar(v: Record<string, any>) { return { ...pick(v, backupFields(dataPolicies.avatar)), crop: pick(v.crop, backupFields(dataPolicies.crop)), ...(v.source ? { source: pick(v.source, backupFields(dataPolicies.avatarSource)) } : {}) }; }
 function message(v: Record<string, any>, pair = false): Record<string, any> {
-  v = readMessageGenerationMetrics(v);
+  v = readMessageProviderReplay(readMessageGenerationMetrics(v));
   const result = pick(v, backupFields(dataPolicies.messages).filter(key => !["source", "attachments", "search", "providerReplay", "roundVersions", "generationMetrics"].includes(key)));
   if (v.generationMetrics !== undefined) result.generationMetrics = v.generationMetrics.map((metric: Record<string, any>) => ({
     ...pick(metric, backupFields(dataPolicies.generationMetrics)),
@@ -140,9 +142,10 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
   }
   const configuration = loadSearchConfiguration(storage);
   const profileFields = backupFields(dataPolicies.searchProfile, options.credentials);
-  const searchSettings = { version: 3, exaMcp: pick(configuration.exaMcp, profileFields), exaApi: pick(configuration.exaApi, profileFields),
+  const searchSettings = { version: 4, exaMcp: pick(configuration.exaMcp, profileFields), exaApi: pick(configuration.exaApi, profileFields),
     tavily: pick(configuration.tavily, backupFields(dataPolicies.tavilyProfile, options.credentials)),
-    zhipu: pick(configuration.zhipu, backupFields(dataPolicies.zhipuProfile, options.credentials)) } as BackupDocument["searchSettings"];
+    zhipu: pick(configuration.zhipu, backupFields(dataPolicies.zhipuProfile, options.credentials)),
+    deepseek: pick(configuration.deepseek, backupFields(dataPolicies.deepseekProfile, options.credentials)) } as BackupDocument["searchSettings"];
   const encodedReport = snapshot.preferences[DATA_COMPATIBILITY_KEY];
   const filteredParameters: unknown = encodedReport ? JSON.parse(encodedReport) : [];
   validateFilteredParameters(filteredParameters);

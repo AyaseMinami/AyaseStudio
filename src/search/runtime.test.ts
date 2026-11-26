@@ -40,13 +40,20 @@ it("dispatches Exa API explicitly with one REST call and the same native redirec
   expect(JSON.parse(init.body)).toEqual({ query: "query", numResults: 5, type: "auto", contents: { text: true } });
 });
 
-it.each(["tavily", "zhipu"] as const)("dispatches %s through native HTTP with redirects disabled and independent authentication", async provider => {
+it.each(["tavily", "zhipu", "deepseek"] as const)("dispatches %s through native HTTP with redirects disabled and independent authentication", async provider => {
   const settings = { ...defaultSearchConfiguration()[provider], apiKey: "synthetic-new-key" };
   nativeFetch.mockResolvedValue(new Response(JSON.stringify(provider === "tavily"
     ? { results: [{ title: "Test", url: "https://source.example", content: "excerpt" }] }
-    : { search_result: [{ title: "Test", link: "https://source.example", content: "excerpt" }] }), { headers: { "content-type": "application/json" } }));
+    : provider === "zhipu"
+      ? { search_result: [{ title: "Test", link: "https://source.example", content: "excerpt" }] }
+      : { results: [{ title: "Test", url: "https://source.example", summary: "excerpt", snippet: "short" }] }), { headers: { "content-type": "application/json" } }));
   expect((await searchExa(settings, "query", undefined, provider)).sources).toHaveLength(1);
   expect(nativeFetch).toHaveBeenCalledOnce();
   expect(nativeFetch.mock.calls[0][1]).toMatchObject({ redirect: "error", maxRedirections: 0, credentials: "omit", headers: { Authorization: "Bearer synthetic-new-key" } });
+});
+
+it("rejects unconfigured DeepSeek before calling native networking", async () => {
+  await expect(searchExa(defaultSearchConfiguration().deepseek, "query", undefined, "deepseek")).rejects.toThrow("需要 API Key");
+  expect(nativeFetch).not.toHaveBeenCalled();
 });
 

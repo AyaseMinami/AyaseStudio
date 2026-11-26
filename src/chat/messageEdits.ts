@@ -146,7 +146,22 @@ export class MessageEdits {
       if (op.ownedNew.length) await this.files.verify(op.ownedNew);
       const edited = editedMessage(base, content, final);
       op.prepared = prepare ? await prepare(structuredClone(op.before), edited) : undefined;
-      op.after = readEditTranscript(op.prepared?.messages ?? op.before.map(message => message.id === messageId ? edited : message));
+      const linkedBefore = withReplyLinks(op.before);
+      const saveOnlyMessages = op.before.map((message, index) => {
+        if (message.id === messageId) return edited;
+        if (base.role === "user" && message.role === "assistant"
+          && (message.providerReplay !== undefined || message.continuation !== undefined || message.status === "paused")
+          && linkedBefore[index]?.replyToId === base.id) {
+          return {
+            ...message,
+            providerReplay: undefined,
+            continuation: undefined,
+            ...(message.status === "paused" ? { status: "incomplete" as const } : {}),
+          };
+        }
+        return message;
+      });
+      op.after = readEditTranscript(op.prepared?.messages ?? saveOnlyMessages);
       if (op.prepared?.claim && !op.prepared.claim()) return this.abandon(op, "无法取得该对话生成权限；消息尚未保存。");
       try { await this.access.replace(op.id, op.before, op.after); }
       catch (error) {

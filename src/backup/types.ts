@@ -5,7 +5,7 @@ import type { UserAvatar } from "../avatar/repository";
 import type { ProviderAvatarEntry } from "../avatar/providerAvatars";
 import type { CherryImportRecord } from "../storage/database";
 import type { SessionConfig } from "../chat/sessionConfig";
-import type { SearchSettings, TavilySearchSettings, ZhipuSearchSettings } from "../search/settings";
+import type { SearchSettings, TavilySearchSettings, ZhipuSearchSettings, DeepSeekSearchSettings } from "../search/settings";
 import type { DataVersion } from "../storage/dataContract";
 import type { DrawingPromptPreset } from "../drawing/presets";
 import type { DrawingSettingsData } from "../drawing/settingsData";
@@ -34,7 +34,11 @@ export type BackupSearchProfile = Omit<SearchSettings, "apiKey"> & { apiKey?: st
 export type BackupSearchConfiguration = { version: 2; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile }
   | { version: 3; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile;
       tavily: Omit<TavilySearchSettings, "apiKey"> & { apiKey?: string };
-      zhipu: Omit<ZhipuSearchSettings, "apiKey"> & { apiKey?: string } };
+      zhipu: Omit<ZhipuSearchSettings, "apiKey"> & { apiKey?: string } }
+  | { version: 4; exaMcp: BackupSearchProfile; exaApi: BackupSearchProfile;
+      tavily: Omit<TavilySearchSettings, "apiKey"> & { apiKey?: string };
+      zhipu: Omit<ZhipuSearchSettings, "apiKey"> & { apiKey?: string };
+      deepseek: Omit<DeepSeekSearchSettings, "apiKey"> & { apiKey?: string } };
 export interface BackupDocument {
   format: "ayase-studio-backup";
   version: 1 | 2 | 3 | 4 | 5;

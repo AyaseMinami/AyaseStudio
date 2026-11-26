@@ -43,11 +43,11 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
     warnings.push("此备份不含网络搜索设置：保留本机搜索配置与 API Key；尚未配置时使用默认匿名配置，不自动开启或执行搜索。");
   } else if (mode === "replace") {
     const imported = document.searchSettings;
-    // Only a complete v3 replacement with credentials can repair unreadable local data.
-    const configuration = imported.version === 3 && document.options.credentials
+    // Only a complete v4 replacement with credentials can repair unreadable local data.
+    const configuration = imported.version === 4 && document.options.credentials
       ? defaultSearchConfiguration() : loadSearchConfiguration(currentStorage);
     const profiles = imported.version === 1 ? { exaMcp: imported } : imported;
-    for (const key of ["exaMcp", "exaApi", "tavily", "zhipu"] as const) {
+    for (const key of ["exaMcp", "exaApi", "tavily", "zhipu", "deepseek"] as const) {
       if (!(key in profiles)) continue;
       const profile = (profiles as unknown as Record<string, { apiKey?: string }>)[key];
       Object.assign(configuration, { [key]: { ...profile, apiKey: document.options.credentials ? profile.apiKey! : configuration[key].apiKey } });
@@ -57,7 +57,8 @@ export function createRestorePlan(document: BackupDocument, before: LocalSnapsho
       ? "替换备份包含的网络搜索设置及对应搜索 API Key；恢复不会自动执行搜索。"
       : "替换备份包含的网络搜索设置，保留本机对应搜索 API Key；恢复不会自动执行搜索。");
     if (document.version === 2) warnings.push("此旧 v2 备份只包含 Exa MCP 配置；保留本机 Exa API 配置与 Key。");
-    if (imported.version !== 3) warnings.push("此旧备份不含 Tavily／智谱配置：保留本机对应设置、开关和 Key。");
+    if (imported.version < 3) warnings.push("此旧备份不含 Tavily／智谱／DeepSeek 配置：保留本机对应设置、开关和 Key。");
+    else if (imported.version === 3) warnings.push("此旧备份不含 DeepSeek 搜索配置：保留本机对应设置、开关和 Key。");
   } else warnings.push("保留本机全局网络搜索设置及搜索 API Key；恢复不会自动执行搜索。");
   const targetConnections: ConnectionSettingsState = structuredClone(currentConnections);
   const providerImageMap = new Map<string, string>((incoming.providerAvatars as { id: string }[]).map(a => [a.id,
