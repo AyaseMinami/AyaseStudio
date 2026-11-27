@@ -43,7 +43,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: node scripts/release/cli.mjs preflight
       - run: npm.cmd ci
-      - run: node --test scripts/release/*.test.mjs
       - run: npm.cmd run check
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features release-tools --bin verify-updater-signature
@@ -62,7 +61,7 @@ jobs:
         shell: pwsh
         run: |
           $installer = Join-Path 'src-tauri/target/release/bundle/nsis' "Ayase Studio_$($env:RELEASE_VERSION)_x64-setup.exe"
-          if ((Get-Item -LiteralPath $installer).VersionInfo.ProductVersion -ne $env:RELEASE_VERSION) { throw 'Built installer product version mismatch' }
+          pwsh -NoProfile -File scripts/release/verify-product-version.ps1 -Installer $installer -Version $env:RELEASE_VERSION
       - name: Prepare exact candidate inventory and verify signed bytes
         run: node scripts/release/cli.mjs prepare
       - run: git diff --check

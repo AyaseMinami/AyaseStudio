@@ -333,6 +333,14 @@ export function ConnectionSettings({
   const [providerDraftError, setProviderDraftError] = useState<string>();
   const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => new Set(
     connectionSettings.providers.filter(provider => provider.presetId && provider.id !== initialProviderId).map(provider => provider.id)));
+  useEffect(() => {
+    const valid = new Set(connectionSettings.providers.map(provider => provider.id));
+    setCollapsedProviders(prev => {
+      let changed = false;
+      for (const id of prev) { if (!valid.has(id)) { changed = true; break; } }
+      return changed ? new Set([...prev].filter(id => valid.has(id))) : prev;
+    });
+  }, [connectionSettings.providers]);
   const [avatarProviderId, setAvatarProviderId] = useState<string>();
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [avatarPanelBusy, setAvatarPanelBusy] = useState(false);

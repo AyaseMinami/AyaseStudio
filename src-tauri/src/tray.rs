@@ -67,6 +67,19 @@ fn show_menu(app: &tauri::AppHandle, point: tauri::PhysicalPosition<f64>) -> tau
     Ok(true)
 }
 
+fn is_allowed_menu_url(url: &tauri::Url, debug: bool) -> bool {
+    url.path() == "/tray.html"
+        && matches!(url.scheme(), "http" | "https")
+        && if debug {
+            matches!(
+                url.host_str(),
+                Some("localhost" | "tauri.localhost" | "127.0.0.1")
+            )
+        } else {
+            url.host_str() == Some("tauri.localhost") && url.port().is_none()
+        }
+}
+
 fn install_menu_window(app: &tauri::App) -> tauri::Result<()> {
     let window = tauri::WebviewWindowBuilder::new(app, MENU_LABEL, tauri::WebviewUrl::App("tray.html".into()))
         .title("Ayase Studio 菜单")
@@ -74,8 +87,7 @@ fn install_menu_window(app: &tauri::App) -> tauri::Result<()> {
         .decorations(false).transparent(true).shadow(false)
         .resizable(false).maximizable(false).minimizable(false)
         .skip_taskbar(true).always_on_top(true).visible(false).focused(false)
-        .on_navigation(|url| url.path() == "/tray.html"
-            && matches!(url.host_str(), Some("localhost" | "tauri.localhost" | "127.0.0.1")))
+        .on_navigation(|url| is_allowed_menu_url(url, cfg!(debug_assertions)))
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
                 window.state::<MenuReady>().0.store(false, Ordering::Release);
@@ -130,12 +142,11 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             }
         })
         .on_tray_icon_event(move |tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Right, button_state: MouseButtonState::Up, position, .. } = event {
-                if !matches!(show_menu(tray.app_handle(), position), Ok(true)) {
-                    if let Some(window) = tray.app_handle().get_webview_window("main") {
-                        let _ = window.popup_menu(&menu);
-                    }
-                }
+            if let TrayIconEvent::Click { button: MouseButton::Right, button_state: MouseButtonState::Up, position, .. } = event
+                && !matches!(show_menu(tray.app_handle(), position), Ok(true))
+                && let Some(window) = tray.app_handle().get_webview_window("main")
+            {
+                let _ = window.popup_menu(&menu);
             }
             if matches!(event, TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. }
                 | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. }) {
@@ -148,7 +159,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::menu_origin;
+    use super::{is_allowed_menu_url, menu_origin};
 
     #[test]
     fn clamps_to_work_area_on_all_edges() {
@@ -162,6 +173,30 @@ mod tests {
     fn supports_negative_origins_scaled_menus_and_small_work_areas() {
         assert_eq!(menu_origin((-10.0, 1300.0), (-2560, -100, 2560, 1400), (480.0, 332.0)), (-490, 968));
         assert_eq!(menu_origin((30.0, 50.0), (0, 0, 120, 100), (240.0, 166.0)), (0, 0));
+    }
+
+    #[test]
+    fn menu_navigation_policy_restricts_release_to_tauri_localhost_http_or_https() {
+        let url = |value: &str| tauri::Url::parse(value).unwrap();
+        assert!(is_allowed_menu_url(&url("http://tauri.localhost/tray.html"), false));
+        assert!(is_allowed_menu_url(&url("https://tauri.localhost/tray.html"), false));
+        for blocked_release in [
+            "http://localhost:1420/tray.html",
+            "http://127.0.0.1:1420/tray.html",
+            "http://tauri.localhost:8080/tray.html",
+            "https://tauri.localhost:8443/tray.html",
+            "tauri://tauri.localhost/tray.html",
+            "file:///tray.html",
+            "http://tauri.localhost/index.html",
+            "https://example.com/tray.html",
+        ] {
+            assert!(!is_allowed_menu_url(&url(blocked_release), false), "{blocked_release}");
+        }
+        assert!(is_allowed_menu_url(&url("http://localhost:1420/tray.html"), true));
+        assert!(is_allowed_menu_url(&url("http://127.0.0.1:1420/tray.html"), true));
+        assert!(is_allowed_menu_url(&url("http://tauri.localhost/tray.html"), true));
+        assert!(!is_allowed_menu_url(&url("tauri://localhost/tray.html"), true));
+        assert!(!is_allowed_menu_url(&url("http://localhost:1420/other.html"), true));
     }
 }
 

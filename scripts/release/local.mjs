@@ -24,7 +24,7 @@ export async function writeBuildConfig(output, publicKey) {
   await mkdir(path.dirname(output), { recursive: true });
   await writeFile(output, JSON.stringify({ bundle: { createUpdaterArtifacts: true }, plugins: { updater: { pubkey: key } } }, null, 2) + "\n");
 }
-export async function loadArtifacts(directory, version) {
+export async function loadArtifacts(directory) {
   const { readdir } = await import("node:fs/promises");
   const names = await readdir(directory);
   return Object.fromEntries(await Promise.all(names.map(async name => [name, await readFile(path.join(directory, name))])));
@@ -66,7 +66,7 @@ export async function prepareArtifacts({ root = ".", directory, publicKey, sourc
   const provenance = { schema: 1, repository: REPOSITORY, version, tag: `v${version}`, platform: PLATFORM, sourceSha, publicKey: key, artifacts: Object.fromEntries(Object.entries(files).map(([name, bytes]) => [name, hashRecord(bytes)])) };
   files[names.provenance] = Buffer.from(JSON.stringify(provenance, null, 2) + "\n");
   await writeFile(path.join(directory, names.provenance), files[names.provenance]);
-  verifyArtifacts(await loadArtifacts(directory, version), { version, publicKey: key, sourceSha });
+  verifyArtifacts(await loadArtifacts(directory), { version, publicKey: key, sourceSha });
   verifyInstallerVersion(directory, names, version);
   await verifyNativeSignature(directory, names, key, version, root);
   return version;

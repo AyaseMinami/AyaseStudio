@@ -200,9 +200,11 @@ fn entries(bytes: &[u8], allocated: &mut usize) -> Result<Vec<Vec<u8>>, String> 
             return bad();
         }
         key_len = shared.checked_add(added).ok_or("cherry-limit")?;
-        *allocated = allocated
-            .checked_add(key_len + length + 128)
+        let entry_budget = key_len
+            .checked_add(length)
+            .and_then(|value| value.checked_add(128))
             .ok_or("cherry-limit")?;
+        *allocated = allocated.checked_add(entry_budget).ok_or("cherry-limit")?;
         if key_len > 1024 * 1024 || *allocated > 128 * 1024 * 1024 || values.len() > 500000 {
             return Err("cherry-limit".into());
         }
@@ -444,5 +446,21 @@ mod tests {
         std::fs::write(temp.path().join("000004.log"), full(&[0; 12])).unwrap();
         std::fs::write(temp.path().join("000000.log"), b"obsolete corrupt log").unwrap();
         assert!(read_live(temp.path()).unwrap().is_empty());
+    }
+    #[test]
+    fn rejects_overflowing_entry_length_without_panicking() {
+        let mut bytes = Vec::new();
+        put_varint(0, &mut bytes);
+        put_varint(1, &mut bytes);
+        // u64::MAX as varint (10 bytes: nine 0xFF + 0x01) triggers checked_add overflow on key_len + length + 128
+        let mut max_len = usize::MAX;
+        while max_len >= 0x80 {
+            bytes.push((max_len as u8 & 0x7f) | 0x80);
+            max_len >>= 7;
+        }
+        bytes.push(max_len as u8);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(entries(&bytes, &mut 0).unwrap_err(), "cherry-limit");
     }
 }

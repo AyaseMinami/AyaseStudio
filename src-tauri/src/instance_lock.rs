@@ -6,7 +6,7 @@ pub fn acquire(app_data: &Path) -> io::Result<File> {
     let dir = app_data.join("attachments");
     std::fs::create_dir_all(&dir)?;
     // Never remove this empty file: replacing a locked inode would defeat the lock.
-    let file = OpenOptions::new().read(true).write(true).create(true)
+    let file = OpenOptions::new().read(true).write(true).create(true).truncate(false)
         .open(dir.join(".instance.lock"))?;
     match file.try_lock() {
         Ok(()) => Ok(file),

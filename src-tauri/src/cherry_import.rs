@@ -311,7 +311,11 @@ impl Session {
     }
 }
 #[tauri::command]
-pub async fn select_cherry_backup(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+pub async fn select_cherry_backup(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Option<Value>, String> {
+    crate::require_main_window(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
         let Some(file) = app
             .dialog()
@@ -331,7 +335,12 @@ pub async fn select_cherry_backup(app: tauri::AppHandle) -> Result<Option<Value>
     .map_err(error)?
 }
 #[tauri::command]
-pub async fn read_cherry_file(token: String, key: String) -> Result<Option<Value>, String> {
+pub async fn read_cherry_file(
+    window: tauri::WebviewWindow,
+    token: String,
+    key: String,
+) -> Result<Option<Value>, String> {
+    crate::require_main_window(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = SESSION.lock().map_err(error)?;
         let session = guard
@@ -344,7 +353,8 @@ pub async fn read_cherry_file(token: String, key: String) -> Result<Option<Value
     .map_err(error)?
 }
 #[tauri::command]
-pub fn close_cherry_backup(token: String) -> Result<(), String> {
+pub fn close_cherry_backup(window: tauri::WebviewWindow, token: String) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let mut guard = SESSION.lock().map_err(error)?;
     if guard.as_ref().is_some_and(|s| s.token == token) {
         *guard = None

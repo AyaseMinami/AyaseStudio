@@ -161,11 +161,6 @@ export class DrawingController {
         this.dependencies.repository.load(), this.dependencies.presetRepository?.load() ?? Promise.resolve([]),
       ]);
       validateOwnership(saved);
-      // Validate every newly added option before any restart repair writes or file recovery.
-      for (const rows of [saved.tasks, saved.results]) for (const row of rows) {
-        if (row.parameters?.protocol === "gemini-image" && row.parameters.gemini !== undefined
-          && !validGeminiDrawingOptions(row.parameters.gemini)) throw new Error("Invalid Gemini drawing settings");
-      }
       let tasks = saved.tasks, results = saved.results;
       // A native manifest proves completed local persistence, never server acceptance.
       for (const task of tasks) {

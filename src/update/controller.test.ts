@@ -130,3 +130,14 @@ it("StrictMode-style effect replay owns only one startup timer and ignores late 
   controller.configureStartupCheck(true, true); await vi.advanceTimersByTimeAsync(STARTUP_UPDATE_DELAY_MS);
   expect(runtime.check).toHaveBeenCalledOnce();
 });
+
+it("cleans up the native session reference on download failure and preserves oversized-package errors", async () => {
+  await controller.check();
+  vi.mocked(runtime.download).mockRejectedValueOnce(new Error("更新包超过大小上限，已中止下载"));
+  await controller.download();
+  expect(runtime.cancel).toHaveBeenCalledWith("opaque");
+  expect(controller.getSnapshot()).toEqual({
+    phase: "error",
+    message: "更新包超过大小上限，已中止下载。请使用官方下载入口。",
+  });
+});

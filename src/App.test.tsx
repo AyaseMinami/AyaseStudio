@@ -14,7 +14,7 @@ import {
   vi,
 } from "vitest";
 
-import App from "./App";
+import App, { isUpdateInstallBlocked } from "./App";
 import { GeneralSettings } from "./ui/settings/GeneralSettings";
 import * as contextBudget from "./chat/contextBudget";
 import { createChatRepository, type ChatSnapshot } from "./chat/repository";
@@ -1455,5 +1455,33 @@ describe("App navigation", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Base URL 不能包含查询参数。",
     );
+  });
+
+  it("blocks in-app update installation whenever any backup/appearance/avatar/drawing busy gate is active", () => {
+    const idle = {
+      chatBackupDisabled: false,
+      backgroundBusy: false,
+      avatarBusy: false,
+      drawingReady: true,
+      drawingClosing: false,
+      drawingBusy: false,
+      drawingSubmitting: false,
+      drawingManagementBusy: false,
+      drawingPresetsBusy: false,
+      drawingReferencesBusy: false,
+      drawingHasQueuedTask: false,
+    };
+    expect(isUpdateInstallBlocked(idle)).toBe(false);
+    expect(isUpdateInstallBlocked({ ...idle, chatBackupDisabled: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, backgroundBusy: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, avatarBusy: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingReady: false })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingClosing: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingBusy: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingSubmitting: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingManagementBusy: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingPresetsBusy: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingReferencesBusy: true })).toBe(true);
+    expect(isUpdateInstallBlocked({ ...idle, drawingHasQueuedTask: true })).toBe(true);
   });
 });

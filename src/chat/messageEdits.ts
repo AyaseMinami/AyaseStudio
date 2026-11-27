@@ -106,7 +106,10 @@ export class MessageEdits {
     catch { warning = "消息已保存，附件整理待重试。"; }
     const result = this.finish(op, { status: "saved", warning });
     try { if (forGeneration) op.prepared?.committed?.(); }
-    catch { this.access.outcome(op.id, { status: "saved", error: "消息已保存，启动请求失败；不会自动重发。" }); }
+    catch {
+      op.prepared?.cancel?.();
+      this.access.outcome(op.id, { status: "saved", error: "消息已保存，启动请求失败；不会自动重发。" });
+    }
     return result;
   }
   private async run(op: Operation, messageId: string, content: string, draft: MessageEditDraft | undefined,

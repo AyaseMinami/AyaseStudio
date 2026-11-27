@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultSessionConfig } from "../chat/sessionConfig";
 import { buildProtocolBody } from "../chat/requestMapping";
+import { assertValidProviderReplay } from "../chat/deepseekReplay";
 import { prepareSearchContext, projectSearchHistory } from "./context";
 import { externalCitations, readableSearchAnswer } from "./citations";
 import { resolveSearchMode, withSearchMode } from "./mode";
@@ -61,5 +62,117 @@ describe("external search preparation and citations", () => {
   it("blocks when even minimum data cannot fit", async () => {
     const config = { ...defaultSessionConfig(), contextBudget: { mode: "custom" as const, value: "20" } };
     await expect(prepareSearchContext([], "问", config, "gemini-native", "any", [source], [])).rejects.toThrow("最小检索资料");
+  });
+
+  it("forwards replayScope so same-connection native replay is kept and budgeted while cross-connection and external-search replay are dropped", async () => {
+    const scope = "conn-1|https://api.deepseek.com/anthropic";
+    const anthropicReplay = {
+      protocol: "anthropic-native" as const,
+      scope,
+      content: [
+        { type: "thinking", thinking: "reasoned step ".repeat(30), signature: "sig" },
+        { type: "text", text: "prior native answer" },
+      ],
+    };
+    const responsesScope = "conn-2|https://api.deepseek.com/v1";
+    const responsesReplay = {
+      protocol: "openai-responses" as const,
+      scope: responsesScope,
+      content: [
+        {
+          type: "web_search_call",
+          id: "ws_read_1",
+          status: "completed",
+          kind: "read_link",
+          signature: "sig-read-1",
+          action: { type: "open_page", url: "https://example.test/doc" },
+          page: { title: "Doc", content: "signed page body ".repeat(30) },
+        },
+      ],
+    };
+    assertValidProviderReplay(responsesReplay, "assistant");
+    const externalUser = { id: "ext-u", role: "user" as const, status: "complete" as const, content: "外搜提问" };
+    const externalHistory = {
+      id: "ext-a",
+      replyToId: "ext-u",
+      role: "assistant" as const,
+      status: "complete" as const,
+      content: "旧外搜[ayase-source:s1]",
+      search: { ...search, provider: "exa-mcp" as const },
+      providerReplay: anthropicReplay,
+    };
+    const nativeAnthropicUser = { id: "nat-u", role: "user" as const, status: "complete" as const, content: "原生提问" };
+    const nativeAnthropicHistory = {
+      id: "nat-a",
+      replyToId: "nat-u",
+      role: "assistant" as const,
+      status: "complete" as const,
+      content: "prior native answer",
+      providerReplay: anthropicReplay,
+    };
+    const sameScope = await prepareSearchContext(
+      [externalUser, externalHistory, nativeAnthropicUser, nativeAnthropicHistory],
+      "继续",
+      defaultSessionConfig(),
+      "anthropic-native",
+      "deepseek-chat",
+      [source],
+      [],
+      scope,
+    );
+    expect(sameScope.plan.messages[1].providerReplay).toBeUndefined();
+    expect(sameScope.plan.messages[1].content).toContain("资料 (https://example.test/)");
+    expect(sameScope.plan.messages[3].providerReplay).toEqual(anthropicReplay);
+
+    const sameScopeNativeOnly = await prepareSearchContext(
+      [nativeAnthropicUser, nativeAnthropicHistory],
+      "继续",
+      defaultSessionConfig(),
+      "anthropic-native",
+      "deepseek-chat",
+      [source],
+      [],
+      scope,
+    );
+    const otherScope = await prepareSearchContext(
+      [nativeAnthropicUser, nativeAnthropicHistory],
+      "继续",
+      defaultSessionConfig(),
+      "anthropic-native",
+      "deepseek-chat",
+      [source],
+      [],
+      "conn-other|https://api.deepseek.com/anthropic",
+    );
+    expect(otherScope.plan.messages[1].providerReplay).toBeUndefined();
+    expect(sameScopeNativeOnly.plan.inputTokens).toBeGreaterThan(otherScope.plan.inputTokens);
+
+    const responsesHistory = [
+      { id: "nat-ru", role: "user" as const, status: "complete" as const, content: "提问" },
+      { id: "nat-r", replyToId: "nat-ru", role: "assistant" as const, status: "complete" as const, content: "prior responses answer", providerReplay: responsesReplay },
+    ];
+    const responsesPrepared = await prepareSearchContext(
+      responsesHistory,
+      "继续",
+      defaultSessionConfig(),
+      "openai-responses",
+      "deepseek-reasoner",
+      [source],
+      [],
+      responsesScope,
+    );
+    const responsesOtherScope = await prepareSearchContext(
+      responsesHistory,
+      "继续",
+      defaultSessionConfig(),
+      "openai-responses",
+      "deepseek-reasoner",
+      [source],
+      [],
+      "conn-other|https://api.deepseek.com/v1",
+    );
+    expect(responsesPrepared.plan.messages[1].providerReplay).toEqual(responsesReplay);
+    expect(responsesOtherScope.plan.messages[1].providerReplay).toBeUndefined();
+    expect(responsesPrepared.plan.inputTokens).toBeGreaterThan(responsesOtherScope.plan.inputTokens);
   });
 });

@@ -754,4 +754,31 @@ describe("ChatTransport", () => {
     expect(message).not.toContain("test-key");
     expect(message).not.toContain("synthetic-secret");
   });
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] satisfies Parameters<typeof createChatTransport>[0][])(
+    "%s disables HTTP redirects and rejects 3xx responses in streaming and non-streaming modes without leaking credentials",
+    async (protocol) => {
+      for (const config of [defaultSessionConfig(), nonStreamingConfig]) {
+        const seenRedirects: Array<RequestRedirect | undefined> = [];
+        const fetch: FetchLike = async (_input, init) => {
+          seenRedirects.push(init?.redirect);
+          return new Response("moved with test-key to https://evil.example/leak", {
+            status: 307,
+            headers: { Location: "https://evil.example/leak?api_key=test-key" },
+          });
+        };
+        const events = await collectEvents(protocol, fetch, { ...request, config });
+        expect(seenRedirects).toEqual(["error"]);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          type: "failed",
+          error: { kind: "http", status: 307, retryable: false },
+        });
+        const message = events[0]?.type === "failed" ? events[0].error.message : "";
+        expect(message).toContain("重定向");
+        expect(message).not.toContain("test-key");
+        expect(message).not.toContain("evil.example");
+      }
+    },
+  );
 });

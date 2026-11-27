@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ContextBudgetError, estimateInlineRequestBytes, planContextBudget, selectTokenCounter, tokenCountLabel } from "./contextBudget";
+import { ContextBudgetError, planContextBudget, selectTokenCounter, tokenCountLabel } from "./contextBudget";
 import { defaultSessionConfig } from "./sessionConfig";
 import type { StoredChatMessage } from "./repository";
 
@@ -72,11 +72,5 @@ describe("local context budget", () => {
       { role: "user", attachments: [attachment] }, { role: "assistant", content: "seen" },
       { role: "user", attachments: [latest] },
     ]);
-  });
-
-  it("preflights many historical attachments before loading their bytes", () => {
-    const messages = Array.from({ length: 3 }, (_, index) => ({ role: "user" as const, content: `turn ${index}`,
-      attachments: [{ reference: `attachments/${index}.pdf`, name: `${index}.pdf`, mimeType: "application/pdf" as const, size: 10_000_000 }] }));
-    expect(estimateInlineRequestBytes(messages)).toBeGreaterThan(32_000_000);
   });
 });

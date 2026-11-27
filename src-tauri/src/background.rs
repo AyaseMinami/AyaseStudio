@@ -3,7 +3,7 @@ use std::{
     fs::OpenOptions,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Condvar, Mutex},
 };
 
 use image::{DynamicImage, ImageFormat, ImageReader, Limits};
@@ -17,6 +17,47 @@ const MAX_THUMBNAIL_EDGE: u32 = 512;
 const MAX_THUMBNAIL_BYTES: u64 = 2_000_000;
 // Import, resolve and cleanup share one lock, including legacy thumbnail creation.
 pub(crate) static BACKGROUND_FILES: Mutex<()> = Mutex::new(());
+static IN_FLIGHT: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+struct InFlightGuard;
+
+impl InFlightGuard {
+    fn acquire() -> Result<Self, BackgroundError> {
+        let mut count = IN_FLIGHT.0.lock().map_err(|_| BackgroundError::StorageFailed)?;
+        *count += 1;
+        Ok(Self)
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let mut count = match IN_FLIGHT.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            IN_FLIGHT.1.notify_all();
+        }
+    }
+}
+
+pub(crate) fn wait_for_idle() -> Result<(), ()> {
+    let mut count = IN_FLIGHT.0.lock().map_err(|_| ())?;
+    while *count > 0 {
+        count = IN_FLIGHT.1.wait(count).map_err(|_| ())?;
+    }
+    Ok(())
+}
+
+fn map_file_safety_error(error: crate::file_safety::FileSafetyError) -> BackgroundError {
+    match error {
+        crate::file_safety::FileSafetyError::TooLarge => BackgroundError::TooLarge,
+        crate::file_safety::FileSafetyError::InvalidPath => BackgroundError::InvalidReference,
+        crate::file_safety::FileSafetyError::Unavailable => BackgroundError::Unavailable,
+        crate::file_safety::FileSafetyError::Storage => BackgroundError::StorageFailed,
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum BackgroundError {
@@ -134,17 +175,20 @@ fn thumbnail_path(app_data_dir: &Path, file_name: &str) -> PathBuf {
 }
 
 fn validate_thumbnail(path: &Path) -> Result<(), BackgroundError> {
-    let metadata = std::fs::metadata(path).map_err(|_| BackgroundError::Corrupt)?;
-    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_THUMBNAIL_BYTES {
-        return Err(BackgroundError::Corrupt);
+    if let Some(directory) = path.parent()
+        && crate::file_safety::inspect(directory)
+            .map_err(map_file_safety_error)?
+            .is_some_and(|meta| !meta.is_dir())
+    {
+        return Err(BackgroundError::StorageFailed);
     }
-    let mut bytes = Vec::new();
-    std::fs::File::open(path)
-        .map_err(|_| BackgroundError::Corrupt)?
-        .take(MAX_THUMBNAIL_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| BackgroundError::Corrupt)?;
-    if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
+    let bytes = crate::file_safety::bounded_read(path, MAX_THUMBNAIL_BYTES).map_err(|error| {
+        match error {
+            crate::file_safety::FileSafetyError::InvalidPath => BackgroundError::InvalidReference,
+            _ => BackgroundError::Corrupt,
+        }
+    })?;
+    if bytes.is_empty() {
         return Err(BackgroundError::Corrupt);
     }
     if image::guess_format(&bytes).ok() != Some(ImageFormat::Png) {
@@ -162,7 +206,25 @@ fn validate_thumbnail(path: &Path) -> Result<(), BackgroundError> {
 
 fn save_thumbnail(image: &DynamicImage, path: &Path) -> Result<(), BackgroundError> {
     let directory = path.parent().ok_or(BackgroundError::StorageFailed)?;
+    if crate::file_safety::inspect(directory)
+        .map_err(map_file_safety_error)?
+        .is_some_and(|meta| !meta.is_dir())
+    {
+        return Err(BackgroundError::StorageFailed);
+    }
     std::fs::create_dir_all(directory).map_err(|_| BackgroundError::StorageFailed)?;
+    if !crate::file_safety::inspect(directory)
+        .map_err(map_file_safety_error)?
+        .is_some_and(|meta| meta.is_dir())
+    {
+        return Err(BackgroundError::StorageFailed);
+    }
+    if crate::file_safety::inspect(path)
+        .map_err(map_file_safety_error)?
+        .is_some_and(|meta| !meta.is_file())
+    {
+        return Err(BackgroundError::StorageFailed);
+    }
     let thumbnail = if image.width() > MAX_THUMBNAIL_EDGE || image.height() > MAX_THUMBNAIL_EDGE {
         image.thumbnail(MAX_THUMBNAIL_EDGE, MAX_THUMBNAIL_EDGE)
     } else {
@@ -230,7 +292,7 @@ fn resolve_existing_managed_file(
     // Fast path for canonical lowercase references when the lowercase file exists.
     if raw_name == canonical_name {
         let exact = background_dir.join(raw_name);
-        if let Ok(metadata) = std::fs::metadata(&exact) {
+        if let Some(metadata) = crate::file_safety::inspect(&exact).map_err(map_file_safety_error)? {
             if metadata.is_file() {
                 return Ok((raw_name.to_owned(), exact, metadata));
             }
@@ -240,6 +302,12 @@ fn resolve_existing_managed_file(
     // Preserve actual on-disk casing for legacy/mixed-case files across case-sensitive
     // and case-insensitive filesystems. Prefer exact match, then canonical lowercase,
     // then any case-insensitive managed match.
+    if !crate::file_safety::inspect(background_dir)
+        .map_err(map_file_safety_error)?
+        .is_some_and(|meta| meta.is_dir())
+    {
+        return Err(BackgroundError::Unavailable);
+    }
     let entries = std::fs::read_dir(background_dir).map_err(|_| BackgroundError::Unavailable)?;
     let mut canonical_match: Option<(String, PathBuf)> = None;
     let mut case_match: Option<(String, PathBuf)> = None;
@@ -253,7 +321,9 @@ fn resolve_existing_managed_file(
         }
         let path = entry.path();
         if name == raw_name {
-            let metadata = std::fs::metadata(&path).map_err(|_| BackgroundError::Unavailable)?;
+            let metadata = crate::file_safety::inspect(&path)
+                .map_err(map_file_safety_error)?
+                .ok_or(BackgroundError::Unavailable)?;
             if !metadata.is_file() {
                 return Err(BackgroundError::Unavailable);
             }
@@ -268,7 +338,9 @@ fn resolve_existing_managed_file(
     let Some((actual_name, path)) = canonical_match.or(case_match) else {
         return Err(BackgroundError::Unavailable);
     };
-    let metadata = std::fs::metadata(&path).map_err(|_| BackgroundError::Unavailable)?;
+    let metadata = crate::file_safety::inspect(&path)
+        .map_err(map_file_safety_error)?
+        .ok_or(BackgroundError::Unavailable)?;
     if !metadata.is_file() {
         return Err(BackgroundError::Unavailable);
     }
@@ -282,16 +354,30 @@ fn import_background_from_path(
     let _guard = BACKGROUND_FILES
         .lock()
         .map_err(|_| BackgroundError::StorageFailed)?;
-    let metadata = std::fs::metadata(source).map_err(|_| BackgroundError::Unavailable)?;
+    // Explicitly user-selected external sources preserve normal OS path resolution
+    // (including user directory junctions) while enforcing bounded reads.
+    let file = std::fs::File::open(source).map_err(|_| BackgroundError::Unavailable)?;
+    let metadata = file.metadata().map_err(|_| BackgroundError::Unavailable)?;
     if !metadata.is_file() {
         return Err(BackgroundError::Unavailable);
     }
     validate_background_size(metadata.len())?;
-    let bytes = std::fs::read(source).map_err(|_| BackgroundError::Unavailable)?;
+    let mut bytes = Vec::new();
+    std::io::Read::take(file, MAX_BACKGROUND_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| BackgroundError::Unavailable)?;
+    validate_background_size(bytes.len() as u64)?;
     let (kind, image) = decode_background_bytes(&bytes)?;
 
     let background_dir = app_data_dir.join("backgrounds");
+    if crate::file_safety::inspect(&background_dir)
+        .map_err(map_file_safety_error)?
+        .is_some_and(|meta| !meta.is_dir())
+    {
+        return Err(BackgroundError::StorageFailed);
+    }
     std::fs::create_dir_all(&background_dir).map_err(|_| BackgroundError::StorageFailed)?;
+    crate::file_safety::inspect(&background_dir).map_err(map_file_safety_error)?;
     let file_name = format!("{}.{}", Uuid::new_v4(), kind.extension());
     let absolute_path = background_dir.join(&file_name);
     let mut destination = OpenOptions::new()
@@ -328,6 +414,11 @@ fn cleanup_background_files(
         .map(|reference| managed_file_name(reference))
         .collect::<Result<HashSet<_>, _>>()?;
     let background_dir = app_data_dir.join("backgrounds");
+    match crate::file_safety::inspect(&background_dir).map_err(map_file_safety_error)? {
+        None => return Ok(()),
+        Some(meta) if !meta.is_dir() => return Err(BackgroundError::StorageFailed),
+        Some(_) => {}
+    }
     let entries = match std::fs::read_dir(&background_dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -356,7 +447,13 @@ fn cleanup_background_files(
             existing_originals.insert(canonical_name);
         }
     }
-    let thumbnails = match std::fs::read_dir(background_dir.join("thumbnails")) {
+    let thumbnails_dir = background_dir.join("thumbnails");
+    match crate::file_safety::inspect(&thumbnails_dir).map_err(map_file_safety_error)? {
+        None => return Ok(()),
+        Some(meta) if !meta.is_dir() => return Err(BackgroundError::StorageFailed),
+        Some(_) => {}
+    }
+    let thumbnails = match std::fs::read_dir(&thumbnails_dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => return Err(BackgroundError::StorageFailed),
@@ -416,13 +513,22 @@ fn resolve_background_resource(
         return Err(BackgroundError::Corrupt);
     }
     let cached_path = thumbnail_path(app_data_dir, &actual_name);
-    if thumbnail && !refresh && validate_thumbnail(&cached_path).is_ok() {
-        return Ok(ImportedBackground {
-            reference: reference.to_owned(),
-            absolute_path: cached_path,
-        });
+    if thumbnail && !refresh {
+        match validate_thumbnail(&cached_path) {
+            Ok(()) => {
+                return Ok(ImportedBackground {
+                    reference: reference.to_owned(),
+                    absolute_path: cached_path,
+                });
+            }
+            Err(error @ (BackgroundError::InvalidReference | BackgroundError::StorageFailed)) => {
+                return Err(error);
+            }
+            Err(_) => {}
+        }
     }
-    let bytes = std::fs::read(&absolute_path).map_err(|_| BackgroundError::Unavailable)?;
+    let bytes = crate::file_safety::bounded_read(&absolute_path, MAX_BACKGROUND_BYTES)
+        .map_err(map_file_safety_error)?;
     let (kind, image) = decode_background_bytes(&bytes)?;
     if !canonical_name.ends_with(&format!(".{}", kind.extension())) {
         return Err(BackgroundError::Corrupt);
@@ -448,44 +554,52 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 #[tauri::command]
 pub async fn select_background_image(
     app: AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<BackgroundResourcePayload>, String> {
-    let selected = app
-        .dialog()
-        .file()
-        .add_filter("PNG, JPEG 或 WebP 图片", &["png", "jpg", "jpeg", "webp"])
-        .blocking_pick_file();
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let source = selected
-        .into_path()
-        .map_err(|_| BackgroundError::Unavailable.code().to_owned())?;
-    let name = source
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .map(|name| name.chars().take(100).collect());
+    crate::require_main_window(&window)?;
     let directory = app_data_dir(&app)?;
-    let imported = tauri::async_runtime::spawn_blocking(move || {
-        import_background_from_path(&source, &directory)
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code().to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
+        let selected = app
+            .dialog()
+            .file()
+            .add_filter("PNG, JPEG 或 WebP 图片", &["png", "jpg", "jpeg", "webp"])
+            .blocking_pick_file();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let source = selected
+            .into_path()
+            .map_err(|_| BackgroundError::Unavailable.code().to_owned())?;
+        let name = source
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .map(|name| name.chars().take(100).collect());
+        let imported = import_background_from_path(&source, &directory)
+            .map_err(|error| error.code().to_owned())?;
+        let mut payload = BackgroundResourcePayload::try_from(imported)?;
+        // Only the basename crosses the boundary; the source path is never persisted or sent to React.
+        payload.name = name;
+        Ok(Some(payload))
     })
     .await
     .map_err(|_| BackgroundError::StorageFailed.code().to_owned())?
-    .map_err(|error| error.code().to_owned())?;
-    let mut payload = BackgroundResourcePayload::try_from(imported)?;
-    // Only the basename crosses the boundary; the source path is never persisted or sent to React.
-    payload.name = name;
-    Ok(Some(payload))
 }
 
 #[tauri::command]
 pub async fn resolve_background_image(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     reference: String,
     thumbnail: Option<bool>,
     refresh: Option<bool>,
 ) -> Result<BackgroundResourcePayload, String> {
+    crate::require_main_window(&window)?;
     let directory = app_data_dir(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code().to_owned())?;
     let resource = tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         resolve_background_resource(
             &directory,
             &reference,
@@ -502,10 +616,14 @@ pub async fn resolve_background_image(
 #[tauri::command]
 pub async fn cleanup_background_images(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     retained_references: Vec<String>,
 ) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let directory = app_data_dir(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code().to_owned())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         cleanup_background_files(&directory, &retained_references)
     })
     .await
@@ -972,5 +1090,103 @@ mod tests {
             resolve_background_reference(temp.path(), reference),
             Err(BackgroundError::Corrupt)
         );
+    }
+
+    #[test]
+    fn wait_for_idle_blocks_until_queued_in_flight_background_operation_completes() {
+        use std::{
+            sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            },
+            time::Duration,
+        };
+
+        let guard = InFlightGuard::acquire().unwrap();
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_clone = Arc::clone(&finished);
+        let waiter = std::thread::spawn(move || {
+            wait_for_idle().unwrap();
+            finished_clone.store(true, Ordering::SeqCst);
+        });
+        std::thread::sleep(Duration::from_millis(25));
+        assert!(!finished.load(Ordering::SeqCst));
+        drop(guard);
+        waiter.join().unwrap();
+        assert!(finished.load(Ordering::SeqCst));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn junction_thumbnails_dir_fails_closed_without_writing_while_user_selected_junction_imports() {
+        let temp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let src_target = tempfile::tempdir().unwrap();
+        let png = include_bytes!("../icons/32x32.png");
+        let src_real = src_target.path().join("wall.png");
+        std::fs::write(&src_real, png).unwrap();
+
+        // User-selected external source reached through a normal directory junction remains importable.
+        let src_junction = temp.path().join("user-junction");
+        let status = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&src_junction)
+            .arg(src_target.path())
+            .output()
+            .unwrap();
+        assert!(status.status.success(), "mklink /J failed");
+        let app_data = temp.path().join("app");
+        let imported = import_background_from_path(&src_junction.join("wall.png"), &app_data)
+            .expect("user-selected source through junction should import");
+
+        // Replace managed thumbnails directory with a junction pointing outside.
+        let thumbs_dir = app_data.join("backgrounds").join("thumbnails");
+        std::fs::remove_dir_all(&thumbs_dir).unwrap();
+        let status = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&thumbs_dir)
+            .arg(outside.path())
+            .output()
+            .unwrap();
+        assert!(status.status.success(), "mklink /J failed");
+
+        assert_eq!(
+            resolve_background_resource(&app_data, &imported.reference, true, false),
+            Err(BackgroundError::InvalidReference)
+        );
+        assert_eq!(
+            import_background_from_path(&src_real, &app_data),
+            Err(BackgroundError::InvalidReference)
+        );
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+
+        // Startup cleanup must also reject junctions instead of enumerating/deleting outside files.
+        let outside_managed_name = format!("{}.png", Uuid::new_v4());
+        let outside_thumb = outside.path().join(format!("{outside_managed_name}.png"));
+        std::fs::write(&outside_thumb, b"keep-outside").unwrap();
+        assert_eq!(
+            cleanup_background_files(&app_data, std::slice::from_ref(&imported.reference)),
+            Err(BackgroundError::InvalidReference)
+        );
+        assert!(outside_thumb.is_file());
+
+        // A junction at backgrounds itself must also fail closed on cleanup.
+        let app_data_bg = temp.path().join("app-bg-junction");
+        std::fs::create_dir_all(&app_data_bg).unwrap();
+        let outside_bg = tempfile::tempdir().unwrap();
+        let outside_bg_file = outside_bg.path().join(&outside_managed_name);
+        std::fs::write(&outside_bg_file, b"keep-outside-bg").unwrap();
+        let status = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(app_data_bg.join("backgrounds"))
+            .arg(outside_bg.path())
+            .output()
+            .unwrap();
+        assert!(status.status.success(), "mklink /J failed");
+        assert_eq!(
+            cleanup_background_files(&app_data_bg, &[]),
+            Err(BackgroundError::InvalidReference)
+        );
+        assert!(outside_bg_file.is_file());
     }
 }

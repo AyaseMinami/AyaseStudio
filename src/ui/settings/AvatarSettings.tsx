@@ -13,17 +13,19 @@ export function AvatarSettings({ avatar, importBusy = false }: { avatar: UserAva
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const active = useRef(true);
+  const openSeq = useRef(0);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   useEffect(() => () => { if (draft) URL.revokeObjectURL(draft.url); }, [draft]);
   async function open(original: Blob, crop = centeredCrop) {
+    const seq = ++openSeq.current;
     setLoading(true); setError(undefined);
     try {
       if (!["image/png", "image/jpeg", "image/webp"].includes(original.type) || original.size > 20 * 1024 * 1024)
         throw new Error("请选择 20 MB 以内的 PNG、JPEG 或 WebP 图片。");
       const image = await decodeAvatar(original);
-      if (active.current) setDraft({ original, image, url: URL.createObjectURL(original), crop });
-    } catch (error) { if (active.current) setError((error as Error).message); }
-    finally { if (active.current) setLoading(false); }
+      if (active.current && seq === openSeq.current) setDraft({ original, image, url: URL.createObjectURL(original), crop });
+    } catch (error) { if (active.current && seq === openSeq.current) setError((error as Error).message); }
+    finally { if (active.current && seq === openSeq.current) setLoading(false); }
   }
   const busy = avatar.busy || loading || importBusy;
   return <>

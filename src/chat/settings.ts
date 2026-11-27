@@ -145,12 +145,6 @@ export function getActiveTarget(
   return undefined;
 }
 
-export function getActiveProvider(
-  state: ConnectionSettingsState,
-): ProviderGroup | undefined {
-  return getActiveTarget(state)?.provider;
-}
-
 export function getActiveConnection(
   state: ConnectionSettingsState,
 ): ActiveModelTarget["connection"] | undefined {
@@ -179,12 +173,6 @@ export function getDrawingModels(state: ConnectionSettingsState): DrawingModelOp
     .flatMap((connection) => connection.models.map((model) => ({
       id: model.id, label: `${provider.name} / ${connection.name} / ${model.displayName || model.modelId}`, protocol: connection.protocol,
     }))));
-}
-
-export function getActiveModel(
-  state: ConnectionSettingsState,
-): ConfiguredModel | undefined {
-  return getActiveTarget(state)?.model;
 }
 
 function sanitizeModel(

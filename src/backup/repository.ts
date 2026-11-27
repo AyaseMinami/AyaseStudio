@@ -7,6 +7,69 @@ import { persistentPreferences } from "../storage/dataRegistry";
 
 export interface BackupJournal { id: "restore"; before: LocalSnapshot; references: string[]; phase: "staging" | "applying" }
 export interface BackupStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+
+const MAX_JOURNAL_REFERENCES = 2000;
+const MANAGED_REFERENCE = /^(?:attachments\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:png|jpg|webp|pdf|txt|md|docx|xlsx|pptx)|backgrounds\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:png|jpg|webp))$/;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    && Object.prototype.toString.call(value) === "[object Object]";
+}
+
+function hasRecordId(value: unknown): value is Record<string, unknown> & { id: string } {
+  return isPlainObject(value) && typeof value.id === "string" && value.id.length > 0;
+}
+
+function validateDenseUniqueRecords(value: unknown, invalid: () => Error): void {
+  if (!Array.isArray(value)) throw invalid();
+  const seen = new Set<string>();
+  for (let i = 0; i < value.length; i += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, i)) throw invalid();
+    const row = value[i];
+    if (!hasRecordId(row) || seen.has(row.id)) throw invalid();
+    seen.add(row.id);
+  }
+}
+
+function validateJournal(journal: unknown): asserts journal is BackupJournal {
+  const invalid = () => new BackupRecoveryError("恢复日志损坏或不受支持，已中止回滚并保留现有数据与原日志。");
+  if (!isPlainObject(journal)) throw invalid();
+  if (journal.id !== "restore") throw invalid();
+  if (journal.phase !== "staging" && journal.phase !== "applying") throw invalid();
+  if (!Array.isArray(journal.references) || journal.references.length > MAX_JOURNAL_REFERENCES) {
+    throw invalid();
+  }
+  for (let i = 0; i < journal.references.length; i += 1) {
+    if (!Object.prototype.hasOwnProperty.call(journal.references, i)) throw invalid();
+    const ref = journal.references[i];
+    if (typeof ref !== "string" || !MANAGED_REFERENCE.test(ref)) throw invalid();
+  }
+  const before = journal.before;
+  if (!isPlainObject(before)) throw invalid();
+  if (!isPlainObject(before.rows)) throw invalid();
+  for (const t of backupTables) {
+    if (t === "providerAvatars" && before.rows[t] === undefined) continue;
+    validateDenseUniqueRecords(before.rows[t], invalid);
+  }
+  if (!isPlainObject(before.preferences)) throw invalid();
+  for (const value of Object.values(before.preferences)) {
+    if (value !== null && typeof value !== "string") throw invalid();
+  }
+  if (before.drawing !== undefined) {
+    if (!isPlainObject(before.drawing)) throw invalid();
+    validateDenseUniqueRecords(before.drawing.presets, invalid);
+    if (before.drawing.draft !== undefined && (!isPlainObject(before.drawing.draft) || before.drawing.draft.id !== "current")) {
+      throw invalid();
+    }
+    if (before.drawing.targets !== undefined) {
+      if (!Array.isArray(before.drawing.targets)) throw invalid();
+      for (let i = 0; i < before.drawing.targets.length; i += 1) {
+        if (!Object.prototype.hasOwnProperty.call(before.drawing.targets, i)) throw invalid();
+        if (!isPlainObject(before.drawing.targets[i])) throw invalid();
+      }
+    }
+  }
+}
 export class BackupRepository {
   constructor(readonly database = new AyaseDatabase("AyaseStudio"), private storage: BackupStorage = localStorage) {}
   async snapshot(): Promise<LocalSnapshot> {
@@ -37,7 +100,10 @@ export class BackupRepository {
     for (const t of backupTables) {
       // Old rollback journals did not capture provider images: preserve that scope.
       if (t === "providerAvatars" && rows[t] === undefined) continue;
-      const values = rows[t] ?? [];
+      const values = rows[t];
+      if (!Array.isArray(values)) {
+        throw new BackupRecoveryError("恢复日志损坏或不受支持，已中止回滚并保留现有数据与原日志。");
+      }
       await this.database.table(t).clear(); if (values.length) await this.database.table(t).bulkPut(values);
     }
   }
@@ -55,6 +121,7 @@ export class BackupRepository {
   async recover(files: BackupFiles): Promise<boolean> {
     const db = this.database, journal = await db.backupJournal.get("restore");
     if (!journal) return false;
+    validateJournal(journal);
     // Restore durable references first; only then remove journal-owned new files.
     await db.transaction("rw", [...backupTables.map(t => db.table(t)), db.drawingDrafts, db.drawingPromptPresets], async () => {
       await this.replaceRows(journal.before.rows); await this.replaceDrawing(journal.before.drawing);

@@ -41,7 +41,7 @@ fn time(v: &Value, key: &str) -> Result<i64, String> {
     Ok(n)
 }
 fn utf16be(bytes: &[u8]) -> Result<String, String> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return bad();
     }
     let units: Vec<_> = bytes
@@ -88,7 +88,7 @@ fn storage_string(bytes: &[u8]) -> Result<String, String> {
     match bytes.first() {
         Some(1) => Ok(bytes[1..].iter().map(|b| char::from(*b)).collect()),
         Some(0) => {
-            if (bytes.len() - 1) % 2 != 0 {
+            if !(bytes.len() - 1).is_multiple_of(2) {
                 return bad();
             }
             let units: Vec<_> = bytes[1..]

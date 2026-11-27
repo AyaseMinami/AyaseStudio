@@ -37,4 +37,35 @@ describe("parseServerSentEvents", () => {
 
     expect(cancel).toHaveBeenCalledOnce();
   });
+
+  it("handles standalone CR, CRLF, LF and cross-chunk CR+LF line endings per WHATWG SSE", async () => {
+    const encoder = new TextEncoder();
+    const chunks = [
+      "event: delta\rdata: one\r\r",
+      "data: two\r",
+      "\n\r\n",
+      "data: three\r",
+      "data: four\r",
+      "\r",
+      "data: five\n\n",
+    ];
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+    const events = [];
+    for await (const event of parseServerSentEvents(body)) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { event: "delta", data: "one" },
+      { data: "two" },
+      { data: "three\nfour" },
+      { data: "five" },
+    ]);
+  });
 });

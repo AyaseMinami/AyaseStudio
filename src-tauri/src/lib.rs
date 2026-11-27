@@ -14,6 +14,18 @@ mod cherry_v8;
 #[cfg(desktop)]
 mod instance_lock;
 
+pub(crate) fn require_main_window_label(label: &str) -> Result<(), String> {
+    if label == "main" {
+        Ok(())
+    } else {
+        Err("仅允许从主窗口执行此操作".into())
+    }
+}
+
+pub(crate) fn require_main_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    require_main_window_label(window.label())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -116,4 +128,17 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_main_window_label;
+
+    #[test]
+    fn main_window_gate_allows_only_main_label() {
+        assert!(require_main_window_label("main").is_ok());
+        for label in ["", "tray-menu", "MAIN", "main-2", "popup"] {
+            assert!(require_main_window_label(label).is_err(), "{label}");
+        }
+    }
 }

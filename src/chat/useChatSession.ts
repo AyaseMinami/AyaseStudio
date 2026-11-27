@@ -1266,7 +1266,7 @@ export function useChatSession({
         setMessages(workingMessages); queuePersist(workingMessages);
         const latestAttachments = requestMessages[requestMessages.length - 1]?.attachments ?? [];
         const prepared = await prepareSearchContext(requestHistory, content, frozenConfig, requestConnection.protocol,
-          requestModelId, result.sources, latestAttachments as RequestAttachment[]);
+          requestModelId, result.sources, latestAttachments as RequestAttachment[], replayScope);
         if (controller.signal.aborted) throw new Error("检索已停止。");
         planned = prepared.plan;
         // Materialize any historical attachment newly retained after data budgeting.
@@ -1528,12 +1528,13 @@ export function useChatSession({
       const workingMessages = [...history, userMessage, answer];
       return {
         messages: workingMessages,
-        claim: () => { task = generationTasks.begin(conversationId); return !!task; },
+        claim: () => { if (closingRef.current) return false; task = generationTasks.begin(conversationId); return !!task; },
         cancel: () => { if (task) generationTasks.finish(task); },
         committed: () => {
           startedGeneration = true;
           const requestStore = workspace.getStore(conversationId)!;
           workspace.setMessagesAt(conversationId, workingMessages);
+          if (!externalSearch) workspace.setContextPlanAt(conversationId, summarizeContextPlan(planned));
           // The accepted generation outlives navigation and does not consume the Composer draft.
           void streamReply({ requestStore, controller: task!.controller, requestConnection, frozenConfig, requestModelId,
             requestMessages, workingMessages, externalSearch, searchSettings, searchQuery, searchMode, requestHistory,
@@ -1541,10 +1542,7 @@ export function useChatSession({
             setMessages: value => workspace.setMessagesAt(conversationId, value),
             setError: value => workspace.setErrorAt(conversationId, value),
             setSendStatus: value => workspace.setSendStatusAt(conversationId, value),
-            setContextPlan: value => {
-              // This setter is already bound to the originating view.
-              setContextPlan(value);
-            } }).catch(() => workspace.setErrorAt(conversationId, "消息已保存，但请求终态保存失败。"))
+            setContextPlan: value => workspace.setContextPlanAt(conversationId, value) }).catch(() => workspace.setErrorAt(conversationId, "消息已保存，但请求终态保存失败。"))
             .finally(() => {
               workspace.setSendStatusAt(conversationId, undefined);
               generationTasks.finish(task!);

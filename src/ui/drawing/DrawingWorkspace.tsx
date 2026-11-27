@@ -239,6 +239,14 @@ export function DrawingWorkspace({ draft, references = draft.references ?? [], p
   notice?: string | null;
 }) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    const valid = new Set(tasks.map(task => task.id));
+    setExpandedTasks(prev => {
+      let changed = false;
+      for (const id of prev) { if (!valid.has(id)) { changed = true; break; } }
+      return changed ? new Set([...prev].filter(id => valid.has(id))) : prev;
+    });
+  }, [tasks]);
   const [taskSubview, setTaskSubview] = useState<"list" | "logs">("list");
   const [taskPage, setTaskPage] = useState(0), [logPage, setLogPage] = useState(0), [historyPage, setHistoryPage] = useState(0);
   const activeTaskPage = Math.min(taskPage, Math.max(0, Math.ceil(tasks.length / recordsPerPage) - 1));

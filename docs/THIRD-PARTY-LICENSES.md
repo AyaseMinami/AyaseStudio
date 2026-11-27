@@ -1,6 +1,6 @@
 # 第三方许可与资源归属
 
-核验日期：2026-10-03。#57 的文档整理以当前 Beta 1 开发状态为准；Issue 原文的 Alpha 表述是历史阶段。本文件整理已知声明及待核实项，不改变主项目许可证，也不将来源记录当作品牌授权。
+核验日期：2026-11-27（初核 2026-10-03）。本文件随 `#106` 正式版 `0.1.0` 发布前整改更新：已补齐随安装包分发的根目录 [THIRD-PARTY-NOTICES.txt](../THIRD-PARTY-NOTICES.txt)（注册于 `src-tauri/tauri.conf.json` `bundle.resources`），并按用户于 2026-11-27 拍板的个人非商用开源项目边界维持 11 个厂商品牌标识现状；本文件不改变主项目 MIT 许可证，也不将来源记录当作品牌授权。
 
 ## 主项目与依赖清单
 
@@ -8,7 +8,7 @@ Ayase Studio 自有源码和文档适用根目录 [MIT LICENSE](../LICENSE)，�
 
 [完整锁定清单](THIRD-PARTY-DEPENDENCIES.md) 记录 272 个 npm 锁定位置（151 个非 dev 项）和 608 个 Rust 外部包的版本、原始许可表达式、源包入口和本机顶层许可文件。包括开发依赖、可选平台包和 Rust 全目标依赖，数量不等于安装包实际包含数量。所有条目都有包级许可声明；缺少本机全文、未安装平台包、嵌套代码和原始表达式的组合要求仍需分别核实。
 
-#76 新增官方 Tauri updater 和 minisign 验签依赖。`src-tauri/src/update_signature.rs` 的公开测试向量来自锁定 `minisign-verify 0.2.5`，遵循该 crate ISC 许可，仅用于合成验签／篡改测试，不是发布密钥。
+#76 新增官方 Tauri updater 和 minisign 验签依赖。`src-tauri/src/update_signature.rs` 的公开测试向量来自锁定 `minisign-verify 0.2.5`，遵循该 crate MIT 许可（其内置 `src/crypto` 衍生自 rust-crypto 并保留 Graydon Hoare 与 Mozilla Foundation 版权声明），仅用于合成验签／篡改测试，不是发布密钥。
 
 从仓库根目录运行以下命令刷新记录；需要已安装 npm 依赖和已缓存 Cargo 包，不会安装或联网。两个锁文件的 SHA-256 随清单保存；依赖升级后应重新核对。
 
@@ -52,11 +52,10 @@ node scripts/inventory-third-party.mjs
 
 用户自行导入的头像、壁纸、附件以及模型生成内容不是仓库附带的第三方素材，其权利状态取决于用户和相应服务，不能自动适用主项目 MIT。
 
-## 尚待完成的分发核验
+## 分发随附与核验状态（2026-11-27 更新）
 
-- 本轮完成依赖/资源登记与缺口标注；没有宣称安装包已完成全部许可随附要求。当前 `tauri.conf.json` 未配置独立的第三方 notices 资源；本轮 `dist` 也没有专门的许可全文集合，需在下一次分发前核对构建保留的版权、完整许可证、NOTICE 及需要提供的源代码材料。
-- 缺少本机顶层全文的项目已在清单逐项标明；应结合精确发布版本及嵌套目录补足，不能因包级 SPDX 非空判定完整。
-- 11 个厂商品牌的授权/修改/头像使用边界继续按来源记录待核实。没有据此推断违法或已获许可，也没有自动替换品牌资源。
-- 本次没有重打安装包、改变打包脚本或发布检查门禁；安装包中的真实文件/链接范围、平台工具链声明及最终分发包仍待核验。
+- 根目录 [THIRD-PARTY-NOTICES.txt](../THIRD-PARTY-NOTICES.txt) 已按锁定依赖编写，并通过 `src-tauri/tauri.conf.json` 的 `bundle.resources` 注册为安装目录随包文件，涵盖 Ayase Studio MIT、主要前端/Rust MIT/Apache-2.0/ISC/BSD/MPL 依赖、KaTeX 及数学字体 MIT、Lucide ISC + Feather MIT、PDF.js Apache-2.0、SQLite 公有领域归属、ring/BoringSSL/webpki-roots 复合声明、resvg/usvg/roxmltree、Tauri NSIS 模板 MIT 及非 MIT 品牌标识声明。
+- 11 个厂商品牌标识经用户 2026-11-27 拍板，按个人非商用开源项目边界保留现状，维持 [README.md](../README.md)、[THIRD-PARTY-NOTICES.txt](../THIRD-PARTY-NOTICES.txt) 与 [SOURCES.md](../src/avatar/brands/SOURCES.md) 的非 MIT / 非厂商背书声明及原始字节哈希，不替换或重采样。
+- 缺少本机顶层全文的传递/可选依赖已在 [完整锁定清单](THIRD-PARTY-DEPENDENCIES.md) 逐项标明；构建 `v0.1.0` 候选安装包后仍须在 Windows 实机确认安装目录中 `THIRD-PARTY-NOTICES.txt` 已随包到位。
 
-这满足 #57 对“无法确认的内容明确标注待核实”的记录要求，不能代替最终分发授权判断。与代码和缓存审查的共同结果见 [#57 / #106 审查记录](ISSUE-57-106-AUDIT.md)。
+历史记录见 [#57 / #106 审查记录](ISSUE-57-106-AUDIT.md)，本轮正式版发布前整改与实机验收清单见 [#106 正式版发布前方案](ISSUE-106-PRE-RELEASE-PLAN.md)。

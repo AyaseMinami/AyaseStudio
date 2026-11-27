@@ -1,5 +1,11 @@
 # 持久数据契约
 
+## `#106` 正式版 `0.1.0` 备份预算扩容与私有日志严格校验（2026-11-27）
+
+- **便携 `.ayase` 备份上限翻倍**：保持 `envelope v1` / `document v5`、所有模块版本、Dexie schema v9 及剩余预算（2,000 资源 / 100,000 消息 / 8 MiB 非资源字符串）不变；三道容量上限同步由 `48 / 80 / 128 MiB` 提升至 **原始资源 96 MiB / 文档载荷 160 MiB / 单备份文件 256 MiB**（同步于 `src/backup/snapshot.ts`、`src/backup/validation.ts`、`src/backup/codec.ts` 与 `src-tauri/src/ayase_backup.rs`）。旧版读者需同时满足旧三项容量上限（48 / 80 / 128 MiB）及兼容模块版本要求，超过任一旧上限的备份需 `0.1.0+` 读取。`BackupWorkspace` 在导出/恢复完成后仅保留轻量展示摘要，及时释放完整备份对象与 Base64 资产引用。
+- **启动私有恢复日志严格校验（`B1`）**：`BackupRepository.recover()` 在开启任何写事务、改写偏好或删除文件前严格校验 `backupJournal` 结构（`id === "restore"`、`phase` 仅允许 `"staging" | "applying"`、必需表数组除历史日志可省略 `providerAvatars` 外均须为带非空字符串 `id` 的纯对象数组、`preferences` 为键值合法纯对象、`references` 满足 ≤2,000 项且每项为规范受管资源路径、可选 `drawing` 的 `presets` 与单例草稿 `draft.id === "current"` 合法）；结构损坏或不受支持时零写入、保留原数据与原日志并抛出 `BackupRecoveryError`。
+- **删除消息清理孤立回放（`M7`）**：`delete-message` 在删除用户消息时同步清除直接关联孤立助手消息上的 `providerReplay` 与 `continuation`，与 `edit-message` 语义一致。不改变 Dexie schema、模块版本或备份字段策略。
+
 ## 全局字体比例选择 #126（2026-11-26）
 
 外观偏好 `AppearancePreferences` 新增 `fontScale: 90 | 100 | 110 | 120 | 125`（整数百分比，默认 `100`），写入 `:root` 时换算为 `--font-scale: <value / 100>`，由启动首帧 `applyInitialAppearance` 与运行时外观控制器统一注入。存储键 `ayase-studio.appearance.v1`、Dexie schema v9、备份文档 v5／加密信封 v1、凭据与背景资源所有权均保持不变。旧本机记录与旧备份缺失 `fontScale` 时，共享纯克隆读入口 `readAppearancePreferences` 与 `loadAppearancePreferences` 纯读取回填 `100`，零自动写回；非法值（如 `85`、`105`、`1.1`、`"100"`、`null`、`NaN`）、未知字段或损坏 JSON 在严格读取、保存与备份恢复前拒绝并保留原文，启动显示层回退 `100` 且不阻断 `#backup` 维护入口。`setFontScale` 写盘失败时保留上次已保存状态与原 `--font-scale`，并在「文字与字号」卡片就近报错；「恢复方案配色」（`setColorPreset`）与「恢复当前主题默认外观」（`resetCustomAppearance`）均保留当前 `fontScale`，仅通过「文字与字号」卡片的独立「恢复默认」回到 `100`。

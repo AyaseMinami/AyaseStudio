@@ -21,7 +21,7 @@ if (command === "preflight") {
   await prepareArtifacts({ directory, publicKey, sourceSha: process.env.GITHUB_SHA, notes: process.env.RELEASE_NOTES });
 } else if (command === "draft") {
   const { version } = await readVersion();
-  const files = await loadArtifacts(directory, version);
+  const files = await loadArtifacts(directory);
   const verified = verifyArtifacts(files, { version, publicKey, sourceSha: process.env.GITHUB_SHA });
   verifyInstallerVersion(directory, verified.names, version);
   await verifyNativeSignature(directory, verified.names, publicKey, version);

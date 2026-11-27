@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { bytesToBase64 } from "../chat/attachments";
 import { defaultSessionConfig } from "../chat/sessionConfig";
-import { decodeBackup, encodeBackup, KDF_ITERATIONS, MAX_BACKUP_FILE, sha256 } from "./codec";
+import { decodeBackup, encodeBackup, KDF_ITERATIONS, MAX_BACKUP_FILE, MAX_PAYLOAD, sha256 } from "./codec";
 import type { BackupDocument } from "./types";
 
 const password = "synthetic-backup-password";
@@ -315,4 +315,17 @@ describe("backup document validation", () => {
       await expect(decodeBackup(await plainEnvelope(value))).rejects.toThrow();
     },
   );
+
+  it("enforces the upgraded 96 MiB resource / 160 MiB payload / 256 MiB file portable backup limits", async () => {
+    expect(MAX_PAYLOAD).toBe(160 * 1024 * 1024);
+    expect(MAX_BACKUP_FILE).toBe(256 * 1024 * 1024);
+    const overLegacy = document();
+    const bytes = new Uint8Array(50 * 1024 * 1024).fill(65);
+    overLegacy.assets = [{ id: reference, mime: "text/plain", data: bytesToBase64(bytes), size: bytes.length, sha256: await sha256(bytes) }];
+    Object.assign((overLegacy.rows.chats[0] as { messages: object[] }).messages[0]!, {
+      attachments: [{ reference, name: "fifty.txt", mimeType: "text/plain", size: bytes.length }],
+    });
+    const decoded = await decodeBackup(await encodeBackup(overLegacy));
+    expect(decoded.document.assets[0]!.size).toBe(50 * 1024 * 1024);
+  }, 60000);
 });

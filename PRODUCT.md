@@ -14,7 +14,7 @@ Ayase Studio 是基于 Tauri 2、React、TypeScript 的 Windows 本地优先聊�
 
 ## Operating Context
 
-当前为 Windows 桌面 Beta。用户已长期使用并认可现有基础操作；UI 持续围绕工作区整体感、交互减噪与可读性演进，具体现行规则以 `docs/UI-DESIGN.md` 为准。
+当前面向 Windows 桌面正式版（`0.1.0`）。用户已长期使用并认可现有基础操作；UI 持续围绕工作区整体感、交互减噪与可读性演进，具体现行规则以 `docs/UI-DESIGN.md` 为准。
 
 ## Capabilities and Constraints
 

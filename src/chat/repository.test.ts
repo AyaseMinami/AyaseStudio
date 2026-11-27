@@ -46,4 +46,34 @@ describe("ChatRepository", () => {
     await repository.clear("current");
     await expect(repository.load("current")).resolves.toBeUndefined();
   });
+
+  it("clears providerReplay and continuation on orphaned assistant messages when deleting their user message", async () => {
+    const repository = createChatRepository(`DeleteReplay-${crypto.randomUUID()}`);
+    await repository.initializeWorkspace(null, []);
+    await repository.save({
+      id: "current",
+      updatedAt: 1,
+      messages: [
+        { id: "u1", role: "user", content: "question", status: "complete" },
+        {
+          id: "a1",
+          role: "assistant",
+          replyToId: "u1",
+          content: "answer",
+          status: "complete",
+          providerReplay: {
+            protocol: "anthropic-native",
+            scope: "conn|https://example.test",
+            content: [{ type: "text", text: "answer" }],
+          },
+        },
+      ],
+    });
+    await repository.execute({ type: "delete-message", conversationId: "current", messageId: "u1" });
+    const loaded = await repository.load("current");
+    expect(loaded?.messages).toHaveLength(1);
+    expect(loaded?.messages[0]?.id).toBe("a1");
+    expect(loaded?.messages[0]?.providerReplay).toBeUndefined();
+    expect(loaded?.messages[0]?.continuation).toBeUndefined();
+  });
 });

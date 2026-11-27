@@ -8,7 +8,7 @@ use std::{
     fs::Metadata,
     io::{Cursor, Write},
     path::{Component, Path, PathBuf},
-    sync::Mutex,
+    sync::{Condvar, Mutex},
 };
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -26,6 +26,38 @@ const PIXEL_LIMIT: u64 = 32_000_000;
 const IMAGE_COUNT: usize = 8;
 const MANIFEST_LIMIT: usize = 16 * 1024;
 pub(crate) static DRAWING_FILES: Mutex<()> = Mutex::new(());
+static IN_FLIGHT: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+struct InFlightGuard;
+
+impl InFlightGuard {
+    fn acquire() -> Result<Self, Error> {
+        let mut count = IN_FLIGHT.0.lock().map_err(|_| Error::Storage)?;
+        *count += 1;
+        Ok(Self)
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let mut count = match IN_FLIGHT.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            IN_FLIGHT.1.notify_all();
+        }
+    }
+}
+
+pub(crate) fn wait_for_idle() -> Result<(), ()> {
+    let mut count = IN_FLIGHT.0.lock().map_err(|_| ())?;
+    while *count > 0 {
+        count = IN_FLIGHT.1.wait(count).map_err(|_| ())?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum Error {
@@ -452,6 +484,24 @@ fn checked_read(path: &Path, limit: Option<usize>) -> Result<Vec<u8>, Error> {
         path,
         limit.map(|value| value as u64),
     )?)
+}
+
+fn inspect_reference(bytes: &[u8]) -> Result<(&'static str, &'static str), Error> {
+    let format = image::guess_format(bytes).map_err(|_| Error::Corrupt)?;
+    let (mime, ext) = match format {
+        ImageFormat::Png => ("image/png", "png"),
+        ImageFormat::Jpeg => ("image/jpeg", "jpg"),
+        ImageFormat::WebP => ("image/webp", "webp"),
+        ImageFormat::Bmp => ("image/bmp", "bmp"),
+        _ => return Err(Error::Corrupt),
+    };
+    let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+    reader.no_limits();
+    let (width, height) = reader.into_dimensions().map_err(|_| Error::Corrupt)?;
+    if width == 0 || height == 0 {
+        return Err(Error::Corrupt);
+    }
+    Ok((mime, ext))
 }
 
 fn decode_reference(bytes: &[u8]) -> Result<(DynamicImage, &'static str, &'static str), Error> {
@@ -1246,11 +1296,53 @@ fn remove_references(root: &Path, values: &[String]) -> Result<(), Error> {
     Ok(())
 }
 
-fn read(root: &Path, value: &str) -> Result<DrawingImageInput, Error> {
+fn verified_reference_receipt(
+    root: &Path,
+    scope: &str,
+    id: &str,
+    value: &str,
+    bytes: &[u8],
+) -> Result<bool, Error> {
+    let directories = reference_import_directories(root, scope)?;
+    let mut found = None;
+    for directory in &directories {
+        let path = directory.join(format!("{id}.json"));
+        if inspect(&path)?.is_some() {
+            if found.is_some() {
+                return Err(Error::Collision);
+            }
+            found = Some(path);
+        }
+    }
+    let Some(path) = found else {
+        return Ok(false);
+    };
+    let receipt = read_reference_receipt(&path)?;
+    if receipt.reference != value || receipt.size != bytes.len() || receipt.digest != sha256(bytes)
+    {
+        return Err(Error::Corrupt);
+    }
+    Ok(true)
+}
+
+fn read_scoped(
+    root: &Path,
+    scope: Option<&str>,
+    value: &str,
+) -> Result<DrawingImageInput, Error> {
     if value.starts_with("drawing/references/") {
-        let (_, ext) = reference_input(value)?;
+        let (id, ext) = reference_input(value)?;
         let bytes = checked_read(&root.join(value), None)?;
-        let (_, mime, detected_ext) = decode_reference(&bytes)?;
+        let trusted_receipt = match scope {
+            Some(scope) => verified_reference_receipt(root, scope, id, value, &bytes)?,
+            None => false,
+        };
+        let (mime, detected_ext) = if trusted_receipt {
+            inspect_reference(&bytes)?
+        } else {
+            let (_, mime, detected_ext) = decode_reference(&bytes)?;
+            (mime, detected_ext)
+        };
         if ext != detected_ext {
             return Err(Error::Corrupt);
         }
@@ -1264,6 +1356,11 @@ fn read(root: &Path, value: &str) -> Result<DrawingImageInput, Error> {
         mime,
         data: STANDARD.encode(bytes),
     })
+}
+
+#[cfg(test)]
+fn read(root: &Path, value: &str) -> Result<DrawingImageInput, Error> {
+    read_scoped(root, None, value)
 }
 
 fn read_verified_result(
@@ -1441,10 +1538,16 @@ fn output_directory(root: &Path) -> Result<PathBuf, Error> {
 }
 
 #[tauri::command]
-pub async fn open_drawing_output_directory(app: AppHandle) -> Result<(), String> {
+pub async fn open_drawing_output_directory(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
     let default = output::default_directory(&app, &root).map_err(|error| error.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let directory = {
             let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
             output::configured_directory(&root, &default).map_err(|error| error.code())?
@@ -1457,10 +1560,14 @@ pub async fn open_drawing_output_directory(app: AppHandle) -> Result<(), String>
 #[tauri::command]
 pub async fn import_drawing_reference(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     image: DrawingImageInput,
 ) -> Result<ImportedDrawingReference, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         import_reference(&root, &image).map_err(|error| error.code())
     })
@@ -1471,16 +1578,19 @@ pub async fn import_drawing_reference(
 #[tauri::command]
 pub async fn import_drawing_reference_bytes(
     app: AppHandle,
-    webview: tauri::Webview,
+    window: tauri::WebviewWindow,
     request: tauri::ipc::Request<'_>,
 ) -> Result<ImportedDrawingReference, String> {
+    crate::require_main_window(&window)?;
     let bytes = raw_reference_body(request.body())
         .map_err(|error| error.code())?
         .to_vec();
     let root = app_directory(&app)?;
-    let scope = reference_import_scope(&webview.url().map_err(|_| Error::InvalidReference.code())?)
+    let scope = reference_import_scope(&window.url().map_err(|_| Error::InvalidReference.code())?)
         .map_err(|error| error.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         import_reference_scoped(&root, &bytes, &scope).map_err(|error| error.code())
     })
@@ -1489,11 +1599,17 @@ pub async fn import_drawing_reference_bytes(
 }
 
 #[tauri::command]
-pub async fn list_drawing_references(app: AppHandle, webview: tauri::Webview) -> Result<Vec<String>, String> {
+pub async fn list_drawing_references(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<String>, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
-    let scope = reference_import_scope(&webview.url().map_err(|_| Error::InvalidReference.code())?)
+    let scope = reference_import_scope(&window.url().map_err(|_| Error::InvalidReference.code())?)
         .map_err(|error| error.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         list_references(&root, &scope).map_err(|error| error.code())
     })
@@ -1504,13 +1620,16 @@ pub async fn list_drawing_references(app: AppHandle, webview: tauri::Webview) ->
 #[tauri::command]
 pub async fn remove_drawing_references(
     app: AppHandle,
-    webview: tauri::Webview,
+    window: tauri::WebviewWindow,
     references: Vec<String>,
 ) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
-    let scope = reference_import_scope(&webview.url().map_err(|_| Error::InvalidReference.code())?)
+    let scope = reference_import_scope(&window.url().map_err(|_| Error::InvalidReference.code())?)
         .map_err(|error| error.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         remove_scoped_references(&root, &scope, &references).map_err(|error| error.code())
     })
@@ -1521,12 +1640,16 @@ pub async fn remove_drawing_references(
 #[tauri::command]
 pub async fn save_drawing_result(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     task_id: String,
     images: Vec<DrawingImageInput>,
 ) -> Result<Vec<DrawingFile>, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
     let default = output::default_directory(&app, &root).map_err(|error| error.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         output::reserve(&root, &default, std::slice::from_ref(&task_id)).map_err(|error| error.code())?;
         save(&root, &task_id, &images).map_err(|error| error.code())
@@ -1538,10 +1661,14 @@ pub async fn save_drawing_result(
 #[tauri::command]
 pub async fn recover_drawing_result(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     task_id: String,
 ) -> Result<Option<Vec<DrawingFile>>, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         recover(&root, &task_id).map_err(|error| error.code())
     })
@@ -1552,10 +1679,14 @@ pub async fn recover_drawing_result(
 #[tauri::command]
 pub async fn inspect_drawing_recovery(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     task_id: String,
 ) -> Result<RecoveryInventory, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         recovery_inventory(&root, &task_id).map_err(|error| error.code())
     })
@@ -1566,11 +1697,15 @@ pub async fn inspect_drawing_recovery(
 #[tauri::command]
 pub async fn discard_drawing_recovery(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     task_id: String,
     completed_only: Option<bool>,
 ) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         if completed_only.unwrap_or(false) {
             discard_completed(&root, &task_id)
@@ -1586,11 +1721,15 @@ pub async fn discard_drawing_recovery(
 #[tauri::command]
 pub async fn resume_drawing_recovery(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     task_id: String,
     images: Vec<RecoveryImage>,
 ) -> Result<Vec<DrawingFile>, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         resume_recovery(&root, &task_id, &images).map_err(|error| error.code())
     })
@@ -1601,12 +1740,20 @@ pub async fn resume_drawing_recovery(
 #[tauri::command]
 pub async fn read_drawing_result(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     reference: String,
 ) -> Result<DrawingImageInput, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
+    let scope = window
+        .url()
+        .ok()
+        .and_then(|url| reference_import_scope(&url).ok());
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
-        read(&root, &reference).map_err(|error| error.code())
+        read_scoped(&root, scope.as_deref(), &reference).map_err(|error| error.code())
     })
     .await
     .map_err(|_| Error::Storage.code())?
@@ -1615,10 +1762,14 @@ pub async fn read_drawing_result(
 #[tauri::command]
 pub async fn read_drawing_thumbnail(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     reference: String,
 ) -> Result<DrawingImageInput, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         thumbnail(&root, &reference).map_err(|error| error.code())
     })
@@ -1629,10 +1780,12 @@ pub async fn read_drawing_thumbnail(
 #[tauri::command]
 pub async fn export_drawing_result(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     reference: String,
     parameters: Option<DrawingExportParameters>,
     original: Option<bool>,
 ) -> Result<bool, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
     let (_, _, extension) = self::reference(&reference).map_err(|error| error.code())?;
     let extension = if original.unwrap_or(false) { extension.to_owned() } else { "png".to_owned() };
@@ -1642,7 +1795,9 @@ pub async fn export_drawing_result(
         .map(DrawingExportParameters::prepare)
         .transpose()
         .map_err(|error| error.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|error| error.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let Some(file) = app
             .dialog()
             .file()
@@ -4008,6 +4163,63 @@ mod tests {
                 }],
             ),
             Err(Error::Corrupt)
+        );
+    }
+
+    #[test]
+    fn wait_for_idle_blocks_until_queued_in_flight_drawing_operation_completes() {
+        use std::{
+            sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            },
+            time::Duration,
+        };
+
+        let guard = InFlightGuard::acquire().unwrap();
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_clone = Arc::clone(&finished);
+        let waiter = std::thread::spawn(move || {
+            wait_for_idle().unwrap();
+            finished_clone.store(true, Ordering::SeqCst);
+        });
+        std::thread::sleep(Duration::from_millis(25));
+        assert!(!finished.load(Ordering::SeqCst));
+        drop(guard);
+        waiter.join().unwrap();
+        assert!(finished.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn reference_read_validates_pixels_without_receipt_and_trusts_verified_receipt_digest() {
+        let root = tempfile::tempdir().unwrap();
+        let scope = sha256(b"http://tauri.localhost\0AyaseStudio");
+
+        // Build a valid 4x4 BMP and truncate its pixel payload while keeping headers intact.
+        let valid_bmp = STANDARD.decode(input(4, ImageFormat::Bmp).data).unwrap();
+        let truncated_bmp = valid_bmp[..valid_bmp.len() - 12].to_vec();
+        assert!(inspect_reference(&truncated_bmp).is_ok());
+        assert_eq!(decode_reference(&truncated_bmp).unwrap_err(), Error::Corrupt);
+
+        let legacy_ref = format!("drawing/references/{}.bmp", Uuid::new_v4());
+        std::fs::create_dir_all(root.path().join("drawing/references")).unwrap();
+        std::fs::write(root.path().join(&legacy_ref), &truncated_bmp).unwrap();
+        assert_eq!(read(root.path(), &legacy_ref).err(), Some(Error::Corrupt));
+        assert_eq!(
+            read_scoped(root.path(), Some(&scope), &legacy_ref).err(),
+            Some(Error::Corrupt)
+        );
+
+        // Imported reference with valid receipt succeeds on scoped read and fails if tampered.
+        let imported = import_reference_scoped(root.path(), &valid_bmp, &scope).unwrap();
+        let loaded = read_scoped(root.path(), Some(&scope), &imported.file.reference).unwrap();
+        assert_eq!(loaded.mime, "image/bmp");
+        assert_eq!(loaded.data, STANDARD.encode(&valid_bmp));
+
+        std::fs::write(root.path().join(&imported.file.reference), &truncated_bmp).unwrap();
+        assert_eq!(
+            read_scoped(root.path(), Some(&scope), &imported.file.reference).err(),
+            Some(Error::Corrupt)
         );
     }
 }

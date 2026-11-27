@@ -117,8 +117,13 @@ export class UpdateController {
     try {
       await task;
       if (this.alive && epoch === this.epoch) this.publish(this.cancelling ? { phase: "cancelled" } : { phase: "ready", update });
-    } catch {
-      if (this.alive && epoch === this.epoch) this.publish(this.cancelling ? { phase: "cancelled" } : { phase: "error", message: "更新下载或签名校验失败，请重新检查更新后重试。" });
+    } catch (caught) {
+      if (!this.cancelling) void this.runtime.cancel(update.session).catch(() => undefined);
+      const rawMessage = typeof caught === "string" ? caught : caught instanceof Error ? caught.message : "";
+      const message = rawMessage.includes("大小上限")
+        ? "更新包超过大小上限，已中止下载。请使用官方下载入口。"
+        : "更新下载或签名校验失败，请重新检查更新后重试。";
+      if (this.alive && epoch === this.epoch) this.publish(this.cancelling ? { phase: "cancelled" } : { phase: "error", message });
     } finally { if (this.downloadTask === task) this.downloadTask = undefined; }
   };
   cancel = async (): Promise<void> => {

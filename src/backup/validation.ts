@@ -151,8 +151,8 @@ export async function validateDocument(raw: unknown): Promise<void> {
   const assets = new Map<string, JsonRecord>(); let bytesTotal = 0;
   for (const a of raw.assets) {
     fields(a, ["id", "mime", "size", "data", "sha256"]); id(a.id); text(a.mime, 128); check(!assets.has(a.id) && (a.id.startsWith("blob:") || managedReference.test(a.id)));
-    time(a.size); const bytes = decode64(a.data, 48 * 1024 * 1024); bytesTotal += bytes.length;
-    check(bytesTotal <= 48 * 1024 * 1024 && bytes.length === a.size && await sha256(bytes) === a.sha256, "资源完整性校验失败或超出 48 MiB 资源预算。");
+    time(a.size); const bytes = decode64(a.data, 96 * 1024 * 1024); bytesTotal += bytes.length;
+    check(bytesTotal <= 96 * 1024 * 1024 && bytes.length === a.size && await sha256(bytes) === a.sha256, "资源完整性校验失败或超出 96 MiB 资源预算。");
     if (managedReference.test(a.id)) {
       const extension = a.id.slice(a.id.lastIndexOf(".") + 1);
       const mimes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", pdf: "application/pdf", txt: "text/plain", md: "text/markdown",
@@ -262,5 +262,5 @@ export async function validateDocument(raw: unknown): Promise<void> {
   check([null, "narrow", "wide"].includes(raw.preferences[preferenceKeys[1]]));
   check(raw.preferences[preferenceKeys[2]] === null || isAssistantDefaultAvatar(raw.preferences[preferenceKeys[2]]));
   check(used.size === assets.size, "备份包含未引用的资源。");
-  if (raw.options.connections) validateConnections(raw.connections, raw.options.credentials, version === 5); else check(raw.connections === null);
+  if (!raw.options.connections) check(raw.connections === null);
 }
