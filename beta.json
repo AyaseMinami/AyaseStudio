@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0-beta.11",
-  "notes": "## 本版更新\n\n- 聊天消息编辑器支持高度自适应与内联展开，编辑长消息更从容。\n- 模型选择器重构，新增供应商筛选与更清晰的结构化层级展示。\n- 外观新增助手无气泡阅读模式、壁纸磨砂背景效果及窄栏阅读宽度调整。\n- 新增 DeepSeek 独立 Search API 支持，以及 OpenAI Responses 与 Anthropic 原生协议的 DeepSeek 服务端联网搜索和网页读取工具。\n- 补齐 Anthropic 原生协议思考 Token 用量统计与终态合并，并完善 DeepSeek 思考强度控制与原生图片内联映射的协议兼容性。\n\n本版面向 Windows x64（Beta 测试发布）。安装包带有 Tauri 应用内更新签名，尚未提供 Windows Authenticode 签名。全新安装、同版重装、旧版升级后的数据保留及应用内更新全流程仍待实机验证。",
-  "pub_date": "2026-11-26T10:23:45.156Z",
+  "version": "0.1.0",
+  "notes": "## Ayase Studio v0.1.0 正式版更新\n\n- **外观与阅读体验**：新增全局字体大小缩放与排版字号规范（#126）。\n- **安全与数据可靠性加固（#106）**：\n  - 强化备份恢复日志结构校验，异常恢复文件零写入拒绝并保护现有数据；\n  - 禁用跨站 3xx HTTP 重定向以防止 API 凭据泄露，收口多窗口与托盘命令权限；\n  - 修复联网搜索上下文跨连接回放隔离，完善原生重解析点校验（放行 OneDrive / Windows WOF 正常文件，拦截符号链接与目录联接点）。\n- **便携备份升级**：`.ayase` 便携备份限额翻倍至 96 MiB 原始资源 / 160 MiB 载荷 / 256 MiB 文件上限，并降低备份界面导出与恢复后的内存占用。\n- **稳定性修复**：修复流式 SSE 解析、会话删除、消息编辑回滚、更新安装互斥、Cherry 导入软删除过滤及后台/绘图/备份并发竞争等问题。\n- **开源许可与文档**：随安装包提供完整第三方开源许可声明 `THIRD-PARTY-NOTICES.txt`。\n\n本版面向 Windows x64。安装包带有 Tauri 应用内更新签名，尚未提供 Windows Authenticode 签名。",
+  "pub_date": "2026-11-27T04:44:45.961Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUZGcWlwS3hNVmw2K3p6Q3pHY0FnOEtCZ3FQcGdUUmJvWkFINzRINmVrcVpjdGppeEplbkdmYmlXT2tQVDZYWGJKR2YzZXpFMkR5QjVDVVR0bDNtVVFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1Njg4NjIyCWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wLWJldGEuMTFfeDY0LXNldHVwLmV4ZQpna0QwMEtBVSsrWkhlK0NGV09wSTFBWE4zMkNZRVlvOWQrTWM3RUkvam8yZGhqbC9tSGd0c0dEcGU3VWVHV3dUY3p4TlNkdmFBamlsSWxmdnhsSHRCUT09Cg==",
-      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0-beta.11/Ayase.Studio_0.1.0-beta.11_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTa1ZHejVMeWJPUUs3UzlxakhReFE5M0grNlpkbW9PSWM1Q1RHZHlwYys1UHZ3K2JIME5mS0Jsczc1QW9TT1ZEWXJNYWs0Z2I2aFNqRmcrM09xVXU0dFpGMEQzdTQwV3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzU0NjgyCWZpbGU6QXlhc2UgU3R1ZGlvXzAuMS4wX3g2NC1zZXR1cC5leGUKMzhLOTRkeXVLU0h5QWJBbXBtNDhNVmo5UXVEU2h5Q0I2YysvSEFhZ1FIOTlPRDBpWmhrVWE2czdKamZWQVFjTGQvL2ZoUlVVVHNnekl6QWwyZUxkQkE9PQo=",
+      "url": "https://github.com/AyaseMinami/AyaseStudio/releases/download/v0.1.0/Ayase.Studio_0.1.0_x64-setup.exe"
     }
   }
 }
