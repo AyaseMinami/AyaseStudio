@@ -4,8 +4,10 @@ import { colorPresets } from "./colorPresets";
 
 import {
   APPEARANCE_STORAGE_KEY,
+  FONT_SCALE_OPTIONS,
   applyInitialAppearance,
   createAppearanceController,
+  isFontScale,
   loadAppearancePreferences,
   saveAppearancePreferences,
   BackgroundResourceError,
@@ -22,6 +24,7 @@ const expectedDefaultPreferences = {
   unifiedThemeColor: null,
   colorPreset: "default" as const,
   themeMode: "system" as const,
+  fontScale: 100 as const,
   accentColor: null,
   canvasColor: null,
   assistantBubbleColor: null,
@@ -46,6 +49,7 @@ const expectedDefaultRuntime = {
   backgroundStatus: "none" as const,
   backgroundBusy: false,
   backgroundError: null,
+  fontScaleError: null,
 };
 
 function createThemeHarness(initiallyDark = false) {
@@ -496,6 +500,45 @@ describe("appearance preferences", () => {
     expect(snapshot.resolvedTheme).toBe("dark");
     expect(harness.attributes.get("data-theme")).toBe("dark");
     expect(harness.target.style.colorScheme).toBe("dark");
+    expect(harness.styleProperties.get("--font-scale")).toBe("1");
+  });
+
+  it("persists all five fontScale levels, injects --font-scale on bootstrap and runtime, and preserves fontScale across preset/appearance resets", async () => {
+    let saved: string | null = null;
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    const harness = createThemeHarness(false);
+    const controller = createAppearanceController({ storage, systemTheme: harness.systemTheme, target: harness.target });
+    try {
+      await controller.ready;
+      expect(controller.getSnapshot().fontScale).toBe(100);
+      expect(harness.styleProperties.get("--font-scale")).toBe("1");
+      for (const scale of FONT_SCALE_OPTIONS) {
+        expect(isFontScale(scale)).toBe(true);
+        controller.setFontScale(scale);
+        expect(controller.getSnapshot().fontScale).toBe(scale);
+        expect(harness.styleProperties.get("--font-scale")).toBe(String(scale / 100));
+        expect(JSON.parse(saved!).fontScale).toBe(scale);
+      }
+      // Invalid inputs are ignored
+      for (const invalid of [85, 105, 1.1, "100", null, Number.NaN]) {
+        expect(isFontScale(invalid)).toBe(false);
+        controller.setFontScale(invalid as never);
+        expect(controller.getSnapshot().fontScale).toBe(125);
+        expect(loadAppearancePreferences({ getItem: () => JSON.stringify({ fontScale: invalid }), setItem: () => {} }).fontScale).toBe(100);
+      }
+      // Preserved across preset switch, custom appearance reset, and restart
+      controller.setColorPreset("reading");
+      expect(controller.getSnapshot().fontScale).toBe(125);
+      await controller.resetCustomAppearance();
+      expect(controller.getSnapshot().fontScale).toBe(125);
+      expect(harness.styleProperties.get("--font-scale")).toBe("1.25");
+      const bootstrapHarness = createThemeHarness(false);
+      const initial = applyInitialAppearance({ storage, systemPrefersDark: false, target: bootstrapHarness.target });
+      expect(initial.fontScale).toBe(125);
+      expect(bootstrapHarness.styleProperties.get("--font-scale")).toBe("1.25");
+    } finally {
+      controller.destroy();
+    }
   });
 });
 

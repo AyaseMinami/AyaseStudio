@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AyaseDatabase } from "../storage/database";
 import { defaultSessionConfig } from "../chat/sessionConfig";
 import { connectionSettingsStorageKey, type ConnectionSettingsState } from "../chat/settings";
-import { defaultAppearancePreferences } from "../appearance/appearance";
+import { defaultAppearancePreferences, readAppearancePreferences } from "../appearance/appearance";
 import { BackupRepository, type BackupStorage } from "./repository";
 import { createRestorePlan } from "./restorePlan";
 import { allPreferenceKeys, type LocalSnapshot } from "./snapshot";
@@ -446,5 +446,103 @@ describe("multi-store restore journal", () => {
     await expect(test.repository.restore(plan, test.before, test.files)).rejects.toThrow("collision");
     expect(test.files.remove).not.toHaveBeenCalled(); expect(test.files.write).not.toHaveBeenCalled();
     expect(await test.db.backupJournal.count()).toBe(0); expect(test.saved.get(plan.writes[0]!.reference)).toBe("existing");
+  });
+  it("applies v5 fontScale on replace, retains local fontScale on merge/copy, defaults omitted/null on replace, and rolls back raw appearance on failure", async () => {
+    const test = await setup();
+    const localRaw = JSON.stringify({ ...defaultAppearancePreferences, fontScale: 120 });
+    test.store.setItem(preferenceKeys[0], localRaw);
+    const before = await test.repository.snapshot();
+
+    const docV5 = document();
+    docV5.version = 5;
+    docV5.compatibility = { minimumReaderVersion: 5, requiredCapabilities: [], modules: currentModuleVersions() };
+    docV5.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, fontScale: 90 });
+    const validatedV5 = (await decodeBackup(await encodeBackup(docV5))).document;
+
+    for (const mode of ["merge", "copy"] as const) {
+      const plan = createRestorePlan(validatedV5, before, mode);
+      expect(readAppearancePreferences({ getItem: () => plan.after.preferences[preferenceKeys[0]] }).fontScale).toBe(120);
+    }
+
+    const replacePlan = createRestorePlan(validatedV5, before, "replace");
+    expect(readAppearancePreferences({ getItem: () => replacePlan.after.preferences[preferenceKeys[0]] }).fontScale).toBe(90);
+    vi.spyOn(test.db.backupJournal, "delete").mockRejectedValueOnce(Error("injected commit failure"));
+    await expect(test.repository.restore(replacePlan, before, test.files)).rejects.toThrow("已回滚");
+    expect(test.store.getItem(preferenceKeys[0])).toBe(localRaw);
+
+    await test.repository.restore(replacePlan, before, test.files);
+    expect(readAppearancePreferences({ getItem: () => test.store.getItem(preferenceKeys[0]) }).fontScale).toBe(90);
+
+    // Replace with legacy v4 backup missing fontScale defaults to 100 on read
+    const docV4 = document();
+    docV4.version = 4;
+    const { fontScale: _omitted, ...legacyAppearance } = defaultAppearancePreferences;
+    docV4.preferences[preferenceKeys[0]] = JSON.stringify(legacyAppearance);
+    docV4.compatibility = { minimumReaderVersion: 4, requiredCapabilities: [], modules: { ...currentModuleVersions(), appearance: { version: 4, minimumReaderVersion: 4, requiredCapabilities: [] } } };
+    const validatedV4 = (await decodeBackup(await encodeBackup(docV4))).document;
+    const replaceLegacy = createRestorePlan(validatedV4, before, "replace");
+    expect(readAppearancePreferences({ getItem: () => replaceLegacy.after.preferences[preferenceKeys[0]] }).fontScale).toBe(100);
+
+    // Replace with null appearance defaults to 100 on read
+    const docNull = document();
+    docNull.preferences[preferenceKeys[0]] = null;
+    const replaceNull = createRestorePlan(docNull, before, "replace");
+    expect(replaceNull.after.preferences[preferenceKeys[0]]).toBeNull();
+    expect(readAppearancePreferences({ getItem: () => replaceNull.after.preferences[preferenceKeys[0]] }).fontScale).toBe(100);
+  });
+
+  it("rejects corrupted or unsupported rollback journals with zero writes while preserving existing data and journal", async () => {
+    const validRef = "attachments/11111111-1111-4111-8111-111111111111.png";
+    const cases: Array<{ name: string; mutate: (j: any) => any }> = [
+      { name: "unknown phase", mutate: j => ({ ...j, phase: "unknown" }) },
+      { name: "missing required table", mutate: j => { delete j.before.rows.chats; return j; } },
+      { name: "non-array required table", mutate: j => ({ ...j, before: { ...j.before, rows: { ...j.before.rows, chats: {} } } }) },
+      { name: "row missing string id", mutate: j => ({ ...j, before: { ...j.before, rows: { ...j.before.rows, chats: [{ messages: [] }] } } }) },
+      { name: "duplicate row ids", mutate: j => ({ ...j, before: { ...j.before, rows: { ...j.before.rows, chats: [{ id: "dup", messages: [], updatedAt: 1 }, { id: "dup", messages: [], updatedAt: 2 }] } } }) },
+      { name: "non-string references", mutate: j => ({ ...j, references: [123] }) },
+      { name: "sparse references array", mutate: j => ({ ...j, references: new Array(1) }) },
+      { name: "non-canonical string reference", mutate: j => ({ ...j, references: ["bad"] }) },
+      { name: "too many references", mutate: j => ({ ...j, references: Array.from({ length: 2001 }, () => validRef) }) },
+      { name: "non-object preferences", mutate: j => ({ ...j, before: { ...j.before, preferences: [] } }) },
+      { name: "malformed drawing presets", mutate: j => ({ ...j, before: { ...j.before, drawing: { presets: "bad" } } }) },
+      { name: "drawing preset missing id", mutate: j => ({ ...j, before: { ...j.before, drawing: { presets: [{ name: "p" }] } } }) },
+      { name: "non-singleton drawing draft id", mutate: j => ({ ...j, before: { ...j.before, drawing: { presets: [], draft: { id: "other" } } } }) },
+    ];
+    for (const { name, mutate } of cases) {
+      const test = await setup();
+      const rollbackBefore = structuredClone(test.before);
+      // Diverge live durable state from rollback snapshot so any accidental write is observable.
+      const liveChat = { id: "live-only", messages: [{ id: "m-live", role: "user" as const, content: "live", status: "complete" as const }], updatedAt: 999 };
+      await test.db.chats.clear();
+      await test.db.chats.put(liveChat);
+      const liveDraft = { id: "current" as const, prompt: "live-draft", updatedAt: 999 } as any;
+      await test.db.drawingDrafts.put(liveDraft);
+      test.store.setItem(preferenceKeys[0], '{"live":true}');
+
+      const malformed = mutate({ id: "restore", before: rollbackBefore, references: [], phase: "applying" });
+      await test.db.backupJournal.put(malformed);
+      const setItem = vi.spyOn(test.store, "setItem");
+      const removeItem = vi.spyOn(test.store, "removeItem");
+      await expect(test.repository.recover(test.files), name).rejects.toThrow("恢复日志损坏或不受支持");
+      expect(setItem, name).not.toHaveBeenCalled();
+      expect(removeItem, name).not.toHaveBeenCalled();
+      expect(test.files.remove, name).not.toHaveBeenCalled();
+      expect(await test.db.backupJournal.get("restore"), name).toEqual(malformed);
+      expect(await test.db.chats.toArray(), name).toEqual([liveChat]);
+      expect(await test.db.drawingDrafts.toArray(), name).toEqual([liveDraft]);
+      expect(test.store.getItem(preferenceKeys[0]), name).toBe('{"live":true}');
+    }
+  });
+
+  it("still recovers valid legacy journals that omit providerAvatars and drawing", async () => {
+    const test = await setup();
+    const legacy = structuredClone(test.before);
+    delete legacy.rows.providerAvatars;
+    delete legacy.drawing;
+    await test.db.backupJournal.put({ id: "restore", before: legacy, references: [], phase: "applying" });
+    await test.db.chats.clear();
+    expect(await test.repository.recover(test.files)).toBe(true);
+    expect(await test.db.chats.toArray()).toEqual(test.before.rows.chats);
+    expect(await test.db.backupJournal.count()).toBe(0);
   });
 });

@@ -1,4 +1,4 @@
-.search-results { display: grid; gap: 0.35rem; max-width: 100%; margin-top: 0.7rem; color: rgb(var(--color-muted)); font-size: var(--font-caption); line-height: 1.35rem; }
+.search-results { display: grid; gap: 0.35rem; max-width: 100%; margin-top: 0.7rem; color: rgb(var(--color-muted)); font-size: var(--font-caption); line-height: 1.55; }
 .search-status { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 400; }
 .search-status svg { flex-shrink: 0; }
 .search-status-failed, .search-error { color: rgb(var(--color-error-text)); }

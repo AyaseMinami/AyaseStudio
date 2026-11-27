@@ -30,6 +30,34 @@ import {
   type SettingsSection,
 } from "./ui/settings/SettingsWorkspace";
 
+export function isUpdateInstallBlocked(state: {
+  chatBackupDisabled: boolean;
+  backgroundBusy: boolean;
+  avatarBusy: boolean;
+  drawingReady: boolean;
+  drawingClosing: boolean;
+  drawingBusy: boolean;
+  drawingSubmitting: boolean;
+  drawingManagementBusy: boolean;
+  drawingPresetsBusy: boolean;
+  drawingReferencesBusy: boolean;
+  drawingHasQueuedTask: boolean;
+}): boolean {
+  return (
+    state.chatBackupDisabled
+    || state.backgroundBusy
+    || state.avatarBusy
+    || !state.drawingReady
+    || state.drawingClosing
+    || state.drawingBusy
+    || state.drawingSubmitting
+    || state.drawingManagementBusy
+    || state.drawingPresetsBusy
+    || state.drawingReferencesBusy
+    || state.drawingHasQueuedTask
+  );
+}
+
 function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }: {
   general?: GeneralSettingsState; registerExitGuard?: RegisterExitGuard; installUpdate?: InstallUpdate; settingsRequest?: number;
 }) {
@@ -70,7 +98,19 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
   }, [chat.workspace.snapshot, chat.workspace.busy, chat.workspace.loadError]);
   const update = useApplicationUpdate(async install => {
     if (!installUpdate) throw new UpdateInstallBlocked("当前环境无法准备安装，请使用官方下载入口。");
-    if (chat.backupDisabled || drawing.busy || drawing.submitting || drawing.tasks.some(task => task.status === "queued"))
+    if (isUpdateInstallBlocked({
+      chatBackupDisabled: chat.backupDisabled,
+      backgroundBusy: appearance.backgroundBusy,
+      avatarBusy: avatar.busy,
+      drawingReady: drawing.ready,
+      drawingClosing: drawing.closing,
+      drawingBusy: drawing.busy,
+      drawingSubmitting: drawing.submitting,
+      drawingManagementBusy: drawing.managementBusy,
+      drawingPresetsBusy: drawing.presetsBusy,
+      drawingReferencesBusy: drawing.referencesBusy,
+      drawingHasQueuedTask: drawing.tasks.some(task => task.status === "queued"),
+    }))
       throw new UpdateInstallBlocked("当前仍有聊天、绘图或维护任务，请等待任务结束后再次安装。");
     if (!await chat.prepareBackup()) throw new UpdateInstallBlocked("暂时无法保存当前状态，请等待当前操作完成后再次安装。");
     try { return await installUpdate(install); }
@@ -206,6 +246,8 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
           appearance={{
             themeMode: appearance.themeMode,
             resolvedTheme: appearance.resolvedTheme,
+            fontScale: appearance.fontScale,
+            fontScaleError: appearance.fontScaleError,
             accentColor: appearance.accentColor,
             unifiedThemeColor: appearance.unifiedThemeColor,
             effectiveUserBubbleColor: appearance.effectiveUserBubbleColor,
@@ -236,6 +278,7 @@ function App({ general, registerExitGuard, installUpdate, settingsRequest = 0 }:
             backgroundError: appearance.backgroundError,
             readabilityWarnings: appearance.readabilityWarnings,
             onThemeModeChange: appearance.setThemeMode,
+            onFontScaleChange: appearance.setFontScale,
             colorPreset: appearance.colorPreset,
             onColorPresetChange: appearance.setColorPreset,
             onAccentColorChange: appearance.setAccentColor,

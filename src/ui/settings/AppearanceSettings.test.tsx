@@ -24,7 +24,7 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
   const handlers = {
     onUnifiedThemeColorChange: vi.fn(), onUserBubbleColorChange: vi.fn(),
     onColorPresetChange: vi.fn(),
-    onThemeModeChange: vi.fn(), onAccentColorChange: vi.fn(), onCanvasColorChange: vi.fn(),
+    onThemeModeChange: vi.fn(), onFontScaleChange: vi.fn(), onAccentColorChange: vi.fn(), onCanvasColorChange: vi.fn(),
     onAssistantBubbleColorChange: vi.fn(), onAssistantBubbleModeChange: vi.fn(), onAssistantBubbleTransparencyChange: vi.fn(), onEditBackgroundFocus: vi.fn(),
     onUnifiedTransparencyChange: vi.fn(), onSidebarTransparencyChange: vi.fn(), onComposerTransparencyChange: vi.fn(),
     onChromeTransparencyChange: vi.fn(),
@@ -38,7 +38,7 @@ async function render(overrides: Partial<AppearanceSettingsProps> = {}) {
   const props: AppearanceSettingsProps = {
     unifiedThemeColor: null, effectiveUserBubbleColor: "#d2e3f7",
     colorPreset: "default",
-    themeMode: "system", resolvedTheme: "light", accentColor: null, canvasColor: null,
+    themeMode: "system", resolvedTheme: "light", fontScale: 100, fontScaleError: null, accentColor: null, canvasColor: null,
     assistantBubbleColor: "#123456", unifiedTransparency: 0, sidebarTransparency: 0, composerTransparency: 0,
     chromeTransparency: 40,
     sidebarGlassEnabled: false, composerGlassEnabled: false,
@@ -317,5 +317,36 @@ describe("AppearanceSettings", () => {
     expect(handlers.onThemeModeChange).toHaveBeenCalledWith("dark");
     expect(handlers.onAssistantBubbleColorChange).toHaveBeenCalledWith(null);
     expect(handlers.onAssistantBubbleTransparencyChange).not.toHaveBeenCalled();
+  });
+
+  it("renders the font scale card between theme and custom colors, selects levels, resets independently, shows inline errors and code preview", async () => {
+    const { handlers } = await render({ fontScale: 120, fontScaleError: "无法保存字体比例设置，当前设置保持不变，请重试。" });
+    const groups = [...host!.querySelectorAll(".appearance-controls > section")].map(el => el.querySelector("h3")?.textContent);
+    expect(groups.indexOf("文字与字号")).toBe(groups.indexOf("主题与配色") + 1);
+    expect(groups.indexOf("自定义配色")).toBe(groups.indexOf("文字与字号") + 1);
+    const card = host!.querySelector(".appearance-font-scale-group")!;
+    expect(card.textContent).toContain("当前 120%");
+    expect(card.querySelector('[role="alert"]')?.textContent).toBe("无法保存字体比例设置，当前设置保持不变，请重试。");
+    const options = card.querySelectorAll<HTMLInputElement>('input[name="font-scale"]');
+    expect([...options].map(input => input.value)).toEqual(["90", "100", "110", "120", "125"]);
+    expect(options[3].checked).toBe(true);
+    await act(async () => options[4].click());
+    expect(handlers.onFontScaleChange).toHaveBeenCalledWith(125);
+    const reset = card.querySelector<HTMLButtonElement>("button.appearance-secondary-action")!;
+    expect(reset.disabled).toBe(false);
+    await act(async () => reset.click());
+    expect(handlers.onFontScaleChange).toHaveBeenLastCalledWith(100);
+    expect(handlers.onResetCustomAppearance).not.toHaveBeenCalled();
+    expect(handlers.onColorPresetChange).not.toHaveBeenCalled();
+    const readingCode = host!.querySelector(".appearance-reading-preview .assistant-message.markdown code");
+    expect(readingCode?.textContent).toBe("font-scale");
+
+    // At default 100% without error, the independent reset button is disabled
+    await act(async () => root?.unmount());
+    root = undefined;
+    host?.remove();
+    await render({ fontScale: 100, fontScaleError: null });
+    const defaultReset = host!.querySelector<HTMLButtonElement>(".appearance-font-scale-group button.appearance-secondary-action")!;
+    expect(defaultReset.disabled).toBe(true);
   });
 });

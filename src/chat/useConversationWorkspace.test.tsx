@@ -249,4 +249,17 @@ describe("workspace failure recovery", () => {
     await mount(repo);
     expect(current.view.draftAttachments).toEqual([]);
   });
+
+  it("prunes detached views and unavailable entries when a conversation is deleted so isSettled recovers", async () => {
+    const repo = createChatRepository(`Prune-${crypto.randomUUID()}`);
+    await repo.initializeWorkspace(null, []);
+    await repo.execute({ type: "create-conversation", id: "second", assistantId: "default" });
+    await repo.execute({ type: "select", assistantId: "default", conversationId: "current" });
+    await mount(repo);
+    expect(current.isSettled()).toBe(true);
+    await act(async () => current.detachForEdit("second"));
+    expect(current.isSettled()).toBe(false);
+    await act(async () => { expect(await current.execute({ type: "delete-conversation", id: "second" })).toBe(true); });
+    expect(current.isSettled()).toBe(true);
+  });
 });

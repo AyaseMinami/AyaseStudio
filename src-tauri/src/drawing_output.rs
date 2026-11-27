@@ -425,20 +425,32 @@ pub(super) fn protect_export(root: &Path, destination: &Path) -> Result<(), Erro
 }
 
 #[tauri::command]
-pub async fn get_drawing_output_directory_settings(app: AppHandle) -> Result<Settings, String> {
+pub async fn get_drawing_output_directory_settings(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Settings, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
     let default = default_directory(&app, &root).map_err(|e| e.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|e| e.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         settings(&root, &default).map_err(|e| e.code())
     }).await.map_err(|_| Error::Storage.code())?
 }
 
 #[tauri::command]
-pub async fn select_drawing_output_directory(app: AppHandle) -> Result<Option<Settings>, String> {
+pub async fn select_drawing_output_directory(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Option<Settings>, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
     let default = default_directory(&app, &root).map_err(|e| e.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|e| e.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let Some(folder) = app.dialog().file().blocking_pick_folder() else { return Ok(None); };
         let selected = folder.into_path().map_err(|_| Error::OutputConfig.code())?;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
@@ -447,20 +459,33 @@ pub async fn select_drawing_output_directory(app: AppHandle) -> Result<Option<Se
 }
 
 #[tauri::command]
-pub async fn reset_drawing_output_directory(app: AppHandle) -> Result<Settings, String> {
+pub async fn reset_drawing_output_directory(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Settings, String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
     let default = default_directory(&app, &root).map_err(|e| e.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|e| e.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         select(&root, &default, None).map_err(|e| e.code())
     }).await.map_err(|_| Error::Storage.code())?
 }
 
 #[tauri::command]
-pub async fn prepare_drawing_output(app: AppHandle, task_ids: Vec<String>) -> Result<(), String> {
+pub async fn prepare_drawing_output(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    task_ids: Vec<String>,
+) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let root = app_directory(&app)?;
     let default = default_directory(&app, &root).map_err(|e| e.code())?;
+    let in_flight = InFlightGuard::acquire().map_err(|e| e.code())?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = in_flight;
         let _guard = DRAWING_FILES.lock().map_err(|_| Error::Storage.code())?;
         reserve(&root, &default, &task_ids).map_err(|e| e.code())
     }).await.map_err(|_| Error::Storage.code())?

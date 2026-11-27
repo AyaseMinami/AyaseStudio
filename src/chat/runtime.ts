@@ -8,7 +8,8 @@ export async function createRuntimeChatTransport(
     import("@tauri-apps/plugin-http"),
     import("./transport"),
   ]);
-  const runtimeFetch: FetchLike = (input, init) => tauriFetch(input, init);
+  const runtimeFetch: FetchLike = (input, init) =>
+    tauriFetch(input, { ...init, maxRedirections: 0 });
   return createChatTransport(protocol, { fetch: runtimeFetch });
 }
 
@@ -20,6 +21,7 @@ export async function createRuntimeModelCatalogClient(
       import("@tauri-apps/plugin-http"),
       import("./modelCatalog"),
     ]);
-  const runtimeFetch: FetchLike = (input, init) => tauriFetch(input, init);
+  const runtimeFetch: FetchLike = (input, init) =>
+    tauriFetch(input, { ...init, maxRedirections: 0 });
   return createModelCatalogClient(protocol, { fetch: runtimeFetch });
 }

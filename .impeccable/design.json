@@ -19,7 +19,7 @@
       "dialogTitle": { "displayName": "弹窗标题", "purpose": "确认、裁剪、模型目录与配置弹窗标题（--font-dialog-title）。" },
       "section": { "displayName": "分组标题", "purpose": "设置分组与绘图面板标题。" },
       "message": { "displayName": "消息正文", "purpose": "聊天与外观页实际字号阅读样本。" },
-      "fontScale": { "displayName": "字号缩放基线", "purpose": "统一 --font-scale: 1 乘数底座，为 #126 全局字体比例开关预留，默认视觉字号不变。" }
+      "fontScale": { "displayName": "全局字体比例", "purpose": "通过 --font-scale 驱动 7 级语义字号缩放，外观页提供 90/100/110/120/125 五档离散选择（默认 100%），appearance 模块 v5 持久化并随备份迁移。" }
     },
     "shadows": [
       { "name": "static-workbench", "value": "none", "purpose": "静态设置与外观分组面板。" },

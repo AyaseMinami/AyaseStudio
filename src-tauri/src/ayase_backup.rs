@@ -11,8 +11,8 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 use uuid::{Uuid, Variant, Version};
 
-const BACKUP_LIMIT: u64 = 128 * 1024 * 1024;
-const RESOURCE_LIMIT: u64 = 48 * 1024 * 1024;
+const BACKUP_LIMIT: u64 = 256 * 1024 * 1024;
+const RESOURCE_LIMIT: u64 = 96 * 1024 * 1024;
 const REMOVE_LIMIT: usize = 2000;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -265,7 +265,11 @@ fn app_directory(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-pub async fn select_ayase_backup(app: AppHandle) -> Result<Option<String>, String> {
+pub async fn select_ayase_backup(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Option<String>, String> {
+    crate::require_main_window(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
         let Some(file) = app
             .dialog()
@@ -285,7 +289,12 @@ pub async fn select_ayase_backup(app: AppHandle) -> Result<Option<String>, Strin
 }
 
 #[tauri::command]
-pub async fn save_ayase_backup(app: AppHandle, data: String) -> Result<bool, String> {
+pub async fn save_ayase_backup(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    data: String,
+) -> Result<bool, String> {
+    crate::require_main_window(&window)?;
     if data.len() as u64 > BACKUP_LIMIT {
         return Err(Error::TooLarge.code());
     }
@@ -311,7 +320,12 @@ pub async fn save_ayase_backup(app: AppHandle, data: String) -> Result<bool, Str
 }
 
 #[tauri::command]
-pub async fn read_ayase_resource(app: AppHandle, reference: String) -> Result<String, String> {
+pub async fn read_ayase_resource(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    reference: String,
+) -> Result<String, String> {
+    crate::require_main_window(&window)?;
     let directory = app_directory(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let item = self::reference(&reference).map_err(|error| error.code())?;
@@ -330,9 +344,11 @@ pub async fn read_ayase_resource(app: AppHandle, reference: String) -> Result<St
 #[tauri::command]
 pub async fn write_ayase_resource(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     reference: String,
     data: String,
 ) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let directory = app_directory(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let item = self::reference(&reference).map_err(|error| error.code())?;
@@ -349,7 +365,12 @@ pub async fn write_ayase_resource(
 }
 
 #[tauri::command]
-pub async fn remove_ayase_resources(app: AppHandle, references: Vec<String>) -> Result<(), String> {
+pub async fn remove_ayase_resources(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    references: Vec<String>,
+) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let directory = app_directory(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         // Existing operations each take just one mutex; always acquire in this order.
@@ -368,8 +389,10 @@ pub async fn remove_ayase_resources(app: AppHandle, references: Vec<String>) -> 
 #[tauri::command]
 pub async fn assert_ayase_resources_available(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     references: Vec<String>,
 ) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     let directory = app_directory(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let _attachments = crate::attachments::FILE_OPERATIONS
@@ -385,9 +408,12 @@ pub async fn assert_ayase_resources_available(
 }
 
 #[tauri::command]
-pub async fn ayase_backup_fence() -> Result<(), String> {
+pub async fn ayase_backup_fence(window: tauri::WebviewWindow) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
+        crate::drawing::wait_for_idle().map_err(|_| Error::Storage.code())?;
         crate::attachments::wait_for_idle().map_err(|_| Error::Storage.code())?;
+        crate::background::wait_for_idle().map_err(|_| Error::Storage.code())?;
         let _drawing = crate::drawing::DRAWING_FILES
             .lock()
             .map_err(|_| Error::Storage.code())?;

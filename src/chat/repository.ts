@@ -400,8 +400,19 @@ class DexieChatRepository implements WorkspaceRepository {
                 }
                 return item;
               });
-            } else next = messages.filter((message) => message.id !== action.messageId).map((message) =>
-              message.status === "paused" ? { ...message, status: "incomplete" as const, continuation: undefined } : message);
+            } else {
+              const deleted = messages[index];
+              next = messages.filter((message) => message.id !== action.messageId).map((message) => {
+                const orphanedReply = deleted.role === "user" && message.role === "assistant" && message.replyToId === deleted.id;
+                const clearPaused = message.status === "paused";
+                if (!orphanedReply && !clearPaused) return message;
+                return {
+                  ...message,
+                  ...(clearPaused ? { status: "incomplete" as const, continuation: undefined } : {}),
+                  ...(orphanedReply ? { providerReplay: undefined, continuation: undefined } : {}),
+                };
+              });
+            }
             if (action.type === "delete-message" && index >= messages.length - 2) next = next.map(withoutVersions);
             await db.chats.put({ id: source.id, updatedAt: now, messages: next });
             await db.conversations.update(source.id, { updatedAt: now });

@@ -10,7 +10,11 @@ export function ProviderAvatar({ provider, className = "" }: { provider: Provide
   const [image, setImage] = useState<{ id: string; value: UserAvatar }>();
   useEffect(() => {
     let active = true;
-    if (imageId) void providerAvatarRepository.get(imageId).then(value => {
+    if (!imageId) {
+      setImage(undefined);
+      return () => { active = false; };
+    }
+    void providerAvatarRepository.get(imageId).then(value => {
       if (active) setImage(value ? { id: imageId, value } : undefined);
     }).catch(() => { if (active) setImage(undefined); });
     return () => { active = false; };

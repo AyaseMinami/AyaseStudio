@@ -105,8 +105,8 @@ export async function createBackupDocument(snapshot: LocalSnapshot, options: Bac
   const assets: BackupAsset[] = [], blobIds = new Map<string, string>(), native = new Map<string, { size?: number; mime?: string }>();
   let total = 0;
   async function addAsset(id: string, mime: string, data: string) {
-    const bytes = decode64(data, 48 * 1024 * 1024); total += bytes.length;
-    check(total <= 48 * 1024 * 1024 && assets.length < 2000, "备份超过 48 MiB 或 2000 个资源限制。");
+    const bytes = decode64(data, 96 * 1024 * 1024); total += bytes.length;
+    check(total <= 96 * 1024 * 1024 && assets.length < 2000, "备份超过 96 MiB 或 2000 个资源限制。");
     const a = { id, mime, data, size: bytes.length, sha256: await sha256(bytes) }; assets.push(a); return a;
   }
   async function encode(v: any): Promise<any> {

@@ -8,6 +8,7 @@ use semver::Version;
 const ROOT: &str = "https://raw.githubusercontent.com/AyaseMinami/AyaseStudio/updates";
 const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 const CANCELLED: &str = "更新下载已取消";
+const TOO_LARGE: &str = "更新包超过大小上限，已中止下载";
 
 #[derive(Default)]
 pub struct UpdateState(Mutex<SessionState>);
@@ -107,10 +108,15 @@ pub async fn update_download(app: AppHandle, window: WebviewWindow, state: State
         (slot.update.clone(), sender, receiver)
     };
     let mut downloaded = 0u64;
+    let exceeded = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let exceeded_flag = exceeded.clone();
     let result = cancellable(receiver, async {
         update.download(|chunk, total| {
             downloaded = downloaded.saturating_add(chunk as u64);
-            if downloaded > MAX_DOWNLOAD || total.is_some_and(|n| n > MAX_DOWNLOAD) || progress.send(Progress { downloaded, total }).is_err() {
+            if downloaded > MAX_DOWNLOAD || total.is_some_and(|n| n > MAX_DOWNLOAD) {
+                exceeded_flag.store(true, std::sync::atomic::Ordering::Release);
+                let _ = sender.send(true);
+            } else if progress.send(Progress { downloaded, total }).is_err() {
                 let _ = sender.send(true);
             }
         }, || {}).await.map_err(|_| "更新下载或签名校验失败，请重新检查更新后重试".to_string())
@@ -119,6 +125,10 @@ pub async fn update_download(app: AppHandle, window: WebviewWindow, state: State
     let slot = state.session.as_mut().filter(|s| s.id == session).ok_or(CANCELLED)?;
     let cancelled = slot.cancel.as_ref().is_some_and(|s| *s.borrow());
     slot.cancel = None;
+    if exceeded.load(std::sync::atomic::Ordering::Acquire) {
+        state.session = None;
+        return Err(TOO_LARGE.into());
+    }
     match result {
         Ok(bytes) if !cancelled => {
             if let Err(error) = crate::update_signature::verify_release(&bytes, &public_key(&app), &slot.update.signature, &slot.update.version) {

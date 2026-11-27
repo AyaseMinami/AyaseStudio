@@ -232,14 +232,16 @@ class FetchModelCatalogClient implements ModelCatalogClient {
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     for (let page = 0; page < 100; page += 1) {
+      const pageUrl = catalogPageEndpoint(endpoint, this.protocol, cursor);
       let response: Response;
       try {
         response = await this.fetch(
-          catalogPageEndpoint(endpoint, this.protocol, cursor),
+          pageUrl,
           {
             method: "GET",
             headers: catalogHeaders(this.protocol, request.apiKey),
             signal: request.signal,
+            redirect: "error",
           },
         );
       } catch (error) {
@@ -247,6 +249,23 @@ class FetchModelCatalogClient implements ModelCatalogClient {
           throw error;
         }
         throw new ModelCatalogError("无法连接模型列表接口。");
+      }
+      if (
+        response.redirected
+        || (response.status >= 300 && response.status < 400)
+        || (response.url && response.url !== pageUrl)
+      ) {
+        await response.body?.cancel().catch(() => undefined);
+        const status =
+          response.status >= 300 && response.status < 400
+            ? response.status
+            : undefined;
+        throw new ModelCatalogError(
+          status !== undefined
+            ? `模型列表请求被重定向（HTTP ${status}），出于凭据安全已拒绝；请将连接的 Base URL 填写为最终服务地址。`
+            : "模型列表请求被重定向，出于凭据安全已拒绝；请将连接的 Base URL 填写为最终服务地址。",
+          status,
+        );
       }
       if (!response.ok) {
         throw new ModelCatalogError(

@@ -130,7 +130,14 @@ fn save(app_data: &Path, name: String, data: String) -> Result<SavedAttachment, 
     let bytes = STANDARD.decode(data).map_err(|_| AttachmentError::Corrupt)?;
     let (mime, ext) = kind(&name, &bytes)?;
     let dir = app_data.join("attachments").join("staging");
+    if crate::file_safety::inspect(&dir)
+        .map_err(|_| AttachmentError::InvalidReference)?
+        .is_some_and(|meta| !meta.is_dir())
+    {
+        return Err(AttachmentError::InvalidReference);
+    }
     std::fs::create_dir_all(&dir).map_err(|_| AttachmentError::Storage)?;
+    crate::file_safety::inspect(&dir).map_err(|_| AttachmentError::InvalidReference)?;
     let filename = format!("{}.{}", Uuid::new_v4(), ext);
     let path = dir.join(&filename);
     let mut file = OpenOptions::new().create_new(true).write(true).open(&path).map_err(|_| AttachmentError::Storage)?;
@@ -142,18 +149,31 @@ fn save(app_data: &Path, name: String, data: String) -> Result<SavedAttachment, 
     Ok(SavedAttachment { reference: format!("attachments/{filename}"), name, mime_type: mime.to_owned(), size: bytes.len() })
 }
 
-fn read_saved(app_data: &Path, reference: &str) -> Result<String, AttachmentError> {
+fn read_saved(
+    app_data: &Path,
+    reference: &str,
+    expected_size: Option<u64>,
+) -> Result<String, AttachmentError> {
     let filename = managed_name(reference)?;
     let dir = app_data.join("attachments");
     // A cleanup never makes a still-owned reference immediately unreadable.
     let mut bytes = None;
     for path in [dir.join(filename), dir.join("staging").join(filename), dir.join("quarantine").join(filename)] {
-        let Ok(meta) = std::fs::metadata(&path) else { continue; };
-        if !meta.is_file() { continue; }
-        // Another app instance could rename after metadata but before read.
-        if let Ok(value) = std::fs::read(&path) { bytes = Some(value); break; }
+        match crate::file_safety::checked_read(&path, expected_size) {
+            Ok(value) => {
+                bytes = Some(value);
+                break;
+            }
+            Err(crate::file_safety::FileSafetyError::Unavailable) => continue,
+            Err(crate::file_safety::FileSafetyError::InvalidPath) => return Err(AttachmentError::InvalidReference),
+            Err(crate::file_safety::FileSafetyError::TooLarge) => return Err(AttachmentError::Corrupt),
+            Err(crate::file_safety::FileSafetyError::Storage) => return Err(AttachmentError::Storage),
+        }
     }
     let bytes = bytes.ok_or(AttachmentError::Unavailable)?;
+    if expected_size.is_some_and(|expected| bytes.len() as u64 != expected) {
+        return Err(AttachmentError::Corrupt);
+    }
     let extension = filename.rsplit_once('.').unwrap().1;
     let sample_name = format!("sample.{extension}");
     kind(&sample_name, &bytes)?;
@@ -166,7 +186,16 @@ fn verify_saved(app_data: &Path, items: &[AttachmentCheck]) -> Result<(), Attach
         let filename = managed_name(&item.reference)?;
         let mut found = false;
         for path in [dir.join(filename), dir.join("staging").join(filename), dir.join("quarantine").join(filename)] {
-            match std::fs::File::open(path) {
+            let Some(inspected) = crate::file_safety::inspect(&path).map_err(|error| match error {
+                crate::file_safety::FileSafetyError::InvalidPath => AttachmentError::InvalidReference,
+                _ => AttachmentError::Storage,
+            })? else {
+                continue;
+            };
+            if !inspected.is_file() || inspected.len() != item.size as u64 {
+                return Err(AttachmentError::Corrupt);
+            }
+            match std::fs::File::open(&path) {
                 Ok(file) => {
                     let metadata = file.metadata().map_err(|_| AttachmentError::Storage)?;
                     if !metadata.is_file() || metadata.len() != item.size as u64 {
@@ -300,27 +329,37 @@ where
 }
 
 #[tauri::command]
-pub async fn persist_attachment(app: AppHandle, name: String, data: String) -> Result<SavedAttachment, String> {
+pub async fn persist_attachment(app: AppHandle, window: tauri::WebviewWindow, name: String, data: String) -> Result<SavedAttachment, String> {
+    crate::require_main_window(&window)?;
     run_attachment_op(app, move |dir| save(dir, name, data)).await
 }
 
 #[tauri::command]
-pub async fn read_sent_attachment(app: AppHandle, reference: String) -> Result<String, String> {
-    run_attachment_op(app, move |dir| read_saved(dir, &reference)).await
+pub async fn read_sent_attachment(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    reference: String,
+    expected_size: Option<u64>,
+) -> Result<String, String> {
+    crate::require_main_window(&window)?;
+    run_attachment_op(app, move |dir| read_saved(dir, &reference, expected_size)).await
 }
 
 #[tauri::command]
-pub async fn verify_sent_attachments(app: AppHandle, items: Vec<AttachmentCheck>) -> Result<(), String> {
+pub async fn verify_sent_attachments(app: AppHandle, window: tauri::WebviewWindow, items: Vec<AttachmentCheck>) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     run_attachment_op(app, move |dir| verify_saved(dir, &items)).await
 }
 
 #[tauri::command]
-pub async fn discard_uncommitted_attachments(app: AppHandle, references: Vec<String>) -> Result<(), String> {
+pub async fn discard_uncommitted_attachments(app: AppHandle, window: tauri::WebviewWindow, references: Vec<String>) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     run_attachment_op(app, move |dir| discard_uncommitted(dir, &references)).await
 }
 
 #[tauri::command]
-pub async fn cleanup_sent_attachments(app: AppHandle, retained_references: Vec<String>, pending_references: Vec<String>) -> Result<(), String> {
+pub async fn cleanup_sent_attachments(app: AppHandle, window: tauri::WebviewWindow, retained_references: Vec<String>, pending_references: Vec<String>) -> Result<(), String> {
+    crate::require_main_window(&window)?;
     run_attachment_op(app, move |dir| cleanup(dir, &retained_references, &pending_references)).await
 }
 
@@ -361,7 +400,7 @@ mod tests {
             assert_eq!(saved.name, name);
             assert_eq!(saved.mime_type, mime);
             assert!(saved.reference.ends_with(&format!(".{extension}")));
-            assert_eq!(read_saved(temp.path(), &saved.reference).unwrap(), STANDARD.encode(bytes));
+            assert_eq!(read_saved(temp.path(), &saved.reference, Some(saved.size as u64)).unwrap(), STANDARD.encode(bytes));
         }
     }
 
@@ -384,7 +423,7 @@ mod tests {
             assert_eq!(saved.name, name);
             assert_eq!(saved.mime_type, "text/plain");
             assert!(saved.reference.ends_with(".txt"));
-            assert_eq!(read_saved(temp.path(), &saved.reference).unwrap(), STANDARD.encode("你好"));
+            assert_eq!(read_saved(temp.path(), &saved.reference, Some(saved.size as u64)).unwrap(), STANDARD.encode("你好"));
             assert_eq!(kind(&name, b"\xff"), Err(AttachmentError::Corrupt));
         }
         assert_eq!(kind("notes.md", b"markdown"), Ok(("text/markdown", "md")));
@@ -398,7 +437,7 @@ mod tests {
         assert_eq!(sent.name, "renamed.jpg");
         assert_eq!(sent.mime_type, "image/png");
         assert!(sent.reference.ends_with(".png"));
-        assert_eq!(read_saved(temp.path(), &sent.reference).unwrap(), STANDARD.encode(png));
+        assert_eq!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).unwrap(), STANDARD.encode(png));
     }
 
     #[test]
@@ -407,7 +446,7 @@ mod tests {
         let content = vec![b'a'; 10_000_001];
         let sent = save(temp.path(), "large.txt".to_owned(), STANDARD.encode(&content)).unwrap();
         assert_eq!(sent.size, content.len());
-        assert_eq!(read_saved(temp.path(), &sent.reference).unwrap(), STANDARD.encode(&content));
+        assert_eq!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).unwrap(), STANDARD.encode(&content));
     }
 
     #[test]
@@ -417,9 +456,9 @@ mod tests {
         let name = managed_name(&sent.reference).unwrap();
         assert!(temp.path().join("attachments/staging").join(name).is_file());
         assert!(!temp.path().join(&sent.reference).exists());
-        assert_eq!(read_saved(temp.path(), &sent.reference).unwrap(), STANDARD.encode("hello"));
+        assert_eq!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).unwrap(), STANDARD.encode("hello"));
         discard_uncommitted(temp.path(), std::slice::from_ref(&sent.reference)).unwrap();
-        assert_eq!(read_saved(temp.path(), &sent.reference), Err(AttachmentError::Unavailable));
+        assert_eq!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)), Err(AttachmentError::Unavailable));
         assert!(!temp.path().join("attachments/quarantine").join(name).exists());
     }
 
@@ -459,7 +498,7 @@ mod tests {
         let crashed = save(temp.path(), "draft.txt".to_owned(), STANDARD.encode("draft")).unwrap();
         cleanup(temp.path(), std::slice::from_ref(&committed.reference), &[]).unwrap();
         assert!(temp.path().join(&committed.reference).is_file());
-        assert_eq!(read_saved(temp.path(), &crashed.reference), Err(AttachmentError::Unavailable));
+        assert_eq!(read_saved(temp.path(), &crashed.reference, None), Err(AttachmentError::Unavailable));
         let pending = save(temp.path(), "pending.txt".to_owned(), STANDARD.encode("pending")).unwrap();
         cleanup(temp.path(), std::slice::from_ref(&committed.reference), std::slice::from_ref(&pending.reference)).unwrap();
         assert!(temp.path().join("attachments/staging").join(managed_name(&pending.reference).unwrap()).is_file());
@@ -474,13 +513,13 @@ mod tests {
         std::fs::write(&source, b"hello").unwrap();
         let sent = save(temp.path(), "source.txt".to_owned(), STANDARD.encode(std::fs::read(&source).unwrap())).unwrap();
         std::fs::remove_file(source).unwrap();
-        assert_eq!(read_saved(temp.path(), &sent.reference).unwrap(), STANDARD.encode("hello"));
+        assert_eq!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).unwrap(), STANDARD.encode("hello"));
         cleanup(temp.path(), std::slice::from_ref(&sent.reference), &[]).unwrap();
-        assert!(read_saved(temp.path(), &sent.reference).is_ok());
+        assert!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).is_ok());
         cleanup(temp.path(), &[], &[]).unwrap();
-        assert!(read_saved(temp.path(), &sent.reference).is_ok());
+        assert!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).is_ok());
         cleanup(temp.path(), std::slice::from_ref(&sent.reference), &[]).unwrap();
-        assert!(read_saved(temp.path(), &sent.reference).is_ok());
+        assert!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).is_ok());
         assert!(temp.path().join(&sent.reference).is_file());
     }
 
@@ -503,7 +542,7 @@ mod tests {
         // DB no longer owns these files; a frontend rollback lease joins native retained, never pending.
         let lease = vec![staging.reference.clone(), active.reference.clone(), quarantined.reference.clone()];
         cleanup(temp.path(), &lease, &[]).unwrap();
-        for reference in lease { assert!(read_saved(temp.path(), &reference).is_ok()); }
+        for reference in lease { assert!(read_saved(temp.path(), &reference, None).is_ok()); }
         assert!(!scan.exists());
     }
 
@@ -517,7 +556,7 @@ mod tests {
         let quarantine = temp.path().join("attachments/quarantine");
         let file = quarantine.join(name);
         assert!(file.is_file());
-        assert!(read_saved(temp.path(), &sent.reference).is_ok());
+        assert!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).is_ok());
         cleanup(temp.path(), &[], &[]).unwrap();
         assert!(file.is_file());
         let before_grace = SystemTime::now() - QUARANTINE_AGE - Duration::from_secs(120);
@@ -532,7 +571,7 @@ mod tests {
         cleanup(temp.path(), &[], &[]).unwrap();
         assert!(!file.exists());
         assert!(!scan.exists());
-        assert_eq!(read_saved(temp.path(), &sent.reference), Err(AttachmentError::Unavailable));
+        assert_eq!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)), Err(AttachmentError::Unavailable));
     }
 
     #[test]
@@ -555,7 +594,30 @@ mod tests {
         cleanup(temp.path(), std::slice::from_ref(&sent.reference), &[]).unwrap();
         assert!(temp.path().join(&sent.reference).is_file());
         assert!(!scan.exists());
-        assert!(read_saved(temp.path(), &sent.reference).is_ok());
+        assert!(read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).is_ok());
+    }
+
+    #[test]
+    fn read_saved_enforces_exact_expected_size_before_encoding() {
+        let temp = tempfile::tempdir().unwrap();
+        let sent = save(temp.path(), "note.txt".to_owned(), STANDARD.encode("hello")).unwrap();
+        cleanup(temp.path(), std::slice::from_ref(&sent.reference), &[]).unwrap();
+        assert_eq!(
+            read_saved(temp.path(), &sent.reference, Some(sent.size as u64)).unwrap(),
+            STANDARD.encode("hello")
+        );
+        // Oversized tampered file is rejected by bounded_read before allocating/encoding full file.
+        std::fs::write(temp.path().join(&sent.reference), b"hello-tampered-longer").unwrap();
+        assert_eq!(
+            read_saved(temp.path(), &sent.reference, Some(sent.size as u64)),
+            Err(AttachmentError::Corrupt)
+        );
+        // Truncated tampered file is also rejected.
+        std::fs::write(temp.path().join(&sent.reference), b"hi").unwrap();
+        assert_eq!(
+            read_saved(temp.path(), &sent.reference, Some(sent.size as u64)),
+            Err(AttachmentError::Corrupt)
+        );
     }
 
     #[test]

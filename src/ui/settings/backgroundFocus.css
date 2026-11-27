@@ -18,7 +18,7 @@
 .background-crop-fields legend { padding: 0 0 8px; color: rgb(var(--color-muted)); font-size: var(--font-small); font-weight: 500; }
 .background-crop-fields label { display: flex; align-items: center; gap: .6rem; font-size: var(--font-small); }
 .background-crop-fields input { flex: 1; min-width: 0; }
-.background-crop-fields input[type="number"] { width: 5rem; height: 36px; padding: .35rem 8px; border: 1px solid rgb(var(--color-border)); border-radius: .4rem; background: rgb(var(--color-input)); font-variant-numeric: tabular-nums; }
+.background-crop-fields input[type="number"] { width: 5rem; min-height: 36px; padding: .35rem 8px; border: 1px solid rgb(var(--color-border)); border-radius: .4rem; background: rgb(var(--color-input)); font-variant-numeric: tabular-nums; }
 .background-crop-preview { position: relative; isolation: isolate; overflow: hidden; display: grid; place-items: center; border: 1px solid rgb(var(--color-border) / 0.6); border-radius: 8px; background: rgb(var(--color-canvas)); }
 .background-crop-preview-mask { position: absolute; inset: 0; z-index: 1; background: rgb(var(--color-canvas) / var(--appearance-background-mask)); pointer-events: none; }
 .background-crop-preview strong { position: relative; z-index: 2; align-self: start; justify-self: start; margin: 10px; padding: .35rem .55rem; border-radius: .4rem; background: rgb(var(--color-panel) / .82); font-size: var(--font-small); font-weight: 500; }

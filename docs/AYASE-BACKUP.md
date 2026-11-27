@@ -39,7 +39,7 @@
 
 UTF-8 JSON 外层：`format: ayase-studio-envelope`、`version: 1`、`encrypted` 和 `payload`。明文 payload 是含 `document`（JSON 文本）和 `sha256` 的容器。新文档为 `format: ayase-studio-backup`、`version: 5`、创建时间、导出选项、显式表数据、允许的偏好、可选连接、独立 `searchSettings`、可选 `drawing`、资源清单及 `compatibility`。旧 v3/v4/v5 的 `searchSettings` 继续接受 `version: 2` 和 `exaMcp`／`exaApi` 两组配置；v4/v5 在原始搜索模块 v3 声明下接受 `version: 3`（Tavily／智谱），在原始搜索模块 v4 声明下使用 `version: 4`（增加 DeepSeek 配置与会话、历史中的 `deepseek` provider 标识）。每组 profile 为 `version: 1`，含 HTTPS `baseUrl`、1–10 `numResults`，以及包含凭据时的独立 `apiKey`；新增服务还含 `enabled`（Tavily／智谱另含深度／引擎枚举）。未包含凭据时所有 Key 省略。v2 同字段仍是原来的单 MCP 配置。配置不会混入普通偏好或消息记录。资源清单逐项包含 ID、MIME、原始大小、Base64 字节和 SHA-256；头像 Blob 以受约束标记引用清单。原生引用仅允许专用目录中的规范 UUID v4 文件名；恢复时重映射。备份不是整目录归档，也不直接复制原始 localStorage。
 
-v5 的 `compatibility` 必须包含 `minimumReaderVersion: 5`、`requiredCapabilities`（当前为空）和 `modules`。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`，`drawing.settings` 和 `drawing.presets` 存在时分别增加 `drawingSettings` 和 `drawingPresets`，内容与模块声明必须一致。两类独立可选，缺失不表示空数据，非空 `drawing` 至少包含一类；新导出明确包含设置及预设，即使预设为空数组。每个模块声明 `version`、`minimumReaderVersion` 和 `requiredCapabilities`。当前连接 v6（最低读者 6，本机记录仍 v3）、搜索 v4／最低读者 4、chat v3／最低读者 3、外观 v4／最低读者 4、绘图设置 v5／最低读者 5、绘图预设及其余模块 v1；#140 不升级 Dexie schema（当前 v9）。旧绘图设置模块 v1 继续读取，但不能声明新增 Gemini 组。旧 v4 仍固定原七模块、最低文档读者 4，不接受绘图区或绘图模块。未知模块、未知必需能力、超出最低读者要求或不支持结构都拒绝并提示升级。
+v5 的 `compatibility` 必须包含 `minimumReaderVersion: 5`、`requiredCapabilities`（当前为空）和 `modules`。基础七模块为 `chat`、`session`、`workspace`、`avatars`、`appearance`、`connections`、`search`，`drawing.settings` 和 `drawing.presets` 存在时分别增加 `drawingSettings` 和 `drawingPresets`，内容与模块声明必须一致。两类独立可选，缺失不表示空数据，非空 `drawing` 至少包含一类；新导出明确包含设置及预设，即使预设为空数组。每个模块声明 `version`、`minimumReaderVersion` 和 `requiredCapabilities`。当前连接 v6（最低读者 6，本机记录仍 v3）、搜索 v5／最低读者 5、chat v4／最低读者 4、外观 v5／最低读者 5（含全局 `fontScale`）、绘图设置 v5／最低读者 5、绘图预设及其余模块 v1；Dexie schema 当前为 v9。旧绘图设置模块 v1 继续读取，但不能声明新增 Gemini 组。旧 v4 仍固定原七模块、最低文档读者 4，不接受绘图区或绘图模块。未知模块、未知必需能力、超出最低读者要求或不支持结构都拒绝并提示升级。
 
 #107 新回复保存逐请求的 Token、缓存与耗时统计，聊天备份包括这些指标及轮次历史，旧消息缺失时仍保持缺失。该字段要求原始 chat 模块声明支持 v2；旧模块无统计兼容，不将未知指标静默丢弃或在重标版本后伪装支持。它不包含凭据、地址或资源引用。详情见 [#107 数据与验收记录](ISSUE-107-IMPLEMENTATION.md)。
 
@@ -53,11 +53,11 @@ v5 的 `compatibility` 必须包含 `minimumReaderVersion: 5`、`requiredCapabil
 
 密码派生和认证加密通过 Web Crypto 实现，依据 [W3C Web Cryptography](https://www.w3.org/TR/WebCryptoAPI/)；迭代值参考 [OWASP PBKDF2-HMAC-SHA256 指引](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2)。这不代表获得任何认证。
 
-预算：文件 128 MiB、文档 80 MiB、非资源字符串合计 8 MiB、资源原字节合计 48 MiB、最多 2000 个资源和 100000 条消息（含候选）、递归深度 32、100 万个 JSON 节点。头像单图不超过 20 MiB，背景单图不超过 20,000,000 字节；图片任一边不超过 16384 像素且合计不超过 4000 万像素，解析图片头先检查尺寸，再完整解码。JSON/Base64 开销可能使实际可导出的内容更小。拒绝文件先于持久写入；其他未来版本仍需显式兼容设计。
+预算（2026-11-27 `#106` 正式版 `0.1.0` 翻倍扩容，格式保持 `envelope v1` / `document v5` 不变）：文件 256 MiB、文档 160 MiB、非资源字符串合计 8 MiB、资源原字节合计 96 MiB、最多 2000 个资源和 100000 条消息（含候选）、递归深度 32、100 万个 JSON 节点。头像单图不超过 20 MiB，背景单图不超过 20,000,000 字节；图片任一边不超过 16384 像素且合计不超过 4000 万像素，解析图片头先检查尺寸，再完整解码。旧版读者需同时满足旧三项容量上限（资源 ≤48 MiB、文档载荷 ≤80 MiB、单文件 ≤128 MiB）及兼容模块版本要求；超过任一旧上限的备份需 `0.1.0+` 读取。导出与恢复完成后，维护页结果状态仅保留轻量展示摘要并释放完整备份文档与 Base64 资产引用。JSON/Base64 开销可能使实际可导出的内容更小。拒绝文件先于持久写入；其他未来版本仍需显式兼容设计。
 
 ## 一致性与失败恢复
 
-数据管理在重新加载后的独占前端根运行，不挂载聊天、绘图、头像和外观控制器。启动先等待原生附件、背景和绘图共享文件锁，再处理备份恢复日志；普通 UI 和自动清理在恢复成功后才挂载，随后绘图初始化修复自己的保存日志。冷维护中的持久 running 等旧状态可能来自中断，保留供普通初始化恢复，不能据此推断存在活请求。应用已有单实例／数据目录进程锁。原生文件只读取受管目录，拒绝既有 symlink／Windows junction／reparse point，不承诺抵抗同机恶意进程在检查后主动置换路径。
+数据管理在重新加载后的独占前端根运行，不挂载聊天、绘图、头像和外观控制器。启动先通过 `ayase_backup_fence` 等待原生附件、背景和绘图队列的 in-flight 任务与共享文件锁，再严格校验并处理备份恢复日志（日志损坏、未知阶段或缺失必需表时零写入并保留原数据与原日志）；普通 UI 和自动清理在恢复成功后才挂载，随后绘图初始化修复自己的保存日志。冷维护中的持久 running 等旧状态可能来自中断，保留供普通初始化恢复，不能据此推断存在活请求。应用已有单实例／数据目录进程锁。原生文件只读取受管目录，按 Windows Reparse Tag 拒绝符号链接、目录联接及未知/名称代理重解析点，同时放行经核验的非链接系统数据标签（如 CompactOS WOF 与 OneDrive Cloud Files），不承诺抵抗同机恶意进程在检查后主动置换路径。
 
 普通启动还须在控制器挂载前严格读取当前连接配置；失败时保留原值并阻止编辑，可进入 `#backup` 维护入口。经校验的完整连接／凭据备份和明确替换确认可以修复不兼容的本机配置，原始存储值纳入日志保护并可回滚；合并、副本或不完整备份不能绕过读取失败。#93 已用协调和原生围栏取代旧绘图范围禁用规则，不将读取错误当作空配置。
 

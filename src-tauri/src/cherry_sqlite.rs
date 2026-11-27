@@ -511,7 +511,7 @@ fn read_connection(c: &Connection) -> Result<Value, String> {
     let mut files = Map::new();
     let mut projection_budget = ProjectionBudget::default();
     let mut message_ids = HashSet::new();
-    let mut stmt = db(c.prepare("SELECT id,topic_id,parent_id,role,status,data,created_at FROM message WHERE deleted_at IS NULL AND topic_id NOT IN (SELECT id FROM topic WHERE deleted_at IS NOT NULL) ORDER BY created_at,id"))?;
+    let mut stmt = db(c.prepare("SELECT id,topic_id,parent_id,role,status,data,created_at FROM message WHERE deleted_at IS NULL AND topic_id NOT IN (SELECT id FROM topic WHERE deleted_at IS NOT NULL AND id IS NOT NULL) ORDER BY created_at,id"))?;
     let mut rows = db(stmt.query([]))?;
     while let Some(r) = db(rows.next())? {
         let id = identity(db(r.get(0))?, &mut message_ids)?;
@@ -1113,5 +1113,20 @@ mod tests {
         );
         assert!(files.is_empty());
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn soft_deleted_topic_with_null_id_does_not_drop_live_messages() {
+        let c = fixture();
+        message(&c, json!({"parts":[{"type":"text","text":"存活消息"}]}));
+        c.execute(
+            "INSERT INTO topic(id,assistant_id,name,created_at,updated_at,deleted_at) VALUES(NULL,'a1','deleted-null',10,10,999)",
+            [],
+        )
+        .unwrap();
+        let result = read_connection(&c).unwrap();
+        let messages = result["topics"][0]["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["parts"][0]["text"], "存活消息");
     }
 }

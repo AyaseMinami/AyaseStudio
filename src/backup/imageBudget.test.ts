@@ -31,6 +31,6 @@ describe("predecode image resource budget", () => {
   });
   it("validates a 12 MiB decoded resource without recursive-regex stack overflow", () => {
     const encoded = "A".repeat(16 * 1024 * 1024);
-    expect(decode64(encoded, 48 * 1024 * 1024).length).toBe(12 * 1024 * 1024);
+    expect(decode64(encoded, 96 * 1024 * 1024).length).toBe(12 * 1024 * 1024);
   });
 });

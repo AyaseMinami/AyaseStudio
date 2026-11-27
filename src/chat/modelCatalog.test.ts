@@ -257,4 +257,38 @@ describe("model catalog client", () => {
       expect.stringContaining("secret-value"),
     );
   });
+
+  it.each(["openai-chat", "openai-responses", "gemini-native", "anthropic-native"] as const)(
+    "%s disables HTTP redirects and rejects 3xx catalog responses without leaking credentials",
+    async (protocol) => {
+      const seenRedirects: Array<RequestRedirect | undefined> = [];
+      const client = createModelCatalogClient(protocol, {
+        fetch: async (_input, init) => {
+          seenRedirects.push(init?.redirect);
+          return new Response("secret-catalog-key moved to https://evil.example/v1/models", {
+            status: 302,
+            headers: { Location: "https://evil.example/v1/models?key=secret-catalog-key" },
+          });
+        },
+      });
+      const promise = client.list({
+        baseUrl: "https://relay.example/v1",
+        apiKey: "secret-catalog-key",
+      });
+      await expect(promise).rejects.toMatchObject({
+        name: "ModelCatalogError",
+        status: 302,
+        message: expect.stringContaining("重定向"),
+      });
+      await expect(promise).rejects.not.toHaveProperty(
+        "message",
+        expect.stringContaining("secret-catalog-key"),
+      );
+      await expect(promise).rejects.not.toHaveProperty(
+        "message",
+        expect.stringContaining("evil.example"),
+      );
+      expect(seenRedirects).toEqual(["error"]);
+    },
+  );
 });

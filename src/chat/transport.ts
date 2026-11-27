@@ -44,6 +44,37 @@ class HttpStatusError extends Error {
   }
 }
 
+class RedirectBlockedError extends Error {
+  constructor(readonly status?: number) {
+    super(
+      status !== undefined
+        ? `请求被重定向（HTTP ${status}），出于凭据安全已拒绝；请将连接的 Base URL 填写为最终服务地址。`
+        : "请求被重定向，出于凭据安全已拒绝；请将连接的 Base URL 填写为最终服务地址。",
+    );
+    this.name = "RedirectBlockedError";
+  }
+}
+
+function requestUrl(input: RequestInfo | URL): string | undefined {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function isRedirectResponse(response: Response, expectedUrl?: string): boolean {
+  return (
+    response.redirected
+    || (response.status >= 300 && response.status < 400)
+    || Boolean(expectedUrl && response.url && response.url !== expectedUrl)
+  );
+}
+
+function redirectBlockedError(response: Response): RedirectBlockedError {
+  return new RedirectBlockedError(
+    response.status >= 300 && response.status < 400 ? response.status : undefined,
+  );
+}
+
 const credentialName = "(?:(?:x[-_ ]?)?api[-_ ]?key|(?:proxy[-_ ]?)?authorization|(?:(?:access|refresh|id|auth|session)[-_ ]?)?token|(?:client[-_ ]?)?secret|password|credential)";
 const credentialField = new RegExp(`^${credentialName}$`, "i");
 const credentialAssignment = new RegExp(`(["']?\\b${credentialName}["']?\\s*[:=]\\s*["']?)([^\\s"',}\\]]+)`, "gi");
@@ -128,6 +159,11 @@ function providerFailure(
 }
 
 function failureFrom(error: unknown, apiKey?: string): ChatFailure {
+  if (error instanceof RedirectBlockedError) {
+    return error.status !== undefined
+      ? { kind: "http", status: error.status, message: error.message, retryable: false }
+      : { kind: "protocol", message: error.message, retryable: false };
+  }
   if (error instanceof UrlResolutionError || error instanceof RequestConfigError) {
     return { kind: "protocol", message: error.message, retryable: false };
   }
@@ -176,11 +212,17 @@ function failureFrom(error: unknown, apiKey?: string): ChatFailure {
 function openAIFetch(
   dependencies: ChatTransportDependencies,
   apiKey: string,
-): { fetch: ChatTransportDependencies["fetch"]; lastHttpError(): HttpStatusError | undefined } {
-  let lastError: HttpStatusError | undefined;
+): { fetch: ChatTransportDependencies["fetch"]; lastHttpError(): HttpStatusError | RedirectBlockedError | undefined } {
+  let lastError: HttpStatusError | RedirectBlockedError | undefined;
   return {
     fetch: async (input, init) => {
-      const response = await dependencies.fetch(input, init);
+      const response = await dependencies.fetch(input, { ...init, redirect: "error" });
+      if (isRedirectResponse(response, requestUrl(input))) {
+        await response.body?.cancel().catch(() => undefined);
+        const blocked = redirectBlockedError(response);
+        lastError = blocked;
+        throw blocked;
+      }
       if (!response.ok) lastError = await httpStatusError(response, apiKey);
       return response;
     },
@@ -696,8 +738,13 @@ class GeminiNativeTransport implements ChatTransport {
         },
         body: JSON.stringify(body),
         signal: request.signal,
+        redirect: "error",
       });
 
+      if (isRedirectResponse(response, resolvedEndpoint)) {
+        await response.body?.cancel().catch(() => undefined);
+        throw redirectBlockedError(response);
+      }
       if (!response.ok) {
         throw await httpStatusError(response, request.apiKey);
       }
@@ -868,9 +915,14 @@ class AnthropicNativeTransport implements ChatTransport {
           },
           body: JSON.stringify(body),
           signal: request.signal,
+          redirect: "error",
         },
       );
 
+      if (isRedirectResponse(response, resolvedEndpoint)) {
+        await response.body?.cancel().catch(() => undefined);
+        throw redirectBlockedError(response);
+      }
       if (!response.ok) {
         throw await httpStatusError(response, request.apiKey);
       }

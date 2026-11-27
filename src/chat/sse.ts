@@ -59,21 +59,55 @@ export async function* parseServerSentEvents(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const pending: PendingEvent = { data: [] };
-  let buffer = "";
+  const pendingChunks: string[] = [];
+  let pendingCr = false;
   let reachedEof = false;
+
+  const flushLine = (segment: string): ServerSentEvent | undefined => {
+    const line = pendingChunks.length > 0 ? pendingChunks.join("") + segment : segment;
+    if (pendingChunks.length > 0) {
+      pendingChunks.length = 0;
+    }
+    return consumeLine(line, pending);
+  };
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const event = consumeLine(line, pending);
-        if (event) {
-          yield event;
+      let chunk = decoder.decode(value, { stream: !done });
+      if (pendingCr && chunk.length > 0) {
+        pendingCr = false;
+        if (chunk.startsWith("\n")) {
+          chunk = chunk.slice(1);
         }
+      }
+
+      let lineStart = 0;
+      for (let i = 0; i < chunk.length; i += 1) {
+        const ch = chunk[i];
+        if (ch === "\n") {
+          const event = flushLine(chunk.slice(lineStart, i));
+          if (event) {
+            yield event;
+          }
+          lineStart = i + 1;
+        } else if (ch === "\r") {
+          const event = flushLine(chunk.slice(lineStart, i));
+          if (event) {
+            yield event;
+          }
+          if (i + 1 < chunk.length) {
+            if (chunk[i + 1] === "\n") {
+              i += 1;
+            }
+          } else {
+            pendingCr = true;
+          }
+          lineStart = i + 1;
+        }
+      }
+      if (lineStart < chunk.length) {
+        pendingChunks.push(chunk.slice(lineStart));
       }
 
       if (done) {
@@ -82,8 +116,8 @@ export async function* parseServerSentEvents(
       }
     }
 
-    if (buffer !== "") {
-      const event = consumeLine(buffer, pending);
+    if (pendingChunks.length > 0) {
+      const event = flushLine("");
       if (event) {
         yield event;
       }

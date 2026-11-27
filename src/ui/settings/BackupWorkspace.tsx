@@ -30,25 +30,55 @@ function keyCount(preview: BackupPreview) {
   }, searchCount);
 }
 
-function PreviewSummary({ preview }: { preview: BackupPreview }) {
-  const warnings = compatibilityWarnings(preview.document.compatibility);
+interface BackupSummary {
+  version: BackupPreview["document"]["version"];
+  counts: BackupPreview["counts"];
+  hasConnections: boolean;
+  searchSummary: string;
+  hasCredentials: boolean;
+  keyCount: number;
+  encrypted: boolean;
+  drawingPresetsCount?: number;
+  hasDrawingSettings: boolean;
+  warnings: string[];
+}
+
+function summarizeBackupPreview(preview: BackupPreview): BackupSummary {
+  const search = preview.document.searchSettings;
+  const searchSummary = search
+    ? search.version === 4 ? "包含 · Exa API、Exa MCP、Tavily、智谱与 DeepSeek"
+      : search.version === 3 ? "包含 · Exa API、Exa MCP、Tavily 与智谱"
+      : search.version === 2 ? "包含 · Exa API 与 Exa MCP" : "包含 · Exa MCP（旧配置），保留本机 Exa API 设置与 Key"
+    : "不包含（旧备份），保留本机搜索设置与 Key";
+  return {
+    version: preview.document.version,
+    counts: { ...preview.counts },
+    hasConnections: preview.document.options.connections,
+    searchSummary,
+    hasCredentials: preview.document.options.credentials,
+    keyCount: keyCount(preview),
+    encrypted: preview.encrypted,
+    drawingPresetsCount: preview.document.drawing?.presets !== undefined ? preview.document.drawing.presets.length : undefined,
+    hasDrawingSettings: preview.document.drawing?.settings !== undefined,
+    warnings: compatibilityWarnings(preview.document.compatibility),
+  };
+}
+
+function PreviewSummary({ summary }: { summary: BackupSummary }) {
+  const { warnings } = summary;
   return <><dl className="backup-summary">
-    <div><dt>备份版本</dt><dd>{preview.document.version}</dd></div>
-    <div><dt>助手</dt><dd>{preview.counts.assistants}</dd></div>
-    <div><dt>对话</dt><dd>{preview.counts.conversations}</dd></div>
-    <div><dt>消息（含保留候选）</dt><dd>{preview.counts.messages}</dd></div>
-    <div><dt>头像库</dt><dd>{preview.counts.avatars}</dd></div>
-    <div><dt>文件资源</dt><dd>{preview.counts.files}</dd></div>
-    <div><dt>连接配置</dt><dd>{preview.document.options.connections ? `包含 · ${preview.counts.connections} 个连接` : "不包含"}</dd></div>
-    <div><dt>网络搜索配置</dt><dd>{preview.document.searchSettings
-      ? preview.document.searchSettings.version === 4 ? "包含 · Exa API、Exa MCP、Tavily、智谱与 DeepSeek"
-        : preview.document.searchSettings.version === 3 ? "包含 · Exa API、Exa MCP、Tavily 与智谱"
-        : preview.document.searchSettings.version === 2 ? "包含 · Exa API 与 Exa MCP" : "包含 · Exa MCP（旧配置），保留本机 Exa API 设置与 Key"
-      : "不包含（旧备份），保留本机搜索设置与 Key"}</dd></div>
-    <div><dt>API Key</dt><dd>{preview.document.options.credentials ? `包含 · ${keyCount(preview)} 个` : "不包含"}</dd></div>
-    <div><dt>加密</dt><dd>{preview.encrypted ? "已加密" : "未加密"}</dd></div>
-    <div><dt>绘图提示词预设</dt><dd>{preview.document.drawing?.presets !== undefined ? `包含 · ${preview.document.drawing.presets.length} 个` : "不包含，保留本机预设"}</dd></div>
-    <div><dt>绘图设置</dt><dd>{preview.document.drawing?.settings !== undefined ? "包含（仅替换策略应用）" : "不包含，保留本机设置"}</dd></div>
+    <div><dt>备份版本</dt><dd>{summary.version}</dd></div>
+    <div><dt>助手</dt><dd>{summary.counts.assistants}</dd></div>
+    <div><dt>对话</dt><dd>{summary.counts.conversations}</dd></div>
+    <div><dt>消息（含保留候选）</dt><dd>{summary.counts.messages}</dd></div>
+    <div><dt>头像库</dt><dd>{summary.counts.avatars}</dd></div>
+    <div><dt>文件资源</dt><dd>{summary.counts.files}</dd></div>
+    <div><dt>连接配置</dt><dd>{summary.hasConnections ? `包含 · ${summary.counts.connections} 个连接` : "不包含"}</dd></div>
+    <div><dt>网络搜索配置</dt><dd>{summary.searchSummary}</dd></div>
+    <div><dt>API Key</dt><dd>{summary.hasCredentials ? `包含 · ${summary.keyCount} 个` : "不包含"}</dd></div>
+    <div><dt>加密</dt><dd>{summary.encrypted ? "已加密" : "未加密"}</dd></div>
+    <div><dt>绘图提示词预设</dt><dd>{summary.drawingPresetsCount !== undefined ? `包含 · ${summary.drawingPresetsCount} 个` : "不包含，保留本机预设"}</dd></div>
+    <div><dt>绘图设置</dt><dd>{summary.hasDrawingSettings ? "包含（仅替换策略应用）" : "不包含，保留本机设置"}</dd></div>
   </dl>{warnings.length > 0 && <div aria-label="参数兼容提示">
     <p className="backup-warning">{warnings[0]}</p>
     <details><summary>查看过滤参数</summary><ul>{warnings.slice(1).map(path => <li key={path}>{path}</li>)}</ul></details>
@@ -68,13 +98,13 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
   const [serialized, setSerialized] = useState<string | null>(null);
   const [importPassword, setImportPassword] = useState("");
   const [preview, setPreview] = useState<BackupPreview | null>(null);
-  const [exportResult, setExportResult] = useState<{ saved: boolean; preview: BackupPreview } | null>(null);
+  const [exportResult, setExportResult] = useState<{ saved: boolean; summary: BackupSummary } | null>(null);
   const [mode, setMode] = useState<RestoreMode>("merge");
   const [conflicts, setConflicts] = useState<{ preview: BackupPreview; mode: RestoreMode; conflicts: number; warnings: string[] } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [keysConfirmed, setKeysConfirmed] = useState(false);
   const [result, setResult] = useState<string[] | null>(null);
-  const [restoredPreview, setRestoredPreview] = useState<BackupPreview | null>(null);
+  const [restoredSummary, setRestoredSummary] = useState<BackupSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [recoveryLocked, setRecoveryLocked] = useState(false);
@@ -110,7 +140,7 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
       const next = await api.selectBackup();
       if (!mounted.current || next === null) return;
       setPreview(null); setSerialized(null); setImportPassword(""); setConflicts(null);
-      setConfirmed(false); setKeysConfirmed(false); setMode("merge"); setResult(null); setRestoredPreview(null);
+      setConfirmed(false); setKeysConfirmed(false); setMode("merge"); setResult(null); setRestoredSummary(null);
       if (encryptedBackup(next)) setSerialized(next);
       else await inspect(next, "");
     }, "无法读取或校验此备份，请检查文件格式、版本和完整性后重试。");
@@ -154,10 +184,10 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
           void run(async () => {
             setExportResult(null);
             const saved = await api.exportBackup({ encrypted }, password, confirmation);
-            if (mounted.current) { setExportResult(saved); setPassword(""); setConfirmation(""); }
+            if (mounted.current) { setExportResult({ saved: saved.saved, summary: summarizeBackupPreview(saved.preview) }); setPassword(""); setConfirmation(""); }
           }, "备份导出失败，请检查本地资源和保存位置后重试。");
         }}>导出备份</button>
-        {exportResult && <section aria-label="导出结果"><p role="status">{exportResult.saved ? "备份已保存。" : "已取消保存，未保存备份文件。"}</p><PreviewSummary preview={exportResult.preview} /></section>}
+        {exportResult && <section aria-label="导出结果"><p role="status">{exportResult.saved ? "备份已保存。" : "已取消保存，未保存备份文件。"}</p><PreviewSummary summary={exportResult.summary} /></section>}
       </section>
       <section className="settings-card backup-card" inert={recoveryLocked || undefined} aria-labelledby={`${modeName}-import`}>
         <h2 id={`${modeName}-import`}>恢复 Ayase 备份</h2>
@@ -171,7 +201,7 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
           }}>解密并校验</button>
         </div>}
         {preview && <section className="backup-preview" aria-label="已校验的备份预览">
-          <h3>备份预览</h3><PreviewSummary preview={preview} />
+          <h3>备份预览</h3><PreviewSummary summary={summarizeBackupPreview(preview)} />
           {preview.document.options.credentials && !preview.encrypted && <p className="backup-warning">此备份包含明文 API Key，请妥善保管文件。</p>}
           <fieldset disabled={busy} className="backup-strategies"><legend>导入策略</legend>
             {(Object.keys(strategies) as RestoreMode[]).map((strategy) => <label key={strategy}>
@@ -189,16 +219,17 @@ export function BackupWorkspace({ api, onExit }: { api: BackupWorkspaceApi; onEx
           <button type="button" className={`settings-button ${mode === "replace" ? "settings-button-danger" : "settings-button-primary"}`} disabled={busy || !canRestore} onClick={() => {
             if (!canRestore) return;
             void run(async () => {
+              const summary = summarizeBackupPreview(preview);
               const warnings = await api.restore(preview, mode);
               if (mounted.current) {
                 setPreview(null); setConflicts(null); setSerialized(null); setImportPassword("");
-                setConfirmed(false); setKeysConfirmed(false); setResult(warnings); setRestoredPreview(preview);
+                setConfirmed(false); setKeysConfirmed(false); setResult(warnings); setRestoredSummary(summary);
               }
             }, "恢复失败。请检查备份和本地资源后重试。");
           }}>确认导入</button>
         </section>}
         {result !== null && <section aria-label="恢复结果"><p role="status">数据恢复成功。返回设置后将刷新并加载恢复的数据。</p>
-          {restoredPreview && <PreviewSummary preview={restoredPreview} />}
+          {restoredSummary && <PreviewSummary summary={restoredSummary} />}
           {result.length > 0 && <ul aria-label="恢复提示">{result.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
         </section>}
       </section>

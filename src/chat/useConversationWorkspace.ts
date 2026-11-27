@@ -164,7 +164,13 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
         if (alive.current) setSnapshot(updated);
         const remaining = new Set(updated.conversations.map((item) => item.id));
         for (const id of stores.current.keys()) {
-          if (!remaining.has(id)) { stores.current.delete(id); views.current.delete(id); }
+          if (!remaining.has(id)) stores.current.delete(id);
+        }
+        for (const id of views.current.keys()) {
+          if (!remaining.has(id)) views.current.delete(id);
+        }
+        for (const id of unavailable.current) {
+          if (!remaining.has(id)) unavailable.current.delete(id);
         }
         if (action.type === "edit-message" || action.type === "delete-message" || action.type === "select-round-version") {
           const id = action.conversationId;
@@ -251,6 +257,11 @@ export function useConversationWorkspace(repository: WorkspaceRepository, legacy
       const current = views.current.get(target);
       if (!current || current.sendStatus === value) return;
       views.current.set(target, { ...current, sendStatus: value }); changed();
+    },
+    setContextPlanAt: (target: string, value: ContextSummary | undefined) => {
+      const current = views.current.get(target);
+      if (!current) return;
+      views.current.set(target, { ...current, contextPlan: value }); changed();
     },
     // Presentation only: the first transcript load remains visibly unavailable.
     isTemporarilyBusy: busy && hasHydratedView.current,

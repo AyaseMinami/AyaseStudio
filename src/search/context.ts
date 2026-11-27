@@ -21,12 +21,13 @@ export function searchRequestText(content: string, sources: SearchSource[]): str
 /** Budget the final request; reduce retrieved data if mandatory content cannot fit. */
 export async function prepareSearchContext(history: StoredChatMessage[], content: string, config: SessionConfig,
   protocol: ChatProtocol, model: string, sources: SearchSource[], attachments: RequestAttachment[],
+  replayScope?: string,
 ): Promise<{ plan: ContextPlan; sources: SearchSource[] }> {
   let selected = structuredClone(sources);
   if (!selected.length || selected.some(source => !source.excerpt?.trim())) throw new Error("没有可用的检索正文。");
   while (true) {
     try {
-      const plan = await planContextBudget(projectSearchHistory(history), searchRequestText(content, selected), config, protocol, model, undefined, attachments);
+      const plan = await planContextBudget(projectSearchHistory(history), searchRequestText(content, selected), config, protocol, model, undefined, attachments, replayScope);
       return { plan, sources: selected };
     } catch (error) {
       if (!(error instanceof ContextBudgetError)) throw error;

@@ -41,22 +41,22 @@ async function envelope(value: unknown) {
 const files: BackupFiles = { read: vi.fn(), assertAvailable: vi.fn(async () => {}), write: vi.fn(async () => {}), remove: vi.fn(async () => {}) };
 
 describe("versioned backup data contracts", () => {
-  it.each([1, 2, 3, 4] as const)("reads historical v%s appearance omissions repeatedly with sidebar off, composer on and assistant bubble auto", async version => {
+  it.each([1, 2, 3, 4] as const)("reads historical v%s appearance omissions repeatedly with sidebar off, composer on, assistant bubble auto and fontScale 100", async version => {
     const old = document(version);
-    const { assistantBubbleMode: _mode, chromeTransparency: _chrome, sidebarGlassEnabled: _sidebar, composerGlassEnabled: _composer, ...appearance } = defaultAppearancePreferences;
+    const { fontScale: _fontScale, assistantBubbleMode: _mode, chromeTransparency: _chrome, sidebarGlassEnabled: _sidebar, composerGlassEnabled: _composer, ...appearance } = defaultAppearancePreferences;
     old.preferences[preferenceKeys[0]] = JSON.stringify({ ...appearance, sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 12 });
     if (old.compatibility) old.compatibility.modules.appearance = { version: 1, minimumReaderVersion: 1, requiredCapabilities: [] };
     const before = structuredClone(old);
     const first = await readBackupDocument(old);
     expect(await readBackupDocument(first)).toEqual(first);
     expect(readAppearancePreferences({ getItem: () => first.preferences[preferenceKeys[0]] })).toMatchObject({
-      assistantBubbleMode: "auto", chromeTransparency: 40, sidebarGlassEnabled: false, composerGlassEnabled: true, sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 12,
+      fontScale: 100, assistantBubbleMode: "auto", chromeTransparency: 40, sidebarGlassEnabled: false, composerGlassEnabled: true, sidebarTransparency: 37, composerTransparency: 62, assistantBubbleTransparency: 12,
     });
     expect(old).toEqual(before);
   });
   it.each([1, 2, 3, 4] as const)("rejects new glass fields falsely declared as legacy v%s", async version => {
     const old = document(version);
-    const { assistantBubbleMode: _mode, chromeTransparency: _chrome, ...appearance } = defaultAppearancePreferences;
+    const { fontScale: _fontScale, assistantBubbleMode: _mode, chromeTransparency: _chrome, ...appearance } = defaultAppearancePreferences;
     old.preferences[preferenceKeys[0]] = JSON.stringify({ ...appearance, sidebarGlassEnabled: true });
     if (old.compatibility) old.compatibility.modules.appearance = { version: 1, minimumReaderVersion: 1, requiredCapabilities: [] };
     const before = structuredClone(old);
@@ -64,21 +64,21 @@ describe("versioned backup data contracts", () => {
     expect(old).toEqual(before);
   });
   it.each([
-    [53, 37, 19, "auto" as const],
-    [85, 0, 6, "always" as const],
-    [75, 20, 12, "off" as const],
-  ])("projects appearance v4 and roundtrips explicit %s/%s/%s transparencies and mode %s unchanged", async (chromeTransparency, sidebarTransparency, assistantBubbleTransparency, assistantBubbleMode) => {
+    [53, 37, 19, "auto" as const, 90 as const],
+    [85, 0, 6, "always" as const, 100 as const],
+    [75, 20, 12, "off" as const, 125 as const],
+  ])("projects appearance v5 and roundtrips explicit %s/%s/%s transparencies, mode %s and fontScale %s unchanged", async (chromeTransparency, sidebarTransparency, assistantBubbleTransparency, assistantBubbleMode, fontScale) => {
     const doc = document();
     doc.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences,
-      chromeTransparency, sidebarGlassEnabled: true, composerGlassEnabled: false, sidebarTransparency, composerTransparency: 62, assistantBubbleMode, assistantBubbleTransparency });
+      fontScale, chromeTransparency, sidebarGlassEnabled: true, composerGlassEnabled: false, sidebarTransparency, composerTransparency: 62, assistantBubbleMode, assistantBubbleTransparency });
     const snapshot: LocalSnapshot = { rows: doc.rows as LocalSnapshot["rows"], preferences: doc.preferences };
     const exported = await createBackupDocument(snapshot, { connections: false, credentials: false }, files);
     expect(exported.version).toBe(5);
-    expect(exported.compatibility!.modules.appearance).toEqual({ version: 4, minimumReaderVersion: 4, requiredCapabilities: [] });
+    expect(exported.compatibility!.modules.appearance).toEqual({ version: 5, minimumReaderVersion: 5, requiredCapabilities: [] });
     const preview = await decodeBackup(await encodeBackup(exported));
     expect(preview.document.preferences[preferenceKeys[0]]).toBe(exported.preferences[preferenceKeys[0]]);
     expect(JSON.parse(preview.document.preferences[preferenceKeys[0]]!)).toMatchObject({
-      chromeTransparency, sidebarGlassEnabled: true, composerGlassEnabled: false, sidebarTransparency, composerTransparency: 62, assistantBubbleMode, assistantBubbleTransparency,
+      fontScale, chromeTransparency, sidebarGlassEnabled: true, composerGlassEnabled: false, sidebarTransparency, composerTransparency: 62, assistantBubbleMode, assistantBubbleTransparency,
     });
     expect(await readBackupDocument(preview.document)).toEqual(preview.document);
   });
@@ -92,39 +92,54 @@ describe("versioned backup data contracts", () => {
     expect(await readBackupDocument(preview.document)).toEqual(preview.document);
   });
 
-  it("reads appearance v2 and v3 without newer fields through the same defaults and reexports as v4", async () => {
+  it("reads appearance v2, v3 and v4 without newer fields through the same defaults and reexports as v5", async () => {
     const oldV2 = document();
-    const { assistantBubbleMode: _mode2, chromeTransparency: _chrome, ...appearanceV2 } = defaultAppearancePreferences;
+    const { fontScale: _fontScale2, assistantBubbleMode: _mode2, chromeTransparency: _chrome, ...appearanceV2 } = defaultAppearancePreferences;
     oldV2.preferences[preferenceKeys[0]] = JSON.stringify({ ...appearanceV2, sidebarGlassEnabled: true, assistantBubbleTransparency: 12 });
     oldV2.compatibility!.modules.appearance = { version: 2, minimumReaderVersion: 2, requiredCapabilities: [] };
     const beforeV2 = structuredClone(oldV2);
     const firstV2 = await readBackupDocument(oldV2);
     expect(await readBackupDocument(firstV2)).toEqual(firstV2);
     expect(readAppearancePreferences({ getItem: () => firstV2.preferences[preferenceKeys[0]] })).toMatchObject({
-      assistantBubbleMode: "auto", chromeTransparency: 40, sidebarGlassEnabled: true, assistantBubbleTransparency: 12,
+      fontScale: 100, assistantBubbleMode: "auto", chromeTransparency: 40, sidebarGlassEnabled: true, assistantBubbleTransparency: 12,
     });
     const exportedV2 = await createBackupDocument({ rows: firstV2.rows as LocalSnapshot["rows"], preferences: firstV2.preferences }, { connections: false, credentials: false }, files);
-    expect(exportedV2.compatibility!.modules.appearance).toEqual({ version: 4, minimumReaderVersion: 4, requiredCapabilities: [] });
-    expect(JSON.parse(exportedV2.preferences[preferenceKeys[0]]!)).toMatchObject({ assistantBubbleMode: "auto", chromeTransparency: 40, assistantBubbleTransparency: 12 });
+    expect(exportedV2.compatibility!.modules.appearance).toEqual({ version: 5, minimumReaderVersion: 5, requiredCapabilities: [] });
+    expect(JSON.parse(exportedV2.preferences[preferenceKeys[0]]!)).toMatchObject({ fontScale: 100, assistantBubbleMode: "auto", chromeTransparency: 40, assistantBubbleTransparency: 12 });
     expect(oldV2).toEqual(beforeV2);
 
     const oldV3 = document();
-    const { assistantBubbleMode: _mode3, ...appearanceV3 } = defaultAppearancePreferences;
+    const { fontScale: _fontScale3, assistantBubbleMode: _mode3, ...appearanceV3 } = defaultAppearancePreferences;
     oldV3.preferences[preferenceKeys[0]] = JSON.stringify({ ...appearanceV3, assistantBubbleTransparency: 12 });
     oldV3.compatibility!.modules.appearance = { version: 3, minimumReaderVersion: 3, requiredCapabilities: [] };
     const beforeV3 = structuredClone(oldV3);
     const firstV3 = await readBackupDocument(oldV3);
     expect(await readBackupDocument(firstV3)).toEqual(firstV3);
     expect(readAppearancePreferences({ getItem: () => firstV3.preferences[preferenceKeys[0]] })).toMatchObject({
-      assistantBubbleMode: "auto", assistantBubbleTransparency: 12,
+      fontScale: 100, assistantBubbleMode: "auto", assistantBubbleTransparency: 12,
     });
     const exportedV3 = await createBackupDocument({ rows: firstV3.rows as LocalSnapshot["rows"], preferences: firstV3.preferences }, { connections: false, credentials: false }, files);
-    expect(exportedV3.compatibility!.modules.appearance).toEqual({ version: 4, minimumReaderVersion: 4, requiredCapabilities: [] });
-    expect(JSON.parse(exportedV3.preferences[preferenceKeys[0]]!)).toMatchObject({ assistantBubbleMode: "auto", assistantBubbleTransparency: 12 });
+    expect(exportedV3.compatibility!.modules.appearance).toEqual({ version: 5, minimumReaderVersion: 5, requiredCapabilities: [] });
+    expect(JSON.parse(exportedV3.preferences[preferenceKeys[0]]!)).toMatchObject({ fontScale: 100, assistantBubbleMode: "auto", assistantBubbleTransparency: 12 });
     expect(oldV3).toEqual(beforeV3);
 
+    const oldV4 = document();
+    const { fontScale: _fontScale4, ...appearanceV4 } = defaultAppearancePreferences;
+    oldV4.preferences[preferenceKeys[0]] = JSON.stringify({ ...appearanceV4, assistantBubbleMode: "always" });
+    oldV4.compatibility!.modules.appearance = { version: 4, minimumReaderVersion: 4, requiredCapabilities: [] };
+    const beforeV4 = structuredClone(oldV4);
+    const firstV4 = await readBackupDocument(oldV4);
+    expect(await readBackupDocument(firstV4)).toEqual(firstV4);
+    expect(readAppearancePreferences({ getItem: () => firstV4.preferences[preferenceKeys[0]] })).toMatchObject({
+      fontScale: 100, assistantBubbleMode: "always",
+    });
+    const exportedV4 = await createBackupDocument({ rows: firstV4.rows as LocalSnapshot["rows"], preferences: firstV4.preferences }, { connections: false, credentials: false }, files);
+    expect(exportedV4.compatibility!.modules.appearance).toEqual({ version: 5, minimumReaderVersion: 5, requiredCapabilities: [] });
+    expect(JSON.parse(exportedV4.preferences[preferenceKeys[0]]!)).toMatchObject({ fontScale: 100, assistantBubbleMode: "always" });
+    expect(oldV4).toEqual(beforeV4);
+
     const omittedTransparency = document();
-    const { assistantBubbleMode: _mode4, assistantBubbleTransparency: _transparency4, ...appearanceNoBubble } = defaultAppearancePreferences;
+    const { fontScale: _fontScaleOmitted, assistantBubbleMode: _mode4, assistantBubbleTransparency: _transparency4, ...appearanceNoBubble } = defaultAppearancePreferences;
     omittedTransparency.preferences[preferenceKeys[0]] = JSON.stringify({
       ...appearanceNoBubble,
       chromeTransparency: 25,
@@ -136,13 +151,13 @@ describe("versioned backup data contracts", () => {
     const beforeOmitted = structuredClone(omittedTransparency);
     const readOmitted = await readBackupDocument(omittedTransparency);
     expect(readAppearancePreferences({ getItem: () => readOmitted.preferences[preferenceKeys[0]] })).toMatchObject({
-      assistantBubbleMode: "auto", assistantBubbleTransparency: 25, unifiedTransparency: 25,
+      fontScale: 100, assistantBubbleMode: "auto", assistantBubbleTransparency: 25, unifiedTransparency: 25,
     });
     expect(omittedTransparency).toEqual(beforeOmitted);
   });
   it.each([1, 2])("refuses chrome transparency stamped as appearance v%s", async moduleVersion => {
     const old = document();
-    const { assistantBubbleMode: _mode, ...appearance } = defaultAppearancePreferences;
+    const { fontScale: _fontScale, assistantBubbleMode: _mode, ...appearance } = defaultAppearancePreferences;
     old.preferences[preferenceKeys[0]] = JSON.stringify(appearance);
     old.compatibility!.modules.appearance = { version: moduleVersion, minimumReaderVersion: moduleVersion, requiredCapabilities: [] };
     const before = structuredClone(old);
@@ -151,7 +166,8 @@ describe("versioned backup data contracts", () => {
   });
   it.each([1, 2, 3])("refuses assistantBubbleMode stamped as appearance v%s", async moduleVersion => {
     const old = document();
-    old.preferences[preferenceKeys[0]] = JSON.stringify(defaultAppearancePreferences);
+    const { fontScale: _fontScale, ...appearance } = defaultAppearancePreferences;
+    old.preferences[preferenceKeys[0]] = JSON.stringify(appearance);
     old.compatibility!.modules.appearance = { version: moduleVersion, minimumReaderVersion: moduleVersion, requiredCapabilities: [] };
     const before = structuredClone(old);
     await expect(readBackupDocument(old)).rejects.toThrow("外观模块版本");
@@ -159,10 +175,38 @@ describe("versioned backup data contracts", () => {
   });
   it.each([1, 2, 3] as const)("refuses assistantBubbleMode in legacy document v%s", async version => {
     const old = document(version);
-    old.preferences[preferenceKeys[0]] = JSON.stringify(defaultAppearancePreferences);
+    const { fontScale: _fontScale, ...appearance } = defaultAppearancePreferences;
+    old.preferences[preferenceKeys[0]] = JSON.stringify(appearance);
     const before = structuredClone(old);
     await expect(readBackupDocument(old)).rejects.toThrow("外观模块版本");
     expect(old).toEqual(before);
+  });
+  it.each([1, 2, 3, 4])("refuses fontScale (including default 100) stamped as appearance v%s", async moduleVersion => {
+    for (const fontScale of [100, 125] as const) {
+      const old = document();
+      old.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, fontScale });
+      old.compatibility!.modules.appearance = { version: moduleVersion, minimumReaderVersion: moduleVersion, requiredCapabilities: [] };
+      const before = structuredClone(old);
+      await expect(readBackupDocument(old)).rejects.toThrow("外观模块版本");
+      expect(old).toEqual(before);
+    }
+  });
+  it.each([1, 2, 3] as const)("refuses fontScale (including default 100) in legacy document v%s", async version => {
+    for (const fontScale of [100, 120] as const) {
+      const old = document(version);
+      const { assistantBubbleMode: _mode, chromeTransparency: _chrome, sidebarGlassEnabled: _sidebar, composerGlassEnabled: _composer, ...appearance } = defaultAppearancePreferences;
+      old.preferences[preferenceKeys[0]] = JSON.stringify({ ...appearance, fontScale });
+      const before = structuredClone(old);
+      await expect(readBackupDocument(old)).rejects.toThrow("外观模块版本");
+      expect(old).toEqual(before);
+    }
+  });
+  it.each([85, 105, 1.1, "100", null])("rejects invalid fontScale %s in v5 backup without mutating input", async fontScale => {
+    const doc = document();
+    doc.preferences[preferenceKeys[0]] = JSON.stringify({ ...defaultAppearancePreferences, fontScale });
+    const before = structuredClone(doc);
+    await expect(readBackupDocument(doc)).rejects.toThrow();
+    expect(doc).toEqual(before);
   });
   it.each([1, 2, 3] as const)("reads old v%s exactly and keeps its strict unknown-field boundary", async version => {
     const old = document(version);

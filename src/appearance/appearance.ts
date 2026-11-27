@@ -8,6 +8,8 @@ export type ThemeMode = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<ThemeMode, "system">;
 export type BackgroundFit = "cover" | "contain";
 export type AssistantBubbleMode = "auto" | "always" | "off";
+export const FONT_SCALE_OPTIONS = [90, 100, 110, 120, 125] as const;
+export type FontScale = (typeof FONT_SCALE_OPTIONS)[number];
 
 export interface BackgroundLibraryEntry {
   id: string;
@@ -24,6 +26,7 @@ export type BackgroundLibraryEdit = Pick<BackgroundLibraryEntry, "reference" | "
 export interface AppearancePreferences {
   colorPreset: ColorPreset;
   themeMode: ThemeMode;
+  fontScale: FontScale;
   accentColor: string | null;
   userBubbleColor: string | null;
   unifiedThemeColor: string | null;
@@ -102,6 +105,7 @@ export interface AppearanceSnapshot extends AppearancePreferences {
   backgroundStatus: BackgroundStatus;
   backgroundBusy: boolean;
   backgroundError: string | null;
+  fontScaleError: string | null;
   backgroundDraft: BackgroundDraft | null;
 }
 
@@ -111,6 +115,7 @@ export interface AppearanceController {
   getSnapshot(): AppearanceSnapshot;
   subscribe(listener: () => void): () => void;
   setThemeMode(themeMode: ThemeMode): void;
+  setFontScale(scale: FontScale): void;
   setAccentColor(color: string | null): void;
   setUserBubbleColor(color: string | null): void;
   setUnifiedThemeColor(color: string | null): void;
@@ -148,6 +153,7 @@ export const APPEARANCE_STORAGE_KEY = "ayase-studio.appearance.v1";
 export const defaultAppearancePreferences: Readonly<AppearancePreferences> = {
   colorPreset: "default",
   themeMode: "system",
+  fontScale: 100,
   accentColor: null,
   userBubbleColor: null,
   unifiedThemeColor: null,
@@ -209,76 +215,98 @@ function isAssistantBubbleMode(value: unknown): value is AssistantBubbleMode {
   return value === "auto" || value === "always" || value === "off";
 }
 
+export function isFontScale(value: unknown): value is FontScale {
+  return typeof value === "number" && Number.isInteger(value) && (FONT_SCALE_OPTIONS as readonly number[]).includes(value);
+}
+
 const USER_BUBBLE_WALLPAPER_TRANSPARENCY = 12;
+
+function parseAppearancePreferences(
+  stored: Partial<AppearancePreferences> & { backgroundCrop?: unknown },
+): AppearancePreferences {
+  const chromeTransparency = transparencyInRange(stored.chromeTransparency, defaultAppearancePreferences.chromeTransparency);
+  const sidebarTransparency = transparencyInRange(stored.sidebarTransparency, defaultAppearancePreferences.sidebarTransparency);
+  const composerTransparency = transparencyInRange(stored.composerTransparency, defaultAppearancePreferences.composerTransparency);
+  const assistantBubbleTransparency = transparencyInRange(stored.assistantBubbleTransparency, defaultAppearancePreferences.assistantBubbleTransparency);
+  const unifiedTransparency = chromeTransparency === sidebarTransparency && sidebarTransparency === composerTransparency && sidebarTransparency === assistantBubbleTransparency
+    ? sidebarTransparency
+    : transparencyInRange(stored.unifiedTransparency, defaultAppearancePreferences.unifiedTransparency);
+
+  return {
+    colorPreset: isColorPreset(stored.colorPreset) ? stored.colorPreset : "default",
+    themeMode:
+      stored.themeMode === "light" ||
+      stored.themeMode === "dark" ||
+      stored.themeMode === "system"
+        ? stored.themeMode
+        : defaultAppearancePreferences.themeMode,
+    fontScale: isFontScale(stored.fontScale)
+      ? stored.fontScale
+      : defaultAppearancePreferences.fontScale,
+    accentColor: normalizeHexColor(stored.accentColor),
+    userBubbleColor: stored.userBubbleColor === undefined ? normalizeHexColor(stored.accentColor) : normalizeHexColor(stored.userBubbleColor),
+    unifiedThemeColor: normalizeHexColor(stored.unifiedThemeColor),
+    canvasColor: normalizeHexColor(stored.canvasColor),
+    assistantBubbleColor: normalizeHexColor(stored.assistantBubbleColor),
+    unifiedTransparency,
+    chromeTransparency,
+    sidebarTransparency,
+    composerTransparency,
+    sidebarGlassEnabled: typeof stored.sidebarGlassEnabled === "boolean" ? stored.sidebarGlassEnabled : defaultAppearancePreferences.sidebarGlassEnabled,
+    composerGlassEnabled: typeof stored.composerGlassEnabled === "boolean" ? stored.composerGlassEnabled : defaultAppearancePreferences.composerGlassEnabled,
+    assistantBubbleMode: isAssistantBubbleMode(stored.assistantBubbleMode) ? stored.assistantBubbleMode : defaultAppearancePreferences.assistantBubbleMode,
+    assistantBubbleTransparency,
+    backgroundReference: isBackgroundReference(stored.backgroundReference)
+      ? stored.backgroundReference
+      : null,
+    backgroundFocus: isBackgroundReference(stored.backgroundReference)
+      ? normalizeBackgroundFocus(stored.backgroundFocus) ?? focusFromLegacyCrop(stored.backgroundCrop) : null,
+    backgroundFit:
+      stored.backgroundFit === "cover" || stored.backgroundFit === "contain"
+        ? stored.backgroundFit
+        : defaultAppearancePreferences.backgroundFit,
+    backgroundMask: numberInRange(
+      stored.backgroundMask,
+      0,
+      90,
+      defaultAppearancePreferences.backgroundMask,
+    ),
+    backgroundBlur: numberInRange(
+      stored.backgroundBlur,
+      0,
+      32,
+      defaultAppearancePreferences.backgroundBlur,
+    ),
+    backgroundEnabled: stored.backgroundEnabled !== false,
+    backgroundName: typeof stored.backgroundName === "string" ? stored.backgroundName.slice(0, 100) : null,
+    backgroundLibrary: normalizeBackgroundLibrary(stored),
+  };
+}
 
 export function loadAppearancePreferences(
   storage: AppearanceStorage,
 ): AppearancePreferences {
   try {
-    const stored = JSON.parse(storage.getItem(APPEARANCE_STORAGE_KEY) ?? "null") as
-      | (Partial<AppearancePreferences> & { backgroundCrop?: unknown })
-      | null;
+    return readAppearancePreferences(storage);
+  } catch {
+    try {
+      const stored = JSON.parse(storage.getItem(APPEARANCE_STORAGE_KEY) ?? "null") as
+        | (Partial<AppearancePreferences> & { backgroundCrop?: unknown })
+        | null;
 
-    if (stored === null || typeof stored !== "object") {
+      if (stored === null || typeof stored !== "object" || Array.isArray(stored)) {
+        return { ...defaultAppearancePreferences };
+      }
+
+      // Display fallback for unsupported/corrupt records keeps legacy theme fallback
+      // while resetting fontScale to 100% until repaired via #backup.
+      return {
+        ...parseAppearancePreferences(stored),
+        fontScale: defaultAppearancePreferences.fontScale,
+      };
+    } catch {
       return { ...defaultAppearancePreferences };
     }
-
-    const chromeTransparency = transparencyInRange(stored.chromeTransparency, defaultAppearancePreferences.chromeTransparency);
-    const sidebarTransparency = transparencyInRange(stored.sidebarTransparency, defaultAppearancePreferences.sidebarTransparency);
-    const composerTransparency = transparencyInRange(stored.composerTransparency, defaultAppearancePreferences.composerTransparency);
-    const assistantBubbleTransparency = transparencyInRange(stored.assistantBubbleTransparency, defaultAppearancePreferences.assistantBubbleTransparency);
-    const unifiedTransparency = chromeTransparency === sidebarTransparency && sidebarTransparency === composerTransparency && sidebarTransparency === assistantBubbleTransparency
-      ? sidebarTransparency
-      : transparencyInRange(stored.unifiedTransparency, defaultAppearancePreferences.unifiedTransparency);
-
-    return {
-      colorPreset: isColorPreset(stored.colorPreset) ? stored.colorPreset : "default",
-      themeMode:
-        stored.themeMode === "light" ||
-        stored.themeMode === "dark" ||
-        stored.themeMode === "system"
-          ? stored.themeMode
-          : defaultAppearancePreferences.themeMode,
-      accentColor: normalizeHexColor(stored.accentColor),
-      userBubbleColor: stored.userBubbleColor === undefined ? normalizeHexColor(stored.accentColor) : normalizeHexColor(stored.userBubbleColor),
-      unifiedThemeColor: normalizeHexColor(stored.unifiedThemeColor),
-      canvasColor: normalizeHexColor(stored.canvasColor),
-      assistantBubbleColor: normalizeHexColor(stored.assistantBubbleColor),
-      unifiedTransparency,
-      chromeTransparency,
-      sidebarTransparency,
-      composerTransparency,
-      sidebarGlassEnabled: typeof stored.sidebarGlassEnabled === "boolean" ? stored.sidebarGlassEnabled : defaultAppearancePreferences.sidebarGlassEnabled,
-      composerGlassEnabled: typeof stored.composerGlassEnabled === "boolean" ? stored.composerGlassEnabled : defaultAppearancePreferences.composerGlassEnabled,
-      assistantBubbleMode: isAssistantBubbleMode(stored.assistantBubbleMode) ? stored.assistantBubbleMode : defaultAppearancePreferences.assistantBubbleMode,
-      assistantBubbleTransparency,
-      backgroundReference: isBackgroundReference(stored.backgroundReference)
-        ? stored.backgroundReference
-        : null,
-      backgroundFocus: isBackgroundReference(stored.backgroundReference)
-        ? normalizeBackgroundFocus(stored.backgroundFocus) ?? focusFromLegacyCrop(stored.backgroundCrop) : null,
-      backgroundFit:
-        stored.backgroundFit === "cover" || stored.backgroundFit === "contain"
-          ? stored.backgroundFit
-          : defaultAppearancePreferences.backgroundFit,
-      backgroundMask: numberInRange(
-        stored.backgroundMask,
-        0,
-        90,
-        defaultAppearancePreferences.backgroundMask,
-      ),
-      backgroundBlur: numberInRange(
-        stored.backgroundBlur,
-        0,
-        32,
-        defaultAppearancePreferences.backgroundBlur,
-      ),
-      backgroundEnabled: stored.backgroundEnabled !== false,
-      backgroundName: typeof stored.backgroundName === "string" ? stored.backgroundName.slice(0, 100) : null,
-      backgroundLibrary: normalizeBackgroundLibrary(stored),
-    };
-  } catch {
-    return { ...defaultAppearancePreferences };
   }
 }
 
@@ -325,6 +353,7 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
     typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum && (!integer || Number.isInteger(value));
   optional(stored, "colorPreset", isColorPreset);
   optional(stored, "themeMode", value => ["light", "dark", "system"].includes(value as string));
+  optional(stored, "fontScale", isFontScale);
   for (const key of ["accentColor", "userBubbleColor", "unifiedThemeColor", "canvasColor", "assistantBubbleColor"])
     optional(stored, key, value => value === null || normalizeHexColor(value) !== null);
   for (const key of ["unifiedTransparency", "chromeTransparency", "sidebarTransparency", "composerTransparency", "assistantBubbleTransparency"])
@@ -357,7 +386,7 @@ export function readAppearancePreferences(storage: Pick<AppearanceStorage, "getI
       optional(entry, "mask", range(0, 90)); optional(entry, "blur", range(0, 32));
     }
   }
-  return loadAppearancePreferences({ getItem: () => encoded, setItem: () => {} });
+  return parseAppearancePreferences(stored as Partial<AppearancePreferences> & { backgroundCrop?: unknown });
 }
 
 export function saveAppearancePreferences(
@@ -651,6 +680,7 @@ function applyAppearanceVariables(
       target.style.setProperty(property, value);
     }
   });
+  target.style.setProperty("--font-scale", String(preferences.fontScale / 100));
   target.style.setProperty("--chrome-background-opacity", String(1 - preferences.chromeTransparency / 100));
   target.style.setProperty("--sidebar-background-opacity", String(1 - preferences.sidebarTransparency / 100));
   target.style.setProperty("--composer-background-opacity", String(1 - preferences.composerTransparency / 100));
@@ -728,6 +758,7 @@ function createSnapshot(
   resolvedTheme: ResolvedTheme,
   target: ThemeTarget,
   backgroundRuntime = initialBackgroundRuntime(preferences),
+  fontScaleError: string | null = null,
 ): AppearanceSnapshot {
   applyResolvedTheme(target, resolvedTheme);
   const {
@@ -749,6 +780,7 @@ function createSnapshot(
     effectiveAccentColor,
     effectiveCanvasColor,
     ...backgroundRuntime,
+    fontScaleError,
   };
 }
 
@@ -788,6 +820,7 @@ export function createAppearanceController({
   let preferences: AppearancePreferences = {
     colorPreset: snapshot.colorPreset,
     themeMode: snapshot.themeMode,
+    fontScale: snapshot.fontScale,
     accentColor: snapshot.accentColor,
     userBubbleColor: snapshot.userBubbleColor,
     unifiedThemeColor: snapshot.unifiedThemeColor,
@@ -848,6 +881,7 @@ export function createAppearanceController({
     backgroundError: snapshot.backgroundError,
     backgroundDraft: null,
   };
+  let fontScaleError: string | null = null;
   const listeners = new Set<() => void>();
 
   function notify(): void {
@@ -874,6 +908,7 @@ export function createAppearanceController({
     try {
       saveAppearancePreferences(storage, next);
       persistedReferences = retainedReferences(next);
+      fontScaleError = null;
     } catch (error) {
       if (requireSave) throw new BackgroundResourceError("无法保存背景设置，原图片和配置保持不变，请重试。");
       if (error instanceof DataContractError) backgroundRuntime = { ...backgroundRuntime, backgroundError: error.message };
@@ -885,6 +920,7 @@ export function createAppearanceController({
       resolveTheme(preferences.themeMode, systemTheme.isDark()),
       target,
       backgroundRuntime,
+      fontScaleError,
     );
     notify();
     return persisted;
@@ -929,6 +965,7 @@ export function createAppearanceController({
       resolveTheme(preferences.themeMode, systemTheme.isDark()),
       target,
       backgroundRuntime,
+      fontScaleError,
     );
     notify();
   }
@@ -946,6 +983,7 @@ export function createAppearanceController({
       resolvedTheme,
       target,
       backgroundRuntime,
+      fontScaleError,
     );
     notify();
   });
@@ -1001,7 +1039,7 @@ export function createAppearanceController({
   return {
     ready,
     setColorPreset(colorPreset) {
-      updatePreferences({ ...preferences, colorPreset, accentColor: null, userBubbleColor: null, unifiedThemeColor: null, canvasColor: null, assistantBubbleColor: null });
+      updatePreferences({ ...preferences, colorPreset, fontScale: preferences.fontScale, accentColor: null, userBubbleColor: null, unifiedThemeColor: null, canvasColor: null, assistantBubbleColor: null });
     },
     getSnapshot: () => snapshot,
     subscribe(listener) {
@@ -1012,6 +1050,29 @@ export function createAppearanceController({
       if (themeMode !== preferences.themeMode) {
         updatePreferences({ ...preferences, themeMode });
       }
+    },
+    setFontScale(scale) {
+      if (!isFontScale(scale)) return;
+      if (scale === preferences.fontScale && !fontScaleError) return;
+      const next: AppearancePreferences = { ...preferences, fontScale: scale };
+      try {
+        saveAppearancePreferences(storage, next);
+        persistedReferences = retainedReferences(next);
+        fontScaleError = null;
+        preferences = next;
+      } catch (error) {
+        fontScaleError = error instanceof DataContractError
+          ? error.message
+          : "无法保存字体比例设置，当前设置保持不变，请重试。";
+      }
+      snapshot = createSnapshot(
+        preferences,
+        resolveTheme(preferences.themeMode, systemTheme.isDark()),
+        target,
+        backgroundRuntime,
+        fontScaleError,
+      );
+      notify();
     },
     setAccentColor(color) {
       const normalized = color === null ? null : normalizeHexColor(color);
@@ -1197,7 +1258,7 @@ export function createAppearanceController({
       if (backgroundRuntime.backgroundBusy || backgroundRuntime.backgroundDraft) return;
       try {
         await backgroundOperation(async () => {
-          updatePreferences({ ...defaultAppearancePreferences, themeMode: preferences.themeMode,
+          updatePreferences({ ...defaultAppearancePreferences, themeMode: preferences.themeMode, fontScale: preferences.fontScale,
             backgroundLibrary: preferences.backgroundLibrary, backgroundReference: preferences.backgroundReference,
             backgroundName: preferences.backgroundName, backgroundFocus: preferences.backgroundFocus,
             backgroundFit: preferences.backgroundFit, backgroundMask: preferences.backgroundMask,

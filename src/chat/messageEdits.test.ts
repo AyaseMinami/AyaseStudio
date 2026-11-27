@@ -205,6 +205,23 @@ describe("message edit durable ownership and recovery", () => {
     expect((await f.database.chats.get("current"))!.messages).toEqual(invalid);
     expect(f.access.replace).not.toHaveBeenCalled(); expect(f.files.has(hidden.reference)).toBe(true);
   });
+
+  it("releases claimed generation ownership if committed() throws synchronously", async () => {
+    const f = await fixture();
+    const cancel = vi.fn();
+    const result = await f.coordinator.submit("current", "u", "changed", { base: before[0] }, async (_before, edited) => ({
+      messages: [edited],
+      claim: () => true,
+      cancel,
+      committed: () => { throw new Error("sync launch error"); },
+    }));
+    expect(result.status).toBe("saved");
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(f.access.outcome).toHaveBeenLastCalledWith("current", expect.objectContaining({
+      status: "saved",
+      error: expect.stringContaining("启动请求失败"),
+    }));
+  });
 });
 
 it("shared old-file leases release only their own identity, including idempotent release", async () => {

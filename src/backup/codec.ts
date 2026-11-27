@@ -3,8 +3,8 @@ import type { BackupDocument, BackupPreview } from "./types";
 import { checkDocumentBudget, validateDocument } from "./validation";
 import { normalizeCompatibleParameters } from "./compatibility";
 
-export const MAX_BACKUP_FILE = 128 * 1024 * 1024;
-export const MAX_PAYLOAD = 80 * 1024 * 1024;
+export const MAX_BACKUP_FILE = 256 * 1024 * 1024;
+export const MAX_PAYLOAD = 160 * 1024 * 1024;
 export const KDF_ITERATIONS = 600_000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });

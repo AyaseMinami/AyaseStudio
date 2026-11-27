@@ -3,7 +3,7 @@
 .model-group-editor { display: grid; gap: 0.625rem; min-width: 0; padding-bottom: 0.75rem; border-bottom: 1px solid rgb(var(--color-border) / 0.65); }
 .model-group-editor .muted-text, .model-group-management > .muted-text { margin: 0; font-size: var(--font-small); }
 .model-group-name-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-.model-group-name-form .compact-field { flex: 1 1 12rem; min-width: 0; height: 2.25rem; }
+.model-group-name-form .compact-field { flex: 1 1 12rem; min-width: 0; min-height: 2.25rem; }
 .model-group-name-form .settings-button { min-height: 2.25rem; }
 .model-custom-groups { display: grid; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
 .model-custom-groups li { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }

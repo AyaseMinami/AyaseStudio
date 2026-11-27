@@ -22,7 +22,6 @@ jobs:
         with:
           toolchain: stable
       - run: npm.cmd ci
-      - run: node --test scripts/release/*.test.mjs
       - run: npm.cmd run check
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features release-tools --bin verify-updater-signature

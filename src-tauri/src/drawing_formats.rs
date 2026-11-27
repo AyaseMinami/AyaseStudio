@@ -194,12 +194,11 @@ fn declaration_properties(value: &str, owner: Option<Node<'_, '_>>) -> Result<()
         if !presentation_property(property) {
             return Err(Error::Corrupt);
         }
-        if let Some(node) = owner {
-            if is_inherited_resource_property_on_non_shape(node, property)
-                && !resource_references(prop_value)?.is_empty()
-            {
-                return Err(Error::Corrupt);
-            }
+        if let Some(node) = owner
+            && is_inherited_resource_property_on_non_shape(node, property)
+            && !resource_references(prop_value)?.is_empty()
+        {
+            return Err(Error::Corrupt);
         }
     }
     Ok(())
@@ -428,10 +427,10 @@ fn validate_svg(text: &str) -> Result<(), Error> {
         {
             return Err(Error::Corrupt);
         }
-        if let Some(id) = node.attribute("id") {
-            if ids.insert(id, node).is_some() {
-                return Err(Error::Corrupt);
-            }
+        if let Some(id) = node.attribute("id")
+            && ids.insert(id, node).is_some()
+        {
+            return Err(Error::Corrupt);
         }
         if node.has_attribute("href")
             && node.has_attribute(("http://www.w3.org/1999/xlink", "href"))
@@ -945,6 +944,21 @@ mod tests {
             validate_svg(
                 r#"<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"><stop stop-color="blue"/></linearGradient></defs><g fill="url(#g)"><rect width="1" height="1"/></g></svg>"#
             ),
+            Err(Error::Corrupt)
+        );
+    }
+
+    #[test]
+    fn preserves_inert_legacy_svg_attributes_while_still_rejecting_filter_and_pattern_elements() {
+        let inert = br#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect filterUnits="userSpaceOnUse" width="8" height="8" fill="red"/></svg>"#;
+        let image = decode_svg(inert).unwrap();
+        assert_eq!((image.width(), image.height()), (8, 8));
+        assert_eq!(
+            validate_svg(r#"<svg xmlns="http://www.w3.org/2000/svg"><defs><filter id="f"/></defs><rect width="4" height="4"/></svg>"#),
+            Err(Error::Corrupt)
+        );
+        assert_eq!(
+            validate_svg(r#"<svg xmlns="http://www.w3.org/2000/svg"><defs><pattern id="p" width="2" height="2"/></defs><rect width="4" height="4"/></svg>"#),
             Err(Error::Corrupt)
         );
     }

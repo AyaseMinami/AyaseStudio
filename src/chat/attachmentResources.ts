@@ -38,7 +38,7 @@ export function createTauriAttachmentStore(): AttachmentStore {
     },
     async read(sent) {
       try {
-        const data = await invoke<string>("read_sent_attachment", { reference: sent.reference });
+        const data = await invoke<string>("read_sent_attachment", { reference: sent.reference, expectedSize: sent.size });
         const bytes = base64ToBytes(data);
         if (bytes.length !== sent.size) {
           throw new AttachmentError("已发送附件与记录不一致。");

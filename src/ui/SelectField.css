@@ -1,4 +1,4 @@
-.select-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid rgb(var(--color-border)); border-radius: 6px; background: color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas))); color: rgb(var(--color-text)); font: inherit; text-align: left; cursor: pointer; transition: border-color 120ms, background-color 120ms; }
+.select-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; min-height: 36px; padding: 6px 10px; border: 1px solid rgb(var(--color-border)); border-radius: 6px; background: color-mix(in srgb, rgb(var(--color-panel)) 85%, rgb(var(--color-canvas))); color: rgb(var(--color-text)); font: inherit; text-align: left; cursor: pointer; transition: border-color 120ms, background-color 120ms; }
 .select-field > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-field > svg { flex: none; color: rgb(var(--color-muted)); transition: transform 140ms; }
 .select-field[aria-expanded="true"] > svg { transform: rotate(180deg); }

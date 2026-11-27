@@ -1,5 +1,11 @@
 # Protocol Compatibility Contract
 
+## Pre-release transport hardening (#106, 2026-11-27)
+
+- **Chat & model-catalog HTTP redirect refusal (`B2`)**: Desktop `src/chat/runtime.ts` passes `maxRedirections: 0` to `@tauri-apps/plugin-http`, and `src/chat/transport.ts` (all four protocols, streaming and non-streaming) plus `src/chat/modelCatalog.ts` pass `redirect: "error"` and reject any `3xx` / redirected response with a sanitized error instructing the user to configure the final Base URL—never forwarding `Authorization` / `x-api-key` / `x-goog-api-key` or leaking redirect targets/bodies.
+- **External search follow-up replay budgeting (`B3`)**: `prepareSearchContext` accepts and forwards `replayScope` to `planContextBudget` so same-connection Anthropic Native / OpenAI Responses history retains and budgets eligible `providerReplay` while cross-connection and external-search turns still drop replay.
+- **WHATWG SSE line endings (`M4`)**: `src/chat/sse.ts` handles `\r\n`, `\n`, standalone `\r`, and cross-chunk `\r` + `\n` pairs cleanly.
+
 ## DeepSeek native vision compatibility (#142, 2026-11-26)
 
 DeepSeek `deepseek-flash` accepts inline Base64 images across all three DeepSeek-compatible protocols (`openai-chat` `image_url` data URL, `openai-responses` `input_image` data URL with `store: false`, and `anthropic-native` `image.source` Base64; official reference: [图像理解](https://api-docs.deepseek.com/zh-cn/guides/vision/)). Ayase sends original PNG, JPEG, and WebP bytes inline directly to the resolved protocol endpoint without Files API (`POST /files`) uploads, remote image-URL fetching, transcoding, or resizing. Chat attachments remain PNG/JPEG/WebP (`.gif` is intentionally deferred outside `#142` to avoid expanding persisted attachment MIME/extension and portable backup contracts).

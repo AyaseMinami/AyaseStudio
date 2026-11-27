@@ -46,7 +46,7 @@ body { padding: 2px; box-sizing: border-box; }
 
 function sanitizedSuggestionHtml(html: string): string {
   const document = new DOMParser().parseFromString(html, "text/html");
-  document.querySelectorAll("script, base, meta[http-equiv='refresh'], iframe, object, embed, form").forEach((element) => element.remove());
+  document.querySelectorAll("script, base, meta, iframe, object, embed, form").forEach((element) => element.remove());
   const styles = [...document.querySelectorAll("head style")].map((style) => style.outerHTML).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: https:">${styles}${SUGGESTION_LAYOUT_STYLE}</head><body>${document.body.innerHTML}</body></html>`;
 }

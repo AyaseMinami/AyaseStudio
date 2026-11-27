@@ -29,14 +29,6 @@ export function summarizeContextPlan(plan: ContextPlan): ContextSummary {
     countingLabel: plan.countingLabel, estimated: plan.estimated };
 }
 
-/** Conservative Base64 estimate before loading any retained historical copies. */
-export function estimateInlineRequestBytes(messages: ChatMessage[]): number {
-  const encoder = new TextEncoder();
-  return 1_000_000 + messages.reduce((bytes, message) => bytes + encoder.encode(message.content).length +
-    (message.attachments ?? []).reduce((sum, item) => sum + Math.ceil(item.size / 3) * 4 +
-      encoder.encode(item.name).length + 200, 0), 0);
-}
-
 type TokenCounter = (text: string) => number;
 
 function openAiEncoding(model: string): "o200k_base" | "cl100k_base" | undefined {
